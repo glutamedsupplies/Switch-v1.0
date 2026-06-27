@@ -1,0 +1,218 @@
+/* Product panel only overrides.
+   Loaded after styles.css so these rules win without affecting other pages. */
+
+.product-status-shell .product-list {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  column-gap: 52px !important;
+  row-gap: 52px !important;
+}
+
+.product-status-shell .product-panel-grid__inventory {
+  padding: 52px !important;
+}
+
+.product-status-shell .dashboard-content > .hero--product-list {
+  position: sticky !important;
+  top: var(--admin-heading-sticky-top, 4px) !important;
+  z-index: 220;
+  background: var(--dashboard-page-background, #f3f4f6);
+}
+
+.product-status-shell .product-card,
+.product-status-shell .product-card:hover,
+.product-status-shell .product-card.is-inactive,
+.product-status-shell .product-card.is-inactive:hover,
+.product-status-shell .product-card--add-product,
+.product-status-shell .product-card--add-product:hover {
+  position: relative;
+  z-index: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  border: 1px solid rgba(15, 23, 42, 0.1) !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  overflow: hidden !important;
+  box-shadow:
+    0 12px 24px rgba(15, 23, 42, 0.16),
+    0 3px 8px rgba(15, 23, 42, 0.1) !important;
+  outline: none !important;
+  transition: none !important;
+  isolation: isolate;
+}
+
+.product-status-shell .product-card::before,
+.product-status-shell .product-card--add-product::before {
+  display: none;
+}
+
+.product-status-shell .product-card:hover,
+.product-status-shell .product-card.is-inactive:hover {
+  border: 1px solid rgba(15, 23, 42, 0.1) !important;
+  box-shadow:
+    0 12px 24px rgba(15, 23, 42, 0.16),
+    0 3px 8px rgba(15, 23, 42, 0.1) !important;
+  outline: none !important;
+  transform: none !important;
+}
+
+.product-status-shell .product-card:hover::before,
+.product-status-shell .product-card.is-inactive:hover::before,
+.product-status-shell .product-card--add-product:hover::before {
+  box-shadow:
+    0 5px 10px rgba(15, 23, 42, 0.08),
+    0 2px 5px rgba(15, 23, 42, 0.05),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.product-status-shell .product-card--expired-batch,
+.product-status-shell .product-card--expired-batch:hover,
+.product-status-shell .product-card--expired-batch.is-inactive,
+.product-status-shell .product-card--expired-batch.is-inactive:hover {
+  border: 1px solid rgba(153, 27, 27, 0.18) !important;
+}
+
+.product-status-shell .product-card--pending-request,
+.product-status-shell .product-card--pending-request:hover,
+.product-status-shell .product-card--pending-request.is-inactive,
+.product-status-shell .product-card--pending-request.is-inactive:hover {
+  border-color: transparent !important;
+  outline: none !important;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  box-shadow:
+    0 10px 22px rgba(100, 116, 139, 0.14),
+    0 2px 6px rgba(100, 116, 139, 0.1) !important;
+}
+
+.product-status-shell .product-card--expired-batch::before {
+  display: none;
+}
+
+.product-status-shell .product-card--pending-request::before {
+  display: none;
+}
+
+.product-status-shell .product-image,
+.product-status-shell .product-image--add-product,
+.product-status-shell .product-card__photo-button {
+  width: 100% !important;
+  height: 240px !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+
+.product-status-shell .product-card__photo-button {
+  cursor: pointer !important;
+}
+
+.product-status-shell .product-image__count {
+  cursor: pointer !important;
+  transform: scale(1) !important;
+  transform-origin: center !important;
+  transition:
+    background 140ms ease,
+    transform 140ms ease !important;
+  will-change: transform;
+}
+
+.product-status-shell .product-image__count:hover {
+  background: rgba(15, 23, 42, 0.84) !important;
+  transform: scale(1.14) !important;
+}
+
+.product-status-shell .product-card__body {
+  flex: 1 1 auto !important;
+  padding: 12px 14px 0 !important;
+}
+
+.product-status-shell .product-card__footer {
+  width: 100% !important;
+  margin-top: auto !important;
+  padding: 8px 14px 14px !important;
+  border-top: 0 !important;
+  background: transparent !important;
+}
+
+.product-status-shell .product-actions .description-button,
+.product-status-shell .product-actions .edit-button,
+.product-status-shell .product-actions .delete-button {
+  transform: scale(1) !important;
+  transform-origin: center !important;
+  transition:
+    color 140ms ease,
+    transform 140ms ease !important;
+  will-change: transform;
+}
+
+.product-status-shell .product-actions .description-button:hover,
+.product-status-shell .product-actions .description-button:focus-visible,
+.product-status-shell .product-actions .edit-button:hover,
+.product-status-shell .product-actions .edit-button:focus-visible,
+.product-status-shell .product-actions .delete-button:hover,
+.product-status-shell .product-actions .delete-button:focus-visible {
+  transform: scale(1.16) !important;
+}
+
+.product-status-shell .product-actions .description-button:disabled,
+.product-status-shell .product-actions .edit-button:disabled,
+.product-status-shell .product-actions .delete-button:disabled {
+  transform: scale(1) !important;
+}
+
+.product-status-shell .product-card__visibility-toggle-track {
+  transition: background 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.product-status-shell .product-card__visibility-toggle.is-active .product-card__visibility-toggle-track {
+  background-color: var(--accent) !important;
+  background-image: var(--accent-button-gradient-bg) !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+}
+
+.product-status-shell .product-card--expired-batch .product-card__footer {
+  background: transparent !important;
+}
+
+@media (max-width: 1520px) {
+  .product-status-shell .product-list {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .product-status-shell .product-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .product-status-shell .product-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .product-status-shell .product-panel-grid__inventory {
+    padding: 44px !important;
+  }
+
+  .product-status-shell .product-image,
+  .product-status-shell .product-image--add-product,
+  .product-status-shell .product-card__photo-button {
+    height: 220px !important;
+  }
+
+  .product-status-shell .product-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    column-gap: 44px !important;
+    row-gap: 44px !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .product-status-shell .product-list {
+    grid-template-columns: 1fr !important;
+  }
+}

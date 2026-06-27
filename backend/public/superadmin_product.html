@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Listings - Super Admin</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+    <link rel="stylesheet" href="/super_admin.css?v=super-admin-split-1" />
+  </head>
+  <body class="super-admin-page">
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral super-admin-shell">
+      <div class="dashboard-layout super-admin-layout">
+        <aside class="panel dashboard-sidebar super-admin-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/super_admin.html"
+            aria-label="Super admin home"
+            title="Super admin"
+          >
+            <span class="dashboard-sidebar__logo-mark super-admin-logo-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 3.5 5.5 6v5.3c0 4.2 2.6 7.5 6.5 9.2 3.9-1.7 6.5-5 6.5-9.2V6L12 3.5Z" stroke-linejoin="round" />
+                <path d="M9 12.2 11 14l4.2-4.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+          </a>
+
+          <nav class="dashboard-nav" aria-label="Super admin navigation">
+            <a
+              class="dashboard-nav__item is-active"
+              href="/super_admin.html"
+              aria-label="Companies"
+              title="Companies"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                  <path d="M6 12H4a2 2 0 0 0-2 2v8h20v-8a2 2 0 0 0-2-2h-2" />
+                  <path d="M10 6h4" />
+                  <path d="M10 10h4" />
+                  <path d="M10 14h4" />
+                  <path d="M10 18h4" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Companies</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/super_admin.html#product-requests"
+              data-super-admin-section-target="product-requests"
+              aria-label="In Review"
+              title="In Review"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 12H3" />
+                  <path d="M16 6H3" />
+                  <path d="M16 18H3" />
+                  <path d="m16 12 2 2 4-4" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">In Review</span>
+              <span class="dashboard-nav__badge" data-super-admin-product-request-count hidden>0</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/user_data.html"
+              aria-label="User Data"
+              title="User Data"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <circle cx="12" cy="10" r="3" />
+                  <path d="M7 21v-2a5 5 0 0 1 10 0v2" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">User Data</span>
+            </a>
+
+            <button
+              type="button"
+              class="dashboard-nav__item dashboard-nav__item--button"
+              data-root-sign-out
+              data-nav-tooltip="Sign out"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" x2="9" y1="12" y2="12" />
+                </svg>
+              </span>
+            </button>
+          </nav>
+        </aside>
+
+        <div class="dashboard-content super-admin-content">
+          <section class="hero">
+            <div class="hero-actions">
+              <div>
+                <h1 class="user-data-title" id="company-title">Listings</h1>
+                <p class="panel-copy super-admin-listings-subtitle" id="company-subtitle">Loading...</p>
+              </div>
+
+              <div class="dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Super admin workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Admin logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      AD
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Super Admin</strong>
+                    <span id="product-count-label">Loading listings...</span>
+                  </span>
+                </div>
+
+                <div class="settings-menu" data-settings-menu>
+                  <button
+                    class="settings-toggle"
+                    type="button"
+                    aria-label="Color Picker"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Color Picker"
+                    data-settings-toggle
+                  >
+                    <span class="settings-toggle__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path
+                          d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                          stroke-linejoin="round"
+                        />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </span>
+                    <span class="settings-toggle__swatch" aria-hidden="true"></span>
+                  </button>
+
+                  <div class="settings-dropdown" hidden data-settings-dropdown>
+                    <p class="settings-dropdown__eyebrow">Theme Settings</p>
+                    <h2 class="settings-dropdown__title">Color Picker</h2>
+                    <p class="settings-dropdown__copy">
+                      Pick a color and it updates the whole web server instantly.
+                    </p>
+
+                    <label class="settings-color-field">
+                      <span>Primary Color</span>
+                      <input type="color" value="#2563EB" data-theme-color-input />
+                    </label>
+
+                    <div class="settings-color-meta">
+                      <span data-theme-hex>#2563EB</span>
+                      <span data-theme-rgb>RGB 37, 99, 235</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="ghost-button settings-reset-button"
+                      data-theme-reset
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="product-panel-grid product-panel-grid--products-only">
+            <div id="loading-state" class="empty-state">
+              <div class="loading-spinner"></div>
+              <p>Loading listings...</p>
+            </div>
+            <div id="error-state" class="empty-state" hidden>
+              <p>Failed to load listings. Please try again.</p>
+              <button type="button" class="ghost-button" onclick="loadProducts()">Retry</button>
+            </div>
+            <div id="empty-state" class="empty-state" hidden>
+              <p>No listings found for this company.</p>
+            </div>
+            <div id="product-list" class="super-admin-listing-list" hidden></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script>
+      // Get companyId from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const companyId = urlParams.get('companyId');
+
+      if (!companyId) {
+        document.getElementById('company-title').textContent = 'Error';
+        document.getElementById('company-subtitle').textContent = 'No company specified.';
+        document.getElementById('loading-state').hidden = true;
+        document.getElementById('error-state').hidden = false;
+      }
+
+      // Load products on page load
+      document.addEventListener('DOMContentLoaded', loadProducts);
+
+      async function loadProducts() {
+        if (!companyId) return;
+
+        const loadingState = document.getElementById('loading-state');
+        const errorState = document.getElementById('error-state');
+        const emptyState = document.getElementById('empty-state');
+        const productList = document.getElementById('product-list');
+
+        loadingState.hidden = false;
+        errorState.hidden = true;
+        emptyState.hidden = true;
+        productList.hidden = true;
+
+        try {
+          const response = await fetch(`/api/super-admin/products/${companyId}`);
+          const data = await response.json();
+
+          loadingState.hidden = true;
+
+          if (!response.ok) {
+            throw new Error(data.message || 'Failed to load listings');
+          }
+
+          // Update page title and subtitle
+          const listingCount = Array.isArray(data.products) ? data.products.length : 0;
+          const listingCountText = formatListingCount(listingCount);
+
+          document.getElementById('company-title').textContent = 'Listings';
+          document.getElementById('company-subtitle').textContent = data.companyName
+            ? `${data.companyName} - ${listingCountText}`
+            : listingCountText;
+          document.getElementById('product-count-label').textContent = listingCountText;
+          document.title = data.companyName
+            ? `Listings - ${data.companyName} - Super Admin`
+            : 'Listings - Super Admin';
+
+          if (data.products.length === 0) {
+            emptyState.hidden = false;
+            return;
+          }
+
+          productList.hidden = false;
+          renderProducts(data.products);
+        } catch (error) {
+          console.error('Error loading listings:', error);
+          loadingState.hidden = true;
+          errorState.hidden = false;
+        }
+      }
+
+      function renderProducts(products) {
+        const productList = document.getElementById('product-list');
+        productList.innerHTML = '';
+        for (const product of products) {
+          productList.append(createProductCard(product));
+        }
+      }
+
+      function formatListingCount(count) {
+        const normalizedCount = Number(count) || 0;
+        return `${normalizedCount} listing${normalizedCount === 1 ? '' : 's'}`;
+      }
+
+      function normalizeListingText(value) {
+        return String(value ?? '').trim();
+      }
+
+      function resolveListingImageUrl(product) {
+        const imageUrl = [
+          product?.cardImageUrl,
+          product?.imageUrl,
+          product?.mainImageUrl,
+          Array.isArray(product?.imageUrls) ? product.imageUrls[0] : '',
+          Array.isArray(product?.images) ? product.images[0] : '',
+        ]
+          .map(normalizeListingText)
+          .find(Boolean);
+
+        if (!imageUrl) {
+          return '/placeholder.png';
+        }
+        if (
+          imageUrl.startsWith('data:') ||
+          imageUrl.startsWith('http://') ||
+          imageUrl.startsWith('https://') ||
+          imageUrl.startsWith('/')
+        ) {
+          return imageUrl;
+        }
+        return `/uploads/${imageUrl}`;
+      }
+
+      function getListingStatus(product) {
+        const approvalStatus = normalizeListingText(
+          product?.approvalStatus ?? product?.status,
+        ).toLowerCase();
+
+        if (
+          approvalStatus === 'pending' ||
+          approvalStatus === 'in-review' ||
+          approvalStatus === 'in review' ||
+          approvalStatus === 'review'
+        ) {
+          return {
+            label: 'In Review',
+            className: 'super-admin-listing-status--review',
+          };
+        }
+
+        if (product?.isActive === true) {
+          return {
+            label: 'Active',
+            className: 'super-admin-listing-status--active',
+          };
+        }
+
+        return {
+          label: 'Not Active',
+          className: 'super-admin-listing-status--inactive',
+        };
+      }
+
+      function createProductCard(product) {
+        const card = document.createElement('article');
+        card.className = 'super-admin-product-request-card super-admin-listing-card';
+        card.dataset.productId = normalizeListingText(product?.id);
+
+        const imageUrl = resolveListingImageUrl(product);
+        const productName = normalizeListingText(product?.name) || 'Unnamed product';
+        const categoryLabel = getListingCategoryLabel(product);
+        const priceLabel = getListingPriceLabel(product);
+        const originalPriceLabel = getListingOriginalPriceLabel(product);
+        const ratingLabel = getListingRatingLabel(product);
+        const reviewCountLabel = getListingReviewCountLabel(product);
+        const status = getListingStatus(product);
+        const companyName = getListingCompanyLabel(product);
+        const companyImageUrl = resolveListingCompanyImageUrl(product);
+
+        const topbar = document.createElement('div');
+        topbar.className = 'super-admin-product-request-card__topbar';
+
+        if (categoryLabel) {
+          const categoryBadge = document.createElement('span');
+          categoryBadge.className = 'super-admin-product-request-card__badge';
+          categoryBadge.textContent = categoryLabel;
+          topbar.append(categoryBadge);
+        } else {
+          topbar.classList.add('super-admin-product-request-card__topbar--menu-only');
+        }
+
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `super-admin-listing-status ${status.className}`;
+        statusBadge.textContent = status.label;
+        topbar.append(statusBadge);
+
+        const media = document.createElement('div');
+        media.className = 'super-admin-product-request-card__media';
+        if (imageUrl) {
+          const image = document.createElement('img');
+          image.src = imageUrl;
+          image.alt = productName;
+          image.loading = 'lazy';
+          media.append(image);
+        } else {
+          media.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path d="M5 7.5h14v9H5z" stroke-linejoin="round"></path>
+              <path d="m7.5 15 3.5-3.6 2.2 2.2 1.4-1.5 2 2.9" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M8.5 9.2h.01" stroke-linecap="round" stroke-width="3"></path>
+            </svg>
+          `;
+        }
+
+        const body = document.createElement('div');
+        body.className = 'super-admin-product-request-card__body';
+        body.innerHTML = `
+          <div class="super-admin-product-request-card__main">
+            <h3></h3>
+            <div class="super-admin-product-request-card__footer">
+              <span class="super-admin-product-request-card__price-row">
+                <span class="super-admin-product-request-card__price" data-listing-price></span>
+                <span class="super-admin-product-request-card__original-price" data-listing-original-price hidden></span>
+              </span>
+              <span class="super-admin-product-request-card__rating" title="Listing rating">
+                <span aria-hidden="true">&#9733;</span>
+                <span data-listing-rating></span>
+              </span>
+              <span class="super-admin-product-request-card__rating super-admin-product-request-card__rating--reviews" title="Review comments">
+                <span aria-hidden="true">&#128172;</span>
+                <span data-listing-reviews></span>
+              </span>
+            </div>
+          </div>
+          <div class="super-admin-product-request-card__company-profile">
+            <span class="super-admin-product-request-card__company-avatar" data-listing-company-avatar></span>
+            <span class="super-admin-product-request-card__company-name"></span>
+          </div>
+        `;
+        body.querySelector('h3').textContent = productName;
+        body.querySelector('[data-listing-price]').textContent = priceLabel;
+        body.querySelector('[data-listing-rating]').textContent = ratingLabel;
+        body.querySelector('[data-listing-reviews]').textContent = reviewCountLabel;
+        body.querySelector('.super-admin-product-request-card__company-name').textContent = companyName;
+
+        const originalPriceElement = body.querySelector('[data-listing-original-price]');
+        if (originalPriceElement) {
+          originalPriceElement.textContent = originalPriceLabel;
+          originalPriceElement.hidden = !originalPriceLabel;
+        }
+
+        const companyAvatar = body.querySelector('[data-listing-company-avatar]');
+        if (companyAvatar) {
+          if (companyImageUrl) {
+            const companyImage = document.createElement('img');
+            companyImage.src = companyImageUrl;
+            companyImage.alt = `${companyName} company profile`;
+            companyImage.loading = 'lazy';
+            companyImage.addEventListener('error', () => {
+              companyImage.remove();
+              companyAvatar.textContent = getListingCompanyInitials(product);
+            });
+            companyAvatar.append(companyImage);
+          } else {
+            companyAvatar.textContent = getListingCompanyInitials(product);
+          }
+        }
+
+        card.append(topbar, media, body);
+        return card;
+      }
+
+      function getListingCategoryLabel(product) {
+        const category = product?.categories;
+        if (Array.isArray(category)) {
+          return category.map(normalizeListingText).find(Boolean) || 'Uncategorized';
+        }
+        return normalizeListingText(product?.category) || 'Uncategorized';
+      }
+
+      function getListingCompanyLabel(product) {
+        return (
+          normalizeListingText(product?.companyName) ||
+          normalizeListingText(product?.storeName) ||
+          normalizeListingText(product?.businessName) ||
+          'Company'
+        );
+      }
+
+      function normalizeListingImagePath(value) {
+        const imageUrl = normalizeListingText(value);
+        if (!imageUrl) return '';
+        if (
+          imageUrl.startsWith('data:') ||
+          imageUrl.startsWith('http://') ||
+          imageUrl.startsWith('https://') ||
+          imageUrl.startsWith('/')
+        ) {
+          return imageUrl;
+        }
+        return `/uploads/${imageUrl}`;
+      }
+
+      function resolveListingCompanyImageUrl(product) {
+        return [
+          product?.companyProfileImageUrl,
+          product?.companyPictureUrl,
+          product?.companyImageUrl,
+          product?.companyLogoUrl,
+          product?.storeLogoUrl,
+          product?.profileImageUrl,
+          product?.logoUrl,
+        ]
+          .map(normalizeListingImagePath)
+          .find(Boolean) || '';
+      }
+
+      function getListingCompanyInitials(product) {
+        const label = getListingCompanyLabel(product);
+        const initials = label
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map(part => part.charAt(0).toUpperCase())
+          .join('');
+        return initials || 'CO';
+      }
+
+      function getListingPriceValue(product) {
+        const salesPrice = Number(product?.salesPrice);
+        if (Number.isFinite(salesPrice) && salesPrice >= 0) {
+          return salesPrice;
+        }
+        const originalPrice = Number(product?.originalPrice);
+        if (Number.isFinite(originalPrice) && originalPrice >= 0) {
+          return originalPrice;
+        }
+        const price = Number(product?.price);
+        return Number.isFinite(price) && price >= 0 ? price : 0;
+      }
+
+      function getListingPriceLabel(product) {
+        return formatListingMoney(getListingPriceValue(product));
+      }
+
+      function getListingOriginalPriceLabel(product) {
+        const salesPrice = Number(product?.salesPrice);
+        const originalPrice = Number(product?.originalPrice ?? product?.price);
+        const hasDiscount =
+          Number.isFinite(salesPrice) &&
+          salesPrice >= 0 &&
+          Number.isFinite(originalPrice) &&
+          originalPrice > salesPrice;
+        return hasDiscount ? formatListingMoney(originalPrice) : '';
+      }
+
+      function formatListingMoney(value) {
+        const amount = Number(value);
+        const safeAmount = Number.isFinite(amount) ? amount : 0;
+        return `₱ ${safeAmount.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+      }
+
+      function getListingRatingLabel(product) {
+        const rating = Number(product?.rating ?? product?.averageRating);
+        if (Number.isFinite(rating) && rating > 0) {
+          return rating.toFixed(1);
+        }
+        return '0.0';
+      }
+
+      function getListingReviewCountLabel(product) {
+        const directCount = Number(
+          product?.commentCount ??
+          product?.reviewCommentCount ??
+          product?.productReviewCommentCount ??
+          product?.reviewCount ??
+          0,
+        );
+        if (Number.isFinite(directCount) && directCount > 0) {
+          return String(Math.trunc(directCount));
+        }
+        const comments = product?.reviewComments ?? product?.productReviewComments ?? product?.reviews;
+        return String(Array.isArray(comments) ? comments.length : 0);
+      }
+    </script>
+  </body>
+</html>

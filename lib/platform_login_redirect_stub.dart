@@ -1,0 +1,3 @@
+bool redirectToLoginHtmlIfSupported() {
+  return false;
+}

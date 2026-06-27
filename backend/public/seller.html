@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Seller</title>
+  <link rel="stylesheet" href="/styles.css?v=universal-search-1">
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 18px; background:#f6f8fa; color:#162033 }
+    .seller-header { display:flex; align-items:center; gap:12px; margin-bottom:12px }
+    .seller-avatar { width:64px; height:64px; border-radius:50%; background:#eee; overflow:hidden; display:flex; align-items:center; justify-content:center }
+    .seller-avatar img{ width:100%; height:100%; object-fit:cover }
+    .seller-meta { display:flex; flex-direction:column }
+    .seller-name { font-size:20px; font-weight:700 }
+    .seller-actions { margin-left:auto; display:flex; gap:8px }
+    .btn { border:0; padding:8px 12px; border-radius:8px; cursor:pointer }
+    .btn-follow { background:#1d4ed8; color:#fff }
+    .btn-unfollow { background:#e5e7eb; color:#111 }
+    .btn-sub { background:#10b981; color:#fff }
+    .products-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-top:18px }
+    .product-card { background:#fff; border-radius:10px; padding:10px; box-shadow:0 6px 12px rgba(21,42,88,0.04); display:flex; flex-direction:column }
+    .product-image{ height:140px; background:#f3f4f6; border-radius:6px; overflow:hidden; display:flex; align-items:center; justify-content:center }
+    .product-image img{ width:100%; height:100%; object-fit:cover }
+    .product-name{ margin-top:8px; font-weight:600 }
+    .product-price{ color:#1d4ed8; font-weight:700; margin-top:6px }
+    .empty { padding:28px; text-align:center; color:#64748b }
+  </style>
+</head>
+<body>
+  <a href="/" style="display:inline-block;margin-bottom:12px;color:var(--accent);">← Back</a>
+  <div id="seller" class="seller-header">
+    <div class="seller-avatar" id="sellerAvatar">S</div>
+    <div class="seller-meta">
+      <div id="sellerName" class="seller-name">Seller</div>
+      <div id="sellerBio" style="color:#52607a;font-size:13px;">&nbsp;</div>
+    </div>
+    <div class="seller-actions">
+      <button id="followBtn" class="btn btn-follow">Follow</button>
+      <button id="subscribeBtn" class="btn btn-sub">Subscribe</button>
+    </div>
+  </div>
+
+  <h3 style="margin-top:6px">Products</h3>
+  <div id="products" class="products-grid"></div>
+  <div id="empty" class="empty" style="display:none">No products found for this seller.</div>
+
+  <script>
+    (function(){
+      const params = new URLSearchParams(location.search);
+      const adminId = (params.get('adminId') || params.get('seller') || '').trim();
+      const sellerAvatar = document.getElementById('sellerAvatar');
+      const sellerNameEl = document.getElementById('sellerName');
+      const sellerBio = document.getElementById('sellerBio');
+      const followBtn = document.getElementById('followBtn');
+      const subscribeBtn = document.getElementById('subscribeBtn');
+      const productsEl = document.getElementById('products');
+      const emptyEl = document.getElementById('empty');
+
+      if (!adminId) {
+        sellerNameEl.textContent = 'Unknown Seller';
+        sellerBio.textContent = 'No seller specified.';
+        followBtn.style.display = 'none';
+        subscribeBtn.style.display = 'none';
+        emptyEl.style.display = 'block';
+        return;
+      }
+
+      const followKey = 'seller_follow_' + adminId;
+      const subKey = 'seller_sub_' + adminId;
+
+      function updateFollowUI() {
+        const following = localStorage.getItem(followKey) === '1';
+        followBtn.textContent = following ? 'Following' : 'Follow';
+        followBtn.className = 'btn ' + (following ? 'btn-unfollow' : 'btn-follow');
+      }
+
+      function updateSubUI() {
+        const sub = localStorage.getItem(subKey) === '1';
+        subscribeBtn.textContent = sub ? 'Subscribed' : 'Subscribe';
+        subscribeBtn.className = 'btn ' + (sub ? 'btn-unfollow' : 'btn-sub');
+      }
+
+      followBtn.addEventListener('click', () => {
+        const following = localStorage.getItem(followKey) === '1';
+        localStorage.setItem(followKey, following ? '0' : '1');
+        updateFollowUI();
+      });
+
+      subscribeBtn.addEventListener('click', () => {
+        const sub = localStorage.getItem(subKey) === '1';
+        localStorage.setItem(subKey, sub ? '0' : '1');
+        updateSubUI();
+      });
+
+      updateFollowUI();
+      updateSubUI();
+
+      function renderProduct(product) {
+        const card = document.createElement('article');
+        card.className = 'product-card';
+        const imgWrap = document.createElement('div');
+        imgWrap.className = 'product-image';
+        const img = document.createElement('img');
+        img.src = product.cardDisplayImageUrl || product.imageUrl || '/images/placeholder.png';
+        img.alt = product.name || '';
+        imgWrap.appendChild(img);
+        card.appendChild(imgWrap);
+
+        const title = document.createElement('div');
+        title.className = 'product-name';
+        title.textContent = product.name || 'Unnamed';
+        card.appendChild(title);
+
+        const price = document.createElement('div');
+        price.className = 'product-price';
+        const amount = (product.salesPrice != null && product.salesPrice >= 0) ? product.salesPrice : product.originalPrice;
+        price.textContent = '₱' + (amount != null ? Number(amount).toLocaleString() : '0');
+        card.appendChild(price);
+
+        const view = document.createElement('a');
+        view.href = '/';
+        view.textContent = 'View';
+        view.style.marginTop = '8px';
+        view.style.display = 'inline-block';
+        view.style.color = 'var(--accent)';
+        card.appendChild(view);
+
+        return card;
+      }
+
+      async function loadSeller() {
+        try {
+          const [accountsRes, productsRes] = await Promise.all([
+            fetch('/api/accounts?adminId=' + encodeURIComponent(adminId)),
+            fetch('/api/products?adminId=' + encodeURIComponent(adminId)),
+          ]);
+
+          const accountsJson = await accountsRes.json();
+          const productsJson = await productsRes.json();
+
+          const account = (accountsJson && Array.isArray(accountsJson.accounts) && accountsJson.accounts[0]) || null;
+          const products = (productsJson && Array.isArray(productsJson.products) ? productsJson.products : []);
+
+          if (account) {
+            const name = account.displayName || account.companyName || account.name || account.firstName || account.accountName || adminId;
+            sellerNameEl.textContent = name;
+            sellerBio.textContent = account.bio || account.description || '';
+            const imgUrl = account.pictureUrl || account.companyPictureUrl || '';
+            if (imgUrl) {
+              sellerAvatar.innerHTML = '';
+              const im = document.createElement('img');
+              im.src = imgUrl;
+              sellerAvatar.appendChild(im);
+            } else {
+              sellerAvatar.textContent = (name || adminId).charAt(0).toUpperCase();
+            }
+          } else {
+            sellerNameEl.textContent = adminId;
+            sellerAvatar.textContent = adminId.charAt(0).toUpperCase();
+          }
+
+          productsEl.innerHTML = '';
+          if (!products.length) {
+            emptyEl.style.display = 'block';
+            return;
+          }
+          emptyEl.style.display = 'none';
+
+          for (const p of products) {
+            const node = renderProduct(p);
+            productsEl.appendChild(node);
+          }
+
+        } catch (err) {
+          console.error(err);
+          emptyEl.textContent = 'Unable to load seller data right now.';
+          emptyEl.style.display = 'block';
+        }
+      }
+
+      loadSeller();
+    })();
+  </script>
+</body>
+</html>

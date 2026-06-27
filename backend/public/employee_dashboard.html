@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Employee Dashboard</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+    <script src="/employee_access_guard.js?v=admin-session-bypass-1" data-employee-access-guard data-allowed-positions="admin employee"></script>
+  </head>
+  <body>
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--line-neutral employee-dashboard-shell">
+      <div class="dashboard-layout">
+        <aside class="panel dashboard-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/employee_dashboard.html"
+            aria-label="Employee dashboard home"
+            title="Employee dashboard"
+            data-login-logo
+          >
+            <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
+              <img
+                class="dashboard-sidebar__logo-image"
+                alt="Employee logo"
+                hidden
+                data-logo-image
+              />
+              <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder>
+                logo
+              </span>
+            </span>
+          </a>
+
+          <nav class="dashboard-nav" aria-label="Employee navigation">
+            <a
+              class="dashboard-nav__item is-active"
+              href="/employee_dashboard.html"
+              aria-current="page"
+              aria-label="Employee dashboard"
+              title="Employee dashboard"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M540-570q-12.75 0-21.37-8.63Q510-587.25 510-600v-210q0-12.75 8.63-21.38Q527.25-840 540-840h270q12.75 0 21.38 8.62Q840-822.75 840-810v210q0 12.75-8.62 21.37Q822.75-570 810-570H540ZM150-450q-12.75 0-21.37-8.63Q120-467.25 120-480v-330q0-12.75 8.63-21.38Q137.25-840 150-840h270q12.75 0 21.38 8.62Q450-822.75 450-810v330q0 12.75-8.62 21.37Q432.75-450 420-450H150Zm390 330q-12.75 0-21.37-8.63Q510-137.25 510-150v-330q0-12.75 8.63-21.38Q527.25-510 540-510h270q12.75 0 21.38 8.62Q840-492.75 840-480v330q0 12.75-8.62 21.37Q822.75-120 810-120H540Zm-390 0q-12.75 0-21.37-8.63Q120-137.25 120-150v-210q0-12.75 8.63-21.38Q137.25-390 150-390h270q12.75 0 21.38 8.62Q450-372.75 450-360v210q0 12.75-8.62 21.37Q432.75-120 420-120H150Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Dashboard</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/live_chat.html"
+              aria-label="Live chat"
+              title="Live chat"
+            >
+              <span class="dashboard-nav__icon dashboard-nav__icon--live-chat" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M240-240 131-131q-14 14-32.5 6.34Q80-132.31 80-152v-668q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H240Zm-26-60h606v-520H140v600l74-80Zm-74 0v-520 520Zm194.5-234.5Q346-546 346-563t-11.5-28.5Q323-603 306-603t-28.5 11.5Q266-580 266-563t11.5 28.5Q289-523 306-523t28.5-11.5Zm177 0Q523-546 523-563t-11.5-28.5Q500-603 483-603t-28.5 11.5Q443-580 443-563t11.5 28.5Q466-523 483-523t28.5-11.5Zm170 0Q693-546 693-563t-11.5-28.5Q670-603 653-603t-28.5 11.5Q613-580 613-563t11.5 28.5Q636-523 653-523t28.5-11.5Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Live Chat</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/employee_order_insight.html"
+              aria-label="Order"
+              title="Order"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg class="dashboard-nav__order-cart-outline" viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M236-102.21q-21-21.21-21-51T236.21-204q21.21-21 51-21T338-203.79q21 21.21 21 51T337.79-102q-21.21 21-51 21T236-102.21Zm400 0q-21-21.21-21-51T636.21-204q21.21-21 51-21T738-203.79q21 21.21 21 51T737.79-102q-21.21 21-51 21T636-102.21ZM235-741l110 228h288l125-228H235Zm-30-60h589.07q22.97 0 34.95 21 11.98 21-.02 42L694-495q-11 19-28.56 30.5T627-453H324l-56 104h461q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H277q-42 0-60.5-28t.5-63l64-118-152-322H81q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32Q68.25-880 81-880h68q9 0 16.2 4.43 7.2 4.44 10.8 12.57l29 62Zm140 288h288-288Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Order</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/stock.html?role=admin"
+              aria-label="Inventory"
+              title="Inventory"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M465.5-419.5Q459-421 452-425L90-619q-8-5-11.5-11.5T75-645q0-8 3.5-14.5T90-671l362-194q7-4 13.5-5.5T480-872q8 0 14.5 1.5T508-865l362 194q8 5 12 11.5t4 14.5q0 8-4 14.5T870-619L508-425q-7 4-13.5 5.5T480-418q-8 0-14.5-1.5ZM480-479l315-166-315-166-314 166 314 166Zm1-166Zm-1 332 339-181q2-1 14-3 12 0 21 8.5t9 21.5q0 8-4 14.5T847-441L508-260q-7 4-13.5 5.5T480-253q-8 0-14.5-1.5T452-260L114-441q-8-5-12-11.5T98-467q0-13 9-21.5t21-8.5q4 0 7.5 1t6.5 3l338 180Zm0 165 339-181q2-1 14-3 12 0 21 8.5t9 21.5q0 8-4 14.5T847-276L508-95q-7 4-13.5 5.5T480-88q-8 0-14.5-1.5T452-95L114-276q-8-5-12-11.5T98-302q0-13 9-21.5t21-8.5q4 0 7.5 1t6.5 3l338 180Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Inventory</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item dashboard-nav__item--sign-out"
+              href="/login.html?role=employee"
+              aria-label="Sign out"
+              title="Sign out"
+              data-employee-sign-out
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h269q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H180v600h269q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H180Zm545-330H390q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h333l-81-81q-9-9-8.5-21t9.5-21q9-9 21.5-9t21.5 9l133 133q9 9 9 21t-9 21L687-326q-8.8 9-20.9 8.5-12.1-.5-21.49-9.5-8.61-9-8.61-21.5t9-21.5l80-80Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Sign Out</span>
+            </a>
+
+          </nav>
+        </aside>
+
+        <div class="dashboard-content">
+          <section class="hero">
+            <div class="hero-actions">
+              <div>
+                <h1>Dashboard</h1>
+              </div>
+
+              <div class="dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Employee workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Employee logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      EM
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Employee Workspace</strong>
+                    <span>Dashboard</span>
+                  </span>
+                </div>
+
+                <div class="settings-menu" data-settings-menu>
+                  <button
+                    class="settings-toggle"
+                    type="button"
+                    aria-label="Color Picker"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Color Picker"
+                    data-settings-toggle
+                  >
+                    <span class="settings-toggle__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path
+                          d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                          stroke-linejoin="round"
+                        />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </span>
+                    <span class="settings-toggle__swatch" aria-hidden="true"></span>
+                  </button>
+
+                  <div class="settings-dropdown" hidden data-settings-dropdown>
+                    <p class="settings-dropdown__eyebrow">Theme Settings</p>
+                    <h2 class="settings-dropdown__title">Color Picker</h2>
+                    <p class="settings-dropdown__copy">
+                      Pick a color and it updates the whole web server instantly.
+                    </p>
+
+                    <label class="settings-color-field">
+                      <span>Primary Color</span>
+                      <input type="color" value="#2563EB" data-theme-color-input />
+                    </label>
+
+                    <div class="settings-color-meta">
+                      <span data-theme-hex>#2563EB</span>
+                      <span data-theme-rgb>RGB 37, 99, 235</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="ghost-button settings-reset-button"
+                      data-theme-reset
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="user-summary-grid employee-dashboard-summary-grid">
+            <article class="stat-card panel stat-card--attendance" data-employee-dashboard-card="attendance">
+              <p class="section-label">Attendance</p>
+              <div class="employee-dashboard-attendance-layout">
+                <div class="employee-dashboard-attendance-main">
+                  <div class="employee-dashboard-attendance-summary">
+                    <div>
+                      <strong data-employee-dashboard-attendance-status>Scheduled</strong>
+                      <span data-employee-dashboard-attendance-date>Today</span>
+                    </div>
+                    <span class="employee-dashboard-attendance-summary__pill" data-employee-dashboard-attendance-pill>
+                      Attendance
+                    </span>
+                  </div>
+                  <div class="employee-dashboard-attendance-times">
+                    <span>
+                      <small>Time In</small>
+                      <strong data-employee-dashboard-attendance-time-in>-</strong>
+                    </span>
+                    <span>
+                      <small>Time Out</small>
+                      <strong data-employee-dashboard-attendance-time-out>-</strong>
+                    </span>
+                  </div>
+                </div>
+                <div
+                  class="employee-dashboard-progress-ring employee-dashboard-attendance-progress"
+                  data-employee-dashboard-attendance-ring
+                  style="--progress: 0;"
+                  aria-label="Attendance Performance 0%"
+                >
+                  <span class="employee-dashboard-progress-ring__value" data-employee-dashboard-attendance-percent>0%</span>
+                </div>
+              </div>
+              <div class="employee-dashboard-attendance-detail-grid">
+                <article
+                  class="employee-attendance-calendar employee-dashboard-attendance-calendar"
+                  aria-label="Attendance calendar"
+                  data-employee-dashboard-attendance-calendar
+                >
+                  <div class="employee-attendance-calendar__header">
+                    <button
+                      type="button"
+                      class="employee-attendance-calendar__nav"
+                      data-employee-dashboard-attendance-calendar-step="-1"
+                      aria-label="Previous month"
+                    >
+                      <span aria-hidden="true">&lt;</span>
+                    </button>
+                    <strong class="employee-attendance-calendar__month" data-employee-dashboard-attendance-calendar-month>
+                      Month Year
+                    </strong>
+                    <button
+                      type="button"
+                      class="employee-attendance-calendar__nav"
+                      data-employee-dashboard-attendance-calendar-step="1"
+                      aria-label="Next month"
+                    >
+                      <span aria-hidden="true">&gt;</span>
+                    </button>
+                  </div>
+                  <div class="employee-attendance-calendar__weekdays" aria-hidden="true">
+                    <span>Sun</span>
+                    <span>Mon</span>
+                    <span>Tue</span>
+                    <span>Wed</span>
+                    <span>Thu</span>
+                    <span>Fri</span>
+                    <span>Sat</span>
+                  </div>
+                  <div
+                    class="employee-attendance-calendar__days"
+                    data-employee-dashboard-attendance-calendar-days
+                    role="grid"
+                  ></div>
+                  <div class="employee-attendance-calendar__actions">
+                    <button
+                      type="button"
+                      class="employee-attendance-calendar__today-button"
+                      data-employee-dashboard-attendance-calendar-today
+                    >
+                      Today
+                    </button>
+                  </div>
+                  <div class="employee-attendance-calendar__legend" aria-label="Attendance status legend">
+                    <span><i class="employee-attendance-calendar__legend-dot is-present" aria-hidden="true"></i>Present</span>
+                    <span><i class="employee-attendance-calendar__legend-dot is-late" aria-hidden="true"></i>Late</span>
+                    <span><i class="employee-attendance-calendar__legend-dot is-absent" aria-hidden="true"></i>Absent</span>
+                    <span><i class="employee-attendance-calendar__legend-dot is-leave" aria-hidden="true"></i>Leave</span>
+                  </div>
+                </article>
+
+                <article class="employee-dashboard-attendance-records" aria-label="Attendance records">
+                  <div class="employee-dashboard-attendance-records__header">
+                    <strong>Records</strong>
+                  </div>
+                  <div class="employee-attendance-table-shell employee-dashboard-attendance-records__table-shell">
+                    <table class="employee-attendance-table employee-dashboard-attendance-records__table">
+                      <thead>
+                        <tr>
+                          <th>Status</th>
+                          <th>Time In</th>
+                          <th>Time Out</th>
+                        </tr>
+                      </thead>
+                      <tbody data-employee-dashboard-attendance-record-list>
+                        <tr class="employee-attendance-table__empty-row">
+                          <td colspan="3">No attendance records yet.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              </div>
+            </article>
+
+            <article class="stat-card panel stat-card--chat-response" data-employee-dashboard-card="chat-response" hidden>
+              <p class="section-label">Chat Response</p>
+              <div class="employee-dashboard-progress-ring" style="--progress: 92;">
+                <span class="employee-dashboard-progress-ring__value">92%</span>
+              </div>
+              <p class="stat-card__meta">Customer chats answered within the current response target today.</p>
+            </article>
+
+            <article class="stat-card panel stat-card--employee-rating" data-employee-dashboard-admin-only hidden>
+              <p class="section-label">Employee Rating</p>
+              <div class="employee-dashboard-rating-summary">
+                <div class="employee-dashboard-rating-summary__score">
+                  <strong class="employee-dashboard-rating-summary__score-value">5.0</strong>
+                  <div class="employee-dashboard-rating-summary__stars" aria-label="5 out of 5 stars">
+                    <span>&#9733;</span>
+                    <span>&#9733;</span>
+                    <span>&#9733;</span>
+                    <span>&#9733;</span>
+                    <span>&#9733;</span>
+                  </div>
+                  <span class="employee-dashboard-rating-summary__total">96 total reviews</span>
+                </div>
+
+                <div class="product-insight-review-breakdown employee-dashboard-rating-summary__bars">
+                  <div class="product-insight-review-breakdown__row">
+                    <span class="product-insight-review-breakdown__label">5</span>
+                    <span class="product-insight-review-breakdown__track">
+                      <span class="product-insight-review-breakdown__fill" style="width: 72.9%;"></span>
+                    </span>
+                    <span class="product-insight-review-breakdown__count">70</span>
+                  </div>
+                  <div class="product-insight-review-breakdown__row">
+                    <span class="product-insight-review-breakdown__label">4</span>
+                    <span class="product-insight-review-breakdown__track">
+                      <span class="product-insight-review-breakdown__fill" style="width: 18.8%;"></span>
+                    </span>
+                    <span class="product-insight-review-breakdown__count">18</span>
+                  </div>
+                  <div class="product-insight-review-breakdown__row">
+                    <span class="product-insight-review-breakdown__label">3</span>
+                    <span class="product-insight-review-breakdown__track">
+                      <span class="product-insight-review-breakdown__fill" style="width: 5.2%;"></span>
+                    </span>
+                    <span class="product-insight-review-breakdown__count">5</span>
+                  </div>
+                  <div class="product-insight-review-breakdown__row">
+                    <span class="product-insight-review-breakdown__label">2</span>
+                    <span class="product-insight-review-breakdown__track">
+                      <span class="product-insight-review-breakdown__fill" style="width: 2.1%;"></span>
+                    </span>
+                    <span class="product-insight-review-breakdown__count">2</span>
+                  </div>
+                  <div class="product-insight-review-breakdown__row">
+                    <span class="product-insight-review-breakdown__label">1</span>
+                    <span class="product-insight-review-breakdown__track">
+                      <span class="product-insight-review-breakdown__fill" style="width: 1.0%;"></span>
+                    </span>
+                    <span class="product-insight-review-breakdown__count">1</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+          </section>
+
+        </div>
+      </div>
+    </main>
+
+    <div
+      class="employee-dashboard-schedule-leave-modal-overlay"
+      hidden
+      data-employee-dashboard-schedule-leave-modal
+    >
+      <section
+        class="employee-dashboard-schedule-leave-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="employee-dashboard-schedule-leave-title"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close employee-dashboard-schedule-leave-modal__close"
+          aria-label="Close schedule leave reason"
+          title="Close schedule leave reason"
+          data-employee-dashboard-schedule-leave-modal-close
+        >
+          &times;
+        </button>
+        <p class="section-label">Schedule Leave</p>
+        <h2 id="employee-dashboard-schedule-leave-title">Select Reason</h2>
+        <p
+          class="employee-dashboard-schedule-leave-modal__copy"
+          data-employee-dashboard-schedule-leave-modal-date
+        >
+          Choose a reason for your selected date.
+        </p>
+        <label class="employee-dashboard-schedule-leave-modal__field">
+          <span>Reason</span>
+          <textarea
+            rows="4"
+            maxlength="240"
+            placeholder="Type your reason here..."
+            data-employee-dashboard-schedule-leave-modal-input
+          ></textarea>
+        </label>
+        <div
+          class="employee-dashboard-schedule-leave-modal__reasons"
+          data-employee-dashboard-schedule-leave-modal-reasons
+        ></div>
+        <div class="employee-dashboard-schedule-leave-modal__actions">
+          <button
+            type="button"
+            class="employee-dashboard-schedule-leave-modal__apply"
+            disabled
+            data-employee-dashboard-schedule-leave-modal-apply
+          >
+            Apply Schedule Leave
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script src="/employee_sign_out.js?v=employee-login-history-1"></script>
+    <script src="/employee_dashboard.js?v=product-scope-isolation-1"></script>
+  </body>
+</html>

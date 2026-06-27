@@ -1,0 +1,1211 @@
+(function () {
+  if (window.gmsAdminAccountSettingsLoaded) {
+    return;
+  }
+  window.gmsAdminAccountSettingsLoaded = true;
+
+  const adminSessionKey = "gms-admin-session";
+  let modalRefs = null;
+  let modalAccount = null;
+  let modalBaseline = null;
+  let modalProfileImageUrl = "";
+  let modalBusy = false;
+  let validationAutoCloseTimer = 0;
+  let validationModalAllowManualClose = true;
+  let validationSuccessAnimation = null;
+  let validationLottieLoadPromise = null;
+  const lottiePlayerUrl = "/vendor/lottie.min.js";
+  const successCheckAnimationPath = "/animations/employee-account-check.json";
+  const successModalAutoCloseMs = 1800;
+  const validationModalIconMarkup = {
+    success: `
+      <div class="employee-account-settings-lottie-check" data-admin-account-settings-lottie-check></div>
+    `,
+    notice: `
+      <svg viewBox="0 0 24 24" width="140" height="140" fill="none">
+        <circle cx="12" cy="12" r="8.8" stroke="currentColor" stroke-width="1.8" />
+        <path d="M12 10.4v5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        <circle cx="12" cy="7.6" r="1.1" fill="currentColor" />
+      </svg>
+    `,
+  };
+
+  function readAdminSession() {
+    try {
+      const rawValue = window.sessionStorage.getItem(adminSessionKey);
+      return rawValue ? JSON.parse(rawValue) : null;
+    } catch (error) {
+      console.warn("Unable to read admin session.", error);
+      return null;
+    }
+  }
+
+  function writeAdminSession(session) {
+    try {
+      window.sessionStorage.setItem(adminSessionKey, JSON.stringify(session));
+    } catch (error) {
+      console.warn("Unable to update admin session.", error);
+    }
+  }
+
+  function getAdminRequestId(session = readAdminSession()) {
+    return String(
+      session?.adminId ??
+        session?.id ??
+        session?.accountCode ??
+        session?.email ??
+        "",
+    ).trim();
+  }
+
+  function getAdminHeaders(extraHeaders = {}) {
+    const adminId = getAdminRequestId();
+    return {
+      ...extraHeaders,
+      ...(adminId ? { "X-GMS-Admin-ID": adminId } : {}),
+    };
+  }
+
+  function getDefaultWorkspaceLogoIconMarkup() {
+    return `
+      <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+        <path d="M179-120q-24 0-42-18t-18-42v-339q-28-24-37-59t2-70l43-135q8-27 28-42t46-15h553q28 0 49 15.5t29 41.5l44 135q11 35 1.5 70T840-519v339q0 24-18 42t-42 18H179Zm391-430q29 0 49-19t16-46l-25-165H510v165q0 26 17 45.5t43 19.5Zm-187 0q28 0 47.5-19t19.5-46v-165H350l-25 165q-4 26 14 45.5t44 19.5Zm-182 0q24 0 41.5-16.5T263-607l26-173H189l-46 146q-10 31 8 57.5t50 26.5Zm557 0q32 0 50.5-26t8.5-58l-46-146H671l26 173q3 24 20.5 40.5T758-550ZM179-180h601v-311q1 1-6.5 1H758q-25 0-47.5-10.5T666-533q-16 20-40 31.5T573-490q-30 0-51.5-8.5T480-527q-15 18-38 27.5t-52 9.5q-31 0-55-11t-41-32q-24 21-47 32t-46 11h-13.5q-6.5 0-8.5-1v311Zm601 0H179h601Z" fill="currentColor"></path>
+      </svg>`;
+  }
+
+  function getAdminDisplayName(account) {
+    const fullName = [account?.firstName, account?.lastName]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const companyName = String(account?.companyName ?? account?.storeName ?? "").trim();
+    return (
+      companyName ||
+      fullName ||
+      String(account?.displayName ?? "").trim() ||
+      String(account?.email ?? "").trim().split("@")[0] ||
+      "Admin"
+    );
+  }
+
+  function getAdminProfileImageUrl(account) {
+    return [
+      account?.profileImageUrl,
+      account?.avatarUrl,
+      account?.photoUrl,
+      account?.profilePhotoUrl,
+      account?.pictureUrl,
+      account?.imageUrl,
+      account?.logoUrl,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "";
+  }
+
+  function getAdminCreatedSinceText(account) {
+    const rawDate = String(account?.createdAt ?? "").trim();
+    const timestamp = rawDate ? Date.parse(rawDate) : NaN;
+    if (!Number.isFinite(timestamp)) {
+      return "Created since Not available";
+    }
+
+    return `Created since ${new Intl.DateTimeFormat("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(timestamp))}`;
+  }
+
+  function normalizePhoneNumber(value) {
+    let digits = String(value ?? "").replace(/\D/g, "");
+    if (digits.startsWith("63") && digits.length > 10) {
+      digits = digits.slice(2);
+    }
+    if (digits.startsWith("0") && digits.length > 10) {
+      digits = digits.slice(1);
+    }
+    return digits.slice(0, 10);
+  }
+
+  function closeWorkspaceMenus() {
+    document.querySelectorAll("[data-dashboard-workspace-menu]").forEach((menu) => {
+      menu.classList.remove("is-open");
+      const toggle = menu.querySelector("[data-dashboard-workspace-toggle]");
+      const dropdown = menu.querySelector("[data-dashboard-workspace-dropdown]");
+      toggle?.setAttribute("aria-expanded", "false");
+      if (dropdown) {
+        dropdown.hidden = true;
+      }
+    });
+  }
+
+  function setFeedback(message = "", type = "") {
+    if (!modalRefs?.feedback) {
+      return;
+    }
+    const isError = type === "error";
+    modalRefs.feedback.textContent = isError ? message : "";
+    modalRefs.feedback.classList.toggle("is-error", type === "error");
+    modalRefs.feedback.classList.toggle("is-success", false);
+  }
+
+  function getAdminAccountSettingsValues() {
+    if (!modalRefs) {
+      return {
+        companyName: "",
+        firstName: "",
+        lastName: "",
+        mobileNumber: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        profileImageUrl: modalProfileImageUrl,
+      };
+    }
+
+    return {
+      companyName: String(modalRefs.companyInput.value || "").replace(/\s+/g, " ").trim(),
+      firstName: String(modalRefs.firstNameInput.value || "").trim(),
+      lastName: String(modalRefs.lastNameInput.value || "").trim(),
+      mobileNumber: normalizePhoneNumber(modalRefs.phoneInput.value),
+      email: String(modalRefs.emailInput.value || "").trim().toLowerCase(),
+      password: String(modalRefs.passwordInput.value || "").trim(),
+      confirmPassword: String(modalRefs.confirmPasswordInput.value || "").trim(),
+      profileImageUrl: String(modalProfileImageUrl || "").trim(),
+    };
+  }
+
+  function hasAdminAccountSettingsChanges() {
+    if (!modalBaseline) {
+      return false;
+    }
+
+    const values = getAdminAccountSettingsValues();
+    return (
+      values.companyName !== modalBaseline.companyName
+      || values.firstName !== modalBaseline.firstName
+      || values.lastName !== modalBaseline.lastName
+      || values.mobileNumber !== modalBaseline.mobileNumber
+      || values.email !== modalBaseline.email
+      || values.profileImageUrl !== modalBaseline.profileImageUrl
+      || Boolean(values.password || values.confirmPassword)
+    );
+  }
+
+  function syncSaveButtonState() {
+    if (!modalRefs?.saveButton) {
+      return;
+    }
+
+    modalRefs.saveButton.disabled = modalBusy || !hasAdminAccountSettingsChanges();
+  }
+
+  function setBusy(isBusy) {
+    modalBusy = Boolean(isBusy);
+    if (!modalRefs) {
+      return;
+    }
+    modalRefs.cancelButton.disabled = modalBusy;
+    modalRefs.closeButton.disabled = modalBusy;
+    modalRefs.form.querySelectorAll("input").forEach((input) => {
+      input.readOnly = modalBusy;
+    });
+    if (modalRefs.avatarButton) {
+      modalRefs.avatarButton.disabled = modalBusy;
+    }
+    if (modalRefs.fileButton) {
+      modalRefs.fileButton.disabled = modalBusy;
+    }
+    if (modalRefs.seePhotoButton) {
+      modalRefs.seePhotoButton.disabled = modalBusy || !modalProfileImageUrl;
+    }
+    if (modalRefs.removePhotoButton) {
+      modalRefs.removePhotoButton.hidden = !modalProfileImageUrl;
+      modalRefs.removePhotoButton.disabled = modalBusy || !modalProfileImageUrl;
+    }
+    if (modalBusy) {
+      setAvatarMenuOpen(false);
+    }
+    syncAdminAccountSettingsEditButtons();
+    syncSaveButtonState();
+  }
+
+  function syncProfilePreview() {
+    if (!modalRefs) {
+      return;
+    }
+
+    const displayName = getAdminDisplayName(modalAccount);
+    modalRefs.profileName.textContent = displayName;
+    modalRefs.createdSince.textContent = getAdminCreatedSinceText(modalAccount);
+    const hasProfileImage = Boolean(modalProfileImageUrl);
+    modalRefs.removePhotoButton.hidden = !hasProfileImage;
+    modalRefs.removePhotoButton.disabled = modalBusy || !hasProfileImage;
+    modalRefs.seePhotoButton.disabled = modalBusy || !hasProfileImage;
+    modalRefs.changePhotoLabel.textContent = hasProfileImage
+      ? "Change Company Picture"
+      : "Upload Company Picture";
+
+    if (hasProfileImage) {
+      modalRefs.avatarImage.src = modalProfileImageUrl;
+      modalRefs.avatarImage.alt = `${displayName} company picture`;
+      modalRefs.avatarImage.hidden = false;
+      modalRefs.avatarFallback.hidden = true;
+    } else {
+      modalRefs.avatarImage.removeAttribute("src");
+      modalRefs.avatarImage.alt = "";
+      modalRefs.avatarImage.hidden = true;
+      modalRefs.avatarFallback.innerHTML = getDefaultWorkspaceLogoIconMarkup();
+      modalRefs.avatarFallback.hidden = false;
+    }
+    syncSaveButtonState();
+  }
+
+  function openFilePicker() {
+    if (modalBusy) {
+      return;
+    }
+    setAvatarMenuOpen(false);
+    modalRefs?.fileInput?.click();
+  }
+
+  function setAvatarMenuOpen(isOpen) {
+    if (!modalRefs?.avatarMenu || !modalRefs?.avatarButton || !modalRefs?.avatarWrap) {
+      return;
+    }
+
+    modalRefs.avatarMenu.hidden = !isOpen;
+    modalRefs.avatarButton.setAttribute("aria-expanded", String(isOpen));
+    modalRefs.avatarWrap.classList.toggle("is-open", isOpen);
+  }
+
+  function toggleAvatarMenu() {
+    if (modalBusy || !modalRefs?.avatarMenu) {
+      return;
+    }
+
+    setAvatarMenuOpen(modalRefs.avatarMenu.hidden);
+  }
+
+  function openProfilePictureViewer() {
+    setAvatarMenuOpen(false);
+    if (!modalRefs || !modalProfileImageUrl) {
+      setFeedback("Add a company picture first.", "error");
+      return;
+    }
+
+    const displayName = getAdminDisplayName(modalAccount);
+    modalRefs.photoViewerImage.src = modalProfileImageUrl;
+    modalRefs.photoViewerImage.alt = `${displayName} company picture`;
+    modalRefs.photoViewer.hidden = false;
+    modalRefs.photoViewer.setAttribute("aria-hidden", "false");
+    modalRefs.photoViewer.classList.add("is-open");
+  }
+
+  function closeProfilePictureViewer() {
+    if (!modalRefs?.photoViewer) {
+      return;
+    }
+
+    modalRefs.photoViewer.classList.remove("is-open");
+    modalRefs.photoViewer.hidden = true;
+    modalRefs.photoViewer.setAttribute("aria-hidden", "true");
+    modalRefs.photoViewerImage.removeAttribute("src");
+    modalRefs.photoViewerImage.alt = "";
+  }
+
+  function ensureLottiePlayer() {
+    if (window.lottie?.loadAnimation) {
+      return Promise.resolve(true);
+    }
+
+    if (validationLottieLoadPromise) {
+      return validationLottieLoadPromise;
+    }
+
+    validationLottieLoadPromise = new Promise((resolve) => {
+      const existingScript = document.querySelector(`script[src$="${lottiePlayerUrl}"], script[src*="${lottiePlayerUrl}?"]`);
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(Boolean(window.lottie?.loadAnimation)), { once: true });
+        existingScript.addEventListener("error", () => resolve(false), { once: true });
+        if (window.lottie?.loadAnimation) {
+          resolve(true);
+        }
+        return;
+      }
+
+      const scriptElement = document.createElement("script");
+      scriptElement.src = lottiePlayerUrl;
+      scriptElement.async = true;
+      scriptElement.addEventListener("load", () => resolve(Boolean(window.lottie?.loadAnimation)), { once: true });
+      scriptElement.addEventListener("error", () => resolve(false), { once: true });
+      document.head.appendChild(scriptElement);
+    });
+
+    return validationLottieLoadPromise;
+  }
+
+  function destroyValidationSuccessAnimation() {
+    if (validationSuccessAnimation?.destroy) {
+      validationSuccessAnimation.destroy();
+    }
+    validationSuccessAnimation = null;
+  }
+
+  async function playValidationSuccessAnimation() {
+    const container = modalRefs?.validationIcon?.querySelector("[data-admin-account-settings-lottie-check]");
+    if (!(container instanceof HTMLElement)) {
+      return;
+    }
+
+    destroyValidationSuccessAnimation();
+    container.innerHTML = "";
+
+    const canUseLottie = await ensureLottiePlayer();
+    if (!canUseLottie || !window.lottie?.loadAnimation || !container.isConnected) {
+      return;
+    }
+
+    validationSuccessAnimation = window.lottie.loadAnimation({
+      container,
+      renderer: "svg",
+      loop: false,
+      autoplay: true,
+      path: successCheckAnimationPath,
+    });
+  }
+
+  function openValidationModal(message, options = {}) {
+    if (!modalRefs?.validationOverlay) {
+      return;
+    }
+
+    const {
+      title = "Important Notice",
+      actionLabel = "Go Back",
+      mode = "notice",
+      autoCloseMs = 0,
+      hideAction = false,
+      hideClose = false,
+      allowManualClose = true,
+      onAutoClose = null,
+    } = options;
+    if (validationAutoCloseTimer) {
+      window.clearTimeout(validationAutoCloseTimer);
+      validationAutoCloseTimer = 0;
+    }
+
+    const modalMode = mode === "success" ? "success" : "notice";
+    validationModalAllowManualClose = allowManualClose !== false;
+    modalRefs.validationIcon.className = `validation-modal__icon validation-modal__icon--${modalMode}`;
+    modalRefs.validationIcon.innerHTML =
+      validationModalIconMarkup[modalMode] || validationModalIconMarkup.notice;
+    if (modalMode === "success") {
+      void playValidationSuccessAnimation();
+    } else {
+      destroyValidationSuccessAnimation();
+    }
+    modalRefs.validationTitle.textContent = title;
+    modalRefs.validationCopy.textContent = message;
+    modalRefs.validationAction.textContent = actionLabel;
+    modalRefs.validationAction.hidden = Boolean(hideAction);
+    modalRefs.validationClose.hidden = Boolean(hideClose);
+    modalRefs.validationOverlay.hidden = false;
+    modalRefs.validationOverlay.setAttribute("aria-hidden", "false");
+    window.requestAnimationFrame(() => {
+      modalRefs.validationOverlay.classList.add("is-open");
+    });
+    if (!hideAction) {
+      window.setTimeout(() => modalRefs.validationAction.focus(), 0);
+    }
+    if (Number.isFinite(autoCloseMs) && autoCloseMs > 0) {
+      validationAutoCloseTimer = window.setTimeout(() => {
+        validationAutoCloseTimer = 0;
+        closeValidationModal();
+        if (typeof onAutoClose === "function") {
+          onAutoClose();
+        }
+      }, autoCloseMs);
+    }
+  }
+
+  function closeValidationModal() {
+    if (!modalRefs?.validationOverlay) {
+      return;
+    }
+    if (validationAutoCloseTimer) {
+      window.clearTimeout(validationAutoCloseTimer);
+      validationAutoCloseTimer = 0;
+    }
+    modalRefs.validationOverlay.classList.remove("is-open");
+    modalRefs.validationOverlay.hidden = true;
+    modalRefs.validationOverlay.setAttribute("aria-hidden", "true");
+    destroyValidationSuccessAnimation();
+    modalRefs.validationAction.hidden = false;
+    modalRefs.validationClose.hidden = false;
+    validationModalAllowManualClose = true;
+  }
+
+  function getFieldWrapper(input) {
+    return input?.closest(".employee-account-settings-field") || null;
+  }
+
+  function setFieldTooltip(input, message = "") {
+    const field = getFieldWrapper(input);
+    if (!field) {
+      return;
+    }
+    if (message) {
+      field.dataset.accountTooltip = message;
+      field.classList.add("is-invalid");
+    } else {
+      delete field.dataset.accountTooltip;
+      field.classList.remove("is-invalid");
+    }
+  }
+
+  function clearFieldTooltips() {
+    modalRefs?.form
+      ?.querySelectorAll(".employee-account-settings-field")
+      .forEach((field) => {
+        delete field.dataset.accountTooltip;
+        field.classList.remove("is-invalid");
+      });
+  }
+
+  function getAdminAccountSettingsEditConfig(type) {
+    if (!modalRefs) {
+      return null;
+    }
+
+    if (type === "company") {
+      return {
+        button: modalRefs.companyEditButton,
+        fields: [getFieldWrapper(modalRefs.companyInput)].filter(Boolean),
+        inputs: [modalRefs.companyInput].filter(Boolean),
+        label: "company name",
+      };
+    }
+
+    if (type === "firstName") {
+      return {
+        button: modalRefs.firstNameEditButton,
+        fields: [getFieldWrapper(modalRefs.firstNameInput)].filter(Boolean),
+        inputs: [modalRefs.firstNameInput].filter(Boolean),
+        label: "first name",
+      };
+    }
+
+    if (type === "lastName") {
+      return {
+        button: modalRefs.lastNameEditButton,
+        fields: [getFieldWrapper(modalRefs.lastNameInput)].filter(Boolean),
+        inputs: [modalRefs.lastNameInput].filter(Boolean),
+        label: "last name",
+      };
+    }
+
+    if (type === "phone") {
+      return {
+        button: modalRefs.phoneEditButton,
+        fields: [getFieldWrapper(modalRefs.phoneInput)].filter(Boolean),
+        inputs: [modalRefs.phoneInput].filter(Boolean),
+        label: "contact number",
+      };
+    }
+
+    if (type === "email") {
+      return {
+        button: modalRefs.emailEditButton,
+        fields: [getFieldWrapper(modalRefs.emailInput)].filter(Boolean),
+        inputs: [modalRefs.emailInput].filter(Boolean),
+        label: "e-mail",
+      };
+    }
+
+    if (type === "password") {
+      return {
+        button: modalRefs.passwordEditButton,
+        fields: [
+          getFieldWrapper(modalRefs.passwordInput),
+          getFieldWrapper(modalRefs.confirmPasswordInput),
+        ].filter(Boolean),
+        inputs: [
+          modalRefs.passwordInput,
+          modalRefs.confirmPasswordInput,
+        ].filter(Boolean),
+        label: "new password",
+      };
+    }
+
+    return null;
+  }
+
+  function syncAdminAccountSettingsEditButtons() {
+    ["company", "firstName", "lastName", "phone", "email", "password"].forEach((type) => {
+      const config = getAdminAccountSettingsEditConfig(type);
+      if (!config?.button || !config.inputs.length) {
+        return;
+      }
+
+      const isEditable = config.inputs.some((input) => !input.disabled);
+      config.button.disabled = modalBusy;
+      config.button.classList.toggle("is-active", isEditable);
+      config.button.setAttribute("aria-pressed", isEditable ? "true" : "false");
+      config.button.setAttribute(
+        "aria-label",
+        isEditable ? `${config.label} is editable` : `Edit ${config.label}`,
+      );
+      config.button.setAttribute(
+        "title",
+        isEditable ? `${config.label} is editable` : `Edit ${config.label}`,
+      );
+    });
+  }
+
+  function setAdminAccountSettingsFieldEditable(type, isEditable, options = {}) {
+    const config = getAdminAccountSettingsEditConfig(type);
+    if (!config) {
+      return;
+    }
+
+    const editable = Boolean(isEditable);
+    config.inputs.forEach((input) => {
+      input.disabled = !editable;
+      input.setAttribute("aria-disabled", editable ? "false" : "true");
+    });
+    config.fields.forEach((field) => {
+      field.classList.toggle("is-editable", editable);
+      field.classList.toggle("is-locked", !editable);
+    });
+    syncAdminAccountSettingsEditButtons();
+
+    if (editable && options.focus !== false) {
+      const targetInput = config.inputs[0];
+      targetInput?.focus?.({ preventScroll: true });
+      if (typeof targetInput?.setSelectionRange === "function") {
+        const valueLength = String(targetInput.value || "").length;
+        targetInput.setSelectionRange(valueLength, valueLength);
+      }
+    }
+  }
+
+  function lockAdminAccountSettingsEditableFields() {
+    ["company", "firstName", "lastName", "phone", "email", "password"].forEach((type) => {
+      setAdminAccountSettingsFieldEditable(type, false, { focus: false });
+    });
+  }
+
+  function getAdminAccountSettingsEditTypeForInput(input) {
+    if (input === modalRefs?.companyInput) {
+      return "company";
+    }
+    if (input === modalRefs?.firstNameInput) {
+      return "firstName";
+    }
+    if (input === modalRefs?.lastNameInput) {
+      return "lastName";
+    }
+    if (input === modalRefs?.phoneInput) {
+      return "phone";
+    }
+    if (input === modalRefs?.emailInput) {
+      return "email";
+    }
+    if (input === modalRefs?.passwordInput || input === modalRefs?.confirmPasswordInput) {
+      return "password";
+    }
+    return "";
+  }
+
+  async function fetchAdminAccount() {
+    const response = await fetch("/api/admin-account", {
+      cache: "no-store",
+      headers: getAdminHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || "Unable to load admin account.");
+    }
+    return data.admin || {};
+  }
+
+  function prepareProfileImageDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !String(file.type || "").startsWith("image/")) {
+        reject(new Error("Please choose an image file."));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.addEventListener("error", () => reject(new Error("Unable to read selected image.")));
+      reader.addEventListener("load", () => {
+        const image = new Image();
+        image.addEventListener("error", () => reject(new Error("Unable to prepare selected image.")));
+        image.addEventListener("load", () => {
+          const containerSize = Math.round(
+            Math.min(
+              modalRefs?.avatarButton?.getBoundingClientRect?.().width || 118,
+              modalRefs?.avatarButton?.getBoundingClientRect?.().height || 118,
+            ),
+          );
+          const size = Math.max(1, containerSize || 118);
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          if (!context) {
+            reject(new Error("Unable to prepare selected image."));
+            return;
+          }
+
+          const sourceSize = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height);
+          const sourceX = Math.max(0, ((image.naturalWidth || image.width) - sourceSize) / 2);
+          const sourceY = Math.max(0, ((image.naturalHeight || image.height) - sourceSize) / 2);
+          canvas.width = size;
+          canvas.height = size;
+          context.clearRect(0, 0, size, size);
+          context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+          resolve(canvas.toDataURL("image/png"));
+        });
+        image.src = String(reader.result || "");
+      });
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function createAdminAccountSettingsModal() {
+    if (modalRefs) {
+      return modalRefs;
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "employee-account-settings-overlay admin-account-settings-overlay";
+    overlay.hidden = true;
+    overlay.setAttribute("aria-hidden", "true");
+    overlay.innerHTML = `
+      <section class="employee-account-settings-modal admin-account-settings-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-settings-title">
+        <div class="employee-account-settings-modal__header">
+          <div>
+            <h2 id="admin-account-settings-title">Account Settings</h2>
+          </div>
+          <button type="button" class="employee-account-settings-modal__close" data-admin-account-settings-close aria-label="Close account settings">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <form class="employee-account-settings-modal__form" data-admin-account-settings-form novalidate>
+          <div class="employee-account-settings-layout">
+            <section class="employee-account-settings-profile" aria-label="Company picture">
+              <h3>Company Picture</h3>
+              <span class="employee-account-settings-profile__avatar-wrap" data-admin-account-settings-avatar-wrap>
+                <button type="button" class="employee-account-settings-profile__avatar-button" data-admin-account-settings-avatar-button aria-haspopup="menu" aria-expanded="false" aria-label="Company picture options">
+                  <span class="employee-account-settings-profile__avatar">
+                    <img data-admin-account-settings-avatar-image alt="" hidden />
+                    <span data-admin-account-settings-avatar-fallback>${getDefaultWorkspaceLogoIconMarkup()}</span>
+                  </span>
+                </button>
+                <button type="button" class="employee-account-settings-avatar-remove" data-admin-account-settings-remove-photo aria-label="Remove company picture" hidden>
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+                <span class="employee-account-settings-profile__menu" data-admin-account-settings-avatar-menu role="menu" hidden>
+                  <button type="button" role="menuitem" data-admin-account-settings-see-photo>
+                    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                    <span>See Company Picture</span>
+                  </button>
+                  <button type="button" role="menuitem" data-admin-account-settings-file-button>
+                    <i class="fa-solid fa-image" aria-hidden="true"></i>
+                    <span data-admin-account-settings-change-photo-label>Upload Company Picture</span>
+                  </button>
+                </span>
+              </span>
+              <span class="employee-account-settings-profile__identity">
+                <span class="employee-account-settings-profile__name" data-admin-account-settings-profile-name>Admin</span>
+                <span class="employee-account-settings-profile__position">Free Plan</span>
+                <span class="employee-account-settings-profile__since" data-admin-account-settings-created-since>Created since Not available</span>
+              </span>
+              <input type="file" accept="image/*" hidden data-admin-account-settings-file />
+            </section>
+
+            <section class="employee-account-settings-basic" aria-label="Company account details">
+              <h3>Company Account</h3>
+              <div class="employee-account-settings-contact-grid">
+                <label class="employee-account-settings-field employee-account-settings-field--full">
+                  <span>Company name</span>
+                  <span class="employee-account-settings-editable-field">
+                    <input type="text" autocomplete="organization" data-admin-account-settings-company />
+                    <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-company-edit aria-label="Edit company name" title="Edit company name" aria-pressed="false">
+                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </label>
+                <label class="employee-account-settings-field">
+                  <span>First name</span>
+                  <span class="employee-account-settings-editable-field">
+                    <input type="text" autocomplete="given-name" data-admin-account-settings-first-name />
+                    <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-first-name-edit aria-label="Edit first name" title="Edit first name" aria-pressed="false">
+                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </label>
+                <label class="employee-account-settings-field">
+                  <span>Last name</span>
+                  <span class="employee-account-settings-editable-field">
+                    <input type="text" autocomplete="family-name" data-admin-account-settings-last-name />
+                    <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-last-name-edit aria-label="Edit last name" title="Edit last name" aria-pressed="false">
+                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </label>
+                <label class="employee-account-settings-field">
+                  <span>E-mail</span>
+                  <span class="employee-account-settings-editable-field">
+                    <input type="email" inputmode="email" autocomplete="email" data-admin-account-settings-email />
+                    <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-email-edit aria-label="Edit e-mail" title="Edit e-mail" aria-pressed="false">
+                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </label>
+                <label class="employee-account-settings-field">
+                  <span>Contact number</span>
+                  <span class="employee-account-settings-phone-field">
+                    <span class="employee-account-settings-phone-field__prefix">+63</span>
+                    <input type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" data-admin-account-settings-phone />
+                    <button type="button" class="employee-account-settings-field-edit employee-account-settings-field-edit--phone" data-admin-account-settings-phone-edit aria-label="Edit contact number" title="Edit contact number" aria-pressed="false">
+                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </label>
+              </div>
+
+              <div class="employee-account-settings-grid">
+                <label class="employee-account-settings-field">
+                  <span>New Password</span>
+                  <span class="employee-account-settings-editable-field">
+                    <input type="password" autocomplete="new-password" data-admin-account-settings-password />
+                    <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-password-edit aria-label="Edit new password" title="Edit new password" aria-pressed="false">
+                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </label>
+                <label class="employee-account-settings-field">
+                  <span>Confirm Password</span>
+                  <input type="password" autocomplete="new-password" data-admin-account-settings-confirm-password />
+                </label>
+              </div>
+            </section>
+          </div>
+
+          <p class="employee-account-settings-feedback" data-admin-account-settings-feedback aria-live="polite"></p>
+
+          <div class="employee-account-settings-modal__actions">
+            <button type="button" class="employee-account-settings-secondary" data-admin-account-settings-cancel>Cancel</button>
+            <button type="submit" class="employee-account-settings-primary" data-admin-account-settings-save>Save Changes</button>
+          </div>
+        </form>
+      </section>
+
+      <div class="employee-account-settings-photo-viewer" data-admin-account-settings-photo-viewer aria-hidden="true" hidden>
+        <section class="employee-account-settings-photo-viewer__dialog" role="dialog" aria-modal="true" aria-label="Company picture preview">
+          <button type="button" class="employee-account-settings-photo-viewer__close" data-admin-account-settings-photo-viewer-close aria-label="Close company picture preview">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+          <img data-admin-account-settings-photo-viewer-image alt="" />
+        </section>
+      </div>
+
+      <div class="validation-modal-overlay admin-account-settings-validation-overlay" data-admin-account-settings-validation-overlay hidden aria-hidden="true">
+        <section class="validation-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-settings-validation-title">
+          <button type="button" class="product-gallery-modal__close validation-modal__close" data-admin-account-settings-validation-close aria-label="Close validation modal">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+          <div class="validation-modal__top">
+            <div class="validation-modal__icon validation-modal__icon--notice" data-admin-account-settings-validation-icon aria-hidden="true" role="presentation" tabindex="-1">
+              ${validationModalIconMarkup.notice}
+            </div>
+          </div>
+          <div class="validation-modal__body">
+            <h2 class="validation-modal__title" id="admin-account-settings-validation-title" data-admin-account-settings-validation-title>Important Notice</h2>
+            <p class="validation-modal__copy" data-admin-account-settings-validation-copy>Please review the highlighted fields and try again.</p>
+            <div class="validation-modal__actions">
+              <button type="button" class="ghost-button validation-modal__action-button validation-modal__action-button--secondary" data-admin-account-settings-validation-action>Go Back</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    modalRefs = {
+      overlay,
+      closeButton: overlay.querySelector("[data-admin-account-settings-close]"),
+      cancelButton: overlay.querySelector("[data-admin-account-settings-cancel]"),
+      form: overlay.querySelector("[data-admin-account-settings-form]"),
+      profileName: overlay.querySelector("[data-admin-account-settings-profile-name]"),
+      createdSince: overlay.querySelector("[data-admin-account-settings-created-since]"),
+      avatarWrap: overlay.querySelector("[data-admin-account-settings-avatar-wrap]"),
+      avatarButton: overlay.querySelector("[data-admin-account-settings-avatar-button]"),
+      avatarMenu: overlay.querySelector("[data-admin-account-settings-avatar-menu]"),
+      avatarImage: overlay.querySelector("[data-admin-account-settings-avatar-image]"),
+      avatarFallback: overlay.querySelector("[data-admin-account-settings-avatar-fallback]"),
+      fileInput: overlay.querySelector("[data-admin-account-settings-file]"),
+      fileButton: overlay.querySelector("[data-admin-account-settings-file-button]"),
+      changePhotoLabel: overlay.querySelector("[data-admin-account-settings-change-photo-label]"),
+      seePhotoButton: overlay.querySelector("[data-admin-account-settings-see-photo]"),
+      removePhotoButton: overlay.querySelector("[data-admin-account-settings-remove-photo]"),
+      photoViewer: overlay.querySelector("[data-admin-account-settings-photo-viewer]"),
+      photoViewerClose: overlay.querySelector("[data-admin-account-settings-photo-viewer-close]"),
+      photoViewerImage: overlay.querySelector("[data-admin-account-settings-photo-viewer-image]"),
+      validationOverlay: overlay.querySelector("[data-admin-account-settings-validation-overlay]"),
+      validationClose: overlay.querySelector("[data-admin-account-settings-validation-close]"),
+      validationAction: overlay.querySelector("[data-admin-account-settings-validation-action]"),
+      validationIcon: overlay.querySelector("[data-admin-account-settings-validation-icon]"),
+      validationTitle: overlay.querySelector("[data-admin-account-settings-validation-title]"),
+      validationCopy: overlay.querySelector("[data-admin-account-settings-validation-copy]"),
+      companyInput: overlay.querySelector("[data-admin-account-settings-company]"),
+      companyEditButton: overlay.querySelector("[data-admin-account-settings-company-edit]"),
+      firstNameInput: overlay.querySelector("[data-admin-account-settings-first-name]"),
+      firstNameEditButton: overlay.querySelector("[data-admin-account-settings-first-name-edit]"),
+      lastNameInput: overlay.querySelector("[data-admin-account-settings-last-name]"),
+      lastNameEditButton: overlay.querySelector("[data-admin-account-settings-last-name-edit]"),
+      phoneInput: overlay.querySelector("[data-admin-account-settings-phone]"),
+      phoneEditButton: overlay.querySelector("[data-admin-account-settings-phone-edit]"),
+      emailInput: overlay.querySelector("[data-admin-account-settings-email]"),
+      emailEditButton: overlay.querySelector("[data-admin-account-settings-email-edit]"),
+      passwordInput: overlay.querySelector("[data-admin-account-settings-password]"),
+      passwordEditButton: overlay.querySelector("[data-admin-account-settings-password-edit]"),
+      confirmPasswordInput: overlay.querySelector("[data-admin-account-settings-confirm-password]"),
+      feedback: overlay.querySelector("[data-admin-account-settings-feedback]"),
+      saveButton: overlay.querySelector("[data-admin-account-settings-save]"),
+    };
+
+    lockAdminAccountSettingsEditableFields();
+    modalRefs.closeButton.addEventListener("click", closeAdminAccountSettings);
+    modalRefs.cancelButton.addEventListener("click", closeAdminAccountSettings);
+    modalRefs.form.addEventListener("submit", saveAdminAccountSettings);
+    modalRefs.avatarButton.addEventListener("click", toggleAvatarMenu);
+    modalRefs.seePhotoButton.addEventListener("click", openProfilePictureViewer);
+    modalRefs.fileButton.addEventListener("click", openFilePicker);
+    modalRefs.removePhotoButton.addEventListener("click", () => {
+      setAvatarMenuOpen(false);
+      modalProfileImageUrl = "";
+      syncProfilePreview();
+      setFeedback("");
+    });
+    modalRefs.photoViewerClose.addEventListener("click", closeProfilePictureViewer);
+    modalRefs.validationClose.addEventListener("click", () => {
+      if (validationModalAllowManualClose) {
+        closeValidationModal();
+      }
+    });
+    modalRefs.validationAction.addEventListener("click", () => {
+      if (validationModalAllowManualClose) {
+        closeValidationModal();
+      }
+    });
+    modalRefs.companyEditButton.addEventListener("click", () => {
+      setAdminAccountSettingsFieldEditable("company", true);
+    });
+    modalRefs.firstNameEditButton.addEventListener("click", () => {
+      setAdminAccountSettingsFieldEditable("firstName", true);
+    });
+    modalRefs.lastNameEditButton.addEventListener("click", () => {
+      setAdminAccountSettingsFieldEditable("lastName", true);
+    });
+    modalRefs.phoneEditButton.addEventListener("click", () => {
+      setAdminAccountSettingsFieldEditable("phone", true);
+    });
+    modalRefs.emailEditButton.addEventListener("click", () => {
+      setAdminAccountSettingsFieldEditable("email", true);
+    });
+    modalRefs.passwordEditButton.addEventListener("click", () => {
+      setAdminAccountSettingsFieldEditable("password", true);
+      setFieldTooltip(modalRefs.passwordInput, "");
+      setFieldTooltip(modalRefs.confirmPasswordInput, "");
+    });
+    modalRefs.phoneInput.addEventListener("input", () => {
+      modalRefs.phoneInput.value = normalizePhoneNumber(modalRefs.phoneInput.value);
+      setFieldTooltip(modalRefs.phoneInput, "");
+      syncSaveButtonState();
+    });
+    [
+      modalRefs.companyInput,
+      modalRefs.firstNameInput,
+      modalRefs.lastNameInput,
+      modalRefs.emailInput,
+      modalRefs.passwordInput,
+      modalRefs.confirmPasswordInput,
+    ].forEach((input) => {
+      input.addEventListener("input", () => {
+        setFieldTooltip(input, "");
+        syncSaveButtonState();
+      });
+    });
+    modalRefs.fileInput.addEventListener("change", async () => {
+      const file = modalRefs.fileInput.files?.[0] || null;
+      modalRefs.fileInput.value = "";
+      if (!file) {
+        return;
+      }
+
+      try {
+        setFeedback("");
+        modalProfileImageUrl = await prepareProfileImageDataUrl(file);
+        syncProfilePreview();
+        setFeedback("");
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : "Unable to use selected photo.", "error");
+      }
+    });
+    modalRefs.overlay.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && !modalRefs.avatarWrap.contains(target)) {
+        setAvatarMenuOpen(false);
+      }
+      if (event.target === modalRefs.photoViewer) {
+        closeProfilePictureViewer();
+      }
+    });
+
+    return modalRefs;
+  }
+
+  function fillAdminAccountForm(account) {
+    modalProfileImageUrl = getAdminProfileImageUrl(account);
+    modalRefs.companyInput.value = String(account.companyName || account.storeName || "").trim();
+    modalRefs.firstNameInput.value = String(account.firstName || "").trim();
+    modalRefs.lastNameInput.value = String(account.lastName || "").trim();
+    modalRefs.phoneInput.value = normalizePhoneNumber(account.mobileNumber);
+    modalRefs.emailInput.value = String(account.email || "").trim();
+    modalRefs.passwordInput.value = "";
+    modalRefs.confirmPasswordInput.value = "";
+    modalBaseline = getAdminAccountSettingsValues();
+    syncProfilePreview();
+    clearFieldTooltips();
+    lockAdminAccountSettingsEditableFields();
+    syncSaveButtonState();
+  }
+
+  async function openAdminAccountSettings() {
+    const session = readAdminSession();
+    if (!session || typeof session !== "object") {
+      window.location.href = "/login.html?role=admin";
+      return;
+    }
+
+    const refs = createAdminAccountSettingsModal();
+    closeWorkspaceMenus();
+    lockAdminAccountSettingsEditableFields();
+    refs.overlay.hidden = false;
+    refs.overlay.setAttribute("aria-hidden", "false");
+    refs.overlay.classList.add("is-open");
+    document.body.classList.add("modal-open");
+    setFeedback("Loading account...");
+    setBusy(true);
+
+    try {
+      modalAccount = await fetchAdminAccount();
+      fillAdminAccountForm(modalAccount);
+      setFeedback("");
+      setBusy(false);
+      window.requestAnimationFrame(() => refs.companyEditButton.focus());
+    } catch (error) {
+      setBusy(false);
+      setFeedback(error instanceof Error ? error.message : "Unable to open account settings.", "error");
+    }
+  }
+
+  function closeAdminAccountSettings() {
+    if (!modalRefs || modalBusy) {
+      return;
+    }
+    setAvatarMenuOpen(false);
+    closeProfilePictureViewer();
+    closeValidationModal();
+    modalRefs.overlay.classList.remove("is-open");
+    modalRefs.overlay.hidden = true;
+    modalRefs.overlay.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+    modalRefs.passwordInput.value = "";
+    modalRefs.confirmPasswordInput.value = "";
+    modalBaseline = getAdminAccountSettingsValues();
+    lockAdminAccountSettingsEditableFields();
+    clearFieldTooltips();
+    setFeedback("");
+    syncSaveButtonState();
+  }
+
+  function validateAdminForm() {
+    const values = {
+      companyName: String(modalRefs.companyInput.value || "").replace(/\s+/g, " ").trim(),
+      firstName: String(modalRefs.firstNameInput.value || "").trim(),
+      lastName: String(modalRefs.lastNameInput.value || "").trim(),
+      mobileNumber: normalizePhoneNumber(modalRefs.phoneInput.value),
+      countryCode: "+63",
+      email: String(modalRefs.emailInput.value || "").trim().toLowerCase(),
+      password: String(modalRefs.passwordInput.value || "").trim(),
+      confirmPassword: String(modalRefs.confirmPasswordInput.value || "").trim(),
+    };
+
+    if (values.companyName.length < 2) {
+      return { error: "Company name must be at least 2 characters long.", target: modalRefs.companyInput };
+    }
+    if (values.firstName.length < 2) {
+      return { error: "First name must be at least 2 characters long.", target: modalRefs.firstNameInput };
+    }
+    if (values.lastName.length < 2) {
+      return { error: "Last name must be at least 2 characters long.", target: modalRefs.lastNameInput };
+    }
+    if (!/^9\d{9}$/.test(values.mobileNumber)) {
+      return { error: "Contact number must start with 9 and be 10 digits long.", target: modalRefs.phoneInput };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
+      return { error: "Please enter a valid e-mail address.", target: modalRefs.emailInput };
+    }
+    if (values.password || values.confirmPassword) {
+      if (values.password.length < 6) {
+        return { error: "New password must be at least 6 characters long.", target: modalRefs.passwordInput };
+      }
+      if (values.password !== values.confirmPassword) {
+        return { error: "Confirm password not match.", target: modalRefs.confirmPasswordInput };
+      }
+    }
+
+    return { values };
+  }
+
+  async function saveAdminAccountSettings(event) {
+    event.preventDefault();
+    if (modalBusy || !modalAccount) {
+      return;
+    }
+    if (!hasAdminAccountSettingsChanges()) {
+      syncSaveButtonState();
+      return;
+    }
+
+    clearFieldTooltips();
+    const result = validateAdminForm();
+    if (result.error) {
+      const editType = getAdminAccountSettingsEditTypeForInput(result.target);
+      if (editType) {
+        setAdminAccountSettingsFieldEditable(editType, true, { focus: false });
+      }
+      setFieldTooltip(result.target, result.error);
+      result.target?.focus();
+      setFeedback("");
+      return;
+    }
+
+    const payload = {
+      companyName: result.values.companyName,
+      storeName: result.values.companyName,
+      firstName: result.values.firstName,
+      lastName: result.values.lastName,
+      countryCode: result.values.countryCode,
+      mobileNumber: result.values.mobileNumber,
+      email: result.values.email,
+      profileImageUrl: modalProfileImageUrl,
+    };
+    if (result.values.password) {
+      payload.password = result.values.password;
+    }
+
+    setBusy(true);
+    setFeedback("");
+    try {
+      const response = await fetch("/api/admin-account", {
+        method: "PUT",
+        headers: getAdminHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to update admin account.");
+      }
+
+      const updatedAdmin = data.admin || { ...modalAccount, ...payload };
+      const currentSession = readAdminSession() || {};
+      const nextSession = {
+        ...currentSession,
+        ...updatedAdmin,
+        signedInAt: currentSession.signedInAt || new Date().toISOString(),
+      };
+      writeAdminSession(nextSession);
+      try {
+        window.localStorage?.setItem("gms-admin-id", getAdminRequestId(nextSession));
+        window.localStorage?.setItem("gms-admin-account-updated-at", new Date().toISOString());
+      } catch (error) {
+        // Session update is enough for the current page.
+      }
+      modalAccount = updatedAdmin;
+      fillAdminAccountForm(updatedAdmin);
+      window.dispatchEvent(
+        new CustomEvent("gms-admin-session-updated", {
+          detail: { session: nextSession },
+        }),
+      );
+      window.gmsApplyAdminWorkspaceProfile?.(nextSession);
+      setFeedback("");
+      openValidationModal("Account settings saved successfully.", {
+        title: "Saved",
+        mode: "success",
+        hideAction: true,
+        hideClose: true,
+        allowManualClose: false,
+        autoCloseMs: successModalAutoCloseMs,
+        onAutoClose: () => {
+          closeAdminAccountSettings();
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update admin account.";
+      if (/email/i.test(message)) {
+        setAdminAccountSettingsFieldEditable("email", true, { focus: false });
+        setFieldTooltip(modalRefs.emailInput, message);
+        modalRefs.emailInput.focus();
+        setFeedback("");
+      } else if (/contact|phone|mobile/i.test(message)) {
+        setAdminAccountSettingsFieldEditable("phone", true, { focus: false });
+        setFieldTooltip(modalRefs.phoneInput, message);
+        modalRefs.phoneInput.focus();
+        setFeedback("");
+      } else {
+        setFeedback(message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const settingsLink = target?.closest("[data-admin-account-settings]");
+    if (!settingsLink) {
+      return;
+    }
+
+    event.preventDefault();
+    void openAdminAccountSettings();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && modalRefs && !modalRefs.overlay.hidden) {
+      if (!modalRefs.validationOverlay.hidden) {
+        if (validationModalAllowManualClose) {
+          closeValidationModal();
+        }
+        return;
+      }
+      if (!modalRefs.photoViewer.hidden) {
+        closeProfilePictureViewer();
+        return;
+      }
+      if (!modalRefs.avatarMenu.hidden) {
+        setAvatarMenuOpen(false);
+        return;
+      }
+      closeAdminAccountSettings();
+    }
+  });
+
+  window.gmsOpenAdminAccountSettings = openAdminAccountSettings;
+})();

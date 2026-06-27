@@ -1,0 +1,4041 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+  </head>
+  <body class="register-page">
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral">
+      <div class="dashboard-layout">
+        <aside class="panel dashboard-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/admin_dashboard.html"
+            aria-label="Admin dashboard home"
+            title="Admin dashboard"
+            data-login-logo
+          >
+            <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
+              <img
+                class="dashboard-sidebar__logo-image"
+                alt="Admin logo"
+                hidden
+                data-logo-image
+              />
+              <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder>
+                logo
+              </span>
+            </span>
+          </a>
+
+          <nav class="dashboard-nav" aria-label="Admin navigation">
+            <a
+              class="dashboard-nav__item"
+              href="/admin_dashboard.html"
+              aria-label="Store Overview"
+              title="Store Overview"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M510-600v-210q0-12.75 8.63-21.38Q527.25-840 540-840h270q12.75 0 21.38 8.62Q840-822.75 840-810v210q0 12.75-8.62 21.37Q822.75-570 810-570H540q-12.75 0-21.37-8.63Q510-587.25 510-600ZM120-480v-330q0-12.75 8.63-21.38Q137.25-840 150-840h270q12.75 0 21.38 8.62Q450-822.75 450-810v330q0 12.75-8.62 21.37Q432.75-450 420-450H150q-12.75 0-21.37-8.63Q120-467.25 120-480Zm390 330v-330q0-12.75 8.63-21.38Q527.25-510 540-510h270q12.75 0 21.38 8.62Q840-492.75 840-480v330q0 12.75-8.62 21.37Q822.75-120 810-120H540q-12.75 0-21.37-8.63Q510-137.25 510-150Zm-390 0v-210q0-12.75 8.63-21.38Q137.25-390 150-390h270q12.75 0 21.38 8.62Q450-372.75 450-360v210q0 12.75-8.62 21.37Q432.75-120 420-120H150q-12.75 0-21.37-8.63Q120-137.25 120-150Zm60-360h210v-270H180v270Zm390 330h210v-270H570v270Zm0-450h210v-150H570v150ZM180-180h210v-150H180v150Zm210-330Zm180-120Zm0 180ZM390-330Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Dashboard</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/insight.html"
+              aria-label="Insight"
+              title="Insight"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg class="dashboard-nav__order-cart-outline" viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M236-102.21q-21-21.21-21-51T236.21-204q21.21-21 51-21T338-203.79q21 21.21 21 51T337.79-102q-21.21 21-51 21T236-102.21Zm400 0q-21-21.21-21-51T636.21-204q21.21-21 51-21T738-203.79q21 21.21 21 51T737.79-102q-21.21 21-51 21T636-102.21ZM235-741l110 228h288l125-228H235Zm-30-60h589.07q22.97 0 34.95 21 11.98 21-.02 42L694-495q-11 19-28.56 30.5T627-453H324l-56 104h461q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H277q-42 0-60.5-28t.5-63l64-118-152-322H81q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32Q68.25-880 81-880h68q9 0 16.2 4.43 7.2 4.44 10.8 12.57l29 62Zm140 288h288-288Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Insight</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/product_insight.html"
+              aria-label="Product Insight"
+              title="Product Insight"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="m363-390 117-71 117 71-31-133 104-90-137-11-53-126-53 126-137 11 104 90-31 133ZM80-80v-740q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H240L80-80Zm134-220h606v-520H140v600l74-80Zm-74 0v-520 520Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Product Insight</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/product_panel.html"
+              aria-label="Products"
+              title="Products"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M450-154v-309L180-619v309l270 156Zm60 0 270-156v-310L510-463v309Zm-60 69L150-258q-14-8-22-22t-8-30v-340q0-16 8-30t22-22l300-173q14-8 30-8t30 8l300 173q14 8 22 22t8 30v340q0 16-8 30t-22 22L510-85q-14 8-30 8t-30-8Zm194-525 102-59-266-154-102 59 266 154Zm-164 96 104-61-267-154-104 60 267 155Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Products</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/stock.html"
+              aria-label="Inventory"
+              title="Inventory"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M465.5-419.5Q459-421 452-425L90-619q-8-5-11.5-11.5T75-645q0-8 3.5-14.5T90-671l362-194q7-4 13.5-5.5T480-872q8 0 14.5 1.5T508-865l362 194q8 5 12 11.5t4 14.5q0 8-4 14.5T870-619L508-425q-7 4-13.5 5.5T480-418q-8 0-14.5-1.5ZM480-479l315-166-315-166-314 166 314 166Zm1-166Zm-1 332 339-181q2-1 14-3 12 0 21 8.5t9 21.5q0 8-4 14.5T847-441L508-260q-7 4-13.5 5.5T480-253q-8 0-14.5-1.5T452-260L114-441q-8-5-12-11.5T98-467q0-13 9-21.5t21-8.5q4 0 7.5 1t6.5 3l338 180Zm0 165 339-181q2-1 14-3 12 0 21 8.5t9 21.5q0 8-4 14.5T847-276L508-95q-7 4-13.5 5.5T480-88q-8 0-14.5-1.5T452-95L114-276q-8-5-12-11.5T98-302q0-13 9-21.5t21-8.5q4 0 7.5 1t6.5 3l338 180Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Inventory</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/Employee_data.html"
+              aria-label="Employee data"
+              title="Employee data"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M730-450q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H610q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5h120Zm0-120q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H610q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5h120ZM360-434q-38 0-66.64 6.5Q264.73-421 243-407q-20 11-31 28.13-11 17.14-11 36.87 0 9.43 6.68 15.71Q214.35-320 224-320h272q9.65 0 16.32-6.52Q519-333.03 519-343q0-17.69-10.5-34.35Q498-394 478-407q-22-14-51-20.5t-67-6.5Zm51.5-81.42q21.5-21.42 21.5-51.5t-21.42-51.58q-21.42-21.5-51.5-21.5t-51.58 21.42q-21.5 21.42-21.5 51.5t21.42 51.58q21.42 21.5 51.5 21.5t51.58-21.42ZM140-160q-24 0-42-18t-18-42v-520q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H140Zm0-60h680v-520H140v520Zm0 0v-520 520Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Employee Data</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item is-active"
+              href="/register.html"
+              aria-current="page"
+              aria-label="Register"
+              title="Register"
+              data-nav-tooltip="Register"
+              data-stock-nav-item="register"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M730-530H630q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h100v-100q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v100h100q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H790v100q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37v-100Zm-478 7q-42-42-42-108t42-108q42-42 108-42t108 42q42 42 42 108t-42 108q-42 42-108 42t-108-42ZM40-220v-34q0-35 17.5-63.5T108-360q75-33 133.34-46.5t118.5-13.5Q420-420 478-406.5T611-360q33 15 51 43t18 63v34q0 24.75-17.62 42.37Q644.75-160 620-160H100q-24.75 0-42.37-17.63Q40-195.25 40-220Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Register</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/login.html"
+              aria-label="Login"
+              title="Login"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M10 7.5V6a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-1.5" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M14.5 12H4.5" stroke-linecap="round" />
+                  <path d="m8 8.5-3.5 3.5L8 15.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Login</span>
+            </a>
+          </nav>
+        </aside>
+
+        <div class="dashboard-content register-page-shell">
+          <section class="hero">
+            <div class="hero-actions">
+              <div>
+                <h1 class="register-page-title">Create Employee Account</h1>
+              </div>
+
+              <div class="dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Admin workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Admin logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      AD
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Admin Workspace</strong>
+                    <span>Employee Register</span>
+                  </span>
+                </div>
+
+                <div class="settings-menu" data-settings-menu>
+                  <button
+                    class="settings-toggle"
+                    type="button"
+                    aria-label="Color Picker"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Color Picker"
+                    data-settings-toggle
+                  >
+                    <span class="settings-toggle__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path
+                          d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                          stroke-linejoin="round"
+                        />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </span>
+                    <span class="settings-toggle__swatch" aria-hidden="true"></span>
+                  </button>
+
+                  <div class="settings-dropdown" hidden data-settings-dropdown>
+                    <p class="settings-dropdown__eyebrow">Theme Settings</p>
+                    <h2 class="settings-dropdown__title">Color Picker</h2>
+                    <p class="settings-dropdown__copy">
+                      Pick a color and it updates the whole web server instantly.
+                    </p>
+
+                    <label class="settings-color-field">
+                      <span>Primary Color</span>
+                      <input type="color" value="#2563EB" data-theme-color-input />
+                    </label>
+
+                    <div class="settings-color-meta">
+                      <span data-theme-hex>#2563EB</span>
+                      <span data-theme-rgb>RGB 37, 99, 235</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="ghost-button settings-reset-button"
+                      data-theme-reset
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="register-face-layout">
+            <section class="panel register-form-panel" id="register-employee-details-section">
+              <div class="product-form-section-carousel register-section-tabs" aria-label="Employee register sections">
+                <button
+                  type="button"
+                  class="product-form-section-carousel__button"
+                  data-register-section-button
+                  data-register-section-target="register-document-file-content"
+                  aria-pressed="false"
+                >
+                  Document File
+                </button>
+                <button
+                  type="button"
+                  class="product-form-section-carousel__button is-active"
+                  data-register-section-button
+                  data-register-section-target="register-employee-details-content"
+                  aria-pressed="true"
+                >
+                  Employee Details
+                </button>
+              </div>
+
+              <div
+                class="register-section-panel"
+                id="register-employee-details-content"
+                data-register-section-panel
+              >
+                <form id="employee-register-form" class="product-form register-form-panel__form" novalidate>
+                  <div class="form-grid register-employment-grid">
+                    <label class="register-employee-id-field">
+                      Employee ID
+                      <input
+                        id="register-employee-id"
+                        type="hidden"
+                        name="employeeId"
+                        autocomplete="off"
+                      />
+                      <input
+                        id="register-company-acronym"
+                        type="hidden"
+                        name="companyAcronym"
+                        autocomplete="organization"
+                      />
+                      <div class="register-employee-id-control">
+                        <div
+                          class="product-category-multiselect product-panel-grid__inventory-category-filter register-company-acronym-dropdown"
+                          id="register-company-acronym-dropdown"
+                        >
+                          <button
+                            type="button"
+                            class="product-category-multiselect__trigger"
+                            id="register-company-acronym-trigger"
+                            aria-haspopup="listbox"
+                            aria-expanded="false"
+                            aria-controls="register-company-acronym-menu"
+                          >
+                            <span
+                              class="product-category-multiselect__summary is-placeholder"
+                              id="register-company-acronym-summary"
+                            >
+                              No acronym
+                            </span>
+                            <span
+                              class="product-panel-grid__inventory-category-filter-icon"
+                              aria-hidden="true"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path
+                                  d="m6.5 9.5 5.5 5 5.5-5"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                />
+                              </svg>
+                            </span>
+                          </button>
+                          <div
+                            class="product-category-multiselect__menu"
+                            id="register-company-acronym-menu"
+                            role="listbox"
+                            hidden
+                          >
+                          </div>
+                        </div>
+                        <input
+                          id="register-employee-id-number"
+                          class="register-employee-id-number"
+                          type="text"
+                          inputmode="numeric"
+                          maxlength="6"
+                          autocomplete="off"
+                          readonly
+                          aria-readonly="true"
+                          aria-label="Employee ID number"
+                        />
+                      </div>
+                    </label>
+
+                    <label>
+                      Position
+                      <input
+                        id="register-position"
+                        type="hidden"
+                        name="position"
+                        autocomplete="organization-title"
+                      />
+                      <div
+                        class="product-category-multiselect product-panel-grid__inventory-category-filter"
+                        id="register-position-dropdown"
+                      >
+                        <button
+                          type="button"
+                          class="product-category-multiselect__trigger"
+                          id="register-position-trigger"
+                          aria-haspopup="listbox"
+                          aria-expanded="false"
+                        >
+                          <span
+                            class="product-category-multiselect__summary"
+                            id="register-position-summary"
+                          >
+                            Select position
+                          </span>
+                          <span
+                            class="product-panel-grid__inventory-category-filter-icon"
+                            aria-hidden="true"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                              <path
+                                d="m6.5 9.5 5.5 5 5.5-5"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                              />
+                            </svg>
+                          </span>
+                        </button>
+                        <div
+                          class="product-category-multiselect__menu"
+                          id="register-position-menu"
+                          role="listbox"
+                          hidden
+                        >
+                          <button
+                            type="button"
+                            class="product-category-multiselect__option product-category-multiselect__option--placeholder"
+                            data-position-value=""
+                            role="option"
+                            aria-selected="true"
+                          >
+                            Select position
+                          </button>
+                          <button
+                            type="button"
+                            class="product-category-multiselect__option"
+                            data-position-value="Packing"
+                            role="option"
+                            aria-selected="false"
+                          >
+                            Packing
+                          </button>
+                          <button
+                            type="button"
+                            class="product-category-multiselect__option"
+                            data-position-value="Admin Employee"
+                            role="option"
+                            aria-selected="false"
+                          >
+                            Admin Employee
+                          </button>
+                        </div>
+                      </div>
+                    </label>
+
+                    <label>
+                      Time In
+                      <input id="register-time-in" type="hidden" name="timeIn" />
+                      <div class="register-time-dropdown" id="register-time-in-dropdown">
+                        <button
+                          type="button"
+                          class="register-time-dropdown__trigger"
+                          id="register-time-in-trigger"
+                          aria-haspopup="listbox"
+                          aria-expanded="false"
+                          aria-controls="register-time-in-menu"
+                        >
+                          <span
+                            class="register-time-dropdown__summary is-placeholder"
+                            id="register-time-in-summary"
+                          >
+                            Select time
+                          </span>
+                          <span class="register-time-dropdown__chevron" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                              <path
+                                d="m6.5 9.5 5.5 5 5.5-5"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                              />
+                            </svg>
+                          </span>
+                        </button>
+                        <div
+                          class="register-time-dropdown__menu"
+                          id="register-time-in-menu"
+                          role="listbox"
+                          hidden
+                        >
+                          <button
+                            type="button"
+                            class="register-time-dropdown__item"
+                            data-time-in-value=""
+                            role="option"
+                            aria-selected="true"
+                          >
+                            Select time
+                          </button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="06:00" role="option" aria-selected="false">6:00 AM</button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="07:00" role="option" aria-selected="false">7:00 AM</button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="08:00" role="option" aria-selected="false">8:00 AM</button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="09:00" role="option" aria-selected="false">9:00 AM</button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="10:00" role="option" aria-selected="false">10:00 AM</button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="11:00" role="option" aria-selected="false">11:00 AM</button>
+                          <button type="button" class="register-time-dropdown__item" data-time-in-value="12:00" role="option" aria-selected="false">12:00 PM</button>
+                        </div>
+                      </div>
+                    </label>
+
+                    <label>
+                      Time Out
+                      <input
+                        id="register-time-out-display"
+                        type="text"
+                        placeholder="--"
+                        readonly
+                      />
+                      <input id="register-time-out" type="hidden" name="timeOut" />
+                      <input id="register-work-hours" type="hidden" name="workHours" />
+                    </label>
+                  </div>
+
+                  <div class="form-grid register-name-grid">
+                    <label class="register-applicant-name-shell">
+                      First Name
+                      <input
+                        id="register-first-name"
+                        type="text"
+                        name="firstName"
+                        placeholder="Juan"
+                        autocomplete="given-name"
+                      />
+                      <span
+                        class="register-applicant-name-status"
+                        id="register-applicant-name-status"
+                      ></span>
+                    </label>
+
+                    <label>
+                      Middle Name (Optional)
+                      <input
+                        id="register-middle-name"
+                        type="text"
+                        name="middleName"
+                        placeholder="Santos"
+                        autocomplete="additional-name"
+                      />
+                    </label>
+
+                    <label>
+                      Last Name
+                      <input
+                        id="register-last-name"
+                        type="text"
+                        name="lastName"
+                        placeholder="Dela Cruz"
+                        autocomplete="family-name"
+                      />
+                    </label>
+
+                    <label class="register-name-grid__suffix">
+                      Suffix
+                      <input
+                        id="register-suffix"
+                        type="text"
+                        name="suffix"
+                        placeholder="Jr."
+                        autocomplete="honorific-suffix"
+                      />
+                    </label>
+                  </div>
+
+                  <div class="form-grid">
+                    <label class="register-email-label">
+                      Email Address
+                      <div class="register-email-field">
+                        <input
+                          id="register-email"
+                          type="email"
+                          name="registerEmail"
+                          placeholder="employee@example.com"
+                          autocomplete="email"
+                        />
+                        <span
+                          class="register-email-field__status"
+                          id="register-email-status"
+                        ></span>
+                      </div>
+                    </label>
+
+                    <label>
+                      Phone Number
+                      <div class="register-phone-field">
+                        <span class="register-phone-field__prefix">+63</span>
+                        <input
+                          id="register-phone-number"
+                          type="tel"
+                          name="mobileNumber"
+                          autocomplete="tel-national"
+                          inputmode="numeric"
+                          maxlength="10"
+                        />
+                        <span
+                          class="register-phone-field__status"
+                          id="register-phone-status"
+                        ></span>
+                      </div>
+                      <p
+                        class="register-phone-validation"
+                        id="register-phone-validation"
+                        aria-live="polite"
+                      ></p>
+                    </label>
+                  </div>
+
+                  <label>
+                    Address
+                    <input
+                      id="register-address"
+                      type="text"
+                      name="address"
+                      placeholder="Enter full address"
+                      autocomplete="street-address"
+                    />
+                  </label>
+
+                  <div class="form-grid">
+                    <label>
+                      Password
+                      <div class="password-field">
+                        <input
+                          id="register-password"
+                          type="password"
+                          name="password"
+                          placeholder="Enter your password"
+                          autocomplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          class="password-field__toggle"
+                          data-password-toggle="register-password"
+                          aria-controls="register-password"
+                        >
+                          Show
+                        </button>
+                      </div>
+                    </label>
+
+                    <label>
+                      Confirm Password
+                      <div class="password-field">
+                        <input
+                          id="register-confirm-password"
+                          type="password"
+                          name="confirmPassword"
+                          placeholder="Confirm your password"
+                          autocomplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          class="password-field__toggle"
+                          data-password-toggle="register-confirm-password"
+                          aria-controls="register-confirm-password"
+                        >
+                          Show
+                        </button>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="form-actions register-form-panel__actions">
+                    <button type="submit" id="submit-register-button">Register</button>
+                  </div>
+
+                  <p id="register-feedback" class="feedback-note" aria-live="polite"></p>
+                </form>
+              </div>
+
+              <div
+                class="register-section-panel register-document-panel"
+                id="register-document-file-content"
+                data-register-section-panel
+                hidden
+              >
+                <div class="panel-heading register-side-panel__heading">
+                  <div>
+                    <p class="section-label" aria-hidden="true"></p>
+                    <h2 id="register-document-heading">Resume, Bio Data, or Application Letter</h2>
+                  </div>
+                </div>
+
+                <div class="register-document-upload">
+                  <label class="product-image-input-row__field register-document-upload__field">
+                    <span>Document File</span>
+                    <div
+                      id="register-document-preview"
+                      class="product-image-input-row__preview product-image-input-row__preview--filename-only register-document-upload__preview"
+                      role="button"
+                      tabindex="0"
+                      aria-controls="register-document-input"
+                      aria-label="Choose document file"
+                    ></div>
+                    <input
+                      id="register-document-input"
+                      type="file"
+                      class="product-image-input-row__file-input"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    />
+                    <span id="register-document-status" class="product-image-input-row__status">
+                      PDF, DOC, and DOCX only.
+                    </span>
+                  </label>
+                  <div class="product-image-input-row__actions register-document-upload__actions">
+                    <button
+                      id="register-document-remove-button"
+                      type="button"
+                      class="ghost-button icon-action-button icon-action-button--danger product-image-input-row__remove register-document-upload__remove-button"
+                      aria-label="Remove selected document"
+                      title="Remove selected document"
+                      disabled
+                    >
+                      <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="register-document-panel__actions">
+                  <button
+                    type="button"
+                    id="register-document-view-button"
+                    class="register-document-panel__view-button"
+                    disabled
+                  >
+                    View document
+                  </button>
+                </div>
+
+                <div
+                  class="register-side-panel__stack"
+                  id="register-document-result-stack"
+                  hidden
+                ></div>
+              </div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <div
+      class="category-shortcut-fab register-employee-settings-fab"
+      id="register-employee-settings-fab"
+      data-register-employee-settings-fab
+    >
+      <button
+        type="button"
+        class="category-shortcut-fab__trigger register-employee-settings-fab__trigger"
+        id="register-employee-settings-trigger"
+        aria-label="Employee setting"
+        data-nav-tooltip="Employee Setting"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.25 7.25 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.61.25-1.18.58-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.12.22.38.31.6.22l2.49-1c.51.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.18-.58 1.69-.98l2.49 1c.22.09.48 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7Z"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div
+      class="validation-modal-overlay"
+      id="register-validation-modal-overlay"
+      hidden
+      aria-hidden="true"
+    >
+      <section
+        class="validation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="register-validation-modal-title"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="register-validation-modal-close"
+          aria-label="Close validation modal"
+          title="Close validation modal"
+        >
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <div class="validation-modal__top">
+          <div
+            class="validation-modal__icon validation-modal__icon--notice"
+            aria-hidden="true"
+            role="presentation"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" width="140" height="140" fill="none">
+              <circle
+                cx="12"
+                cy="12"
+                r="8.8"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <path
+                d="M12 10.4v5.2"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <circle cx="12" cy="7.6" r="1.1" fill="currentColor" />
+            </svg>
+          </div>
+        </div>
+        <div class="validation-modal__body">
+          <h2 class="validation-modal__title" id="register-validation-modal-title">
+            Important Notice
+          </h2>
+          <p class="validation-modal__copy" id="register-validation-modal-copy">
+            Please review the highlighted fields and try again.
+          </p>
+          <div class="validation-modal__actions">
+            <button
+              type="button"
+              class="ghost-button validation-modal__action-button validation-modal__action-button--secondary"
+              id="register-validation-modal-action"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+      <script src="/admin_navigation.js?v=admin-profile-refresh-1"></script>
+      <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+      <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+      <script src="/password-toggle.js"></script>
+      <script>
+      const employeeRegisterForm = document.getElementById("employee-register-form");
+      const registerEmployeeIdInput = document.getElementById("register-employee-id");
+      const registerEmployeeIdNumberInput = document.getElementById("register-employee-id-number");
+      const registerCompanyAcronymInput = document.getElementById("register-company-acronym");
+      const registerCompanyAcronymDropdown = document.getElementById("register-company-acronym-dropdown");
+      const registerCompanyAcronymTrigger = document.getElementById("register-company-acronym-trigger");
+      const registerCompanyAcronymSummary = document.getElementById("register-company-acronym-summary");
+      const registerCompanyAcronymMenu = document.getElementById("register-company-acronym-menu");
+      let registerCompanyAcronymOptions = [];
+      let registerEmployeeIdRandomSuffix = "";
+      const registerPositionInput = document.getElementById("register-position");
+      const registerTimeInSelect = document.getElementById("register-time-in");
+      const registerTimeInDropdown = document.getElementById("register-time-in-dropdown");
+      const registerTimeInTrigger = document.getElementById("register-time-in-trigger");
+      const registerTimeInSummary = document.getElementById("register-time-in-summary");
+      const registerTimeInMenu = document.getElementById("register-time-in-menu");
+      const registerTimeInOptions = Array.from(
+        registerTimeInMenu.querySelectorAll("[data-time-in-value]"),
+      );
+      const registerTimeOutInput = document.getElementById("register-time-out");
+      const registerTimeOutDisplay = document.getElementById("register-time-out-display");
+      const registerWorkHoursInput = document.getElementById("register-work-hours");
+      const registerSectionButtons = Array.from(
+        document.querySelectorAll("[data-register-section-button]"),
+      );
+      const registerSectionPanels = Array.from(
+        document.querySelectorAll("[data-register-section-panel]"),
+      );
+      const registerPositionDropdown = document.getElementById("register-position-dropdown");
+      const registerPositionTrigger = document.getElementById("register-position-trigger");
+      const registerPositionSummary = document.getElementById("register-position-summary");
+      const registerPositionMenu = document.getElementById("register-position-menu");
+      let registerPositionOptions = Array.from(
+        registerPositionMenu.querySelectorAll("[data-position-value]"),
+      );
+      const registerFirstNameInput = document.getElementById("register-first-name");
+      const registerApplicantNameShell = registerFirstNameInput?.closest(".register-applicant-name-shell");
+      const registerApplicantNameStatus = document.getElementById("register-applicant-name-status");
+      const registerMiddleNameInput = document.getElementById("register-middle-name");
+      const registerLastNameInput = document.getElementById("register-last-name");
+      const registerSuffixInput = document.getElementById("register-suffix");
+      const registerEmailInput = document.getElementById("register-email");
+      const registerAddressInput = document.getElementById("register-address");
+      const registerPhoneNumberInput = document.getElementById("register-phone-number");
+      const registerPhoneField = registerPhoneNumberInput?.closest(".register-phone-field");
+      const registerPhoneStatus = document.getElementById("register-phone-status");
+      const registerPhoneValidation = document.getElementById("register-phone-validation");
+      const registerPasswordInput = document.getElementById("register-password");
+      const registerConfirmPasswordInput = document.getElementById("register-confirm-password");
+      const registerFeedback = document.getElementById("register-feedback");
+      const registerDocumentInput = document.getElementById("register-document-input");
+      const registerDocumentPreview = document.getElementById("register-document-preview");
+      const registerDocumentRemoveButton = document.getElementById("register-document-remove-button");
+      const registerDocumentViewButton = document.getElementById("register-document-view-button");
+      const registerDocumentStatus = document.getElementById("register-document-status");
+      const registerDocumentHeading = document.getElementById("register-document-heading");
+      const registerDocumentDetectionPill = document.getElementById("register-document-detection-pill");
+      const registerDocumentEmptyState = document.getElementById("register-document-empty-state");
+      const registerDocumentEmptyTitle = document.getElementById("register-document-empty-title");
+      const registerDocumentEmptyCopy = document.getElementById("register-document-empty-copy");
+      const registerDocumentResultStack = document.getElementById("register-document-result-stack");
+      const registerValidationModalOverlay = document.getElementById("register-validation-modal-overlay");
+      const registerValidationModalTitle = document.getElementById("register-validation-modal-title");
+      const registerValidationModalCopy = document.getElementById("register-validation-modal-copy");
+      const registerValidationModalAction = document.getElementById("register-validation-modal-action");
+      const registerValidationModalClose = document.getElementById("register-validation-modal-close");
+      const registerValidationModalIcon = registerValidationModalOverlay.querySelector(".validation-modal__icon");
+      const submitRegisterButton = document.getElementById("submit-register-button");
+      const registerEmployeeSettingsFab = document.getElementById("register-employee-settings-fab");
+      const registerEmployeeSettingsTrigger = document.getElementById("register-employee-settings-trigger");
+      const registerDraftStorageKey = "gms-employee-register-draft";
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const generatedEmployeeIdPattern = /^(?:[A-Z0-9]{2,8}-)?\d{6}$/;
+      const registerPhoneCountryCode = "+63";
+      const registerPhilippineMobilePattern = /^9\d{9}$/;
+      const registerPaidWorkHours = 8;
+      const registerScheduleElapsedHours = 9;
+      const registerDocumentAllowedExtensions = ["pdf", "doc", "docx"];
+      const registerDocumentAllowedMimeTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+      const registerDocumentDefaultHeading = "Resume, Bio Data, or Application Letter";
+      const registerDocumentDetectedHeadingText = {
+        resume: "This file is Resume",
+        biodata: "This file is Biodata",
+        "application-letter": "This file is Application Letter",
+      };
+      const registerResumePatternDefinitions = [
+        {
+          label: "resume",
+          score: 4,
+          patterns: [" resume ", " curriculum vitae ", " cv "],
+        },
+        {
+          label: "work experience",
+          score: 3,
+          patterns: [" work experience ", " employment history ", " professional experience "],
+        },
+        {
+          label: "skills",
+          score: 2,
+          patterns: [" skills ", " technical skills ", " core competencies "],
+        },
+        {
+          label: "education",
+          score: 2,
+          patterns: [" education ", " academic background ", " educational background "],
+        },
+        {
+          label: "summary",
+          score: 1,
+          patterns: [" professional summary ", " career objective ", " objective statement "],
+        },
+      ];
+      const registerBiodataPatternDefinitions = [
+        {
+          label: "biodata",
+          score: 5,
+          patterns: [" biodata ", " bio data ", " bio data form ", " bio-data "],
+        },
+        {
+          label: "personal information",
+          score: 2,
+          patterns: [" personal information ", " personal details ", " personal profile "],
+        },
+        {
+          label: "birth details",
+          score: 2,
+          patterns: [" date of birth ", " place of birth ", " birth date "],
+        },
+        {
+          label: "civil details",
+          score: 2,
+          patterns: [" civil status ", " nationality ", " religion ", " citizenship "],
+        },
+        {
+          label: "physical details",
+          score: 2,
+          patterns: [" height ", " weight ", " sex ", " gender "],
+        },
+        {
+          label: "family details",
+          score: 2,
+          patterns: [" father ", " mother ", " parents ", " spouse "],
+        },
+      ];
+      const registerApplicationLetterPatternDefinitions = [
+        {
+          label: "application letter",
+          score: 5,
+          patterns: [" application letter ", " cover letter ", " letter of application "],
+        },
+        {
+          label: "formal greeting",
+          score: 2,
+          patterns: [
+            " dear sir ",
+            " dear madam ",
+            " dear hiring manager ",
+            " to whom it may concern ",
+          ],
+        },
+        {
+          label: "application intent",
+          score: 3,
+          patterns: [
+            " i am writing to apply ",
+            " i am applying for ",
+            " i would like to apply ",
+            " i wish to apply ",
+            " application for the position ",
+          ],
+        },
+        {
+          label: "job role",
+          score: 2,
+          patterns: [
+            " for the position of ",
+            " for the role of ",
+            " vacant position ",
+            " job opening ",
+            " vacancy ",
+          ],
+        },
+        {
+          label: "formal closing",
+          score: 2,
+          patterns: [
+            " sincerely ",
+            " yours faithfully ",
+            " respectfully yours ",
+            " thank you for your time and consideration ",
+            " attached is my resume ",
+          ],
+        },
+      ];
+      let registerValidationFocusTarget = null;
+      let registerDocumentAnalysisRequestId = 0;
+      let registerDocumentDetectionState = null;
+      let registerDocumentAutofillSnapshot = null;
+      let registerPhoneValidationRequestId = 0;
+      let registeredPhoneNumbersPromise = null;
+      let registeredPhoneNumbersCache = new Set();
+      let registerApplicantValidationRequestId = 0;
+      let registeredApplicantNamesPromise = null;
+      let registeredApplicantNamesCache = new Set();
+      let registerValidationModalCanClose = true;
+      let registerPasswordMismatchTimer = 0;
+      let lastRegisterPasswordMismatchKey = "";
+      const registerValidationModalIconMarkup = {
+        notice: `
+          <svg viewBox="0 0 24 24" width="140" height="140" fill="none">
+            <circle cx="12" cy="12" r="8.8" stroke="currentColor" stroke-width="1.8" />
+            <path d="M12 10.4v5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <circle cx="12" cy="7.6" r="1.1" fill="currentColor" />
+          </svg>
+        `,
+        success: `
+          <svg viewBox="0 0 24 24" width="140" height="140" fill="none">
+            <circle cx="12" cy="12" r="8.8" stroke="currentColor" stroke-width="1.8" />
+            <path d="m8.2 12.2 2.6 2.6 5.8-6.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        `,
+        error: `
+          <svg viewBox="0 0 24 24" width="140" height="140" fill="none">
+            <circle cx="12" cy="12" r="8.8" stroke="currentColor" stroke-width="1.8" />
+            <path d="m8.6 8.6 6.8 6.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            <path d="m15.4 8.6-6.8 6.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        `,
+      };
+
+      function setActiveRegisterSection(targetId, options = {}) {
+        const shouldScroll = options.shouldScroll ?? true;
+        const targetSection = document.getElementById(targetId);
+
+        registerSectionButtons.forEach((button) => {
+          const isActive = button.dataset.registerSectionTarget === targetId;
+          button.classList.toggle("is-active", isActive);
+          button.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+
+        registerSectionPanels.forEach((panel) => {
+          panel.hidden = panel.id !== targetId;
+        });
+
+        if (shouldScroll && targetSection) {
+          targetSection.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }
+
+      function normalizeRegisterCompanyAcronym(value) {
+        if (window.GMSCompanyAcronyms?.normalize) {
+          return window.GMSCompanyAcronyms.normalize(value);
+        }
+
+        return String(value ?? "")
+          .trim()
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+          .slice(0, 8);
+      }
+
+      function loadRegisterCompanyAcronyms() {
+        if (window.GMSCompanyAcronyms?.load) {
+          const acronyms = window.GMSCompanyAcronyms.load();
+          if (Array.isArray(acronyms)) {
+            return acronyms.map(normalizeRegisterCompanyAcronym).filter(Boolean);
+          }
+        }
+
+        return [];
+      }
+
+      function generateEmployeeIdSuffix() {
+        return String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+      }
+
+      function normalizeRegisterEmployeeIdNumber(value) {
+        return String(value ?? "").replace(/\D/g, "").slice(0, 6);
+      }
+
+      function formatRegisterEmployeeIdNumber(value) {
+        const number = normalizeRegisterEmployeeIdNumber(value);
+        return number ? number.padStart(6, "0") : "";
+      }
+
+      function parseRegisterEmployeeId(value) {
+        const normalized = String(value ?? "").trim().toUpperCase();
+        const fullMatch = normalized.match(/^([A-Z0-9]{2,8})-(\d{1,6})$/);
+        if (fullMatch) {
+          return {
+            acronym: normalizeRegisterCompanyAcronym(fullMatch[1]),
+            number: normalizeRegisterEmployeeIdNumber(fullMatch[2]),
+          };
+        }
+
+        return {
+          acronym: "",
+          number: normalizeRegisterEmployeeIdNumber(normalized),
+        };
+      }
+
+      function composeRegisterEmployeeId(acronym, number) {
+        const employeeNumber = formatRegisterEmployeeIdNumber(number);
+        if (!employeeNumber) {
+          return "";
+        }
+
+        const normalizedAcronym = normalizeRegisterCompanyAcronym(acronym);
+        return normalizedAcronym ? `${normalizedAcronym}-${employeeNumber}` : employeeNumber;
+      }
+
+      function uppercaseRegisterNameInitials(value) {
+        return String(value ?? "").replace(/(^|[\s'-])([a-z�])/gi, (match, prefix, letter) => {
+          return `${prefix}${letter.toUpperCase()}`;
+        });
+      }
+
+      function uppercaseRegisterNameInput(input) {
+        if (!input) {
+          return;
+        }
+
+        const currentValue = String(input.value ?? "");
+        const nextValue = uppercaseRegisterNameInitials(currentValue);
+        if (nextValue === currentValue) {
+          return;
+        }
+
+        const selectionStart = input.selectionStart;
+        const selectionEnd = input.selectionEnd;
+        input.value = nextValue;
+        if (document.activeElement === input && selectionStart !== null && selectionEnd !== null) {
+          input.setSelectionRange(selectionStart, selectionEnd);
+        }
+      }
+
+      function syncRegisterEmployeeIdValue(options = {}) {
+        if (!registerEmployeeIdInput) {
+          return "";
+        }
+
+        const rawNumber = normalizeRegisterEmployeeIdNumber(registerEmployeeIdNumberInput?.value ?? "");
+        const employeeNumber = options.pad ? formatRegisterEmployeeIdNumber(rawNumber) : rawNumber;
+        if (registerEmployeeIdNumberInput) {
+          registerEmployeeIdNumberInput.value = employeeNumber;
+        }
+
+        const acronym = registerCompanyAcronymInput?.value || loadRegisterCompanyAcronyms()[0] || "";
+        registerEmployeeIdInput.value = employeeNumber
+          ? composeRegisterEmployeeId(acronym, employeeNumber)
+          : "";
+        return registerEmployeeIdInput.value;
+      }
+
+      function setRegisterEmployeeId(value) {
+        const parts = parseRegisterEmployeeId(value);
+        const acronym = parts.acronym || registerCompanyAcronymInput?.value || loadRegisterCompanyAcronyms()[0] || "";
+
+        if (registerEmployeeIdNumberInput) {
+          registerEmployeeIdNumberInput.value = parts.number;
+        }
+        setRegisterCompanyAcronym(acronym, { skipDraft: true });
+        syncRegisterEmployeeIdValue({ pad: false });
+        handleDraftUpdate();
+      }
+
+      function syncRegisterCompanyAcronymDropdown() {
+        if (!registerCompanyAcronymSummary || !registerCompanyAcronymInput) {
+          return;
+        }
+
+        const selectedValue = registerCompanyAcronymInput.value.trim();
+        const hasAcronyms = registerCompanyAcronymOptions.length > 0;
+        registerCompanyAcronymSummary.textContent = selectedValue || "No acronym";
+        registerCompanyAcronymSummary.classList.toggle("is-placeholder", !selectedValue);
+        registerCompanyAcronymDropdown?.closest(".register-employee-id-control")
+          ?.classList.toggle("has-no-acronym", !hasAcronyms);
+        if (registerCompanyAcronymDropdown) {
+          registerCompanyAcronymDropdown.hidden = !hasAcronyms;
+        }
+        if (registerCompanyAcronymTrigger) {
+          registerCompanyAcronymTrigger.disabled = !hasAcronyms;
+          registerCompanyAcronymTrigger.setAttribute("aria-expanded", "false");
+        }
+        if (!hasAcronyms && registerCompanyAcronymMenu) {
+          registerCompanyAcronymMenu.hidden = true;
+          registerCompanyAcronymDropdown?.classList.remove("is-open");
+        }
+
+        registerCompanyAcronymOptions.forEach((option) => {
+          const isSelected = option.dataset.companyAcronymValue === selectedValue;
+          option.classList.toggle("is-selected", isSelected);
+          option.setAttribute("aria-selected", isSelected ? "true" : "false");
+        });
+      }
+
+      function closeRegisterCompanyAcronymDropdown() {
+        if (!registerCompanyAcronymDropdown || !registerCompanyAcronymTrigger || !registerCompanyAcronymMenu) {
+          return;
+        }
+
+        registerCompanyAcronymDropdown.classList.remove("is-open");
+        registerCompanyAcronymTrigger.setAttribute("aria-expanded", "false");
+        registerCompanyAcronymMenu.hidden = true;
+      }
+
+      function openRegisterCompanyAcronymDropdown() {
+        if (!registerCompanyAcronymDropdown || !registerCompanyAcronymTrigger || !registerCompanyAcronymMenu) {
+          return;
+        }
+        if (registerCompanyAcronymTrigger.disabled || registerCompanyAcronymOptions.length === 0) {
+          return;
+        }
+
+        registerCompanyAcronymDropdown.classList.add("is-open");
+        registerCompanyAcronymTrigger.setAttribute("aria-expanded", "true");
+        registerCompanyAcronymMenu.hidden = false;
+      }
+
+      function setRegisterCompanyAcronym(value, options = {}) {
+        if (!registerCompanyAcronymInput) {
+          return;
+        }
+
+        registerCompanyAcronymInput.value = normalizeRegisterCompanyAcronym(value);
+        syncRegisterCompanyAcronymDropdown();
+        syncRegisterEmployeeIdValue();
+        if (!options.skipDraft) {
+          handleDraftUpdate();
+        }
+      }
+
+      function renderRegisterEmployeeIdOptions(options = {}) {
+        if (!registerCompanyAcronymMenu || !registerCompanyAcronymInput) {
+          return;
+        }
+
+        if (options.regenerateSuffix || !registerEmployeeIdRandomSuffix) {
+          registerEmployeeIdRandomSuffix = generateEmployeeIdSuffix();
+        }
+
+        if (registerEmployeeIdNumberInput && !registerEmployeeIdNumberInput.value.trim()) {
+          registerEmployeeIdNumberInput.value = registerEmployeeIdRandomSuffix;
+        }
+
+        const acronyms = loadRegisterCompanyAcronyms();
+        if (!acronyms.length) {
+          registerCompanyAcronymMenu.replaceChildren();
+          registerCompanyAcronymOptions = [];
+          setRegisterCompanyAcronym("", { skipDraft: true });
+          syncRegisterEmployeeIdValue({ pad: false });
+          handleDraftUpdate();
+          return;
+        }
+
+        const currentParts = parseRegisterEmployeeId(registerEmployeeIdInput?.value ?? "");
+        const currentAcronym = registerCompanyAcronymInput.value.trim() || currentParts.acronym;
+        const selectedAcronym =
+          options.preserveCurrent && acronyms.includes(currentAcronym)
+            ? currentAcronym
+            : acronyms[0];
+
+        registerCompanyAcronymMenu.replaceChildren(
+          ...acronyms.map((acronym) => {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "product-category-multiselect__option";
+            option.dataset.companyAcronymValue = acronym;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", "false");
+            option.textContent = acronym;
+            return option;
+          }),
+        );
+
+        registerCompanyAcronymOptions = Array.from(
+          registerCompanyAcronymMenu.querySelectorAll("[data-company-acronym-value]"),
+        );
+        setRegisterCompanyAcronym(selectedAcronym, { skipDraft: true });
+        syncRegisterEmployeeIdValue({ pad: false });
+        handleDraftUpdate();
+      }
+
+      function normalizeRegisterEmployeePosition(value) {
+        if (window.GMSEmployeePositions?.normalize) {
+          return window.GMSEmployeePositions.normalize(value);
+        }
+
+        return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+      }
+
+      function loadRegisterEmployeePositions() {
+        if (window.GMSEmployeePositions?.load) {
+          const positions = window.GMSEmployeePositions.load();
+          if (Array.isArray(positions) && positions.length) {
+            return positions.map(normalizeRegisterEmployeePosition).filter(Boolean);
+          }
+        }
+
+        return ["Packing", "Admin Employee"];
+      }
+
+      function isRegisterEmployeePosition(value) {
+        const normalizedValue = normalizeRegisterEmployeePosition(value).toLowerCase();
+        return loadRegisterEmployeePositions().some(
+          (position) => position.toLowerCase() === normalizedValue,
+        );
+      }
+
+      function renderRegisterPositionOptions(options = {}) {
+        if (!registerPositionMenu || !registerPositionInput) {
+          return;
+        }
+
+        const positions = loadRegisterEmployeePositions();
+        const currentValue = registerPositionInput.value.trim();
+        const shouldKeepCurrent = options.preserveCurrent && isRegisterEmployeePosition(currentValue);
+        registerPositionMenu.replaceChildren();
+
+        const placeholder = document.createElement("button");
+        placeholder.type = "button";
+        placeholder.className =
+          "product-category-multiselect__option product-category-multiselect__option--placeholder";
+        placeholder.dataset.positionValue = "";
+        placeholder.setAttribute("role", "option");
+        placeholder.setAttribute("aria-selected", shouldKeepCurrent ? "false" : "true");
+        placeholder.textContent = "Select position";
+        registerPositionMenu.appendChild(placeholder);
+
+        positions.forEach((position) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "product-category-multiselect__option";
+          option.dataset.positionValue = position;
+          option.setAttribute("role", "option");
+          option.setAttribute("aria-selected", "false");
+          option.textContent = position;
+          registerPositionMenu.appendChild(option);
+        });
+
+        registerPositionOptions = Array.from(
+          registerPositionMenu.querySelectorAll("[data-position-value]"),
+        );
+
+        if (!shouldKeepCurrent) {
+          registerPositionInput.value = "";
+        }
+
+        syncRegisterPositionDropdown();
+      }
+
+      function syncRegisterPositionDropdown() {
+        const selectedValue = registerPositionInput.value.trim();
+        const selectedOption = registerPositionOptions.find(
+          (option) => option.dataset.positionValue === selectedValue,
+        );
+        const selectedLabel = selectedOption?.textContent?.trim() || "Select position";
+
+        registerPositionSummary.textContent = selectedLabel;
+        registerPositionSummary.classList.toggle("is-placeholder", !selectedValue);
+
+        registerPositionOptions.forEach((option) => {
+          const isSelected = option === selectedOption;
+          option.classList.toggle("is-selected", isSelected);
+          option.setAttribute("aria-selected", isSelected ? "true" : "false");
+        });
+      }
+
+      function closeRegisterPositionDropdown() {
+        registerPositionDropdown.classList.remove("is-open");
+        registerPositionTrigger.setAttribute("aria-expanded", "false");
+        registerPositionMenu.hidden = true;
+      }
+
+      function openRegisterPositionDropdown() {
+        registerPositionDropdown.classList.add("is-open");
+        registerPositionTrigger.setAttribute("aria-expanded", "true");
+        registerPositionMenu.hidden = false;
+      }
+
+      function setRegisterPosition(value) {
+        registerPositionInput.value = value;
+        syncRegisterPositionDropdown();
+        handleDraftUpdate();
+      }
+
+      function syncRegisterTimeInDropdown() {
+        const selectedValue = registerTimeInSelect.value.trim();
+        const selectedOption = registerTimeInOptions.find(
+          (option) => option.dataset.timeInValue === selectedValue,
+        );
+        const selectedLabel = selectedOption?.textContent?.trim() || "Select time";
+
+        registerTimeInSummary.textContent = selectedLabel;
+        registerTimeInSummary.classList.toggle("is-placeholder", !selectedValue);
+
+        registerTimeInOptions.forEach((option) => {
+          const isSelected = option === selectedOption;
+          option.classList.toggle("is-selected", isSelected);
+          option.setAttribute("aria-selected", isSelected ? "true" : "false");
+        });
+      }
+
+      function closeRegisterTimeInDropdown() {
+        registerTimeInDropdown.classList.remove("is-open");
+        registerTimeInTrigger.setAttribute("aria-expanded", "false");
+        registerTimeInMenu.hidden = true;
+      }
+
+      function openRegisterTimeInDropdown() {
+        registerTimeInDropdown.classList.add("is-open");
+        registerTimeInTrigger.setAttribute("aria-expanded", "true");
+        registerTimeInMenu.hidden = false;
+      }
+
+      function setRegisterTimeIn(value) {
+        registerTimeInSelect.value = value;
+        syncRegisterTimeInDropdown();
+        syncRegisterScheduleFields();
+        handleDraftUpdate();
+      }
+
+      function parseRegisterScheduleTime(value) {
+        const match = String(value ?? "").trim().match(/^(\d{2}):(\d{2})$/);
+        if (!match) {
+          return null;
+        }
+
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        if (
+          !Number.isInteger(hours)
+          || !Number.isInteger(minutes)
+          || hours < 0
+          || hours > 23
+          || minutes < 0
+          || minutes > 59
+        ) {
+          return null;
+        }
+
+        return hours * 60 + minutes;
+      }
+
+      function formatRegisterScheduleValue(totalMinutes) {
+        const minutesInDay = 24 * 60;
+        const normalizedMinutes = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+        const hours = Math.floor(normalizedMinutes / 60);
+        const minutes = normalizedMinutes % 60;
+        return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+      }
+
+      function formatRegisterScheduleLabel(value) {
+        const totalMinutes = typeof value === "number" ? value : parseRegisterScheduleTime(value);
+        if (!Number.isFinite(totalMinutes)) {
+          return "";
+        }
+
+        const minutesInDay = 24 * 60;
+        const normalizedMinutes = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
+        const hours = Math.floor(normalizedMinutes / 60);
+        const minutes = normalizedMinutes % 60;
+        const period = hours >= 12 ? "PM" : "AM";
+        const displayHours = hours % 12 || 12;
+        return `${displayHours}:${String(minutes).padStart(2, "0")} ${period}`;
+      }
+
+      function computeRegisterTimeOutValue(timeInValue) {
+        const timeInMinutes = parseRegisterScheduleTime(timeInValue);
+        if (timeInMinutes === null) {
+          return "";
+        }
+
+        return formatRegisterScheduleValue(
+          timeInMinutes + registerScheduleElapsedHours * 60,
+        );
+      }
+
+      function syncRegisterScheduleFields() {
+        const timeOutValue = computeRegisterTimeOutValue(registerTimeInSelect?.value ?? "");
+        if (registerTimeOutInput) {
+          registerTimeOutInput.value = timeOutValue;
+        }
+        if (registerTimeOutDisplay) {
+          registerTimeOutDisplay.value = formatRegisterScheduleLabel(timeOutValue) || "--";
+        }
+        if (registerWorkHoursInput) {
+          registerWorkHoursInput.value = timeOutValue ? String(registerPaidWorkHours) : "";
+        }
+      }
+
+      function syncModalOpenState() {
+        const hasOpenModal = !registerValidationModalOverlay.hidden;
+        document.body.classList.toggle("modal-open", hasOpenModal);
+      }
+
+      function closeRegisterValidationModal(options = {}) {
+        const { restoreFocus = true, force = false } = options;
+        if (!force && !registerValidationModalCanClose) {
+          return;
+        }
+
+        registerValidationModalOverlay.classList.remove("is-open");
+        registerValidationModalOverlay.hidden = true;
+        registerValidationModalOverlay.setAttribute("aria-hidden", "true");
+        registerValidationModalCanClose = true;
+        registerValidationModalAction.disabled = false;
+        registerValidationModalClose.hidden = false;
+        syncModalOpenState();
+
+        if (restoreFocus && registerValidationFocusTarget instanceof HTMLElement) {
+          window.setTimeout(() => {
+            registerValidationFocusTarget.focus();
+          }, 0);
+        }
+
+        registerValidationFocusTarget = null;
+      }
+
+      function openRegisterValidationModal(message, options = {}) {
+        const {
+          title = "Important Notice",
+          actionLabel = "Go Back",
+          focusTarget = null,
+          mode = "notice",
+          actionDisabled = false,
+          showClose = true,
+          canClose = true,
+        } = options;
+        const modalMode = ["notice", "success", "error"].includes(mode) ? mode : "notice";
+
+        if (registerValidationModalIcon) {
+          registerValidationModalIcon.className = `validation-modal__icon validation-modal__icon--${modalMode}`;
+          registerValidationModalIcon.innerHTML =
+            registerValidationModalIconMarkup[modalMode] || registerValidationModalIconMarkup.notice;
+        }
+
+        registerValidationModalTitle.textContent = title;
+        registerValidationModalCopy.textContent = message;
+        registerValidationModalAction.textContent = actionLabel;
+        registerValidationModalAction.disabled = Boolean(actionDisabled);
+        registerValidationModalClose.hidden = !showClose;
+        registerValidationModalCanClose = Boolean(canClose);
+        registerValidationFocusTarget = focusTarget instanceof HTMLElement ? focusTarget : null;
+        registerValidationModalOverlay.hidden = false;
+        registerValidationModalOverlay.setAttribute("aria-hidden", "false");
+        window.requestAnimationFrame(() => {
+          registerValidationModalOverlay.classList.add("is-open");
+        });
+        setRegisterFeedback("");
+        syncModalOpenState();
+
+        window.setTimeout(() => {
+          if (registerValidationModalAction.disabled) {
+            registerValidationModalTitle.focus?.();
+            return;
+          }
+
+          registerValidationModalAction.focus();
+        }, 0);
+      }
+
+      function clearRegisterPasswordMismatchTimer() {
+        if (registerPasswordMismatchTimer) {
+          window.clearTimeout(registerPasswordMismatchTimer);
+          registerPasswordMismatchTimer = 0;
+        }
+      }
+
+      function setRegisterPasswordTooltip(input, message = "") {
+        const fieldShell = input?.closest?.(".password-field");
+        if (!fieldShell) {
+          return;
+        }
+
+        if (message) {
+          fieldShell.dataset.passwordTooltip = message;
+          fieldShell.classList.add("is-invalid");
+          input?.setAttribute?.("aria-invalid", "true");
+          return;
+        }
+
+        delete fieldShell.dataset.passwordTooltip;
+        fieldShell.classList.remove("is-invalid");
+        input?.removeAttribute?.("aria-invalid");
+      }
+
+      function openRegisterPasswordMismatchModal() {
+        setRegisterPasswordTooltip(
+          registerConfirmPasswordInput,
+          "Confirm password not match",
+        );
+      }
+
+      function validateRegisterPasswordMatchNow(options = {}) {
+        if (registerValidationModalOverlay && !registerValidationModalOverlay.hidden) {
+          return;
+        }
+
+        const { force = false } = options;
+        const password = String(registerPasswordInput?.value ?? "").trim();
+        const confirmPassword = String(registerConfirmPasswordInput?.value ?? "").trim();
+        if (!password || !confirmPassword) {
+          lastRegisterPasswordMismatchKey = "";
+          setRegisterPasswordTooltip(registerConfirmPasswordInput, "");
+          return;
+        }
+
+        if (password === confirmPassword) {
+          lastRegisterPasswordMismatchKey = "";
+          setRegisterPasswordTooltip(registerConfirmPasswordInput, "");
+          return;
+        }
+
+        if (!force && confirmPassword.length < password.length) {
+          return;
+        }
+
+        const mismatchKey = `${password}\n${confirmPassword}`;
+        if (mismatchKey === lastRegisterPasswordMismatchKey) {
+          return;
+        }
+
+        lastRegisterPasswordMismatchKey = mismatchKey;
+        openRegisterPasswordMismatchModal();
+      }
+
+      function scheduleRegisterPasswordMatchValidation(options = {}) {
+        clearRegisterPasswordMismatchTimer();
+        const delay = options.force ? 0 : 520;
+        registerPasswordMismatchTimer = window.setTimeout(() => {
+          registerPasswordMismatchTimer = 0;
+          validateRegisterPasswordMatchNow(options);
+        }, delay);
+      }
+
+      function setRegisterFeedback(message, mode) {
+        registerFeedback.textContent = message;
+        registerFeedback.className = "feedback-note";
+        if (mode) {
+          registerFeedback.classList.add(mode);
+        }
+      }
+
+      function normalizeRegisterPhoneNumber(value) {
+        let digits = String(value ?? "").replace(/\D/g, "");
+
+        if (digits.startsWith("63") && digits.length > 10) {
+          digits = digits.slice(2);
+        }
+
+        if (digits.startsWith("0") && digits.length > 10) {
+          digits = digits.slice(1);
+        }
+
+        return digits.slice(0, 10);
+      }
+
+      function setRegisterPhoneValidationState(mode = "", message = "") {
+        if (registerPhoneField) {
+          registerPhoneField.classList.remove("is-valid", "is-invalid");
+          if (mode === "valid" || mode === "invalid") {
+            registerPhoneField.classList.add(`is-${mode}`);
+          }
+        }
+
+        if (registerPhoneStatus) {
+          if (mode === "invalid" && message) {
+            registerPhoneStatus.dataset.phoneTooltip = message;
+            registerPhoneStatus.setAttribute("aria-label", message);
+            registerPhoneStatus.setAttribute("tabindex", "0");
+          } else {
+            delete registerPhoneStatus.dataset.phoneTooltip;
+            registerPhoneStatus.removeAttribute("aria-label");
+            registerPhoneStatus.removeAttribute("tabindex");
+          }
+        }
+
+        if (registerPhoneValidation) {
+          registerPhoneValidation.textContent = "";
+          registerPhoneValidation.className = "register-phone-validation";
+        }
+      }
+
+      function getRegisterAccountPhoneNumber(account) {
+        return normalizeRegisterPhoneNumber(
+          account?.mobileNumber
+          ?? account?.phoneNumber
+          ?? account?.contactNumber
+          ?? "",
+        );
+      }
+
+      async function loadRegisteredPhoneNumbers(options = {}) {
+        const { forceRefresh = false } = options;
+        if (forceRefresh || !registeredPhoneNumbersPromise) {
+          registeredPhoneNumbersPromise = fetch("/api/accounts")
+            .then(async (response) => {
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(data?.message || "Unable to scan registered phone numbers.");
+              }
+
+              registeredPhoneNumbersCache = new Set(
+                (Array.isArray(data?.accounts) ? data.accounts : [])
+                  .map(getRegisterAccountPhoneNumber)
+                  .filter(Boolean),
+              );
+              return registeredPhoneNumbersCache;
+            })
+            .catch((error) => {
+              registeredPhoneNumbersPromise = null;
+              throw error;
+            });
+        }
+
+        return registeredPhoneNumbersPromise;
+      }
+
+      async function validateRegisterPhoneNumber(options = {}) {
+        const { showEmpty = false, forceRefresh = false } = options;
+        const requestId = ++registerPhoneValidationRequestId;
+        const phoneNumber = normalizeRegisterPhoneNumber(registerPhoneNumberInput?.value ?? "");
+
+        if (registerPhoneNumberInput) {
+          registerPhoneNumberInput.value = phoneNumber;
+        }
+
+        if (!phoneNumber) {
+          setRegisterPhoneValidationState(
+            showEmpty ? "invalid" : "",
+            showEmpty ? "Phone number is required." : "",
+          );
+          return { valid: false, message: "Phone number is required." };
+        }
+
+        if (!registerPhilippineMobilePattern.test(phoneNumber)) {
+          const message = "Phone number must start with 9 and be 10 digits long.";
+          setRegisterPhoneValidationState(
+            "invalid",
+            message,
+          );
+          return {
+            valid: false,
+            message,
+          };
+        }
+
+        setRegisterPhoneValidationState("", "Scanning phone number...");
+
+        try {
+          const registeredPhoneNumbers = await loadRegisteredPhoneNumbers({ forceRefresh });
+          if (requestId !== registerPhoneValidationRequestId) {
+            return { valid: false, stale: true, message: "" };
+          }
+
+          if (registeredPhoneNumbers.has(phoneNumber)) {
+            const message = "Phone number is already registered.";
+            setRegisterPhoneValidationState("invalid", message);
+            return { valid: false, message };
+          }
+
+          setRegisterPhoneValidationState("valid", "Phone number is available.");
+          return { valid: true, message: "" };
+        } catch (error) {
+          console.warn("Unable to scan registered phone numbers.", error);
+          if (requestId === registerPhoneValidationRequestId) {
+            setRegisterPhoneValidationState("", "");
+          }
+          return { valid: true, message: "" };
+        }
+      }
+
+      function normalizeRegisterApplicantNamePart(value) {
+        return String(value ?? "")
+          .trim()
+          .toLowerCase()
+          .normalize("NFKD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function getRegisterApplicantNameKey(firstName, middleName, lastName, suffix) {
+        const first = normalizeRegisterApplicantNamePart(firstName);
+        const middle = normalizeRegisterApplicantNamePart(middleName);
+        const last = normalizeRegisterApplicantNamePart(lastName);
+        const suffixKey = normalizeRegisterApplicantNamePart(suffix);
+
+        if (!first || !last) {
+          return "";
+        }
+
+        return [first, middle, last, suffixKey].join("|");
+      }
+
+      function getRegisterAccountApplicantNameKey(account) {
+        return getRegisterApplicantNameKey(
+          account?.firstName,
+          account?.middleName,
+          account?.lastName,
+          account?.suffix,
+        );
+      }
+
+      function getRegisterAccountLabel(account) {
+        const accountId = String(
+          account?.employeeId
+            ?? account?.accountCode
+            ?? account?.id
+            ?? "Unknown ID",
+        ).trim();
+        const fullName = `${account?.firstName ?? ""} ${account?.lastName ?? ""}`.trim();
+        return fullName ? `${accountId} - ${fullName}` : accountId;
+      }
+
+      async function findRegisteredEmailAccount(emailValue) {
+        const normalizedEmail = String(emailValue ?? "").trim().toLowerCase();
+        if (!normalizedEmail) {
+          return null;
+        }
+
+        try {
+          const response = await fetch("/api/accounts", { cache: "no-store" });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(data?.message || "Unable to scan registered emails.");
+          }
+
+          const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
+          return accounts.find((account) =>
+            String(account?.email ?? "").trim().toLowerCase() === normalizedEmail,
+          ) || null;
+        } catch (error) {
+          console.warn("Unable to scan registered emails.", error);
+          return null;
+        }
+      }
+
+      function setRegisterApplicantValidationState(mode = "", message = "") {
+        if (registerApplicantNameShell) {
+          registerApplicantNameShell.classList.remove("is-invalid");
+          if (mode === "invalid") {
+            registerApplicantNameShell.classList.add("is-invalid");
+          }
+        }
+
+        if (registerApplicantNameStatus) {
+          if (mode === "invalid" && message) {
+            registerApplicantNameStatus.dataset.applicantTooltip = message;
+            registerApplicantNameStatus.setAttribute("aria-label", message);
+            registerApplicantNameStatus.setAttribute("tabindex", "0");
+          } else {
+            delete registerApplicantNameStatus.dataset.applicantTooltip;
+            registerApplicantNameStatus.removeAttribute("aria-label");
+            registerApplicantNameStatus.removeAttribute("tabindex");
+          }
+        }
+      }
+
+      async function loadRegisteredApplicantNames(options = {}) {
+        const { forceRefresh = false } = options;
+        if (forceRefresh || !registeredApplicantNamesPromise) {
+          registeredApplicantNamesPromise = fetch("/api/accounts")
+            .then(async (response) => {
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(data?.message || "Unable to scan registered applicants.");
+              }
+
+              registeredApplicantNamesCache = new Set(
+                (Array.isArray(data?.accounts) ? data.accounts : [])
+                  .map(getRegisterAccountApplicantNameKey)
+                  .filter(Boolean),
+              );
+              return registeredApplicantNamesCache;
+            })
+            .catch((error) => {
+              registeredApplicantNamesPromise = null;
+              throw error;
+            });
+        }
+
+        return registeredApplicantNamesPromise;
+      }
+
+      async function validateRegisterApplicantName(options = {}) {
+        const { forceRefresh = false } = options;
+        const requestId = ++registerApplicantValidationRequestId;
+        const applicantNameKey = getRegisterApplicantNameKey(
+          registerFirstNameInput?.value,
+          registerMiddleNameInput?.value,
+          registerLastNameInput?.value,
+          registerSuffixInput?.value,
+        );
+
+        if (!applicantNameKey) {
+          setRegisterApplicantValidationState();
+          return { valid: true, message: "" };
+        }
+
+        try {
+          const registeredApplicantNames = await loadRegisteredApplicantNames({ forceRefresh });
+          if (requestId !== registerApplicantValidationRequestId) {
+            return { valid: false, stale: true, message: "" };
+          }
+
+          if (registeredApplicantNames.has(applicantNameKey)) {
+            const message = "Applicant already exist";
+            setRegisterApplicantValidationState("invalid", message);
+            return { valid: false, message };
+          }
+
+          setRegisterApplicantValidationState();
+          return { valid: true, message: "" };
+        } catch (error) {
+          console.warn("Unable to scan registered applicants.", error);
+          if (requestId === registerApplicantValidationRequestId) {
+            setRegisterApplicantValidationState();
+          }
+          return { valid: true, message: "" };
+        }
+      }
+
+      function createRegisterDocumentDetectionState(overrides = {}) {
+        return {
+          kind: "empty",
+          label: "Empty",
+          mode: "",
+          title: "",
+          copy: "",
+          fileName: "",
+          fileExtension: "",
+          documentOpenUrl: "",
+          serverDocumentUrl: "",
+          visualPreviewKind: "",
+          visualPreviewUrl: "",
+          accepted: false,
+          modalTitle: "",
+          modalMessage: "",
+          ...overrides,
+        };
+      }
+
+      function renderRegisterDocumentDetectionState(state) {
+        const normalizedState = state || createRegisterDocumentDetectionState();
+
+        if (registerDocumentHeading) {
+          const detectedHeading = normalizedState.accepted
+            ? registerDocumentDetectedHeadingText[normalizedState.kind]
+            : "";
+          registerDocumentHeading.textContent = detectedHeading || registerDocumentDefaultHeading;
+        }
+
+        if (registerDocumentDetectionPill) {
+          registerDocumentDetectionPill.textContent = normalizedState.label;
+          registerDocumentDetectionPill.className = "status-pill";
+          if (normalizedState.mode) {
+            registerDocumentDetectionPill.classList.add(normalizedState.mode);
+          }
+        }
+
+        if (
+          !registerDocumentEmptyState
+          || !registerDocumentEmptyTitle
+          || !registerDocumentEmptyCopy
+          || !registerDocumentResultStack
+        ) {
+          return;
+        }
+
+        if (normalizedState.kind === "empty") {
+          registerDocumentEmptyState.hidden = false;
+          registerDocumentEmptyTitle.textContent = normalizedState.title;
+          registerDocumentEmptyCopy.textContent = normalizedState.copy;
+          registerDocumentResultStack.hidden = true;
+          registerDocumentResultStack.replaceChildren();
+          return;
+        }
+
+        const hasPdfPreview =
+          normalizedState.visualPreviewKind === "pdf" && Boolean(normalizedState.visualPreviewUrl);
+        const hasViewDocumentAction =
+          normalizedState.accepted
+          && Boolean(normalizedState.documentOpenUrl || normalizedState.serverDocumentUrl);
+        const shouldKeepDefaultEmptyState = [
+          "wrong-file",
+          "not-detected",
+          "analysis-error",
+        ].includes(normalizedState.kind);
+
+        if (!hasPdfPreview && !hasViewDocumentAction) {
+          if (shouldKeepDefaultEmptyState) {
+            const emptyState = createRegisterDocumentDetectionState();
+            registerDocumentEmptyState.hidden = false;
+            registerDocumentEmptyTitle.textContent = emptyState.title;
+            registerDocumentEmptyCopy.textContent = emptyState.copy;
+            registerDocumentResultStack.hidden = true;
+            registerDocumentResultStack.replaceChildren();
+            return;
+          }
+
+          registerDocumentEmptyState.hidden = true;
+          registerDocumentResultStack.hidden = true;
+          registerDocumentResultStack.replaceChildren();
+          return;
+        }
+
+        registerDocumentEmptyState.hidden = true;
+        registerDocumentResultStack.hidden = true;
+        registerDocumentResultStack.replaceChildren();
+      }
+
+      function syncRegisterDocumentViewButton(state) {
+        if (!registerDocumentViewButton) {
+          return;
+        }
+
+        const normalizedState = state || createRegisterDocumentDetectionState();
+        const hasSelectedFile = Boolean(registerDocumentInput?.files?.[0]);
+        const canOpenDocument =
+          normalizedState.accepted
+          && (hasSelectedFile || Boolean(normalizedState.serverDocumentUrl || normalizedState.documentOpenUrl));
+
+        registerDocumentViewButton.disabled = !canOpenDocument;
+      }
+
+      function setRegisterDocumentDetectionState(state) {
+        registerDocumentDetectionState = state;
+        syncRegisterDocumentViewButton(state);
+        renderRegisterDocumentDetectionState(state);
+      }
+
+      let registerDocumentVisualPreviewUrl = "";
+
+      function getRegisterDocumentExtension(fileName) {
+        const normalizedName = String(fileName ?? "").trim().toLowerCase();
+        const extensionIndex = normalizedName.lastIndexOf(".");
+        return extensionIndex >= 0 ? normalizedName.slice(extensionIndex + 1) : "";
+      }
+
+      function revokeRegisterDocumentVisualPreview() {
+        if (!registerDocumentVisualPreviewUrl) {
+          return;
+        }
+
+        URL.revokeObjectURL(registerDocumentVisualPreviewUrl);
+        registerDocumentVisualPreviewUrl = "";
+      }
+
+      function createRegisterDocumentVisualPreview(file) {
+        revokeRegisterDocumentVisualPreview();
+
+        const fileExtension = getRegisterDocumentExtension(file?.name);
+        registerDocumentVisualPreviewUrl = URL.createObjectURL(file);
+
+        if (fileExtension !== "pdf") {
+          return {
+            fileName: String(file?.name ?? "").trim(),
+            fileExtension,
+            documentOpenUrl: registerDocumentVisualPreviewUrl,
+            serverDocumentUrl: "",
+            visualPreviewKind: "",
+            visualPreviewUrl: "",
+          };
+        }
+
+        return {
+          fileName: String(file?.name ?? "").trim(),
+          fileExtension,
+          documentOpenUrl: registerDocumentVisualPreviewUrl,
+          serverDocumentUrl: "",
+          visualPreviewKind: "pdf",
+          visualPreviewUrl: `${registerDocumentVisualPreviewUrl}#toolbar=0&navpanes=0&scrollbar=0`,
+        };
+      }
+
+      function getRegisterDocumentMimeType(file) {
+        const explicitType = String(file?.type ?? "").trim().toLowerCase();
+        if (explicitType) {
+          return explicitType;
+        }
+
+        switch (getRegisterDocumentExtension(file?.name ?? "")) {
+          case "pdf":
+            return "application/pdf";
+          case "doc":
+            return "application/msword";
+          case "docx":
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          default:
+            return "application/octet-stream";
+        }
+      }
+
+      async function uploadRegisterDocumentForExternalOpen(file) {
+        const response = await fetch("/api/document-uploads", {
+          method: "POST",
+          headers: {
+            "Content-Type": getRegisterDocumentMimeType(file),
+            "X-File-Name": String(file?.name ?? "employee-document"),
+          },
+          body: file,
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || "Unable to prepare document for Word.");
+        }
+
+        return String(data.documentUrl ?? "").trim();
+      }
+
+      async function openRegisterSelectedDocument(state) {
+        const normalizedState = state || registerDocumentDetectionState;
+        let serverDocumentUrl = String(normalizedState?.serverDocumentUrl ?? "").trim();
+
+        if (!serverDocumentUrl) {
+          const selectedFile = registerDocumentInput?.files?.[0] ?? null;
+          if (selectedFile) {
+            try {
+              serverDocumentUrl = await uploadRegisterDocumentForExternalOpen(selectedFile);
+              setRegisterDocumentDetectionState(
+                createRegisterDocumentDetectionState({
+                  ...normalizedState,
+                  serverDocumentUrl,
+                }),
+              );
+            } catch (error) {
+              openRegisterValidationModal(
+                error instanceof Error
+                  ? error.message
+                  : "Unable to prepare document for Word open.",
+                {
+                  title: "Document unavailable",
+                  actionLabel: "Go Back",
+                  focusTarget: registerDocumentPreview,
+                },
+              );
+              return;
+            }
+          }
+        }
+
+        if (!serverDocumentUrl) {
+          openRegisterValidationModal("Please choose a document file first before opening it.", {
+            title: "Document unavailable",
+            actionLabel: "Go Back",
+            focusTarget: registerDocumentPreview,
+          });
+          return;
+        }
+
+        const documentOpenUrl = new URL(serverDocumentUrl, window.location.origin).toString();
+        const fileExtension = String(
+          normalizedState?.fileExtension
+            ?? getRegisterDocumentExtension(normalizedState?.fileName ?? ""),
+        )
+          .trim()
+          .toLowerCase();
+
+        const openWithAnchor = (options = {}) => {
+          const link = document.createElement("a");
+          link.href = documentOpenUrl;
+          link.rel = "noopener";
+          if (options.targetBlank) {
+            link.target = "_blank";
+          }
+          if (options.downloadName) {
+            link.download = options.downloadName;
+          }
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        };
+
+        try {
+          if (["pdf", "doc", "docx"].includes(fileExtension)) {
+            const microsoftWordProtocolUrl = `ms-word:ofe|u|${encodeURI(documentOpenUrl)}`;
+            let didLoseFocusToWord = false;
+
+            const handleWordLaunchSignal = () => {
+              didLoseFocusToWord = true;
+            };
+
+            const cleanupWordLaunchListeners = () => {
+              window.removeEventListener("blur", handleWordLaunchSignal);
+              document.removeEventListener("visibilitychange", handleWordLaunchSignal);
+            };
+
+            window.addEventListener("blur", handleWordLaunchSignal, { once: true });
+            document.addEventListener("visibilitychange", handleWordLaunchSignal, { once: true });
+            window.location.href = microsoftWordProtocolUrl;
+
+            window.setTimeout(() => {
+              cleanupWordLaunchListeners();
+              if (didLoseFocusToWord || document.visibilityState === "hidden") {
+                return;
+              }
+
+              if (fileExtension === "pdf") {
+                openWithAnchor({ targetBlank: true });
+                return;
+              }
+
+              openWithAnchor({
+                targetBlank: true,
+                downloadName: normalizedState?.fileName || `document.${fileExtension || "docx"}`,
+              });
+            }, 1200);
+            return;
+          }
+
+          if (fileExtension === "pdf") {
+            openWithAnchor({ targetBlank: true });
+            return;
+          }
+
+          const openedWindow = window.open(documentOpenUrl, "_blank", "noopener");
+          if (openedWindow) {
+            openedWindow.opener = null;
+            return;
+          }
+        } catch (error) {
+          // Fall through to the anchor fallback when popups or file viewers are blocked.
+        }
+
+        openWithAnchor({
+          targetBlank: true,
+          downloadName: normalizedState?.fileName || `document.${fileExtension || "docx"}`,
+        });
+      }
+
+      function isValidRegisterDocumentFile(file) {
+        if (!(file instanceof File)) {
+          return false;
+        }
+
+        const fileType = String(file.type ?? "").trim().toLowerCase();
+        const fileExtension = getRegisterDocumentExtension(file.name);
+
+        if (fileType.startsWith("image/")) {
+          return false;
+        }
+
+        return (
+          registerDocumentAllowedMimeTypes.includes(fileType)
+          || registerDocumentAllowedExtensions.includes(fileExtension)
+        );
+      }
+
+      function normalizeRegisterDocumentText(value) {
+        return ` ${String(value ?? "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()} `;
+      }
+
+      function extractReadableStringsFromBytes(bytes) {
+        const safeBytes = bytes.byteLength > 1_500_000 ? bytes.slice(0, 1_500_000) : bytes;
+        const decoded = new TextDecoder("latin1").decode(safeBytes);
+        const matches = decoded.match(/[A-Za-z0-9][A-Za-z0-9@._%+\s,/:&()'-]{2,}/g) ?? [];
+        return matches.slice(0, 3000).join(" ");
+      }
+
+      function findRegisterZipEntry(zipBytes, targetPath) {
+        const view = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
+        const nameDecoder = new TextDecoder("utf-8");
+        let offset = 0;
+
+        while (offset <= zipBytes.length - 30) {
+          const signature = view.getUint32(offset, true);
+
+          if (signature === 0x04034b50) {
+            const flags = view.getUint16(offset + 6, true);
+            const compressionMethod = view.getUint16(offset + 8, true);
+            const compressedSize = view.getUint32(offset + 18, true);
+            const fileNameLength = view.getUint16(offset + 26, true);
+            const extraLength = view.getUint16(offset + 28, true);
+            const fileNameStart = offset + 30;
+            const fileNameEnd = fileNameStart + fileNameLength;
+            const dataStart = fileNameEnd + extraLength;
+
+            if (fileNameEnd > zipBytes.length || dataStart > zipBytes.length) {
+              break;
+            }
+
+            const fileName = nameDecoder.decode(zipBytes.slice(fileNameStart, fileNameEnd));
+
+            if (flags & 0x08) {
+              offset = dataStart;
+              continue;
+            }
+
+            const dataEnd = dataStart + compressedSize;
+            if (dataEnd > zipBytes.length) {
+              break;
+            }
+
+            if (fileName === targetPath) {
+              return {
+                compressionMethod,
+                data: zipBytes.slice(dataStart, dataEnd),
+              };
+            }
+
+            offset = dataEnd;
+            continue;
+          }
+
+          if (signature === 0x02014b50 || signature === 0x06054b50) {
+            break;
+          }
+
+          offset += 1;
+        }
+
+        return null;
+      }
+
+      async function inflateRegisterZipEntryBytes(compressedBytes) {
+        if (typeof DecompressionStream === "undefined") {
+          return null;
+        }
+
+        try {
+          const inflater = new DecompressionStream("deflate-raw");
+          const stream = new Blob([compressedBytes]).stream().pipeThrough(inflater);
+          return new Uint8Array(await new Response(stream).arrayBuffer());
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function xmlToRegisterDocumentText(xmlText) {
+        return String(xmlText ?? "")
+          .replace(/<w:tab[^>]*\/>/gi, " ")
+          .replace(/<w:br[^>]*\/>/gi, "\n")
+          .replace(/<\/w:p>/gi, "\n")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/&amp;/gi, "&")
+          .replace(/&lt;/gi, "<")
+          .replace(/&gt;/gi, ">")
+          .replace(/&quot;/gi, '"')
+          .replace(/&#39;/gi, "'");
+      }
+
+      async function extractDocxTextFromBytes(docxBytes) {
+        const documentEntry = findRegisterZipEntry(docxBytes, "word/document.xml");
+        if (!documentEntry) {
+          return extractReadableStringsFromBytes(docxBytes);
+        }
+
+        let documentBytes = documentEntry.data;
+        if (documentEntry.compressionMethod === 8) {
+          const inflatedBytes = await inflateRegisterZipEntryBytes(documentEntry.data);
+          if (!inflatedBytes) {
+            return extractReadableStringsFromBytes(docxBytes);
+          }
+          documentBytes = inflatedBytes;
+        } else if (documentEntry.compressionMethod !== 0) {
+          return extractReadableStringsFromBytes(docxBytes);
+        }
+
+        const xmlText = new TextDecoder("utf-8").decode(documentBytes);
+        return xmlToRegisterDocumentText(xmlText);
+      }
+
+      async function extractRegisterDocumentText(file) {
+        const fileExtension = getRegisterDocumentExtension(file.name);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+
+        if (fileExtension === "docx") {
+          return `${await extractDocxTextFromBytes(bytes)} ${extractReadableStringsFromBytes(bytes)}`;
+        }
+
+        return extractReadableStringsFromBytes(bytes);
+      }
+
+      function scoreRegisterDocumentPatterns(normalizedText, patternDefinitions) {
+        const matches = [];
+        let score = 0;
+
+        for (const definition of patternDefinitions) {
+          if (definition.patterns.some((pattern) => normalizedText.includes(pattern))) {
+            matches.push(definition.label);
+            score += definition.score;
+          }
+        }
+
+        return {
+          score,
+          matches,
+        };
+      }
+
+      function detectRegisterDocumentType(file, extractedText) {
+        const normalizedText = normalizeRegisterDocumentText(`${file?.name ?? ""} ${extractedText ?? ""}`);
+        const resumeResult = scoreRegisterDocumentPatterns(
+          normalizedText,
+          registerResumePatternDefinitions,
+        );
+        const biodataResult = scoreRegisterDocumentPatterns(
+          normalizedText,
+          registerBiodataPatternDefinitions,
+        );
+        const applicationLetterResult = scoreRegisterDocumentPatterns(
+          normalizedText,
+          registerApplicationLetterPatternDefinitions,
+        );
+        const hasResumeKeyword =
+          normalizedText.includes(" resume ")
+          || normalizedText.includes(" curriculum vitae ")
+          || normalizedText.includes(" cv ");
+        const hasBiodataKeyword =
+          normalizedText.includes(" biodata ")
+          || normalizedText.includes(" bio data ")
+          || normalizedText.includes(" bio-data ");
+        const hasApplicationLetterKeyword =
+          normalizedText.includes(" application letter ")
+          || normalizedText.includes(" cover letter ")
+          || normalizedText.includes(" letter of application ");
+
+        if (
+          (hasBiodataKeyword && biodataResult.score >= 5)
+          || (
+            biodataResult.score >= 6
+            && biodataResult.matches.length >= 2
+            && biodataResult.score >= resumeResult.score + 1
+          )
+        ) {
+          return {
+            kind: "biodata",
+            accepted: true,
+            matchedLabels: biodataResult.matches,
+          };
+        }
+
+        if (
+          (hasApplicationLetterKeyword && applicationLetterResult.score >= 5)
+          || (
+            applicationLetterResult.score >= 7
+            && applicationLetterResult.matches.length >= 2
+          )
+        ) {
+          return {
+            kind: "application-letter",
+            accepted: true,
+            matchedLabels: applicationLetterResult.matches,
+          };
+        }
+
+        if (
+          (hasResumeKeyword && resumeResult.score >= 4)
+          || (resumeResult.score >= 6 && resumeResult.matches.length >= 2)
+        ) {
+          return {
+            kind: "resume",
+            accepted: true,
+            matchedLabels: resumeResult.matches,
+          };
+        }
+
+        return {
+          kind: "not-detected",
+          accepted: false,
+          matchedLabels: [
+            ...resumeResult.matches,
+            ...biodataResult.matches,
+            ...applicationLetterResult.matches,
+          ],
+        };
+      }
+
+      function createRegisterDocumentAutofillSnapshot(overrides = {}) {
+        return {
+          position: "",
+          firstName: "",
+          middleName: "",
+          lastName: "",
+          suffix: "",
+          registerEmail: "",
+          address: "",
+          mobileNumber: "",
+          ...overrides,
+        };
+      }
+
+      function escapeRegisterRegex(value) {
+        return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+
+      function normalizeRegisterDocumentLine(value) {
+        return String(value ?? "")
+          .replace(/\u0000/g, " ")
+          .replace(/\u00a0/g, " ")
+          .replace(/\s+/g, " ")
+          .replace(/^[\s,;:._-]+|[\s,;:._-]+$/g, "")
+          .trim();
+      }
+
+      function sanitizeRegisterAddressValue(value) {
+        let candidate = normalizeRegisterDocumentLine(value);
+        if (!candidate) {
+          return "";
+        }
+
+        if (candidate.includes(":")) {
+          candidate = candidate.slice(candidate.lastIndexOf(":") + 1);
+        }
+
+        candidate = candidate.replace(/^[^A-Za-z0-9]+/, "");
+        if (!candidate) {
+          return "";
+        }
+
+        if (
+          /^(?:for|subject|re|attn|attention)\b\s*(?:[:\-]|is)?/i.test(candidate)
+          || /^(?:dear(?:\s+sir|\s+madam|\s+hiring\s+manager)?|to whom it may concern)\b/i.test(candidate)
+        ) {
+          return "";
+        }
+
+        candidate = candidate
+          .replace(/\s+(?:for|subject|re|attn|attention)\b\s*(?:[:\-]|is)\s*.*$/i, "")
+          .replace(/\s+dear(?:\s+sir|\s+madam|\s+hiring\s+manager)?\b.*$/i, "")
+          .replace(/\s+to whom it may concern\b.*$/i, "");
+
+        return normalizeRegisterDocumentLine(candidate);
+      }
+
+      function getRegisterDocumentTextLines(text) {
+        return String(text ?? "")
+          .replace(/\r/g, "\n")
+          .split(/\n+/)
+          .map((line) => normalizeRegisterDocumentLine(line))
+          .filter(Boolean)
+          .slice(0, 400);
+      }
+
+      function sanitizeRegisterNameCandidate(value) {
+        let candidate = normalizeRegisterDocumentLine(value)
+          .replace(/^(?:\d+\s*[.)-]?\s*)/, "")
+          .replace(
+            /^(?:full\s+name|name|applicant\s+name|employee\s+name|candidate\s+name)\s*(?:[:\-]|is)?\s*/i,
+            "",
+          )
+          .replace(/\b(?:email|e-mail|phone|mobile|contact|address)\b.*$/i, "")
+          .replace(
+            /(?:,\s*|\s+)(?:ph\.?\s*d\.?|m\.?\s*d\.?|mba|rn|esq|cpa|ma|ms|msc|bs|bsc)\.?$/i,
+            "",
+          );
+
+        while (/^(?:mr|mrs|ms|miss|dr|prof|engr|eng|atty|sir|madam)\.?\s+/i.test(candidate)) {
+          candidate = candidate.replace(/^(?:mr|mrs|ms|miss|dr|prof|engr|eng|atty|sir|madam)\.?\s+/i, "");
+        }
+
+        return normalizeRegisterDocumentLine(candidate);
+      }
+
+      function isLikelyRegisterNameLine(value) {
+        const candidate = sanitizeRegisterNameCandidate(value);
+        if (!candidate || candidate.length < 4 || candidate.length > 80) {
+          return false;
+        }
+
+        if (candidate.includes("@") || /\d/.test(candidate)) {
+          return false;
+        }
+
+        const loweredCandidate = candidate.toLowerCase();
+        const blockedTerms = [
+          "biodata",
+          "bio data",
+          "resume",
+          "curriculum vitae",
+          "application letter",
+          "cover letter",
+          "letter of application",
+          "objective",
+          "experience",
+          "education",
+          "skills",
+          "contact",
+          "address",
+          "phone",
+          "mobile",
+          "email",
+          "dear ",
+          "sincerely",
+          "respectfully",
+          "position",
+          "summary",
+          "profile",
+          "date of birth",
+          "marital status",
+        ];
+        if (blockedTerms.some((term) => loweredCandidate.includes(term))) {
+          return false;
+        }
+
+        const tokens = candidate.split(/\s+/).filter(Boolean);
+        if (tokens.length < 2 || tokens.length > 6) {
+          return false;
+        }
+
+        return tokens.every((token) => /^[A-Za-z][A-Za-z'.-]*$/.test(token));
+      }
+
+      function formatRegisterNameToken(token) {
+        const cleanedToken = String(token ?? "").replace(/^[,.\s]+|[,.\s]+$/g, "");
+        if (!cleanedToken) {
+          return "";
+        }
+
+        const loweredToken = cleanedToken.toLowerCase();
+        if (/^(?:jr|sr)$/.test(loweredToken)) {
+          return `${loweredToken.charAt(0).toUpperCase()}${loweredToken.slice(1)}.`;
+        }
+
+        if (/^(?:ii|iii|iv|v|vi|vii|viii|ix|x)$/.test(loweredToken)) {
+          return loweredToken.toUpperCase();
+        }
+
+        return cleanedToken
+          .split(/([-'])/)
+          .map((part) => {
+            if (part === "-" || part === "'") {
+              return part;
+            }
+
+            return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+          })
+          .join("");
+      }
+
+      function formatRegisterNameValue(value) {
+        return String(value ?? "")
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((token) => formatRegisterNameToken(token))
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+      }
+
+      function extractRegisterLabeledFieldValue(text, labels, trailingLabels = []) {
+        const sourceText = String(text ?? "");
+        if (!sourceText.trim() || !Array.isArray(labels) || !labels.length) {
+          return "";
+        }
+
+        const labelPattern = labels.map((label) => escapeRegisterRegex(label)).join("|");
+        const lineRegex = new RegExp(
+          `(?:^|[\\r\\n])\\s*(?:\\d+\\s*[.)-]?\\s*)?(?:${labelPattern})\\s*(?:[:\\-]|is)?\\s*([^\\r\\n]{2,120})`,
+          "i",
+        );
+        const lineMatch = sourceText.match(lineRegex);
+        if (lineMatch?.[1]) {
+          return normalizeRegisterDocumentLine(lineMatch[1]);
+        }
+
+        if (!trailingLabels.length) {
+          return "";
+        }
+
+        const flattenedText = sourceText.replace(/\s+/g, " ");
+        const trailingPattern = trailingLabels.map((label) => escapeRegisterRegex(label)).join("|");
+        const flattenedRegex = new RegExp(
+          `(?:${labelPattern})\\s*(?:[:\\-]|is)?\\s*(.{2,120}?)(?=\\s+(?:${trailingPattern})\\b|$)`,
+          "i",
+        );
+        const flattenedMatch = flattenedText.match(flattenedRegex);
+        return flattenedMatch?.[1] ? normalizeRegisterDocumentLine(flattenedMatch[1]) : "";
+      }
+
+      function extractRegisterNameFromFileName(fileName) {
+        const baseName = String(fileName ?? "")
+          .replace(/\.[^.]+$/, "")
+          .replace(/[_-]+/g, " ")
+          .replace(
+            /\b(?:resume|biodata|bio data|application letter|cover letter|letter of application|curriculum vitae|cv|final|updated|new|copy)\b/gi,
+            " ",
+          )
+          .replace(/\d+/g, " ");
+        const candidate = sanitizeRegisterNameCandidate(baseName);
+        return isLikelyRegisterNameLine(candidate) ? candidate : "";
+      }
+
+      function extractRegisterApplicationSignatureName(lines) {
+        for (let index = 0; index < lines.length; index += 1) {
+          if (!/^(?:sincerely|respectfully|yours truly|yours faithfully|best regards|regards)\b/i.test(lines[index])) {
+            continue;
+          }
+
+          for (let offset = 1; offset <= 3; offset += 1) {
+            const candidate = lines[index + offset];
+            if (candidate && isLikelyRegisterNameLine(candidate)) {
+              return sanitizeRegisterNameCandidate(candidate);
+            }
+          }
+        }
+
+        return "";
+      }
+
+      function extractRegisterNameCandidate(file, extractedText, detectedKind) {
+        const candidateFromLabel = extractRegisterLabeledFieldValue(
+          extractedText,
+          ["full name", "name", "applicant name", "employee name", "candidate name"],
+          [
+            "age",
+            "date of birth",
+            "birth date",
+            "dob",
+            "marital status",
+            "civil status",
+            "address",
+            "local residential address",
+            "phone",
+            "mobile",
+            "email",
+            "profession",
+            "qualification",
+            "skills",
+            "education",
+            "position",
+          ],
+        );
+        if (candidateFromLabel && isLikelyRegisterNameLine(candidateFromLabel)) {
+          return sanitizeRegisterNameCandidate(candidateFromLabel);
+        }
+
+        const lines = getRegisterDocumentTextLines(extractedText);
+        if (detectedKind === "application-letter") {
+          const signatureName = extractRegisterApplicationSignatureName(lines);
+          if (signatureName) {
+            return signatureName;
+          }
+        }
+
+        const orderedCandidates =
+          detectedKind === "application-letter"
+            ? [...lines.slice(0, 10), ...lines.slice(-10)]
+            : [...lines.slice(0, 14), ...lines.slice(-6)];
+
+        for (const line of orderedCandidates) {
+          if (isLikelyRegisterNameLine(line)) {
+            return sanitizeRegisterNameCandidate(line);
+          }
+        }
+
+        return extractRegisterNameFromFileName(file?.name ?? "");
+      }
+
+      function splitRegisterNameParts(fullName) {
+        const sanitizedName = sanitizeRegisterNameCandidate(fullName);
+        if (!sanitizedName) {
+          return null;
+        }
+
+        const tokens = sanitizedName.split(/\s+/).filter(Boolean);
+        if (tokens.length < 2) {
+          return null;
+        }
+
+        const suffixTokens = [];
+        while (tokens.length > 2) {
+          const trailingToken = tokens[tokens.length - 1]?.toLowerCase().replace(/\./g, "");
+          if (!/^(?:jr|sr|ii|iii|iv|v|vi|vii|viii|ix|x)$/.test(trailingToken)) {
+            break;
+          }
+          suffixTokens.unshift(tokens.pop());
+        }
+
+        const lastNameJoiners = new Set(["de", "del", "dela", "la", "van", "von", "da", "di", "dos", "das"]);
+        let lastNameStartIndex = tokens.length - 1;
+        while (lastNameStartIndex > 1) {
+          const previousToken = tokens[lastNameStartIndex - 1]?.toLowerCase().replace(/\./g, "");
+          if (!lastNameJoiners.has(previousToken)) {
+            break;
+          }
+          lastNameStartIndex -= 1;
+        }
+
+        const firstName = formatRegisterNameValue(tokens[0]);
+        const middleName = formatRegisterNameValue(tokens.slice(1, lastNameStartIndex).join(" "));
+        const lastName = formatRegisterNameValue(tokens.slice(lastNameStartIndex).join(" "));
+        const suffix = formatRegisterNameValue(suffixTokens.join(" "));
+
+        if (firstName.length < 2 || lastName.length < 2) {
+          return null;
+        }
+
+        return {
+          firstName,
+          middleName,
+          lastName,
+          suffix,
+        };
+      }
+
+      function extractRegisterEmailFromDocumentText(extractedText) {
+        const sourceText = String(extractedText ?? "");
+        const directMatch = sourceText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        if (directMatch?.[0]) {
+          return directMatch[0].toLowerCase();
+        }
+
+        const normalizedSourceText = sourceText
+          .replace(/\s*@\s*/g, "@")
+          .replace(/\s*\.\s*/g, ".")
+          .replace(/\s+/g, " ");
+        const repairedMatch = normalizedSourceText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        return repairedMatch?.[0] ? repairedMatch[0].toLowerCase() : "";
+      }
+
+      function extractRegisterPhoneNumberFromDocumentText(extractedText) {
+        const phoneMatches = String(extractedText ?? "").match(
+          /(?:\+?63|0)?\s*9\d{2}[\s-]?\d{3}[\s-]?\d{4}|9\d{9}/g,
+        ) ?? [];
+
+        for (const candidate of phoneMatches) {
+          const normalizedPhoneNumber = normalizeRegisterPhoneNumber(candidate);
+          if (registerPhilippineMobilePattern.test(normalizedPhoneNumber)) {
+            return normalizedPhoneNumber;
+          }
+        }
+
+        return "";
+      }
+
+      function extractRegisterAddressFromDocumentText(extractedText) {
+        const trailingLabels = [
+          "phone",
+          "mobile",
+          "email",
+          "for",
+          "subject",
+          "re",
+          "attn",
+          "attention",
+          "dear",
+          "qualification",
+          "education",
+          "profession",
+          "skills",
+          "position",
+          "experience",
+          "date of birth",
+          "marital status",
+          "civil status",
+        ];
+        const labeledAddress = extractRegisterLabeledFieldValue(
+          extractedText,
+          [
+            "address",
+            "present address",
+            "current address",
+            "home address",
+            "local residential address",
+            "permanent address",
+            "address for communication",
+            "mailing address",
+            "residential address",
+          ],
+          trailingLabels,
+        );
+        if (labeledAddress) {
+          const sanitizedLabeledAddress = sanitizeRegisterAddressValue(labeledAddress);
+          if (sanitizedLabeledAddress) {
+            return sanitizedLabeledAddress;
+          }
+        }
+
+        const lines = getRegisterDocumentTextLines(extractedText);
+        const stopLinePattern = new RegExp(
+          `^(?:\\d+\\s*[.)-]?\\s*)?(?:${trailingLabels.map((label) => escapeRegisterRegex(label)).join("|")})\\b`,
+          "i",
+        );
+
+        for (let index = 0; index < lines.length; index += 1) {
+          const lineMatch = lines[index].match(
+            /^(?:\d+\s*[.)-]?\s*)?(?:address|present address|current address|home address|local residential address|permanent address|address for communication|mailing address|residential address)\s*(?:[:\-]|is)?\s*(.*)$/i,
+          );
+          if (!lineMatch) {
+            continue;
+          }
+
+          const addressParts = [];
+          if (lineMatch[1]) {
+            const sanitizedFirstAddressLine = sanitizeRegisterAddressValue(lineMatch[1]);
+            if (sanitizedFirstAddressLine) {
+              addressParts.push(sanitizedFirstAddressLine);
+            }
+          }
+
+          for (let offset = 1; offset <= 2; offset += 1) {
+            const nextLine = lines[index + offset];
+            if (!nextLine || stopLinePattern.test(nextLine)) {
+              break;
+            }
+
+            const sanitizedNextAddressLine = sanitizeRegisterAddressValue(nextLine);
+            if (!sanitizedNextAddressLine) {
+              break;
+            }
+
+            addressParts.push(sanitizedNextAddressLine);
+          }
+
+          const normalizedAddress = sanitizeRegisterAddressValue(addressParts.join(" "));
+          if (normalizedAddress) {
+            return normalizedAddress;
+          }
+        }
+
+        return "";
+      }
+
+      function mapRegisterDetectedPosition(value) {
+        const normalizedValue = normalizeRegisterDocumentText(value);
+        if (normalizedValue.includes(" admin employee ")) {
+          return "Admin Employee";
+        }
+
+        if (normalizedValue.includes(" packing ") || normalizedValue.includes(" packer ")) {
+          return "Packing";
+        }
+
+        return "";
+      }
+
+      function extractRegisterPositionFromDocumentText(extractedText) {
+        const labeledPosition = extractRegisterLabeledFieldValue(
+          extractedText,
+          ["position applied for", "applied position", "desired position", "position", "role"],
+          ["email", "phone", "mobile", "address", "education", "experience", "skills"],
+        );
+        return mapRegisterDetectedPosition(labeledPosition || extractedText);
+      }
+
+      function extractRegisterEmployeeDetailsFromDocument(file, extractedText, detectedKind) {
+        const nameParts = splitRegisterNameParts(
+          extractRegisterNameCandidate(file, extractedText, detectedKind),
+        );
+        return createRegisterDocumentAutofillSnapshot({
+          position: extractRegisterPositionFromDocumentText(extractedText),
+          firstName: nameParts?.firstName ?? "",
+          middleName: nameParts?.middleName ?? "",
+          lastName: nameParts?.lastName ?? "",
+          suffix: nameParts?.suffix ?? "",
+          registerEmail: extractRegisterEmailFromDocumentText(extractedText),
+          address: extractRegisterAddressFromDocumentText(extractedText),
+          mobileNumber: extractRegisterPhoneNumberFromDocumentText(extractedText),
+        });
+      }
+
+      function resetRegisterDocumentAutofillValues() {
+        const previousSnapshot = registerDocumentAutofillSnapshot;
+        if (!previousSnapshot) {
+          return;
+        }
+
+        if (previousSnapshot.position && registerPositionInput.value === previousSnapshot.position) {
+          registerPositionInput.value = "";
+          syncRegisterPositionDropdown();
+        }
+
+        if (previousSnapshot.firstName && registerFirstNameInput.value === previousSnapshot.firstName) {
+          registerFirstNameInput.value = "";
+        }
+
+        if (previousSnapshot.middleName && registerMiddleNameInput.value === previousSnapshot.middleName) {
+          registerMiddleNameInput.value = "";
+        }
+
+        if (previousSnapshot.lastName && registerLastNameInput.value === previousSnapshot.lastName) {
+          registerLastNameInput.value = "";
+        }
+
+        if (previousSnapshot.firstName || previousSnapshot.middleName || previousSnapshot.lastName) {
+          setRegisterApplicantValidationState();
+        }
+
+        if (previousSnapshot.suffix && registerSuffixInput.value === previousSnapshot.suffix) {
+          registerSuffixInput.value = "";
+        }
+
+        if (previousSnapshot.registerEmail && registerEmailInput.value === previousSnapshot.registerEmail) {
+          registerEmailInput.value = "";
+        }
+
+        if (previousSnapshot.address && registerAddressInput.value === previousSnapshot.address) {
+          registerAddressInput.value = "";
+        }
+
+        if (previousSnapshot.mobileNumber && registerPhoneNumberInput.value === previousSnapshot.mobileNumber) {
+          registerPhoneNumberInput.value = "";
+          setRegisterPhoneValidationState();
+        }
+      }
+
+      function applyRegisterEmployeeDetailsAutofill(autofillDetails) {
+        const normalizedAutofillDetails = createRegisterDocumentAutofillSnapshot(autofillDetails);
+        resetRegisterDocumentAutofillValues();
+
+        if (normalizedAutofillDetails.position) {
+          registerPositionInput.value = normalizedAutofillDetails.position;
+          syncRegisterPositionDropdown();
+        }
+
+        if (normalizedAutofillDetails.firstName) {
+          registerFirstNameInput.value = normalizedAutofillDetails.firstName;
+        }
+
+        if (normalizedAutofillDetails.middleName) {
+          registerMiddleNameInput.value = normalizedAutofillDetails.middleName;
+        }
+
+        if (normalizedAutofillDetails.lastName) {
+          registerLastNameInput.value = normalizedAutofillDetails.lastName;
+        }
+
+        if (normalizedAutofillDetails.suffix) {
+          registerSuffixInput.value = normalizedAutofillDetails.suffix;
+        }
+
+        if (normalizedAutofillDetails.registerEmail) {
+          registerEmailInput.value = normalizedAutofillDetails.registerEmail;
+        }
+
+        if (normalizedAutofillDetails.address) {
+          registerAddressInput.value = normalizedAutofillDetails.address;
+        }
+
+        if (normalizedAutofillDetails.mobileNumber) {
+          registerPhoneNumberInput.value = normalizedAutofillDetails.mobileNumber;
+          void validateRegisterPhoneNumber({
+            showEmpty: true,
+            forceRefresh: true,
+          });
+        }
+
+        registerDocumentAutofillSnapshot = normalizedAutofillDetails;
+        handleDraftUpdate();
+
+        if (normalizedAutofillDetails.firstName || normalizedAutofillDetails.lastName) {
+          void validateRegisterApplicantName({ forceRefresh: true });
+        }
+
+        return Object.values(normalizedAutofillDetails).filter(Boolean).length;
+      }
+
+      async function analyzeSelectedRegisterDocument(file) {
+        const requestId = ++registerDocumentAnalysisRequestId;
+        const visualPreview = createRegisterDocumentVisualPreview(file);
+        renderRegisterDocumentPreview("Analyzing document...");
+        setRegisterDocumentDetectionState(
+          createRegisterDocumentDetectionState({
+            kind: "checking",
+            label: "Checking",
+            title: "Checking document",
+            copy: "Reviewing the selected file for resume, bio data, or application letter content.",
+            note: "This check uses the file name and readable document text.",
+            fileName: file.name,
+            ...visualPreview,
+            accepted: false,
+          }),
+        );
+
+        try {
+          const extractedText = await extractRegisterDocumentText(file);
+          if (requestId !== registerDocumentAnalysisRequestId) {
+            return;
+          }
+
+          const detectionResult = detectRegisterDocumentType(file, extractedText);
+          let serverDocumentUrl = "";
+          const autofillDetails = detectionResult.accepted
+            ? extractRegisterEmployeeDetailsFromDocument(file, extractedText, detectionResult.kind)
+            : null;
+          const autofillCount = detectionResult.accepted
+            ? applyRegisterEmployeeDetailsAutofill(autofillDetails)
+            : 0;
+          const readyStatusMessage = autofillCount
+            ? "Document ready. Employee details updated."
+            : "Document ready.";
+
+          if (detectionResult.accepted) {
+            try {
+              serverDocumentUrl = await uploadRegisterDocumentForExternalOpen(file);
+            } catch (error) {
+              console.warn("Unable to prepare document for Word open.", error);
+            }
+
+            if (requestId !== registerDocumentAnalysisRequestId) {
+              return;
+            }
+          }
+
+          if (detectionResult.accepted && detectionResult.kind === "resume") {
+            renderRegisterDocumentPreview(readyStatusMessage);
+            setRegisterDocumentDetectionState(
+              createRegisterDocumentDetectionState({
+                kind: "resume",
+                label: "Resume",
+                mode: "success",
+                title: "Resume detected",
+                copy: "This document looks like a resume and is ready for document review.",
+                ...visualPreview,
+                serverDocumentUrl,
+                accepted: true,
+              }),
+            );
+            return;
+          }
+
+          if (detectionResult.accepted && detectionResult.kind === "biodata") {
+            renderRegisterDocumentPreview(readyStatusMessage);
+            setRegisterDocumentDetectionState(
+              createRegisterDocumentDetectionState({
+                kind: "biodata",
+                label: "Bio Data",
+                mode: "success",
+                title: "Bio data detected",
+                copy: "This document looks like a bio data file and is ready for document review.",
+                ...visualPreview,
+                serverDocumentUrl,
+                accepted: true,
+              }),
+            );
+            return;
+          }
+
+          if (detectionResult.accepted && detectionResult.kind === "application-letter") {
+            renderRegisterDocumentPreview(readyStatusMessage);
+            setRegisterDocumentDetectionState(
+              createRegisterDocumentDetectionState({
+                kind: "application-letter",
+                label: "Application Letter",
+                mode: "success",
+                title: "Application letter detected",
+                copy: "This document looks like an application letter and is ready for document review.",
+                ...visualPreview,
+                serverDocumentUrl,
+                accepted: true,
+              }),
+            );
+            return;
+          }
+
+          if (registerDocumentInput) {
+            registerDocumentInput.value = "";
+          }
+          revokeRegisterDocumentVisualPreview();
+          renderRegisterDocumentPreview(
+            "Not supported document detected. The selected file was blocked.",
+          );
+          setRegisterDocumentDetectionState(
+            createRegisterDocumentDetectionState({
+              kind: "not-detected",
+              label: "Not Detected",
+              mode: "error",
+              title: "Document not detected",
+              copy: "The selected file does not look like a resume, bio data, or application letter document yet.",
+              ...visualPreview,
+              accepted: false,
+              modalTitle: "Document not detected",
+              modalMessage: "Please choose a resume, bio data, or application letter document before continuing.",
+            }),
+          );
+          openRegisterValidationModal("Please choose a resume, bio data, or application letter document before continuing.", {
+            title: "Document not detected",
+            actionLabel: "Choose file",
+            focusTarget: registerDocumentPreview,
+          });
+        } catch (error) {
+          if (requestId !== registerDocumentAnalysisRequestId) {
+            return;
+          }
+
+          revokeRegisterDocumentVisualPreview();
+          renderRegisterDocumentPreview("Unable to analyze document.");
+          setRegisterDocumentDetectionState(
+            createRegisterDocumentDetectionState({
+              kind: "analysis-error",
+              label: "Check Failed",
+              mode: "error",
+              title: "Document check failed",
+              copy: "The selected file could not be analyzed for resume, bio data, or application letter content.",
+              note: "Try another PDF, DOC, or DOCX file.",
+              ...visualPreview,
+              accepted: false,
+              modalTitle: "Document check failed",
+              modalMessage: "The selected file could not be analyzed. Please choose another resume, bio data, or application letter document.",
+            }),
+          );
+          openRegisterValidationModal(
+            "The selected file could not be analyzed. Please choose another resume, bio data, or application letter document.",
+            {
+              title: "Document check failed",
+              actionLabel: "Choose file",
+              focusTarget: registerDocumentPreview,
+            },
+          );
+        }
+      }
+
+      function createRegisterDocumentSummary(titleText, metaText, options = {}) {
+        const summary = document.createElement("div");
+        summary.className = "product-image-input-row__file-summary";
+
+        const icon = document.createElement("span");
+        icon.className = "product-image-input-row__preview-icon register-document-upload__icon";
+        icon.innerHTML = '<i class="fa-regular fa-file-lines" aria-hidden="true"></i>';
+
+        const copy = document.createElement("span");
+        copy.className = "product-image-input-row__file-summary-copy";
+
+        const title = document.createElement("span");
+        title.className = "product-image-input-row__preview-title";
+        title.textContent = titleText;
+
+        const meta = document.createElement("span");
+        meta.className = "product-image-input-row__preview-meta";
+        meta.textContent = metaText;
+
+        copy.append(title, meta);
+        summary.append(icon, copy);
+
+        return summary;
+      }
+
+      function clearRegisterSelectedDocument(statusMessage = "") {
+        if (!registerDocumentInput || !registerDocumentPreview) {
+          return;
+        }
+
+        registerDocumentAnalysisRequestId += 1;
+        revokeRegisterDocumentVisualPreview();
+        registerDocumentInput.value = "";
+        resetRegisterDocumentAutofillValues();
+        registerDocumentAutofillSnapshot = null;
+        renderRegisterDocumentPreview(statusMessage);
+        setRegisterDocumentDetectionState(createRegisterDocumentDetectionState());
+        handleDraftUpdate();
+      }
+
+      function renderRegisterDocumentPreview(statusMessage = "") {
+        if (!registerDocumentPreview || !registerDocumentInput || !registerDocumentStatus) {
+          return;
+        }
+
+        const selectedFile = registerDocumentInput.files?.[0] ?? null;
+        registerDocumentPreview.innerHTML = "";
+        registerDocumentPreview.classList.toggle("is-empty", !selectedFile);
+        if (registerDocumentRemoveButton) {
+          registerDocumentRemoveButton.disabled = !selectedFile;
+        }
+        registerDocumentPreview.appendChild(
+          createRegisterDocumentSummary(
+            selectedFile ? selectedFile.name : "No document selected",
+            selectedFile ? "Tap to replace document" : "Tap to choose file",
+          ),
+        );
+        registerDocumentPreview.title = selectedFile ? "Change document file" : "Choose document file";
+        registerDocumentStatus.textContent = statusMessage
+          || (selectedFile ? "Selected document is ready." : "PDF, DOC, and DOCX only.");
+      }
+
+      function handleInvalidRegisterDocumentSelection() {
+        if (!registerDocumentInput || !registerDocumentPreview) {
+          return;
+        }
+
+        registerDocumentAnalysisRequestId += 1;
+        revokeRegisterDocumentVisualPreview();
+        registerDocumentInput.value = "";
+        renderRegisterDocumentPreview("Wrong file selected. PDF, DOC, and DOCX only.");
+        setRegisterDocumentDetectionState(
+          createRegisterDocumentDetectionState({
+            kind: "wrong-file",
+            label: "Wrong File",
+            mode: "error",
+            title: "Wrong file selected",
+            copy: "Only document files can be checked here.",
+            note: "Use PDF, DOC, or DOCX. Images and other unsupported files are not allowed.",
+            accepted: false,
+            modalTitle: "Wrong file selected",
+            modalMessage: "Please choose a document file only. Images and other unsupported files are not allowed.",
+          }),
+        );
+        openRegisterValidationModal(
+          "Please choose a document file only. Images and other unsupported files are not allowed.",
+          {
+            title: "Wrong file selected",
+            actionLabel: "Choose file",
+            focusTarget: registerDocumentPreview,
+          },
+        );
+      }
+
+      function readRegisterDraft() {
+        return null;
+      }
+
+      function storeRegisterDraft() {
+        clearRegisterDraft();
+      }
+
+      function clearRegisterDraft() {
+        try {
+          window.sessionStorage.removeItem(registerDraftStorageKey);
+        } catch (error) {
+          console.warn("Unable to clear employee register draft.", error);
+        }
+      }
+
+      function hydrateRegisterForm() {
+        clearRegisterDraft();
+
+        registerEmployeeIdRandomSuffix = generateEmployeeIdSuffix();
+        if (registerEmployeeIdNumberInput) {
+          registerEmployeeIdNumberInput.value = registerEmployeeIdRandomSuffix;
+        }
+        if (registerEmployeeIdInput) {
+          registerEmployeeIdInput.value = "";
+        }
+        if (registerCompanyAcronymInput) {
+          registerCompanyAcronymInput.value = "";
+        }
+        registerPositionInput.value = "";
+        registerTimeInSelect.value = "";
+        registerFirstNameInput.value = "";
+        registerMiddleNameInput.value = "";
+        registerLastNameInput.value = "";
+        registerSuffixInput.value = "";
+        registerEmailInput.value = "";
+        registerAddressInput.value = "";
+        registerPhoneNumberInput.value = "";
+        registerPasswordInput.value = "";
+        registerConfirmPasswordInput.value = "";
+        lastRegisterPasswordMismatchKey = "";
+        clearRegisterPasswordMismatchTimer();
+        setRegisterPasswordTooltip(registerConfirmPasswordInput, "");
+
+        renderRegisterEmployeeIdOptions();
+        renderRegisterPositionOptions();
+        syncRegisterTimeInDropdown();
+        syncRegisterScheduleFields();
+        setRegisterPhoneValidationState();
+        setRegisterApplicantValidationState();
+      }
+
+      function handleDraftUpdate() {
+        storeRegisterDraft();
+      }
+
+      hydrateRegisterForm();
+      renderRegisterDocumentPreview();
+      setRegisterDocumentDetectionState(createRegisterDocumentDetectionState());
+      setActiveRegisterSection("register-employee-details-content", { shouldScroll: false });
+
+      registerSectionButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const targetId = button.dataset.registerSectionTarget ?? "";
+          if (targetId) {
+            setActiveRegisterSection(targetId, { shouldScroll: false });
+          }
+        });
+      });
+
+      function closeRegisterEmployeeSettingsFab() {
+        registerEmployeeSettingsFab?.classList.remove("is-open");
+      }
+
+      registerEmployeeSettingsTrigger?.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        closeRegisterEmployeeSettingsFab();
+        window.dispatchEvent(new CustomEvent("gms:open-employee-settings"));
+      });
+
+      registerEmployeeIdNumberInput?.addEventListener("input", () => {
+        registerEmployeeIdNumberInput.value = normalizeRegisterEmployeeIdNumber(
+          registerEmployeeIdNumberInput.value,
+        );
+        syncRegisterEmployeeIdValue();
+        handleDraftUpdate();
+      });
+
+      registerEmployeeIdNumberInput?.addEventListener("blur", () => {
+        syncRegisterEmployeeIdValue({ pad: true });
+        handleDraftUpdate();
+      });
+
+      registerCompanyAcronymTrigger?.addEventListener("click", () => {
+        if (registerCompanyAcronymTrigger.disabled || registerCompanyAcronymOptions.length === 0) {
+          return;
+        }
+
+        if (registerCompanyAcronymMenu.hidden) {
+          openRegisterCompanyAcronymDropdown();
+          return;
+        }
+
+        closeRegisterCompanyAcronymDropdown();
+      });
+
+      registerCompanyAcronymMenu?.addEventListener("click", (event) => {
+        const option = event.target?.closest?.("[data-company-acronym-value]");
+        if (!(option instanceof HTMLElement)) {
+          return;
+        }
+
+        setRegisterCompanyAcronym(option.dataset.companyAcronymValue ?? "");
+        closeRegisterCompanyAcronymDropdown();
+        registerCompanyAcronymTrigger?.focus();
+      });
+
+      registerPositionTrigger.addEventListener("click", () => {
+        if (registerPositionMenu.hidden) {
+          openRegisterPositionDropdown();
+          return;
+        }
+
+        closeRegisterPositionDropdown();
+      });
+
+      registerPositionMenu.addEventListener("click", (event) => {
+        const option = event.target?.closest?.("[data-position-value]");
+        if (!(option instanceof HTMLElement)) {
+          return;
+        }
+
+        setRegisterPosition(option.dataset.positionValue ?? "");
+        closeRegisterPositionDropdown();
+        registerPositionTrigger.focus();
+      });
+
+      registerTimeInTrigger.addEventListener("click", () => {
+        if (registerTimeInMenu.hidden) {
+          openRegisterTimeInDropdown();
+          return;
+        }
+
+        closeRegisterTimeInDropdown();
+      });
+
+      registerTimeInOptions.forEach((option) => {
+        option.addEventListener("click", () => {
+          setRegisterTimeIn(option.dataset.timeInValue ?? "");
+          closeRegisterTimeInDropdown();
+          registerTimeInTrigger.focus();
+        });
+      });
+
+      document.addEventListener("click", (event) => {
+        if (registerEmployeeSettingsFab && !registerEmployeeSettingsFab.contains(event.target)) {
+          closeRegisterEmployeeSettingsFab();
+        }
+
+        if (registerCompanyAcronymDropdown && !registerCompanyAcronymDropdown.contains(event.target)) {
+          closeRegisterCompanyAcronymDropdown();
+        }
+
+        if (!registerPositionDropdown.contains(event.target)) {
+          closeRegisterPositionDropdown();
+        }
+
+        if (!registerTimeInDropdown.contains(event.target)) {
+          closeRegisterTimeInDropdown();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          if (!registerValidationModalOverlay.hidden) {
+            closeRegisterValidationModal();
+            return;
+          }
+
+          closeRegisterCompanyAcronymDropdown();
+          closeRegisterPositionDropdown();
+          closeRegisterTimeInDropdown();
+          closeRegisterEmployeeSettingsFab();
+        }
+      });
+
+      window.addEventListener("gms:company-acronyms-updated", () => {
+        renderRegisterEmployeeIdOptions({ preserveCurrent: true });
+      });
+
+      window.addEventListener("gms:register-employee-id-regenerate", () => {
+        renderRegisterEmployeeIdOptions({ regenerateSuffix: true });
+      });
+
+      window.addEventListener("gms:employee-positions-updated", () => {
+        renderRegisterPositionOptions({ preserveCurrent: true });
+      });
+
+      [
+        registerPositionInput,
+        registerTimeInSelect,
+        registerSuffixInput,
+        registerEmailInput,
+        registerAddressInput,
+      ].forEach((input) => {
+        input.addEventListener("input", handleDraftUpdate);
+        input.addEventListener("change", handleDraftUpdate);
+      });
+
+      if (registerTimeInSelect) {
+        registerTimeInSelect.addEventListener("change", () => {
+          syncRegisterTimeInDropdown();
+          syncRegisterScheduleFields();
+          handleDraftUpdate();
+        });
+      }
+
+      registerSuffixInput?.addEventListener("input", () => {
+        registerApplicantValidationRequestId += 1;
+        setRegisterApplicantValidationState();
+      });
+      registerSuffixInput?.addEventListener("change", () => {
+        void validateRegisterApplicantName({ forceRefresh: true });
+      });
+
+      [
+        registerFirstNameInput,
+        registerMiddleNameInput,
+        registerLastNameInput,
+      ].forEach((input) => {
+        input.addEventListener("input", () => {
+          uppercaseRegisterNameInput(input);
+          handleDraftUpdate();
+          registerApplicantValidationRequestId += 1;
+          setRegisterApplicantValidationState();
+        });
+        input.addEventListener("change", () => {
+          uppercaseRegisterNameInput(input);
+          handleDraftUpdate();
+          void validateRegisterApplicantName({ forceRefresh: true });
+        });
+      });
+
+      if (registerPhoneNumberInput) {
+        registerPhoneNumberInput.addEventListener("input", () => {
+          registerPhoneNumberInput.value = normalizeRegisterPhoneNumber(registerPhoneNumberInput.value);
+          handleDraftUpdate();
+          registerPhoneValidationRequestId += 1;
+          setRegisterPhoneValidationState();
+        });
+        registerPhoneNumberInput.addEventListener("change", () => {
+          registerPhoneNumberInput.value = normalizeRegisterPhoneNumber(registerPhoneNumberInput.value);
+          handleDraftUpdate();
+          void validateRegisterPhoneNumber({
+            showEmpty: Boolean(registerPhoneNumberInput.value),
+            forceRefresh: true,
+          });
+        });
+      }
+
+      registerPasswordInput?.addEventListener("input", () => {
+        scheduleRegisterPasswordMatchValidation();
+      });
+      registerConfirmPasswordInput?.addEventListener("input", () => {
+        scheduleRegisterPasswordMatchValidation();
+      });
+      registerPasswordInput?.addEventListener("blur", () => {
+        scheduleRegisterPasswordMatchValidation({ force: true });
+      });
+      registerConfirmPasswordInput?.addEventListener("blur", () => {
+        scheduleRegisterPasswordMatchValidation({ force: true });
+      });
+
+      if (registerDocumentRemoveButton) {
+        const preventDocumentRemoveTrigger = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        };
+
+        registerDocumentRemoveButton.addEventListener("pointerdown", preventDocumentRemoveTrigger);
+        registerDocumentRemoveButton.addEventListener("click", (event) => {
+          preventDocumentRemoveTrigger(event);
+          clearRegisterSelectedDocument();
+        });
+      }
+
+      if (registerDocumentViewButton) {
+        registerDocumentViewButton.addEventListener("click", async () => {
+          if (registerDocumentViewButton.disabled) {
+            return;
+          }
+
+          registerDocumentViewButton.disabled = true;
+          try {
+            await openRegisterSelectedDocument();
+          } finally {
+            syncRegisterDocumentViewButton(registerDocumentDetectionState);
+          }
+        });
+      }
+
+      if (registerDocumentInput && registerDocumentPreview) {
+        registerDocumentInput.addEventListener("change", async () => {
+          const selectedFile = registerDocumentInput.files?.[0] ?? null;
+          if (!selectedFile) {
+            registerDocumentAnalysisRequestId += 1;
+            revokeRegisterDocumentVisualPreview();
+            renderRegisterDocumentPreview();
+            setRegisterDocumentDetectionState(createRegisterDocumentDetectionState());
+            return;
+          }
+
+          if (selectedFile && !isValidRegisterDocumentFile(selectedFile)) {
+            handleInvalidRegisterDocumentSelection();
+            return;
+          }
+
+          await analyzeSelectedRegisterDocument(selectedFile);
+        });
+
+        registerDocumentPreview.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            registerDocumentInput.click();
+          }
+        });
+      }
+
+      employeeRegisterForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        syncRegisterScheduleFields();
+        syncRegisterEmployeeIdValue({ pad: true });
+        [
+          registerFirstNameInput,
+          registerMiddleNameInput,
+          registerLastNameInput,
+        ].forEach(uppercaseRegisterNameInput);
+
+        const formData = new FormData(employeeRegisterForm);
+        const employeeId = String(formData.get("employeeId") ?? "").trim();
+        const position = String(formData.get("position") ?? "").trim();
+        const timeIn = String(formData.get("timeIn") ?? "").trim();
+        const timeOut = String(formData.get("timeOut") ?? "").trim();
+        const workHours = Number(formData.get("workHours") ?? registerPaidWorkHours);
+        const firstName = uppercaseRegisterNameInitials(formData.get("firstName")).trim();
+        const middleName = uppercaseRegisterNameInitials(formData.get("middleName")).trim();
+        const lastName = uppercaseRegisterNameInitials(formData.get("lastName")).trim();
+        const suffix = String(formData.get("suffix") ?? "").trim();
+        const registerEmail = String(formData.get("registerEmail") ?? "").trim();
+        const address = String(formData.get("address") ?? "").trim();
+        const registerPhoneNumber = normalizeRegisterPhoneNumber(
+          String(formData.get("mobileNumber") ?? "").trim(),
+        );
+        const password = String(formData.get("password") ?? "").trim();
+        const confirmPassword = String(formData.get("confirmPassword") ?? "").trim();
+        const selectedRegisterDocument = registerDocumentInput?.files?.[0] ?? null;
+        setRegisterFeedback("");
+
+        try {
+        if (registerPhoneNumberInput) {
+          registerPhoneNumberInput.value = registerPhoneNumber;
+        }
+
+        if (selectedRegisterDocument && !isValidRegisterDocumentFile(selectedRegisterDocument)) {
+          setActiveRegisterSection("register-document-file-content");
+          handleInvalidRegisterDocumentSelection();
+          return;
+        }
+
+        if (selectedRegisterDocument && registerDocumentDetectionState?.kind === "checking") {
+          setActiveRegisterSection("register-document-file-content");
+          openRegisterValidationModal("Please wait for the document check to finish before continuing.", {
+            title: "Checking document",
+            actionLabel: "Go Back",
+            focusTarget: registerDocumentPreview,
+          });
+          return;
+        }
+
+        if (selectedRegisterDocument && !registerDocumentDetectionState?.accepted) {
+          setActiveRegisterSection("register-document-file-content");
+          openRegisterValidationModal(
+            registerDocumentDetectionState?.modalMessage
+              || "Please choose a valid resume, bio data, or application letter document before continuing.",
+            {
+              title: registerDocumentDetectionState?.modalTitle || "Document not detected",
+              actionLabel: "Choose file",
+              focusTarget: registerDocumentPreview,
+            },
+          );
+          return;
+        }
+
+        if (
+          !employeeId
+          || !position
+          || !timeIn
+          || !timeOut
+          || !firstName
+          || !lastName
+          || !registerEmail
+          || !registerPhoneNumber
+          || !password
+          || !confirmPassword
+        ) {
+          const missingFieldState =
+            (!employeeId && {
+              message: 'Please fill up "employee ID".',
+              focusTarget: registerEmployeeIdNumberInput || registerEmployeeIdInput,
+            })
+            || (!position && {
+              message: 'Please select "employee position".',
+              focusTarget: registerPositionTrigger,
+            })
+            || (!timeIn && {
+              message: 'Please select "time in".',
+              focusTarget: registerTimeInTrigger,
+            })
+            || (!timeOut && {
+              message: 'Please select "time in" so "time out" can be computed.',
+              focusTarget: registerTimeInTrigger,
+            })
+            || (!firstName && {
+              message: 'Please fill up "first name".',
+              focusTarget: registerFirstNameInput,
+            })
+            || (!lastName && {
+              message: 'Please fill up "last name".',
+              focusTarget: registerLastNameInput,
+            })
+            || (!registerEmail && {
+              message: 'Please fill up "email address".',
+              focusTarget: registerEmailInput,
+            })
+            || (!registerPhoneNumber && {
+              message: 'Please fill up "phone number".',
+              focusTarget: registerPhoneNumberInput,
+            })
+            || (!password && {
+              message: 'Please fill up "password".',
+              focusTarget: registerPasswordInput,
+            })
+            || (!confirmPassword && {
+              message: 'Please fill up "confirm password".',
+              focusTarget: registerConfirmPasswordInput,
+            })
+            || {
+              message: "Please complete the employee registration form.",
+              focusTarget: submitRegisterButton,
+            };
+          setActiveRegisterSection("register-employee-details-content");
+          if (!registerPhoneNumber) {
+            setRegisterPhoneValidationState("invalid", "Phone number is required.");
+          }
+          openRegisterValidationModal(missingFieldState.message, {
+            focusTarget: missingFieldState.focusTarget,
+          });
+          return;
+        }
+
+        if (parseRegisterScheduleTime(timeIn) === null) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal('Please select a valid "time in".', {
+            focusTarget: registerTimeInTrigger,
+          });
+          return;
+        }
+
+        if (timeOut !== computeRegisterTimeOutValue(timeIn)) {
+          syncRegisterScheduleFields();
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal('"time out" must be computed automatically from "time in".', {
+            focusTarget: registerTimeInTrigger,
+          });
+          return;
+        }
+
+        if (!generatedEmployeeIdPattern.test(employeeId)) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal(
+            'Generated "employee ID" is invalid. Please reload the page and try again.',
+            {
+              focusTarget: registerEmployeeIdNumberInput || registerEmployeeIdInput,
+            },
+          );
+          return;
+        }
+
+        if (!isRegisterEmployeePosition(position)) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal('Please select a valid "employee position".', {
+            focusTarget: registerPositionTrigger,
+          });
+          return;
+        }
+
+        if (firstName.length < 2 || lastName.length < 2) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal(
+            firstName.length < 2
+              ? '"first name" must be at least 2 characters long.'
+              : '"last name" must be at least 2 characters long.',
+            {
+              focusTarget: firstName.length < 2 ? registerFirstNameInput : registerLastNameInput,
+            },
+          );
+          return;
+        }
+
+        if (!emailPattern.test(registerEmail)) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal('Please enter a valid "email address".', {
+            focusTarget: registerEmailInput,
+          });
+          return;
+        }
+
+        const registeredEmailAccount = await findRegisteredEmailAccount(registerEmail);
+        if (registeredEmailAccount) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal(
+            `Email address is already registered under ${getRegisterAccountLabel(registeredEmailAccount)}.`,
+            {
+              title: "Duplicate Email",
+              actionLabel: "Review Email",
+              focusTarget: registerEmailInput,
+              mode: "error",
+            },
+          );
+          return;
+        }
+
+        const applicantValidationState = await validateRegisterApplicantName({
+          forceRefresh: true,
+        });
+
+        if (!applicantValidationState.valid) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal(
+            applicantValidationState.message || "Applicant already exist",
+            {
+              focusTarget: registerFirstNameInput,
+            },
+          );
+          return;
+        }
+
+        if (!registerPhilippineMobilePattern.test(registerPhoneNumber)) {
+          const message = "Phone number must start with 9 and be 10 digits long.";
+          setActiveRegisterSection("register-employee-details-content");
+          setRegisterPhoneValidationState(
+            "invalid",
+            message,
+          );
+          openRegisterValidationModal(
+            message,
+            {
+              focusTarget: registerPhoneNumberInput,
+            },
+          );
+          return;
+        }
+
+        const phoneValidationState = await validateRegisterPhoneNumber({
+          showEmpty: true,
+          forceRefresh: true,
+        });
+
+        if (!phoneValidationState.valid) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal(
+            phoneValidationState.message || "Please enter a valid phone number.",
+            {
+              focusTarget: registerPhoneNumberInput,
+            },
+          );
+          return;
+        }
+
+        if (password.length < 6) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterValidationModal('"password" must be at least 6 characters long.', {
+            focusTarget: registerPasswordInput,
+          });
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          setActiveRegisterSection("register-employee-details-content");
+          openRegisterPasswordMismatchModal();
+          registerConfirmPasswordInput.focus();
+          return;
+        }
+
+        submitRegisterButton.disabled = true;
+
+        try {
+          let eDocumentPayload = null;
+
+          if (selectedRegisterDocument) {
+            let documentUrl = String(registerDocumentDetectionState?.serverDocumentUrl ?? "").trim();
+            if (!documentUrl) {
+              documentUrl = await uploadRegisterDocumentForExternalOpen(selectedRegisterDocument);
+              setRegisterDocumentDetectionState(
+                createRegisterDocumentDetectionState({
+                  ...registerDocumentDetectionState,
+                  serverDocumentUrl: documentUrl,
+                }),
+              );
+            }
+
+            eDocumentPayload = {
+              type: registerDocumentDetectionState?.kind || "",
+              label: registerDocumentDetectionState?.label || "",
+              fileName: selectedRegisterDocument.name,
+              fileExtension: getRegisterDocumentExtension(selectedRegisterDocument.name),
+              url: documentUrl,
+              uploadedAt: new Date().toISOString(),
+            };
+          }
+
+          const response = await fetch("/api/accounts", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              employeeId,
+              position,
+              timeIn,
+              timeOut,
+              workHours: Number.isFinite(workHours) && workHours > 0
+                ? workHours
+                : registerPaidWorkHours,
+              firstName,
+              middleName,
+              lastName,
+              suffix,
+              email: registerEmail,
+              address,
+              countryCode: registerPhoneCountryCode,
+              mobileNumber: registerPhoneNumber,
+              password,
+              ...(eDocumentPayload ? { eDocument: eDocumentPayload } : {}),
+              source: "web",
+            }),
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(data.message || `Unable to create employee account. Server returned ${response.status}.`);
+          }
+
+          setRegisterFeedback("");
+          clearRegisterDraft();
+          registeredPhoneNumbersPromise = null;
+          registeredPhoneNumbersCache = new Set();
+          registeredApplicantNamesPromise = null;
+          registeredApplicantNamesCache = new Set();
+          clearRegisterSelectedDocument();
+          hydrateRegisterForm();
+          setActiveRegisterSection("register-employee-details-content", { shouldScroll: false });
+          submitRegisterButton.disabled = false;
+          if (window.GMSAdminSuccessModal?.show) {
+            window.GMSAdminSuccessModal.show({
+              title: "Success",
+              copy: "Employee account created successfully.",
+            });
+          } else {
+            openRegisterValidationModal(
+              "Employee account created successfully.",
+              {
+                title: "Success",
+                actionLabel: "Done",
+                focusTarget: submitRegisterButton,
+                mode: "success",
+              },
+            );
+          }
+        } catch (error) {
+          console.warn("Unable to create employee account.", error);
+          const errorMessage = error instanceof Error ? error.message : "Unable to create employee account.";
+          if (/phone number/i.test(errorMessage)) {
+            setRegisterPhoneValidationState("invalid", errorMessage);
+          }
+          if (/applicant|person|already exists|already existed/i.test(errorMessage)) {
+            setRegisterApplicantValidationState("invalid", "Applicant already exist");
+          }
+          openRegisterValidationModal(
+            errorMessage,
+            {
+              title: "Registration Failed",
+              actionLabel: "Review Form",
+              focusTarget: submitRegisterButton,
+              mode: "error",
+            },
+          );
+          submitRegisterButton.disabled = false;
+        }
+        } catch (error) {
+          console.warn("Unable to complete employee registration validation.", error);
+          submitRegisterButton.disabled = false;
+          openRegisterValidationModal(
+            error instanceof Error
+              ? error.message
+              : "Unable to complete employee registration validation.",
+            {
+              title: "Registration Failed",
+              actionLabel: "Review Form",
+              focusTarget: submitRegisterButton,
+              mode: "error",
+            },
+          );
+        }
+      });
+
+      registerValidationModalAction.addEventListener("click", () => {
+        closeRegisterValidationModal();
+      });
+      registerValidationModalClose.addEventListener("click", () => {
+        closeRegisterValidationModal();
+      });
+      registerValidationModalOverlay.addEventListener("click", (event) => {
+        if (event.target === registerValidationModalOverlay) {
+          closeRegisterValidationModal();
+        }
+      });
+
+      window.GMSEmployeeRegisterInlineReady = true;
+      window.addEventListener("beforeunload", revokeRegisterDocumentVisualPreview);
+    </script>
+    <script src="/register_fallback.js?v=employee-clean-id-1"></script>
+  </body>
+</html>

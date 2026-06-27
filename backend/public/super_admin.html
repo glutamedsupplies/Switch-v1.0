@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Super Admin</title>
+    <link rel="stylesheet" href="/styles.css?v=super-admin-body-f2f2f2-1" />
+    <link rel="stylesheet" href="/super_admin.css?v=company-complete-single-actions-1" />
+  </head>
+  <body class="super-admin-page super-admin-companies-active">
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral super-admin-shell">
+      <div class="dashboard-layout super-admin-layout">
+        <aside class="panel dashboard-sidebar super-admin-sidebar" id="super-admin-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/super_admin.html"
+            aria-label="Super admin home"
+            title="Super admin"
+          >
+            <span class="dashboard-sidebar__logo-mark super-admin-logo-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 3.5 5.5 6v5.3c0 4.2 2.6 7.5 6.5 9.2 3.9-1.7 6.5-5 6.5-9.2V6L12 3.5Z" stroke-linejoin="round" />
+                <path d="M9 12.2 11 14l4.2-4.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+          </a>
+
+          <div class="super-admin-drawer-header" aria-label="Swift Cart super admin">
+            <span class="super-admin-drawer-header__logo" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3.5 5.5 6v5.3c0 4.2 2.6 7.5 6.5 9.2 3.9-1.7 6.5-5 6.5-9.2V6L12 3.5Z" />
+                <path d="M9 12.2 11 14l4.2-4.4" />
+              </svg>
+            </span>
+            <span class="super-admin-drawer-header__copy">
+              <strong>Swift Cart</strong>
+              <span>Super Admin</span>
+            </span>
+          </div>
+
+          <nav class="dashboard-nav" aria-label="Super admin navigation">
+            <a
+              class="dashboard-nav__item is-active"
+              href="#companies"
+              data-super-admin-section-target="companies"
+              aria-current="page"
+              aria-label="Companies"
+              title="Companies"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                  <path d="M6 12H4a2 2 0 0 0-2 2v8h20v-8a2 2 0 0 0-2-2h-2" />
+                  <path d="M10 6h4" />
+                  <path d="M10 10h4" />
+                  <path d="M10 14h4" />
+                  <path d="M10 18h4" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Companies</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="#product-requests"
+              data-super-admin-section-target="product-requests"
+              aria-label="In Review"
+              title="In Review"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m8 11 2 2 4-4" />
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">In Review</span>
+              <span class="dashboard-nav__badge" data-super-admin-product-request-count hidden>0</span>
+            </a>
+
+            <button
+              type="button"
+              class="dashboard-nav__item dashboard-nav__item--button"
+              data-root-category-trigger
+              data-nav-tooltip="Categories"
+              aria-label="Categories"
+              aria-controls="category-manager-panel"
+              aria-expanded="false"
+              title="Categories"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="7" height="7" x="3" y="3" rx="1" />
+                  <rect width="7" height="7" x="14" y="3" rx="1" />
+                  <rect width="7" height="7" x="14" y="14" rx="1" />
+                  <rect width="7" height="7" x="3" y="14" rx="1" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Categories</span>
+            </button>
+
+            <a
+              class="dashboard-nav__item"
+              href="#store-types"
+              data-super-admin-section-target="store-types"
+              aria-label="Store Type"
+              title="Store Type"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 20V9.5L12 4l8 5.5V20" />
+                  <path d="M9 20v-6h6v6" />
+                  <path d="M9 10.5h6" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Store Type</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="#payment-partners"
+              data-super-admin-section-target="payment-partners"
+              aria-label="Payment Partners"
+              title="Payment Partners"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <line x1="2" x2="22" y1="10" y2="10" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Payment Partners</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="#delivery-partners"
+              data-super-admin-section-target="delivery-partners"
+              aria-label="Delivery Partners"
+              title="Delivery Partners"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                  <path d="M15 18H9" />
+                  <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 9H14" />
+                  <circle cx="7" cy="18" r="2" />
+                  <circle cx="17" cy="18" r="2" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Delivery Partners</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="#user-data"
+              data-super-admin-section-target="user-data"
+              aria-label="User Data"
+              title="User Data"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <circle cx="12" cy="10" r="3" />
+                  <path d="M7 21v-2a5 5 0 0 1 10 0v2" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">User Data</span>
+            </a>
+
+            <button
+              type="button"
+              class="dashboard-nav__item dashboard-nav__item--button dashboard-nav__item--danger"
+              data-root-sign-out
+              data-nav-tooltip="Sign out"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" x2="9" y1="12" y2="12" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Sign out</span>
+            </button>
+          </nav>
+        </aside>
+        <button
+          type="button"
+          class="super-admin-nav-backdrop"
+          data-super-admin-nav-backdrop
+          aria-label="Close navigation"
+          hidden
+        ></button>
+
+        <div class="dashboard-content super-admin-content">
+            <div
+              class="super-admin-companies-header-container super-admin-main-header-container"
+            >
+                <div class="universal-main-header super-admin-search-filter-row super-admin-companies-main-header">
+                  <div class="universal-main-header__controls super-admin-companies-main-header__controls">
+                    <button
+                      type="button"
+                      class="super-admin-nav-toggle"
+                      data-super-admin-nav-toggle
+                      aria-label="Open navigation"
+                      aria-expanded="false"
+                      aria-controls="super-admin-sidebar"
+                      title="Open navigation"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M4 6h16" />
+                        <path d="M4 12h16" />
+                        <path d="M4 18h16" />
+                      </svg>
+                    </button>
+                    <div class="universal-main-header__workspace super-admin-main-workspace" aria-label="System administration">
+                      <span class="super-admin-main-workspace__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                          <path d="M4 9h16l-1.2-4.2A1.2 1.2 0 0 0 17.65 4H6.35a1.2 1.2 0 0 0-1.15.8L4 9Z" stroke-linejoin="round" />
+                          <path d="M5 9v10h14V9" stroke-linejoin="round" />
+                          <path d="M8 13h3v6H8zM14 13h3" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </span>
+                      <span class="super-admin-status-dot" aria-hidden="true"></span>
+                    </div>
+                    <label class="product-panel-toolbar__search super-admin-company-search super-admin-companies-search" aria-label="Search companies">
+                      <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m21 21-4.34-4.34" />
+                          <circle cx="11" cy="11" r="8" />
+                        </svg>
+                      </span>
+                      <input
+                        type="search"
+                        data-super-admin-search
+                        placeholder="Search Companies"
+                        autocomplete="off"
+                      />
+                    </label>
+
+                    <div class="universal-dropdown super-admin-filter-dropdown super-admin-companies-filter-dropdown">
+                      <button type="button" class="super-admin-filter-dropdown__trigger" data-super-admin-filter-dropdown-toggle aria-expanded="false">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                        </svg>
+                        <span data-super-admin-filter-summary>All, Newest</span>
+                      </button>
+                      <div class="universal-dropdown__panel super-admin-filter-dropdown__panel" hidden data-super-admin-filter-dropdown-panel>
+                        <div class="super-admin-filter-dropdown__section">
+                          <h4>Activity</h4>
+                          <label class="super-admin-filter-checkbox">
+                            <input type="checkbox" value="active" data-super-admin-filter="activity" />
+                            <span class="super-admin-filter-checkbox__mark"></span>
+                            <span>Active</span>
+                          </label>
+                          <label class="super-admin-filter-checkbox">
+                            <input type="checkbox" value="quiet" data-super-admin-filter="activity" />
+                            <span class="super-admin-filter-checkbox__mark"></span>
+                            <span>Quiet</span>
+                          </label>
+                        </div>
+                        <div class="super-admin-filter-dropdown__section">
+                          <h4>Sort by</h4>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-sort" value="created-desc" data-super-admin-sort checked />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>Newest</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-sort" value="company-asc" data-super-admin-sort />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>Company A-Z</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-sort" value="products-desc" data-super-admin-sort />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>Most products</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-sort" value="employees-desc" data-super-admin-sort />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>Most employees</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-sort" value="orders-desc" data-super-admin-sort />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>Most orders</span>
+                          </label>
+                        </div>
+                        <div class="super-admin-filter-dropdown__actions">
+                          <button type="button" class="super-admin-filter-clear-btn" data-super-admin-filter-clear>Clear all</button>
+                          <button type="button" class="super-admin-filter-apply-btn" data-super-admin-filter-apply>Apply</button>
+                        </div>
+                      </div>
+                    </div>
+                    <label class="product-panel-toolbar__search super-admin-company-search super-admin-review-search" aria-label="Search in review">
+                      <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m21 21-4.34-4.34" />
+                          <circle cx="11" cy="11" r="8" />
+                        </svg>
+                      </span>
+                      <input
+                        type="search"
+                        data-super-admin-product-request-search
+                        placeholder="Search In Review"
+                        autocomplete="off"
+                      />
+                    </label>
+
+                    <div class="universal-dropdown super-admin-filter-dropdown super-admin-review-filter-dropdown">
+                      <button type="button" class="super-admin-filter-dropdown__trigger" data-super-admin-product-request-filter-toggle aria-expanded="false">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                        </svg>
+                        <span>Filter by</span>
+                        <span data-super-admin-product-request-filter-summary>All</span>
+                      </button>
+                      <div class="universal-dropdown__panel super-admin-filter-dropdown__panel super-admin-review-filter-dropdown__panel" hidden data-super-admin-product-request-filter-panel>
+                        <div class="super-admin-filter-dropdown__section">
+                          <h4>Filter by</h4>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-product-request-filter" value="all" data-super-admin-product-request-filter checked />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>All</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-product-request-filter" value="with-category" data-super-admin-product-request-filter />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>With category</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-product-request-filter" value="no-category" data-super-admin-product-request-filter />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>No category</span>
+                          </label>
+                          <label class="super-admin-filter-radio">
+                            <input type="radio" name="super-admin-product-request-filter" value="discounted" data-super-admin-product-request-filter />
+                            <span class="super-admin-filter-radio__mark"></span>
+                            <span>Discounted</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <label class="product-panel-toolbar__search super-admin-company-search super-admin-store-type-search" aria-label="Search store types">
+                      <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m21 21-4.34-4.34" />
+                          <circle cx="11" cy="11" r="8" />
+                        </svg>
+                      </span>
+                      <input
+                        type="search"
+                        data-super-admin-store-type-search
+                        placeholder="Search Store Type"
+                        autocomplete="off"
+                      />
+                    </label>
+                    <label class="product-panel-toolbar__search super-admin-company-search super-admin-integrated-search super-admin-payment-partners-search" aria-label="Search payment partners">
+                      <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m21 21-4.34-4.34" />
+                          <circle cx="11" cy="11" r="8" />
+                        </svg>
+                      </span>
+                      <input
+                        type="search"
+                        data-super-admin-payment-partner-search
+                        placeholder="Search Payment Partners"
+                        autocomplete="off"
+                      />
+                    </label>
+                    <label class="product-panel-toolbar__search super-admin-company-search super-admin-integrated-search super-admin-delivery-partners-search" aria-label="Search delivery partners">
+                      <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m21 21-4.34-4.34" />
+                          <circle cx="11" cy="11" r="8" />
+                        </svg>
+                      </span>
+                      <input
+                        type="search"
+                        data-super-admin-delivery-partner-search
+                        placeholder="Search Delivery Partners"
+                        autocomplete="off"
+                      />
+                    </label>
+                    <label class="product-panel-toolbar__search super-admin-company-search super-admin-integrated-search super-admin-user-data-search" aria-label="Search user data">
+                      <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="m21 21-4.34-4.34" />
+                          <circle cx="11" cy="11" r="8" />
+                        </svg>
+                      </span>
+                      <input
+                        type="search"
+                        data-super-admin-user-data-search
+                        placeholder="Search User Data"
+                        autocomplete="off"
+                      />
+                    </label>
+                  </div>
+
+                  <div class="universal-main-header__actions super-admin-toolbar-actions">
+                    <div class="universal-dropdown super-admin-notification-menu">
+                    <button
+                      type="button"
+                      class="super-admin-toolbar-btn super-admin-notification-btn"
+                      id="super-admin-notification-btn"
+                      aria-label="Workspace notifications"
+                      aria-expanded="false"
+                      aria-controls="super-admin-notification-panel"
+                      title="Workspace notifications"
+                    >
+                      <span class="super-admin-toolbar-icon super-admin-toolbar-icon--outline" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+                          <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+                        </svg>
+                      </span>
+                      <span class="super-admin-toolbar-icon super-admin-toolbar-icon--filled" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M10.268 21a2 2 0 0 0 3.464 0" fill="none" />
+                          <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" fill="currentColor" />
+                        </svg>
+                      </span>
+                      <span class="super-admin-notification-badge" id="super-admin-notification-badge" hidden>0</span>
+                    </button>
+                    <div
+                      class="universal-dropdown__panel super-admin-notification-panel dashboard-notification-dropdown"
+                      id="super-admin-notification-panel"
+                      hidden
+                    >
+                      <div class="dashboard-notification-dropdown__header">
+                        <div>
+                          <p class="dashboard-notification-dropdown__eyebrow">Workspace</p>
+                          <h2 class="dashboard-notification-dropdown__title">Notification</h2>
+                        </div>
+                      </div>
+                      <div class="activity-list dashboard-notification-list super-admin-notification-list" id="super-admin-notification-list">
+                        <div class="empty-state">No notification yet.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="universal-dropdown super-admin-color-picker">
+                    <button
+                      type="button"
+                      class="super-admin-toolbar-btn super-admin-color-btn"
+                      id="super-admin-color-btn"
+                      aria-label="Color Theme"
+                      aria-expanded="false"
+                      aria-controls="super-admin-color-panel"
+                      title="Color Theme"
+                    >
+                      <span class="super-admin-toolbar-icon super-admin-toolbar-icon--outline" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" />
+                          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+                          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+                          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+                          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+                        </svg>
+                      </span>
+                      <span class="super-admin-toolbar-icon super-admin-toolbar-icon--filled" aria-hidden="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24">
+                          <defs>
+                            <mask id="super-admin-palette-cutout" maskUnits="userSpaceOnUse">
+                              <rect width="24" height="24" fill="white" />
+                              <circle cx="13.5" cy="6.5" r="1.5" fill="black" />
+                              <circle cx="17.5" cy="10.5" r="1.5" fill="black" />
+                              <circle cx="6.5" cy="12.5" r="1.5" fill="black" />
+                              <circle cx="8.5" cy="7.5" r="1.5" fill="black" />
+                            </mask>
+                          </defs>
+                          <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" mask="url(#super-admin-palette-cutout)" />
+                        </svg>
+                      </span>
+                    </button>
+                    <div class="universal-dropdown__panel super-admin-color-picker__panel" id="super-admin-color-panel" hidden>
+                      <div class="super-admin-color-picker__header">
+                        <h4>Workspace Color</h4>
+                      </div>
+                      <div class="super-admin-color-picker__options" id="super-admin-color-options"></div>
+                    </div>
+                  </div>
+                  </div>
+                </div>
+              </div>
+
+          <div class="super-admin-panel-container">
+            <section class="super-admin-grid">
+              <section
+                class="panel super-admin-panel super-admin-list-panel super-admin-companies-panel"
+              data-super-admin-section="companies"
+            >
+              <div class="super-admin-companies-heading">
+                <div>
+                  <h2>
+                    Companies
+                    <span data-super-admin-total-label>(0 companies)</span>
+                  </h2>
+                </div>
+                <div class="super-admin-company-view-controls">
+                  <div class="super-admin-company-viewbar__actions">
+                    <div class="super-admin-view-toggle" aria-label="Company view">
+                      <button type="button" class="is-active" data-super-admin-view="grid" aria-label="Grid view">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                          <rect width="7" height="7" x="3" y="3" rx="1" />
+                          <rect width="7" height="7" x="14" y="3" rx="1" />
+                          <rect width="7" height="7" x="14" y="14" rx="1" />
+                          <rect width="7" height="7" x="3" y="14" rx="1" />
+                        </svg>
+                      </button>
+                      <button type="button" data-super-admin-view="list" aria-label="List view">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                          <path d="M3 12h.01" stroke-linecap="round" />
+                          <path d="M3 18h.01" stroke-linecap="round" />
+                          <path d="M3 6h.01" stroke-linecap="round" />
+                          <path d="M8 12h13" stroke-linecap="round" />
+                          <path d="M8 18h13" stroke-linecap="round" />
+                          <path d="M8 6h13" stroke-linecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <p class="feedback-note" id="super-admin-feedback" aria-live="polite"></p>
+              </div>
+
+              <div class="super-admin-list super-admin-company-list" data-super-admin-list></div>
+              <div class="super-admin-empty super-admin-company-empty" data-super-admin-empty hidden>
+                <img
+                  src="/assets/empty-inbox_17568918.png"
+                  alt=""
+                  class="super-admin-company-empty__icon"
+                  aria-hidden="true"
+                />
+                <p class="super-admin-company-empty__description" data-super-admin-empty-description>No admin accounts yet.</p>
+              </div>
+              <div class="super-admin-company-drawer-backdrop" data-super-admin-company-drawer-backdrop hidden></div>
+              <aside class="super-admin-company-drawer" data-super-admin-company-drawer hidden aria-label="Company details">
+                <div class="super-admin-company-drawer__header">
+                  <button
+                    type="button"
+                    class="super-admin-company-drawer__close"
+                    data-super-admin-company-drawer-close
+                    aria-label="Close company details"
+                    title="Close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M7 7 17 17" stroke-linecap="round" />
+                      <path d="M17 7 7 17" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="super-admin-company-drawer__body" data-super-admin-company-drawer-content></div>
+              </aside>
+              <div class="super-admin-company-footer">
+                <span data-super-admin-page-meta>Showing 0 to 0 of 0 entries</span>
+                <div class="super-admin-pagination" data-super-admin-pagination></div>
+              </div>
+            </section>
+
+            <section
+              class="panel super-admin-panel super-admin-list-panel super-admin-store-types-panel"
+              data-super-admin-section="store-types"
+              hidden
+            >
+              <div class="super-admin-companies-heading super-admin-store-types-heading">
+                <div>
+                  <h2>
+                    Store Type
+                    <span data-super-admin-store-type-total>(0)</span>
+                  </h2>
+                </div>
+              </div>
+
+              <div class="super-admin-store-type-dashboard">
+                <div class="super-admin-store-type-composer category-manager__composer">
+                  <label class="category-add-field">
+                    <span id="store-type-input-label">Add Store Type</span>
+                    <input
+                      type="text"
+                      id="store-type-name-input"
+                      placeholder="Enter new store type"
+                      autocomplete="off"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    class="category-add-button"
+                    id="add-store-type-button"
+                  >
+                    Add
+                  </button>
+
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    id="cancel-store-type-edit-button"
+                    hidden
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div id="saved-store-type-list" class="category-list super-admin-store-type-list">
+                  <div class="empty-state">No saved store types yet.</div>
+                </div>
+
+                <div class="super-admin-store-type-footer">
+                  <div class="super-admin-company-view-controls super-admin-store-type-view-controls">
+                    <div class="super-admin-company-viewbar__actions">
+                      <div class="super-admin-view-toggle" aria-label="Store type view">
+                        <button type="button" class="is-active" data-super-admin-store-type-view="grid" aria-label="Grid view" aria-pressed="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                            <rect width="7" height="7" x="3" y="3" rx="1" />
+                            <rect width="7" height="7" x="14" y="3" rx="1" />
+                            <rect width="7" height="7" x="14" y="14" rx="1" />
+                            <rect width="7" height="7" x="3" y="14" rx="1" />
+                          </svg>
+                        </button>
+                        <button type="button" data-super-admin-store-type-view="list" aria-label="List view" aria-pressed="false">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                            <path d="M3 12h.01" stroke-linecap="round" />
+                            <path d="M3 18h.01" stroke-linecap="round" />
+                            <path d="M3 6h.01" stroke-linecap="round" />
+                            <path d="M8 12h13" stroke-linecap="round" />
+                            <path d="M8 18h13" stroke-linecap="round" />
+                            <path d="M8 6h13" stroke-linecap="round" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section
+              class="panel super-admin-panel super-admin-list-panel super-admin-review-panel super-admin-product-requests-panel"
+              data-super-admin-section="product-requests"
+              hidden
+            >
+              <div class="super-admin-companies-heading super-admin-review-heading super-admin-product-requests-heading">
+                <div>
+                  <h2>
+                    In Review
+                    <span data-super-admin-product-request-total>(0)</span>
+                  </h2>
+                </div>
+              </div>
+
+              <div class="super-admin-list super-admin-company-list super-admin-review-list super-admin-product-request-list" data-super-admin-product-request-list></div>
+              <div class="super-admin-empty super-admin-review-empty" data-super-admin-product-request-empty hidden>
+                No products in review.
+              </div>
+              </section>
+
+            <section
+              class="panel super-admin-panel super-admin-list-panel super-admin-integrated-panel super-admin-payment-partners-panel"
+              data-super-admin-section="payment-partners"
+              hidden
+            >
+              <div class="super-admin-companies-heading super-admin-integrated-heading">
+                <div>
+                  <h2>
+                    Payment Partners
+                    <span data-super-admin-payment-partner-total>(0)</span>
+                  </h2>
+                </div>
+              </div>
+              <div class="super-admin-integrated-list" data-super-admin-payment-partners-list>
+                <div class="empty-state">No payment partners yet.</div>
+              </div>
+              <div class="super-admin-integrated-drawer-backdrop" data-super-admin-payment-partner-drawer-backdrop hidden></div>
+              <aside class="super-admin-integrated-drawer" data-super-admin-payment-partner-drawer hidden aria-label="Payment partner details">
+                <div class="super-admin-company-drawer__header">
+                  <button
+                    type="button"
+                    class="super-admin-company-drawer__close"
+                    data-super-admin-payment-partner-drawer-close
+                    aria-label="Close payment partner details"
+                    title="Close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M7 7 17 17" stroke-linecap="round" />
+                      <path d="M17 7 7 17" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="super-admin-company-drawer__body" data-super-admin-payment-partner-drawer-content></div>
+              </aside>
+            </section>
+
+            <section
+              class="panel super-admin-panel super-admin-list-panel super-admin-integrated-panel super-admin-delivery-partners-panel"
+              data-super-admin-section="delivery-partners"
+              hidden
+            >
+              <div class="super-admin-companies-heading super-admin-integrated-heading">
+                <div>
+                  <h2>
+                    Delivery Partners
+                    <span data-super-admin-delivery-partner-total>(0)</span>
+                  </h2>
+                </div>
+              </div>
+              <div class="super-admin-integrated-list" data-super-admin-delivery-partners-list>
+                <div class="empty-state">No delivery partners yet.</div>
+              </div>
+              <div class="super-admin-integrated-drawer-backdrop" data-super-admin-delivery-partner-drawer-backdrop hidden></div>
+              <aside class="super-admin-integrated-drawer" data-super-admin-delivery-partner-drawer hidden aria-label="Delivery partner details">
+                <div class="super-admin-company-drawer__header">
+                  <button
+                    type="button"
+                    class="super-admin-company-drawer__close"
+                    data-super-admin-delivery-partner-drawer-close
+                    aria-label="Close delivery partner details"
+                    title="Close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M7 7 17 17" stroke-linecap="round" />
+                      <path d="M17 7 7 17" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="super-admin-company-drawer__body" data-super-admin-delivery-partner-drawer-content></div>
+              </aside>
+            </section>
+
+            <section
+              class="panel super-admin-panel super-admin-list-panel super-admin-integrated-panel super-admin-user-data-panel"
+              data-super-admin-section="user-data"
+              hidden
+            >
+              <div class="super-admin-companies-heading super-admin-integrated-heading">
+                <div>
+                  <h2>
+                    User Data
+                    <span data-super-admin-user-data-total>(0)</span>
+                  </h2>
+                </div>
+              </div>
+              <div class="super-admin-integrated-list" data-super-admin-user-data-list>
+                <div class="empty-state">No registered app users yet.</div>
+              </div>
+              <div class="super-admin-integrated-drawer-backdrop" data-super-admin-user-data-drawer-backdrop hidden></div>
+              <aside class="super-admin-integrated-drawer" data-super-admin-user-data-drawer hidden aria-label="User details">
+                <div class="super-admin-company-drawer__header">
+                  <button
+                    type="button"
+                    class="super-admin-company-drawer__close"
+                    data-super-admin-user-data-drawer-close
+                    aria-label="Close user details"
+                    title="Close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M7 7 17 17" stroke-linecap="round" />
+                      <path d="M17 7 7 17" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="super-admin-company-drawer__body" data-super-admin-user-data-drawer-content></div>
+              </aside>
+            </section>
+
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <section
+        class="panel product-panel-grid__categories category-manager-panel"
+        id="category-manager-panel"
+        tabindex="-1"
+        role="dialog"
+        aria-labelledby="category-manager-title"
+        hidden
+      >
+        <div class="category-manager-panel__header-shell">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">Global</p>
+              <h2 id="category-manager-title" style="font-weight: 500;">Categories</h2>
+            </div>
+            <button
+              type="button"
+              class="product-gallery-modal__close validation-modal__close slider-drawer__close category-manager-panel__close"
+              id="category-manager-close-button"
+              aria-label="Close category panel"
+              title="Close category panel"
+            >
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="category-manager__composer">
+            <label class="category-add-field">
+              <span id="category-input-label">Add Category</span>
+              <input
+                type="text"
+                id="category-name-input"
+                placeholder="Enter new category"
+                autocomplete="off"
+              />
+            </label>
+
+            <button
+              type="button"
+              class="category-add-button"
+              id="add-category-button"
+            >
+              Add
+            </button>
+
+            <button
+              type="button"
+              class="ghost-button"
+              id="cancel-category-edit-button"
+              hidden
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <div id="saved-category-list" class="category-list">
+          <div class="empty-state">No saved categories yet.</div>
+        </div>
+      </section>
+    </main>
+
+    <div
+      class="validation-modal-overlay super-admin-validation-modal-overlay"
+      id="super-admin-validation-modal-overlay"
+      aria-hidden="true"
+      hidden
+    >
+      <section
+        class="validation-modal super-admin-validation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="super-admin-validation-modal-title"
+        aria-describedby="super-admin-validation-modal-copy"
+        tabindex="-1"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="super-admin-validation-modal-close"
+          aria-label="Close validation modal"
+          title="Close"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <path d="M6 6l12 12" stroke-linecap="round"></path>
+            <path d="M18 6 6 18" stroke-linecap="round"></path>
+          </svg>
+        </button>
+
+        <div class="validation-modal__top">
+          <div
+            class="validation-modal__icon validation-modal__icon--notice"
+            id="super-admin-validation-modal-icon"
+            aria-hidden="true"
+          >
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+          </div>
+        </div>
+
+        <div class="validation-modal__body">
+          <h2 class="validation-modal__title" id="super-admin-validation-modal-title">Important Notice</h2>
+          <p class="validation-modal__copy" id="super-admin-validation-modal-copy"></p>
+          <div class="validation-modal__actions" id="super-admin-validation-modal-actions">
+            <button
+              type="button"
+              class="ghost-button validation-modal__action-button validation-modal__action-button--secondary"
+              id="super-admin-validation-modal-secondary-action"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="validation-modal__action-button"
+              id="super-admin-validation-modal-action"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/super_admin.js?v=company-complete-single-actions-1"></script>
+  </body>
+</html>

@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Delivery Partners</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+    <style>
+      :root {
+        color-scheme: light;
+        --delivery-panel-radius: 8px;
+        --delivery-card-radius: 8px;
+        --delivery-control-radius: 8px;
+      }
+
+      html {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        min-height: 100vh;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at top left, rgba(var(--accent-rgb, 37, 99, 235), 0.18), transparent 32%),
+          linear-gradient(180deg, #f7f9ff 0%, #eef2ff 100%);
+        color: #15213a;
+        font-family: "Poppins", "Segoe UI", sans-serif;
+      }
+
+      .delivery-shell.page-shell {
+        width: calc(100% - 24px);
+        max-width: none;
+        height: 100vh;
+        max-height: 100vh;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+
+      .delivery-shell .dashboard-layout,
+      .delivery-shell .dashboard-content {
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .delivery-shell .dashboard-content {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .delivery-hero {
+        flex: 0 0 auto;
+        width: 100%;
+        margin-bottom: 18px;
+      }
+
+      .delivery-grid {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: min(1214px, 100%);
+        display: grid;
+        grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+        gap: 22px;
+        align-items: stretch;
+        margin-bottom: 0;
+      }
+
+      .delivery-panel {
+        padding: 24px;
+        border-radius: var(--delivery-panel-radius);
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
+      }
+
+      .delivery-grid > .delivery-panel:first-child {
+        position: static;
+        top: auto;
+        z-index: 6;
+        align-self: start;
+        overflow: visible;
+      }
+
+      .delivery-grid > .delivery-panel:last-child {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .delivery-panel__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .delivery-panel__title {
+        margin: 0;
+        font-size: 1.2rem;
+      }
+
+      .delivery-feedback {
+        margin-bottom: 18px;
+        padding: 12px 14px;
+        border-radius: var(--delivery-control-radius);
+        font-weight: 600;
+        line-height: 1.5;
+      }
+
+      .delivery-feedback[data-state="success"] {
+        background: rgba(22, 163, 74, 0.12);
+        color: #166534;
+      }
+
+      .delivery-feedback[data-state="error"] {
+        background: rgba(220, 38, 38, 0.12);
+        color: #991b1b;
+      }
+
+      .delivery-feedback[data-state="info"] {
+        background: rgba(var(--accent-rgb, 37, 99, 235), 0.1);
+        color: var(--accent-text, #1d4ed8);
+      }
+
+      .delivery-form {
+        display: grid;
+        gap: 18px;
+      }
+
+      .delivery-upload {
+        display: grid;
+        gap: 12px;
+      }
+
+      .delivery-upload__preview {
+        width: 100%;
+        min-height: 360px;
+        position: relative;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        border: none;
+        border-radius: 8px;
+        border: 2px dashed rgba(var(--accent-rgb, 37, 99, 235), 0.28);
+        background: #ffffff;
+        cursor: pointer;
+        overflow: hidden;
+        transition:
+          border-color 0.2s ease,
+          box-shadow 0.2s ease,
+          background-color 0.2s ease;
+      }
+
+      .delivery-upload__preview:focus-visible {
+        outline: none;
+        border-color: rgba(var(--accent-rgb, 37, 99, 235), 0.72);
+        box-shadow: 0 0 0 4px rgba(var(--accent-rgb, 37, 99, 235), 0.16);
+      }
+
+      .delivery-upload__preview:active {
+        box-shadow: none;
+      }
+
+      .delivery-upload__preview.is-drag-active {
+        border-color: rgba(var(--accent-rgb, 37, 99, 235), 0.72);
+        background: rgba(var(--accent-rgb, 37, 99, 235), 0.06);
+      }
+
+      .delivery-upload__preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 8px;
+      }
+
+      .delivery-upload__clear.validation-modal__close {
+        top: 16px;
+        right: 16px;
+        z-index: 2;
+      }
+
+      .delivery-upload__clear svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .delivery-validation-modal .validation-modal__close svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2.2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .delivery-upload__placeholder {
+        display: grid;
+        gap: 18px;
+        justify-items: center;
+        text-align: center;
+        color: #6b7280;
+        max-width: 560px;
+      }
+
+      .delivery-upload__placeholder svg {
+        width: 64px;
+        height: 64px;
+        color: var(--accent, #2563eb);
+      }
+
+      .delivery-upload__title {
+        margin: 0;
+        color: #111827;
+        font-size: clamp(1.15rem, 1.7vw, 1.4rem);
+        font-weight: 400;
+        line-height: 1.2;
+      }
+
+      .delivery-upload__browse {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 180px;
+        min-height: 56px;
+        padding: 0 24px;
+        border-radius: 8px;
+        background: var(--accent-button-gradient-bg);
+        color: var(--accent-contrast, #ffffff);
+        font-size: 0.95rem;
+        font-weight: 400;
+        letter-spacing: 0.01em;
+        text-transform: lowercase;
+        box-shadow: none;
+      }
+
+      .delivery-field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .delivery-field--branch {
+        position: relative;
+        overflow: visible;
+        z-index: 1;
+      }
+
+      .delivery-field label {
+        font-weight: 700;
+        color: #21304f;
+      }
+
+      .delivery-field--branch label {
+        position: relative;
+        display: grid;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+        overflow: visible;
+      }
+
+      .delivery-field input,
+      .delivery-field textarea {
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: var(--delivery-control-radius);
+        background-color: #f3f4f6;
+        color: var(--text-primary, #15213a);
+        font: inherit;
+        font-weight: 500;
+        padding: 14px 16px;
+        box-sizing: border-box;
+        box-shadow: none;
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease,
+          background-color 120ms ease;
+      }
+
+      .delivery-field textarea {
+        min-height: 200px;
+        resize: vertical;
+      }
+
+      .delivery-field input:focus,
+      .delivery-field textarea:focus {
+        outline: none;
+        border-color: transparent;
+        box-shadow: none;
+      }
+
+      .delivery-field.delivery-field--branch input {
+        min-height: 48px;
+        border: none;
+        border-radius: 8px;
+        background: #f4f5f7;
+        padding: 14px 16px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        line-height: 1.4;
+        color: var(--text-primary, #15213a);
+      }
+
+      .delivery-field.delivery-field--branch input::placeholder {
+        color: #6b7280;
+        font-weight: 600;
+        opacity: 1;
+      }
+
+      .delivery-field.delivery-field--branch input:focus,
+      .delivery-field.delivery-field--branch input:focus-visible {
+        outline: none !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      .delivery-field.delivery-field--branch.is-invalid input,
+      .delivery-field.delivery-field--branch.is-invalid input:focus,
+      .delivery-field.delivery-field--branch.is-invalid input:focus-visible {
+        background: #f4f5f7;
+        box-shadow: 0 0 0 1.5px rgba(168, 52, 52, 0.82) !important;
+      }
+
+      .delivery-field--branch label[data-branch-tooltip]::after {
+        content: attr(data-branch-tooltip);
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        width: max-content;
+        max-width: calc(100vw - 48px);
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(168, 52, 52, 0.96) 0%, rgba(168, 52, 52, 0.78) 100%);
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        text-align: left;
+        pointer-events: none;
+        opacity: 1;
+        visibility: visible;
+        box-shadow: 0 12px 24px rgba(168, 52, 52, 0.24);
+        backdrop-filter: blur(12px);
+        z-index: 280;
+      }
+
+      .delivery-field--branch label[data-branch-tooltip]::before {
+        content: "";
+        position: absolute;
+        right: 8px;
+        top: calc(100% + 4px);
+        width: 12px;
+        height: 12px;
+        background: rgba(168, 52, 52, 0.88);
+        transform: rotate(45deg);
+        pointer-events: none;
+        z-index: 279;
+      }
+
+      .delivery-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 0 22px;
+        border: none;
+        border-radius: var(--delivery-control-radius);
+        background: var(--accent-button-gradient-bg);
+        color: var(--accent-contrast, #fff);
+        font: inherit;
+        font-weight: 400;
+        cursor: pointer;
+        box-shadow: 0 18px 30px rgba(var(--accent-rgb, 37, 99, 235), 0.22);
+      }
+
+      .delivery-submit:disabled {
+        cursor: wait;
+        opacity: 0.72;
+      }
+
+      .delivery-form .delivery-submit {
+        box-shadow: none;
+      }
+
+      .delivery-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        box-sizing: border-box;
+        padding: 2px 10px 2px 24px;
+        scrollbar-gutter: stable;
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .delivery-card {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 16px;
+        padding: 16px 22px 16px 34px;
+        border-radius: var(--delivery-card-radius);
+        background: #ffffff;
+        border: none;
+        box-shadow:
+          0 10px 22px rgba(15, 23, 42, 0.08),
+          0 18px 36px rgba(15, 23, 42, 0.06);
+      }
+
+      .delivery-card__image {
+        width: 92px;
+        height: 92px;
+        border-radius: var(--delivery-card-radius);
+        overflow: hidden;
+        background: rgba(var(--accent-rgb, 37, 99, 235), 0.12);
+      }
+
+      .delivery-card__image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .delivery-card__fallback {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        color: var(--accent, #2563eb);
+      }
+
+      .delivery-card__body {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+      }
+
+      .delivery-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+      }
+
+      .delivery-card__top > div {
+        min-width: 0;
+      }
+
+      .delivery-card__title {
+        overflow: hidden;
+        margin: 0;
+        font-size: 25px;
+        font-weight: 500;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .delivery-card__actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
+
+      .delivery-card__remove {
+        width: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: #a83434;
+        cursor: pointer;
+        box-shadow: none;
+      }
+
+      .delivery-upload__preview:hover .delivery-upload__browse,
+      .delivery-upload__preview:focus-visible .delivery-upload__browse,
+      .delivery-submit:hover,
+      .delivery-submit:focus-visible {
+        border: none;
+        background: linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), var(--accent-button-gradient-bg);
+        color: var(--accent-contrast, #fff);
+        box-shadow: none;
+      }
+
+      .delivery-card__remove:hover,
+      .delivery-card__remove:focus-visible,
+      .delivery-card__remove:active {
+        border: none;
+        background: transparent;
+        color: #922d2d;
+        box-shadow: none;
+      }
+
+      .delivery-card__remove i {
+        font-size: 24px;
+        line-height: 1;
+      }
+
+      .delivery-card__active-toggle .product-card__visibility-toggle-track {
+        background: #ef4444;
+      }
+
+      .delivery-card__active-toggle.product-card__visibility-toggle.is-active .product-card__visibility-toggle-track {
+        background: #22c55e;
+      }
+
+      .delivery-empty {
+        padding: 28px 18px;
+        border-radius: var(--delivery-card-radius);
+        border: 1px dashed rgba(148, 163, 184, 0.24);
+        text-align: center;
+        color: #5f6b85;
+        background: rgba(255, 255, 255, 0.5);
+      }
+
+      @media (max-width: 960px) {
+        html,
+        body {
+          height: auto;
+          overflow: auto;
+        }
+
+        .delivery-shell.page-shell,
+        .delivery-shell .dashboard-layout,
+        .delivery-shell .dashboard-content {
+          height: auto;
+          max-height: none;
+          overflow: visible;
+        }
+
+        .delivery-grid {
+          grid-template-columns: 1fr;
+          overflow: visible;
+          margin-bottom: 40px;
+        }
+
+        .delivery-grid > .delivery-panel:first-child {
+          position: static;
+          top: auto;
+        }
+
+        .delivery-grid > .delivery-panel:last-child {
+          display: block;
+          overflow: visible;
+        }
+
+        .delivery-list {
+          max-height: none;
+          overflow: visible;
+          padding-right: 0;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .delivery-panel__header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .delivery-panel {
+          padding: 18px;
+          border-radius: var(--delivery-panel-radius);
+        }
+
+        .delivery-card {
+          grid-template-columns: 1fr;
+        }
+
+        .delivery-card__image {
+          width: 100%;
+          height: 180px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral delivery-shell">
+      <div class="dashboard-layout">
+        <aside class="panel dashboard-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/admin_dashboard.html"
+            aria-label="Admin dashboard home"
+            title="Admin dashboard"
+            data-login-logo
+          >
+            <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
+              <img
+                class="dashboard-sidebar__logo-image"
+                alt="Admin logo"
+                hidden
+                data-logo-image
+              />
+              <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder>
+                logo
+              </span>
+            </span>
+          </a>
+
+          <nav class="dashboard-nav" aria-label="Admin navigation">
+            <a
+              class="dashboard-nav__item"
+              href="/admin_dashboard.html"
+              aria-label="Store Overview"
+              title="Store Overview"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M510-600v-210q0-12.75 8.63-21.38Q527.25-840 540-840h270q12.75 0 21.38 8.62Q840-822.75 840-810v210q0 12.75-8.62 21.37Q822.75-570 810-570H540q-12.75 0-21.37-8.63Q510-587.25 510-600ZM120-480v-330q0-12.75 8.63-21.38Q137.25-840 150-840h270q12.75 0 21.38 8.62Q450-822.75 450-810v330q0 12.75-8.62 21.37Q432.75-450 420-450H150q-12.75 0-21.37-8.63Q120-467.25 120-480Zm390 330v-330q0-12.75 8.63-21.38Q527.25-510 540-510h270q12.75 0 21.38 8.62Q840-492.75 840-480v330q0 12.75-8.62 21.37Q822.75-120 810-120H540q-12.75 0-21.37-8.63Q510-137.25 510-150Zm-390 0v-210q0-12.75 8.63-21.38Q137.25-390 150-390h270q12.75 0 21.38 8.62Q450-372.75 450-360v210q0 12.75-8.62 21.37Q432.75-120 420-120H150q-12.75 0-21.37-8.63Q120-137.25 120-150Zm60-360h210v-270H180v270Zm390 330h210v-270H570v270Zm0-450h210v-150H570v150ZM180-180h210v-150H180v150Zm210-330Zm180-120Zm0 180ZM390-330Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Dashboard</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/insight.html"
+              aria-label="Insight"
+              title="Insight"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg class="dashboard-nav__order-cart-outline" viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M236-102.21q-21-21.21-21-51T236.21-204q21.21-21 51-21T338-203.79q21 21.21 21 51T337.79-102q-21.21 21-51 21T236-102.21Zm400 0q-21-21.21-21-51T636.21-204q21.21-21 51-21T738-203.79q21 21.21 21 51T737.79-102q-21.21 21-51 21T636-102.21ZM235-741l110 228h288l125-228H235Zm-30-60h589.07q22.97 0 34.95 21 11.98 21-.02 42L694-495q-11 19-28.56 30.5T627-453H324l-56 104h461q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H277q-42 0-60.5-28t.5-63l64-118-152-322H81q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32Q68.25-880 81-880h68q9 0 16.2 4.43 7.2 4.44 10.8 12.57l29 62Zm140 288h288-288Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Insight</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/product_insight.html"
+              aria-label="Product Insight"
+              title="Product Insight"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="m363-390 117-71 117 71-31-133 104-90-137-11-53-126-53 126-137 11 104 90-31 133ZM80-80v-740q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H240L80-80Zm134-220h606v-520H140v600l74-80Zm-74 0v-520 520Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Product Insight</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/product_panel.html"
+              aria-label="Products"
+              title="Products"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M450-154v-309L180-619v309l270 156Zm60 0 270-156v-310L510-463v309Zm-60 69L150-258q-14-8-22-22t-8-30v-340q0-16 8-30t22-22l300-173q14-8 30-8t30 8l300 173q14 8 22 22t8 30v340q0 16-8 30t-22 22L510-85q-14 8-30 8t-30-8Zm194-525 102-59-266-154-102 59 266 154Zm-164 96 104-61-267-154-104 60 267 155Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Products</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/stock.html"
+              aria-label="Inventory"
+              title="Inventory"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M465.5-419.5Q459-421 452-425L90-619q-8-5-11.5-11.5T75-645q0-8 3.5-14.5T90-671l362-194q7-4 13.5-5.5T480-872q8 0 14.5 1.5T508-865l362 194q8 5 12 11.5t4 14.5q0 8-4 14.5T870-619L508-425q-7 4-13.5 5.5T480-418q-8 0-14.5-1.5ZM480-479l315-166-315-166-314 166 314 166Zm1-166Zm-1 332 339-181q2-1 14-3 12 0 21 8.5t9 21.5q0 8-4 14.5T847-441L508-260q-7 4-13.5 5.5T480-253q-8 0-14.5-1.5T452-260L114-441q-8-5-12-11.5T98-467q0-13 9-21.5t21-8.5q4 0 7.5 1t6.5 3l338 180Zm0 165 339-181q2-1 14-3 12 0 21 8.5t9 21.5q0 8-4 14.5T847-276L508-95q-7 4-13.5 5.5T480-88q-8 0-14.5-1.5T452-95L114-276q-8-5-12-11.5T98-302q0-13 9-21.5t21-8.5q4 0 7.5 1t6.5 3l338 180Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Inventory</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/payment_partners.html"
+              aria-label="Payment Partners"
+              title="Payment Partners"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <line x1="2" x2="22" y1="10" y2="10" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Payment Partners</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item is-active"
+              href="/delivery_partners.html"
+              aria-current="page"
+              aria-label="Delivery Partners"
+              title="Delivery Partners"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                  <path d="M15 18H9" />
+                  <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 9H14" />
+                  <circle cx="7" cy="18" r="2" />
+                  <circle cx="17" cy="18" r="2" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Delivery Partners</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/Employee_data.html"
+              aria-label="Employee data"
+              title="Employee data"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M730-450q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H610q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5h120Zm0-120q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H610q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5h120ZM360-434q-38 0-66.64 6.5Q264.73-421 243-407q-20 11-31 28.13-11 17.14-11 36.87 0 9.43 6.68 15.71Q214.35-320 224-320h272q9.65 0 16.32-6.52Q519-333.03 519-343q0-17.69-10.5-34.35Q498-394 478-407q-22-14-51-20.5t-67-6.5Zm51.5-81.42q21.5-21.42 21.5-51.5t-21.42-51.58q-21.42-21.5-51.5-21.5t-51.58 21.42q-21.5 21.42-21.5 51.5t21.42 51.58q21.42 21.5 51.5 21.5t51.58-21.42ZM140-160q-24 0-42-18t-18-42v-520q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H140Zm0-60h680v-520H140v520Zm0 0v-520 520Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Employee Data</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/register.html"
+              aria-label="Register"
+              title="Register"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                                <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                  <path d="M730-530H630q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h100v-100q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v100h100q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H790v100q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37v-100Zm-478 7q-42-42-42-108t42-108q42-42 108-42t108 42q42 42 42 108t-42 108q-42 42-108 42t-108-42ZM40-220v-34q0-35 17.5-63.5T108-360q75-33 133.34-46.5t118.5-13.5Q420-420 478-406.5T611-360q33 15 51 43t18 63v34q0 24.75-17.62 42.37Q644.75-160 620-160H100q-24.75 0-42.37-17.63Q40-195.25 40-220Zm60 0h520v-34q0-16-9-30.5T587-306q-71-33-120-43.5T360-360q-58 0-107.5 10.5T132-306q-15 7-23.5 21.5T100-254v34Zm324.5-346.5Q450-592 450-631t-25.5-64.5Q399-721 360-721t-64.5 25.5Q270-670 270-631t25.5 64.5Q321-541 360-541t64.5-25.5ZM360-631Zm0 411Z" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Register</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/login.html"
+              aria-label="Login"
+              title="Login"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M10 7.5V6a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-1.5" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M14.5 12H4.5" stroke-linecap="round" />
+                  <path d="m8 8.5-3.5 3.5L8 15.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Login</span>
+            </a>
+          </nav>
+        </aside>
+
+        <div class="dashboard-content">
+          <section class="hero delivery-hero universal-page-header">
+            <div class="universal-main-header partner-main-header delivery-main-header">
+              <div class="universal-main-header__controls partner-main-header__controls">
+                <h1 class="delivery-hero__title partner-main-header__title">Delivery Partners</h1>
+                <label
+                  class="universal-search product-panel-toolbar__search product-panel-grid__inventory-search partner-main-header__search"
+                  aria-label="Search saved delivery partners"
+                >
+                  <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="11" cy="11" r="6.5" />
+                      <path d="m16 16 4 4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                  <input
+                    type="search"
+                    placeholder="Search partners"
+                    autocomplete="off"
+                    data-delivery-partner-search
+                  />
+                </label>
+              </div>
+
+              <div class="universal-main-header__actions dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Admin workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Admin logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      AD
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Admin Workspace</strong>
+                    <span>Delivery Partners</span>
+                  </span>
+                </div>
+
+                <div class="dashboard-tool-menu dashboard-notification-menu" data-notification-menu>
+                  <button
+                    class="dashboard-tool-button dashboard-tool-button--notification"
+                    type="button"
+                    aria-label="Notification"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Notification"
+                    data-notification-toggle
+                  >
+                    <span class="dashboard-tool-button__icon" aria-hidden="true">
+                      <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                        <path
+                          d="M190-200q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h50v-304q0-84 49.5-150.5T420-798v-22q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v22q81 17 130.5 83.5T720-564v304h50q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H190Zm290-302Zm0 422q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80ZM300-260h360v-304q0-75-52.5-127.5T480-744q-75 0-127.5 52.5T300-564v304Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </span>
+                    <span class="dashboard-notification-badge" hidden aria-hidden="true"></span>
+                  </button>
+
+                  <div class="dashboard-notification-dropdown" hidden data-notification-dropdown>
+                    <div class="dashboard-notification-dropdown__header">
+                      <div>
+                        <h2 class="dashboard-notification-dropdown__title">Notification</h2>
+                      </div>
+                      <span class="count-pill">0</span>
+                    </div>
+
+                    <div class="activity-list dashboard-notification-list">
+                      <div class="empty-state">No notification yet.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-menu" data-settings-menu>
+                  <button
+                    class="settings-toggle"
+                    type="button"
+                    aria-label="Color Picker"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Color Picker"
+                    data-settings-toggle
+                  >
+                    <span class="settings-toggle__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path
+                          d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                          stroke-linejoin="round"
+                        />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </span>
+                    <span class="settings-toggle__swatch" aria-hidden="true"></span>
+                  </button>
+
+                  <div class="settings-dropdown" hidden data-settings-dropdown>
+                    <p class="settings-dropdown__eyebrow">Theme Settings</p>
+                    <h2 class="settings-dropdown__title">Color Picker</h2>
+                    <p class="settings-dropdown__copy">
+                      Pick a color and it updates the whole web server instantly.
+                    </p>
+
+                    <label class="settings-color-field">
+                      <span>Primary Color</span>
+                      <input type="color" value="#2563EB" data-theme-color-input />
+                    </label>
+
+                    <div class="settings-color-meta">
+                      <span data-theme-hex>#2563EB</span>
+                      <span data-theme-rgb>RGB 37, 99, 235</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="ghost-button settings-reset-button"
+                      data-theme-reset
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="delivery-grid">
+            <section class="delivery-panel" aria-label="Add Delivery Partner">
+              <div
+                class="delivery-feedback"
+                data-delivery-feedback
+                data-state="info"
+                hidden
+              ></div>
+
+              <form class="delivery-form" data-delivery-partner-form>
+                <div class="delivery-upload">
+                  <input
+                    type="file"
+                    accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                    name="image"
+                    data-delivery-image-input
+                    hidden
+                  />
+                  <div
+                    class="delivery-upload__preview"
+                    role="button"
+                    tabindex="0"
+                    aria-label="Choose photo for delivery partner"
+                    data-delivery-image-trigger
+                    data-delivery-image-preview
+                  >
+                    <div class="delivery-upload__placeholder">
+                      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+                        <path d="M22 46H19c-6.1 0-11-4.9-11-11 0-5.6 4.2-10.3 9.7-10.9A15.4 15.4 0 0 1 32.6 12C39.4 12 45 16.4 46.8 22.6A11 11 0 0 1 48 44H42" stroke-linecap="round" stroke-linejoin="round"></path>
+                        <path d="M32 51V27" stroke-linecap="round"></path>
+                        <path d="m23 36 9-9 9 9" stroke-linecap="round" stroke-linejoin="round"></path>
+                      </svg>
+                      <p class="delivery-upload__title">select your file or drag and drop</p>
+                      <span class="delivery-upload__browse" aria-hidden="true">browse</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="delivery-field delivery-field--branch">
+                  <label for="delivery-branch">
+                    Branch
+                    <input
+                      id="delivery-branch"
+                      name="branch"
+                      type="text"
+                      placeholder="Enter delivery partner branch"
+                      autocomplete="off"
+                      required
+                    />
+                  </label>
+                </div>
+
+                <button class="delivery-submit" type="submit" data-delivery-submit>
+                  Save
+                </button>
+              </form>
+            </section>
+
+            <section class="delivery-panel" aria-labelledby="delivery-list-title">
+              <div class="delivery-panel__header">
+                <div>
+                  <h2 class="delivery-panel__title" id="delivery-list-title">
+                    Saved Partners
+                  </h2>
+                </div>
+              </div>
+
+              <div class="delivery-list" data-delivery-partners-list></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <template data-delivery-partner-template>
+      <article class="delivery-card">
+        <div class="delivery-card__image" data-partner-image></div>
+        <div class="delivery-card__body">
+          <div class="delivery-card__top">
+            <div>
+              <h3 class="delivery-card__title" data-partner-branch></h3>
+            </div>
+            <div class="delivery-card__actions">
+              <button
+                class="delivery-card__active-toggle product-card__visibility-toggle"
+                type="button"
+                data-partner-active-toggle
+                aria-label="Deactivate delivery partner"
+                aria-pressed="true"
+                title="Deactivate delivery partner"
+              >
+                <span class="product-card__visibility-toggle-track" aria-hidden="true">
+                  <span class="product-card__visibility-toggle-thumb"></span>
+                </span>
+              </button>
+              <button
+                class="delivery-card__remove delete-button icon-action-button icon-action-button--danger"
+                type="button"
+                data-partner-remove
+                aria-label="Remove delivery partner"
+                title="Remove delivery partner"
+              >
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <div
+      class="validation-modal-overlay"
+      id="delivery-validation-modal-overlay"
+      hidden
+    >
+      <section
+        class="validation-modal delivery-validation-modal"
+        id="delivery-validation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delivery-validation-modal-title"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="delivery-validation-modal-close"
+          aria-label="Close validation modal"
+          title="Close validation modal"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12"></path>
+            <path d="M18 6 6 18"></path>
+          </svg>
+        </button>
+        <div class="validation-modal__top">
+          <div
+            class="validation-modal__icon validation-modal__icon--notice"
+            id="delivery-validation-modal-icon"
+            aria-hidden="true"
+          ></div>
+        </div>
+        <div class="validation-modal__body">
+          <h2 class="validation-modal__title" id="delivery-validation-modal-title">
+            Important notice
+          </h2>
+          <p
+            class="validation-modal__copy"
+            id="delivery-validation-modal-copy"
+            hidden
+          ></p>
+          <ul
+            class="validation-modal__issues"
+            id="delivery-validation-modal-issues"
+            hidden
+          ></ul>
+          <div class="validation-modal__actions">
+            <button
+              type="button"
+              class="ghost-button validation-modal__action-button validation-modal__action-button--secondary"
+              id="delivery-validation-modal-secondary-action"
+              hidden
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="delivery-submit validation-modal__action-button"
+              id="delivery-validation-modal-action"
+            >
+              Okay
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="/admin_navigation.js?v=admin-profile-refresh-1"></script>
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script src="/delivery_partners.js?v=search-delay-500-1" defer></script>
+  </body>
+</html>

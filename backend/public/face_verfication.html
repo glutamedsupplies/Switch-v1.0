@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Face Verification</title>
+    <link rel="stylesheet" href="/styles.css?v=universal-search-1" />
+  </head>
+  <body>
+    <main class="page-shell face-page-shell">
+      <section class="hero">
+        <div class="face-title-row face-title-row--hero">
+          <h1 id="face-page-title">Employee Face Verification</h1>
+          <span class="status-pill" id="face-status-pill">Pending</span>
+        </div>
+        <p class="hero-copy" id="face-page-copy">
+          Use your camera to complete the employee security check before you continue.
+        </p>
+      </section>
+
+      <section class="face-layout face-layout--single">
+        <section class="panel face-camera-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">Live Camera</p>
+              <h2 id="face-mode-title">Face Scan</h2>
+            </div>
+          </div>
+
+          <div class="face-inline-meta-group">
+            <p class="face-inline-meta face-inline-meta--plain">
+              <span>Hi,</span>
+              <strong id="face-employee-id-value">Firstname Lastname</strong>
+            </p>
+            <p class="face-inline-meta" id="face-email-row" hidden>
+              <span>Email</span>
+              <strong id="face-email-value"></strong>
+            </p>
+          </div>
+
+          <div class="face-stage">
+            <video id="face-video" autoplay playsinline hidden></video>
+            <canvas id="face-canvas" hidden></canvas>
+            <div class="face-stage__placeholder" id="face-placeholder">
+              <div class="face-stage__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M8.5 3.5H6a2.5 2.5 0 0 0-2.5 2.5v2.5" stroke-linecap="round" />
+                  <path d="M15.5 3.5H18A2.5 2.5 0 0 1 20.5 6v2.5" stroke-linecap="round" />
+                  <path d="M20.5 15.5V18A2.5 2.5 0 0 1 18 20.5h-2.5" stroke-linecap="round" />
+                  <path d="M8.5 20.5H6A2.5 2.5 0 0 1 3.5 18v-2.5" stroke-linecap="round" />
+                  <circle cx="12" cy="10" r="2.4" />
+                  <path d="M8.5 16.3a4.8 4.8 0 0 1 7 0" stroke-linecap="round" />
+                </svg>
+              </div>
+              <div>
+                <strong>Camera preview will appear here</strong>
+                <p>Start the camera, center your face, then capture a verification frame.</p>
+              </div>
+              <button type="button" class="ghost-button face-stage__start-button" id="start-camera-button">
+                Start Camera
+              </button>
+            </div>
+          </div>
+
+          <p class="helper-text" id="face-helper-text">
+            Allow camera access to begin face verification.
+          </p>
+
+          <div class="face-controls">
+            <button type="button" class="ghost-button" id="capture-face-button" disabled>
+              Capture Face
+            </button>
+            <button type="button" class="ghost-button" id="retake-face-button" hidden>
+              Retake
+            </button>
+          </div>
+
+          <div class="form-actions face-actions">
+            <button type="button" id="complete-face-button" disabled>
+              Verify and Continue
+            </button>
+            <button type="button" class="ghost-button" id="back-button">Back</button>
+          </div>
+
+          <p id="face-feedback" class="feedback-note" aria-live="polite"></p>
+        </section>
+      </section>
+    </main>
+
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script>
+      const searchParams = new URLSearchParams(window.location.search);
+      const requestedMode = searchParams.get("mode") === "register" ? "register" : "signin";
+      const faceVerificationContextStorageKey = "gms-face-verification-context";
+      const faceVerificationResultStorageKey = "gms-face-verification-result";
+
+      const facePageTitle = document.getElementById("face-page-title");
+      const facePageCopy = document.getElementById("face-page-copy");
+      const faceModeTitle = document.getElementById("face-mode-title");
+      const faceStatusPill = document.getElementById("face-status-pill");
+      const faceEmployeeIdValue = document.getElementById("face-employee-id-value");
+      const faceEmailRow = document.getElementById("face-email-row");
+      const faceEmailValue = document.getElementById("face-email-value");
+      const faceVideo = document.getElementById("face-video");
+      const faceCanvas = document.getElementById("face-canvas");
+      const facePlaceholder = document.getElementById("face-placeholder");
+      const faceHelperText = document.getElementById("face-helper-text");
+      const startCameraButton = document.getElementById("start-camera-button");
+      const captureFaceButton = document.getElementById("capture-face-button");
+      const retakeFaceButton = document.getElementById("retake-face-button");
+      const completeFaceButton = document.getElementById("complete-face-button");
+      const backButton = document.getElementById("back-button");
+      const faceFeedback = document.getElementById("face-feedback");
+
+      let activeStream = null;
+      let hasCapturedFace = false;
+
+      function readStoredContext() {
+        try {
+          const rawValue = window.sessionStorage.getItem(faceVerificationContextStorageKey);
+          return rawValue ? JSON.parse(rawValue) : null;
+        } catch (error) {
+          console.warn("Unable to read face verification context.", error);
+          return null;
+        }
+      }
+
+      function storeVerificationResult(payload) {
+        try {
+          window.sessionStorage.setItem(
+            faceVerificationResultStorageKey,
+            JSON.stringify(payload),
+          );
+        } catch (error) {
+          console.warn("Unable to store face verification result.", error);
+        }
+      }
+
+      function setFaceFeedback(message, mode) {
+        faceFeedback.textContent = message;
+        faceFeedback.className = "feedback-note";
+        if (mode) {
+          faceFeedback.classList.add(mode);
+        }
+      }
+
+      function updateStatus(label, mode) {
+        faceStatusPill.textContent = label;
+        faceStatusPill.className = "status-pill";
+        if (mode) {
+          faceStatusPill.classList.add(mode);
+        }
+      }
+
+      function stopCameraStream() {
+        if (!activeStream) {
+          return;
+        }
+
+        activeStream.getTracks().forEach((track) => track.stop());
+        activeStream = null;
+      }
+
+      async function startCamera() {
+        try {
+          stopCameraStream();
+          activeStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: "user",
+            },
+            audio: false,
+          });
+
+          faceVideo.srcObject = activeStream;
+          faceVideo.hidden = false;
+          faceCanvas.hidden = true;
+          facePlaceholder.hidden = true;
+          captureFaceButton.disabled = false;
+          retakeFaceButton.hidden = true;
+          completeFaceButton.disabled = true;
+          hasCapturedFace = false;
+          faceHelperText.textContent = "Center your face in the frame, then capture a clear shot.";
+          updateStatus("Camera Ready");
+          setFaceFeedback("");
+        } catch (error) {
+          console.warn("Unable to start camera.", error);
+          updateStatus("Camera Blocked", "error");
+          setFaceFeedback(
+            "Camera access was blocked or unavailable. Allow camera permission to continue.",
+            "error",
+          );
+        }
+      }
+
+      function captureFace() {
+        if (!activeStream || faceVideo.readyState < 2) {
+          setFaceFeedback("Please start the camera before capturing your face.", "error");
+          return;
+        }
+
+        const stageWidth = faceVideo.videoWidth || 640;
+        const stageHeight = faceVideo.videoHeight || 480;
+        const context = faceCanvas.getContext("2d");
+
+        faceCanvas.width = stageWidth;
+        faceCanvas.height = stageHeight;
+        context.drawImage(faceVideo, 0, 0, stageWidth, stageHeight);
+
+        faceCanvas.hidden = false;
+        faceVideo.hidden = true;
+        retakeFaceButton.hidden = false;
+        captureFaceButton.disabled = true;
+        completeFaceButton.disabled = false;
+        hasCapturedFace = true;
+        faceHelperText.textContent = "Review the captured frame, then continue to finish verification.";
+        updateStatus("Face Captured", "success");
+        setFaceFeedback("");
+      }
+
+      function retakeFace() {
+        if (!activeStream) {
+          startCamera();
+          return;
+        }
+
+        faceCanvas.hidden = true;
+        faceVideo.hidden = false;
+        captureFaceButton.disabled = false;
+        retakeFaceButton.hidden = true;
+        completeFaceButton.disabled = true;
+        hasCapturedFace = false;
+        faceHelperText.textContent = "Center your face in the frame, then capture a clear shot.";
+        updateStatus("Camera Ready");
+        setFaceFeedback("");
+      }
+
+      function goBack() {
+        stopCameraStream();
+        window.location.href = requestedMode === "register"
+          ? "/register.html?role=employee"
+          : "/login.html?role=employee";
+      }
+
+      function completeVerification() {
+        if (!hasCapturedFace) {
+          setFaceFeedback("Capture your face first before continuing.", "error");
+          return;
+        }
+
+        const storedContext = readStoredContext();
+        storeVerificationResult({
+          mode: requestedMode,
+          employeeId: storedContext?.employeeId ?? "",
+          verifiedAt: new Date().toISOString(),
+        });
+
+        try {
+          window.sessionStorage.removeItem(faceVerificationContextStorageKey);
+        } catch (error) {
+          console.warn("Unable to clear face verification context.", error);
+        }
+
+        stopCameraStream();
+        updateStatus("Verified", "success");
+        setFaceFeedback("Face verification validated locally. Returning to the employee flow...", "success");
+
+        window.setTimeout(() => {
+          window.location.href = "/login.html?role=employee";
+        }, 500);
+      }
+
+      const faceContext = readStoredContext();
+      const faceModeCopy = requestedMode === "register"
+        ? {
+            pageTitle: "Employee Registration Verification",
+            pageCopy:
+              "Verify the employee face before completing the registration security step.",
+            summaryTitle: "Registration Security",
+          }
+        : {
+            pageTitle: "Employee Face Verification",
+            pageCopy:
+              "Verify the employee face before completing the sign-in security step.",
+            summaryTitle: "Sign-In Security",
+          };
+
+      function resolveFaceGreeting(context) {
+        const firstName = String(context?.firstName ?? "").trim();
+        const lastName = String(context?.lastName ?? "").trim();
+        const fullName = [firstName, lastName].filter(Boolean).join(" ");
+        return fullName || "Firstname Lastname";
+      }
+
+      facePageTitle.textContent = faceModeCopy.pageTitle;
+      facePageCopy.textContent = faceModeCopy.pageCopy;
+      faceModeTitle.textContent = faceModeCopy.summaryTitle;
+      faceEmployeeIdValue.textContent = resolveFaceGreeting(faceContext);
+
+      if (requestedMode === "register" && faceContext?.registerEmail) {
+        faceEmailRow.hidden = false;
+        faceEmailValue.textContent = faceContext.registerEmail;
+      }
+
+      updateStatus("Pending");
+
+      startCameraButton.addEventListener("click", startCamera);
+      captureFaceButton.addEventListener("click", captureFace);
+      retakeFaceButton.addEventListener("click", retakeFace);
+      completeFaceButton.addEventListener("click", completeVerification);
+      backButton.addEventListener("click", goBack);
+
+      window.addEventListener("beforeunload", stopCameraStream);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "gms-shopping-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Minimal local backend for GMS Shopping products",
+  "dependencies": {
+    "sharp": "^0.33.5"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Concern</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+    <script src="/employee_access_guard.js?v=admin-session-bypass-1" data-employee-access-guard data-allowed-positions="admin"></script>
+  </head>
+  <body>
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral concern-shell">
+      <div class="dashboard-layout">
+        <aside class="panel dashboard-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/admin_dashboard.html"
+            aria-label="Admin dashboard home"
+            title="Admin dashboard"
+            data-login-logo
+          >
+            <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
+              <img
+                class="dashboard-sidebar__logo-image"
+                alt="Admin logo"
+                hidden
+                data-logo-image
+              />
+              <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder>
+                logo
+              </span>
+            </span>
+          </a>
+
+          <nav class="dashboard-nav" aria-label="Admin navigation"></nav>
+        </aside>
+
+        <div class="dashboard-content">
+          <section class="hero">
+            <div class="hero-actions">
+              <div>
+                <h1>Concern</h1>
+              </div>
+
+              <div class="dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Admin workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Admin logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      AD
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Admin Workspace</strong>
+                    <span>Concern</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="concern-grid" aria-label="Concern requests">
+            <section class="panel dashboard-panel concern-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Cancel Request</h2>
+                </div>
+              </div>
+
+              <div class="concern-list" data-concern-cancel-list>
+                <div class="employee-chat-placeholder">
+                  <strong>No pending requests</strong>
+                  <p>Cancellation requests from the app will appear here.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel dashboard-panel concern-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Return Request</h2>
+                </div>
+              </div>
+
+              <div class="concern-list" data-concern-return-list>
+                <div class="employee-chat-placeholder">
+                  <strong>No return requests</strong>
+                  <p>Return requests from the app will appear here.</p>
+                </div>
+              </div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script src="/admin_navigation.js?v=admin-profile-refresh-1"></script>
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script src="/concern.js"></script>
+  </body>
+</html>

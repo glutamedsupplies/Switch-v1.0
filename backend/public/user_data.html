@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Data</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+  </head>
+  <body class="super-admin-page">
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral super-admin-shell user-data-shell">
+      <div class="dashboard-layout super-admin-layout">
+        <aside class="panel dashboard-sidebar super-admin-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/super_admin.html"
+            aria-label="Super admin home"
+            title="Super admin"
+          >
+            <span class="dashboard-sidebar__logo-mark super-admin-logo-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 3.5 5.5 6v5.3c0 4.2 2.6 7.5 6.5 9.2 3.9-1.7 6.5-5 6.5-9.2V6L12 3.5Z" stroke-linejoin="round" />
+                <path d="M9 12.2 11 14l4.2-4.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+          </a>
+
+          <nav class="dashboard-nav" aria-label="Super admin navigation">
+            <a
+              class="dashboard-nav__item"
+              href="/super_admin.html"
+              data-nav-tooltip="Companies"
+              aria-label="Companies"
+              title="Companies"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                  <path d="M6 12H4a2 2 0 0 0-2 2v8h20v-8a2 2 0 0 0-2-2h-2" />
+                  <path d="M10 6h4" />
+                  <path d="M10 10h4" />
+                  <path d="M10 14h4" />
+                  <path d="M10 18h4" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Companies</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/super_admin.html#product-requests"
+              data-nav-tooltip="In Review"
+              aria-label="In Review"
+              title="In Review"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 12H3" />
+                  <path d="M16 6H3" />
+                  <path d="M16 18H3" />
+                  <path d="m16 12 2 2 4-4" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">In Review</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/payment_partners.html"
+              data-nav-tooltip="Payment Partners"
+              aria-label="Payment Partners"
+              title="Payment Partners"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="20" height="14" x="2" y="5" rx="2" />
+                  <line x1="2" x2="22" y1="10" y2="10" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Payment Partners</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/delivery_partners.html"
+              data-nav-tooltip="Delivery Partners"
+              aria-label="Delivery Partners"
+              title="Delivery Partners"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                  <path d="M15 18H9" />
+                  <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 9H14" />
+                  <circle cx="7" cy="18" r="2" />
+                  <circle cx="17" cy="18" r="2" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Delivery Partners</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item is-active"
+              href="/user_data.html"
+              aria-current="page"
+              data-nav-tooltip="User Data"
+              aria-label="User Data"
+              title="User Data"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <circle cx="12" cy="10" r="3" />
+                  <path d="M7 21v-2a5 5 0 0 1 10 0v2" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">User Data</span>
+            </a>
+
+            <button
+              type="button"
+              class="dashboard-nav__item dashboard-nav__item--button"
+              data-root-sign-out
+              data-nav-tooltip="Sign out"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" x2="9" y1="12" y2="12" />
+                </svg>
+              </span>
+            </button>
+          </nav>
+        </aside>
+
+        <div class="dashboard-content">
+          <section class="hero universal-page-header">
+            <div class="universal-main-header user-data-main-header">
+              <div class="universal-main-header__controls user-data-main-header__controls">
+                <h1 class="user-data-title user-data-main-header__title">User Data</h1>
+                <label class="product-panel-toolbar__search super-admin-company-search user-data-main-header__search" for="user-data-search-input">
+                  <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="11" cy="11" r="6.5" />
+                      <path d="m16 16 4 4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                  <input
+                    id="user-data-search-input"
+                    type="search"
+                    placeholder="Search name, last name, or user ID"
+                    autocomplete="off"
+                    data-user-data-search
+                  />
+                </label>
+                <select class="user-data-sort-select user-data-main-header__sort" data-user-data-sort aria-label="Sort by">
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="a-z">A-Z</option>
+                  <option value="z-a">Z-A</option>
+                </select>
+              </div>
+
+              <div class="universal-main-header__actions dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Admin workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Admin logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      AD
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Super Admin</strong>
+                    <span>User Data</span>
+                  </span>
+                </div>
+
+                <div class="settings-menu" data-settings-menu>
+                  <button
+                    class="settings-toggle"
+                    type="button"
+                    aria-label="Color Picker"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Color Picker"
+                    data-settings-toggle
+                  >
+                    <span class="settings-toggle__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path
+                          d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                          stroke-linejoin="round"
+                        />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </span>
+                    <span class="settings-toggle__swatch" aria-hidden="true"></span>
+                  </button>
+
+                  <div class="settings-dropdown" hidden data-settings-dropdown>
+                    <p class="settings-dropdown__eyebrow">Theme Settings</p>
+                    <h2 class="settings-dropdown__title">Color Picker</h2>
+                    <p class="settings-dropdown__copy">
+                      Pick a color and it updates the whole web server instantly.
+                    </p>
+
+                    <label class="settings-color-field">
+                      <span>Primary Color</span>
+                      <input type="color" value="#2563EB" data-theme-color-input />
+                    </label>
+
+                    <div class="settings-color-meta">
+                      <span data-theme-hex>#2563EB</span>
+                      <span data-theme-rgb>RGB 37, 99, 235</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="ghost-button settings-reset-button"
+                      data-theme-reset
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel dashboard-panel user-account-panel">
+            <div class="user-account-list" id="user-account-list">
+              <div class="empty-state">No registered app users yet.</div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script src="/super_admin.js?v=search-delay-500-1"></script>
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script src="/user_data.js?v=super-admin-user-data-restore-1"></script>
+  </body>
+</html>

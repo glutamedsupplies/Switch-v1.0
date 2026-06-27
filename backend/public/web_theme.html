@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GMS Shopping Theme Picker</title>
+    <link rel="stylesheet" href="/styles.css?v=universal-search-1" />
+  </head>
+  <body>
+    <main class="page-shell theme-page-shell">
+      <section class="hero">
+        <div class="hero-actions">
+          <div>
+            <p class="eyebrow">GMS Shopping Theme</p>
+            <h1>RGB Color Picker</h1>
+          </div>
+
+          <div class="hero-shortcuts">
+            <a class="theme-link" href="/">
+              <span class="theme-link__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M3 12h18" stroke-linecap="round" />
+                  <path d="M12 3v18" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span>Product Panel</span>
+            </a>
+            <a class="theme-link" href="/login.html">
+              <span class="theme-link__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M10 17 15 12 10 7" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M15 12H3" stroke-linecap="round" />
+                  <path d="M21 4v16" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span>Login Page</span>
+            </a>
+          </div>
+        </div>
+
+        <p class="hero-copy">
+          Pick your primary color using RGB values. Once saved, the chosen
+          color becomes the live theme for the web server pages.
+        </p>
+      </section>
+
+      <section class="theme-grid">
+        <section class="panel theme-card">
+          <div class="theme-swatch-wrap">
+            <div id="theme-preview-swatch" class="theme-swatch" aria-hidden="true"></div>
+            <div>
+              <p class="section-label">Primary Color</p>
+              <h2 id="theme-hex-value">#2563EB</h2>
+              <p class="panel-copy">RGB: <span id="theme-rgb-value">37, 99, 235</span></p>
+            </div>
+          </div>
+
+          <form id="theme-form" class="product-form theme-form" novalidate>
+            <div class="rgb-control">
+              <div class="rgb-label-row">
+                <label for="red-range">Red</label>
+                <input
+                  id="red-input"
+                  class="rgb-number"
+                  type="number"
+                  min="0"
+                  max="255"
+                  inputmode="numeric"
+                />
+              </div>
+              <input id="red-range" class="range-input" type="range" min="0" max="255" />
+            </div>
+
+            <div class="rgb-control">
+              <div class="rgb-label-row">
+                <label for="green-range">Green</label>
+                <input
+                  id="green-input"
+                  class="rgb-number"
+                  type="number"
+                  min="0"
+                  max="255"
+                  inputmode="numeric"
+                />
+              </div>
+              <input id="green-range" class="range-input" type="range" min="0" max="255" />
+            </div>
+
+            <div class="rgb-control">
+              <div class="rgb-label-row">
+                <label for="blue-range">Blue</label>
+                <input
+                  id="blue-input"
+                  class="rgb-number"
+                  type="number"
+                  min="0"
+                  max="255"
+                  inputmode="numeric"
+                />
+              </div>
+              <input id="blue-range" class="range-input" type="range" min="0" max="255" />
+            </div>
+
+            <div class="theme-actions">
+              <button type="submit">Apply Theme</button>
+              <button type="button" class="ghost-button" id="reset-theme-button">
+                Reset Default
+              </button>
+            </div>
+          </form>
+
+          <p id="theme-feedback" class="feedback-note" aria-live="polite">
+            Preview the color live, then click Apply Theme to save it for the
+            whole web server.
+          </p>
+        </section>
+
+        <aside class="panel theme-preview-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-label">Live Preview</p>
+              <h2>Website sample</h2>
+            </div>
+            <span class="count-pill">Theme Ready</span>
+          </div>
+
+          <div class="theme-preview-stack">
+            <article class="theme-preview-card">
+              <h3 class="product-name">Primary Interface</h3>
+              <p class="product-description">
+                Buttons, pills, borders, and focus states will follow your
+                selected primary RGB color.
+              </p>
+              <div class="preview-button-row">
+                <button type="button">Primary Action</button>
+                <button type="button" class="ghost-button">Secondary</button>
+              </div>
+            </article>
+
+            <article class="theme-preview-card theme-preview-card--soft">
+              <div class="product-stats">
+                <span class="product-stat">Primary Accent</span>
+                <span class="product-stat">Saved Locally</span>
+              </div>
+              <p class="helper-text">
+                Open the product panel or login page and the selected theme will
+                already be applied there.
+              </p>
+            </article>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/web_theme.js"></script>
+  </body>
+</html>
