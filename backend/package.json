@@ -12,6 +12,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "test:security": "node security/security.lock.test.js",
     "db:migrate": "node db/migrate.js",
     "db:migrate-users": "node scripts/migrate-accounts-json-to-postgres.js",
     "gmail:connect": "node scripts/gmail-oauth-setup.js",

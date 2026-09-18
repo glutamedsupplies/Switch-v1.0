@@ -1,7 +1,7 @@
 "use strict";
 
 const { query, withTransaction, isPostgresConfigured, getPool } = require("../db/pool");
-const { hashPassword, verifyPassword } = require("../db/password");
+const { hashPassword, verifyPassword, verifyAndRehash } = require("../db/password");
 const {
   normalizeEmail,
   normalizePhone,
@@ -435,23 +435,42 @@ async function loginEmployee({ employeeId, password }) {
   }
 
   for (const candidate of matches) {
-    const valid = await verifyPassword(password, candidate._passwordHash);
-    if (valid) {
+    const result = await verifyAndRehash(password, candidate._passwordHash);
+    if (result.valid) {
       const now = new Date().toISOString();
-      await query(
-        `
-          UPDATE accounts
-          SET
-            last_login_at = $2,
-            last_active_at = $2,
-            is_online = TRUE,
-            presence_status = 'online',
-            presence_updated_at = $2,
-            updated_at = $2
-          WHERE id = $1
-        `,
-        [candidate.id, now],
-      );
+      if (result.rehashed) {
+        await query(
+          `
+            UPDATE accounts
+            SET
+              password_hash = $2,
+              password_updated_at = $3,
+              last_login_at = $3,
+              last_active_at = $3,
+              is_online = TRUE,
+              presence_status = 'online',
+              presence_updated_at = $3,
+              updated_at = $3
+            WHERE id = $1
+          `,
+          [candidate.id, result.nextHash, now],
+        );
+      } else {
+        await query(
+          `
+            UPDATE accounts
+            SET
+              last_login_at = $2,
+              last_active_at = $2,
+              is_online = TRUE,
+              presence_status = 'online',
+              presence_updated_at = $2,
+              updated_at = $2
+            WHERE id = $1
+          `,
+          [candidate.id, now],
+        );
+      }
       const updated = await findEmployeeById(candidate.id);
       return { ok: true, account: stripInternalFields(updated || candidate) };
     }

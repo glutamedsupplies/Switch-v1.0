@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 const { query, withTransaction, isPostgresConfigured, getPool } = require("../db/pool");
-const { hashPassword, verifyPassword } = require("../db/password");
+const { hashPassword, verifyPassword, verifyAndRehash } = require("../db/password");
 const {
   normalizeEmail,
   normalizePhone,
@@ -783,9 +783,26 @@ async function loginSeller({ email, password }) {
     return { ok: false, code: "not_found", message: "Admin email or password is incorrect." };
   }
 
-  const valid = await verifyPassword(password, account._passwordHash);
-  if (!valid) {
+  const result = await verifyAndRehash(password, account._passwordHash);
+  if (!result.valid) {
     return { ok: false, code: "bad_password", message: "Admin email or password is incorrect." };
+  }
+  if (result.rehashed) {
+    const now = new Date().toISOString();
+    await query(
+      `
+        UPDATE accounts
+        SET
+          password_hash = $2,
+          password_updated_at = $3,
+          updated_at = $3
+        WHERE id = $1
+          AND role = 'admin'
+      `,
+      [account.id, result.nextHash, now],
+    );
+    account._passwordHash = result.nextHash;
+    account.passwordUpdatedAt = now;
   }
 
   const updated = await markSellerLoggedIn(account.id);

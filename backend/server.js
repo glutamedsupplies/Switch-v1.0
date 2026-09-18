@@ -73,7 +73,28 @@ const {
   createHostedCheckoutSession,
   verifyPaymongoWebhook,
 } = require("./services/sellerCheckoutGateway");
-const { verifyPassword } = require("./db/password");
+const {
+  verifyPassword,
+  hashPassword,
+  hashPasswordForStorage,
+  verifyAndRehash,
+} = require("./db/password");
+const {
+  loadSecurityConfigOrExit,
+  createSessionToken,
+  attachRequestAuth,
+  setSessionCookie,
+  applyCorsHeaders,
+  createLoginRateLimiter,
+  getClientIp,
+  isPublicApiPath,
+  isUploadApiPath,
+  evaluateTenantScope,
+  resolveTenantAdminId,
+  hasAuthenticatedAdminScope,
+  isSuperAdminSession,
+  requireSignedSession,
+} = require("./security");
 const {
   isEmployeePostgresReady,
   createEmployeeAccount,
@@ -146,6 +167,15 @@ function loadEnvFile(filePath) {
 
 loadEnvFile(path.join(__dirname, ".env"));
 loadEnvFile(path.join(path.dirname(__dirname), ".env"));
+
+const securityConfig = loadSecurityConfigOrExit(process.env);
+const loginRateLimiter = createLoginRateLimiter({
+  maxAttempts: securityConfig.loginRateLimitMax,
+  ipMaxAttempts: securityConfig.loginRateLimitIpMax,
+  windowMs: securityConfig.loginRateLimitWindowMs,
+});
+const corsRequestByResponse = new WeakMap();
+let superAdminPasswordHash = "";
 
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT_DIR = __dirname;
@@ -381,15 +411,7 @@ const YOLO_INSPECTION_TIMEOUT_MS = Math.max(
   1_000,
   Number(process.env.YOLO_INSPECTION_TIMEOUT_MS) || 20_000,
 );
-const SUPER_ADMIN_USERNAME = String(
-  process.env.SUPER_ADMIN_USERNAME || "root",
-).trim() || "root";
-const SUPER_ADMIN_PASSWORD = String(
-  process.env.SUPER_ADMIN_PASSWORD || "Root@12345",
-).trim() || "Root@12345";
-const SUPER_ADMIN_SESSION_TOKEN = Buffer.from(
-  `${SUPER_ADMIN_USERNAME}:${SUPER_ADMIN_PASSWORD}`,
-).toString("base64url");
+const SUPER_ADMIN_USERNAME = securityConfig.superAdminUsername;
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -448,29 +470,12 @@ function getRecordAdminId(record, fallback = DEFAULT_ADMIN_ID) {
 }
 
 function getRequestAdminId(request, requestUrl = null, fallback = DEFAULT_ADMIN_ID) {
-  const url = requestUrl ?? new URL(request.url, `http://127.0.0.1:${PORT}`);
-  return normalizeAdminTenantId(
-    request.headers["x-gms-admin-id"] ??
-      request.headers["x-admin-id"] ??
-      url.searchParams.get("adminId") ??
-      url.searchParams.get("tenantId") ??
-      url.searchParams.get("workspaceId"),
-    normalizeAdminTenantId(fallback, DEFAULT_ADMIN_ID),
-  );
+  const resolved = resolveTenantAdminId(request, requestUrl, fallback);
+  return normalizeAdminTenantId(resolved, fallback || DEFAULT_ADMIN_ID);
 }
 
 function hasRequestAdminScope(request, requestUrl = null) {
-  const url = requestUrl ?? new URL(request.url, `http://127.0.0.1:${PORT}`);
-  return Boolean(
-    normalizeAdminTenantId(
-      request.headers["x-gms-admin-id"] ??
-        request.headers["x-admin-id"] ??
-        url.searchParams.get("adminId") ??
-        url.searchParams.get("tenantId") ??
-        url.searchParams.get("workspaceId"),
-      "",
-    ),
-  );
+  return hasAuthenticatedAdminScope(request, requestUrl);
 }
 
 function getExplicitRequestAdminId(request, requestUrl = null) {
@@ -1006,8 +1011,7 @@ function mergeScopedRecordsById(allRecords, scopedRecords, adminId) {
 }
 
 function isSuperAdminAuthorized(request) {
-  const token = String(request.headers["x-gms-super-admin-token"] ?? "").trim();
-  return token === SUPER_ADMIN_SESSION_TOKEN;
+  return isSuperAdminSession(request?.gmsAuth);
 }
 
 function requireSuperAdmin(request, response) {
@@ -6922,10 +6926,12 @@ async function verifySellerAccountPassword(account, password) {
   if (await isSellerPostgresReady()) {
     const seller = await findSellerByAdminId(account.adminId || account.id);
     if (seller?._passwordHash) {
-      return verifyPassword(submitted, seller._passwordHash);
+      const result = await verifyAndRehash(submitted, seller._passwordHash);
+      return result.valid;
     }
   }
-  return submitted === String(account.password ?? "");
+  const result = await verifyAndRehash(submitted, account.password);
+  return result.valid;
 }
 
 function applyScheduledSellerAccountDeletion(account, now, requestedBy = "seller-admin") {
@@ -7108,13 +7114,74 @@ async function processDueSellerAccountDeletions() {
   return sellerDeletionSweepPromise;
 }
 
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type,If-Match,X-Request-ID,X-File-Name,X-GMS-Admin-ID,X-Admin-ID,X-GMS-Super-Admin-Token",
-  );
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+function setCorsHeaders(response, request = corsRequestByResponse.get(response)) {
+  applyCorsHeaders(response, request, securityConfig.corsAllowedOrigins);
+}
+
+function bindSecurityRequest(request, response) {
+  corsRequestByResponse.set(response, request);
+  attachRequestAuth(request, securityConfig.sessionSecret);
+}
+
+function getLoginRateLimitIdentifier(payload = {}) {
+  return String(
+    payload.email ??
+      payload.username ??
+      payload.employeeId ??
+      payload.accountId ??
+      payload.identifier ??
+      "",
+  ).trim().toLowerCase();
+}
+
+function enforceLoginRateLimit(request, response, identifier) {
+  const result = loginRateLimiter.consumeLogin({
+    ip: getClientIp(request),
+    identifier: getLoginRateLimitIdentifier({ identifier }),
+  });
+  if (!result.ok) {
+    response.setHeader("Retry-After", String(result.retryAfterSeconds));
+    sendJson(response, 429, {
+      message: "Too many login attempts. Try again later.",
+      retryAfterSeconds: result.retryAfterSeconds,
+    });
+    return false;
+  }
+  return true;
+}
+
+function clearLoginRateLimit(request, identifier) {
+  loginRateLimiter.resetLogin({
+    ip: getClientIp(request),
+    identifier,
+  });
+}
+
+function issueAuthSession(response, claims) {
+  const sessionToken = createSessionToken(claims, {
+    secret: securityConfig.sessionSecret,
+    ttlSeconds: securityConfig.sessionTtlSeconds,
+  });
+  setSessionCookie(response, sessionToken, {
+    ttlSeconds: securityConfig.sessionTtlSeconds,
+    secure: securityConfig.cookieSecure,
+  });
+  return sessionToken;
+}
+
+function requireUploadAuth(request, response) {
+  const auth = requireSignedSession(request?.gmsAuth);
+  if (auth.ok) {
+    return true;
+  }
+  sendJson(response, 401, {
+    message: "Sign in is required to upload files.",
+  });
+  return false;
+}
+
+async function authenticateStoredPassword(storedPassword, submittedPassword) {
+  return verifyAndRehash(submittedPassword, storedPassword);
 }
 
 function sendJson(response, statusCode, body) {
@@ -8197,7 +8264,7 @@ function isAdminAccountPresenceOnline(account) {
 }
 
 function serializeAdminAccount(account, counts = null) {
-  const { password, ...safeAccount } = account || {};
+  const safeAccount = stripInternalFields(account || {}) || {};
   const isPresenceOnline = isAdminAccountPresenceOnline(safeAccount);
   const companyName = [
     safeAccount.companyName,
@@ -8527,7 +8594,10 @@ function applyRegisteredFaceProfile(account, faceAttendanceData = null) {
 }
 
 function serializeEmployeeAccount(account, faceAttendanceData = null) {
-  const safeAccount = applyRegisteredFaceProfile(account, faceAttendanceData);
+  const safeAccount = applyRegisteredFaceProfile(
+    stripInternalFields(account) || {},
+    faceAttendanceData,
+  );
   const accessPermissions = ensureRequiredEmployeeAccessPermissions(
     safeAccount.accessPermissions ?? [],
     safeAccount.position,
@@ -8580,8 +8650,11 @@ function serializeEmployeeAccount(account, faceAttendanceData = null) {
 }
 
 function serializeAccountForList(account, faceAttendanceData = null) {
-  const accountWithFaceProfile = applyRegisteredFaceProfile(account, faceAttendanceData);
-  const { password, ...safeAccount } = accountWithFaceProfile || {};
+  const accountWithFaceProfile = applyRegisteredFaceProfile(
+    stripInternalFields(account) || {},
+    faceAttendanceData,
+  );
+  const safeAccount = accountWithFaceProfile || {};
   const accessPermissions = ensureRequiredEmployeeAccessPermissions(
     safeAccount.accessPermissions ?? [],
     safeAccount.position,
@@ -20816,11 +20889,19 @@ function findEmployeeLoginAccount(accounts, employeeId) {
   return getEmployeeLoginAccountMatches(accounts, employeeId)[0] || null;
 }
 
-function findEmployeeLoginAccountWithPassword(accounts, employeeId, password) {
+async function findEmployeeLoginAccountWithPassword(accounts, employeeId, password) {
   const normalizedPassword = String(password ?? "").trim();
-  return getEmployeeLoginAccountMatches(accounts, employeeId).find((candidate) =>
-    String(candidate.password ?? "") === normalizedPassword
-  ) || null;
+  for (const candidate of getEmployeeLoginAccountMatches(accounts, employeeId)) {
+    const result = await verifyAndRehash(normalizedPassword, candidate.password);
+    if (result.valid) {
+      if (result.rehashed) {
+        candidate.password = result.nextHash;
+        candidate.passwordUpdatedAt = new Date().toISOString();
+      }
+      return { account: candidate, rehashed: result.rehashed };
+    }
+  }
+  return null;
 }
 
 function setAdminAccountPresence(account, isOnline, options = {}) {
@@ -20899,6 +20980,10 @@ async function handleAdminLoginApi(request, response) {
       return;
     }
 
+    if (!enforceLoginRateLimit(request, response, email)) {
+      return;
+    }
+
     if (await isSellerPostgresReady()) {
       await processDueSellerAccountDeletions();
       const pgLogin = await loginSeller({ email, password });
@@ -20939,12 +21024,20 @@ async function handleAdminLoginApi(request, response) {
           return;
         }
 
+        clearLoginRateLimit(request, email);
+        const sessionToken = issueAuthSession(response, {
+          role: "admin",
+          accountId: String(account.id ?? ""),
+          adminId: getRecordAdminId(account, account.adminId || account.id),
+          email: String(account.email ?? email),
+        });
         sendJson(response, 200, {
           admin: serializeAdminAccount(account),
           dashboardPath: "/admin_dashboard.html",
           redirectPath: "/main.html",
           message: "Seller login verified.",
           authStore: "postgres",
+          sessionToken,
         });
         return;
       }
@@ -20962,7 +21055,10 @@ async function handleAdminLoginApi(request, response) {
       String(candidate.email ?? "").trim().toLowerCase() === email
     );
 
-    if (!account || String(account.password ?? "") !== password) {
+    const passwordCheck = account
+      ? await authenticateStoredPassword(account.password, password)
+      : { valid: false, rehashed: false, nextHash: "" };
+    if (!account || !passwordCheck.valid) {
       sendJson(response, 401, {
         message: "Admin email or password is incorrect.",
       });
@@ -21004,14 +21100,26 @@ async function handleAdminLoginApi(request, response) {
     }
 
     setAdminAccountPresence(account, true, { event: "login" });
+    if (passwordCheck.rehashed) {
+      account.password = passwordCheck.nextHash;
+      account.passwordUpdatedAt = new Date().toISOString();
+    }
     await writeAccounts(accounts);
 
+    clearLoginRateLimit(request, email);
+    const sessionToken = issueAuthSession(response, {
+      role: "admin",
+      accountId: String(account.id ?? ""),
+      adminId: getRecordAdminId(account, account.adminId || account.id),
+      email: String(account.email ?? email),
+    });
     sendJson(response, 200, {
       admin: serializeAdminAccount(account),
       dashboardPath: "/admin_dashboard.html",
       redirectPath: "/main.html",
       message: "Seller login verified.",
       authStore: "json",
+      sessionToken,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -21500,7 +21608,7 @@ async function handleBuyerChangePasswordApi(request, response) {
       const now = new Date().toISOString();
       accounts[accountIndex] = {
         ...account,
-        password: newPassword,
+        password: await hashPasswordForStorage(newPassword),
         passwordUpdatedAt: now,
         updatedAt: now,
       };
@@ -22415,7 +22523,7 @@ async function handleAuthPasswordResetApi(request, response) {
       const previousAccount = accounts[accountIndex];
       accounts[accountIndex] = {
         ...previousAccount,
-        password,
+        password: await hashPasswordForStorage(password),
         passwordUpdatedAt: now,
         passwordResetRequired: false,
         mustChangePassword: false,
@@ -22528,6 +22636,9 @@ async function handleAuthGoogleLoginApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
+    if (!enforceLoginRateLimit(request, response, payload.email || payload.idToken || "google")) {
+      return;
+    }
     const createIfMissing =
       payload.createIfMissing === undefined
         ? true
@@ -22571,6 +22682,12 @@ async function handleAuthGoogleLoginApi(request, response) {
       return;
     }
 
+    clearLoginRateLimit(request, String(loginResult.account?.email ?? ""));
+    const sessionToken = issueAuthSession(response, {
+      role: "buyer",
+      accountId: String(loginResult.account.id ?? ""),
+      email: String(loginResult.account.email ?? ""),
+    });
     sendJson(response, 200, {
       account: serializeAccountForList(stripInternalFields(loginResult.account)),
       message: loginResult.created
@@ -22578,6 +22695,7 @@ async function handleAuthGoogleLoginApi(request, response) {
         : "Login successful.",
       created: Boolean(loginResult.created),
       authStore: "postgres",
+      sessionToken,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -22613,6 +22731,9 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
 
     await processDueSellerAccountDeletions();
     const payload = await parseRequestBody(request);
+    if (!enforceLoginRateLimit(request, response, payload.email || payload.idToken || "google-seller")) {
+      return;
+    }
     const createIfMissing =
       payload.createIfMissing === undefined
         ? true
@@ -22654,6 +22775,13 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
       return;
     }
 
+    const sessionToken = issueAuthSession(response, {
+      role: "admin",
+      accountId: String(admin.id ?? ""),
+      adminId: getRecordAdminId(admin, admin.adminId || admin.id),
+      email: String(admin.email ?? ""),
+    });
+    clearLoginRateLimit(request, String(admin.email ?? payload.email ?? "google-seller"));
     sendJson(response, 200, {
       admin: serializeAdminAccount(admin),
       redirectPath: "/main.html#dashboard",
@@ -22663,6 +22791,7 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
         : "Seller login successful.",
       created: Boolean(loginResult.created),
       authStore: "postgres",
+      sessionToken,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -22690,6 +22819,10 @@ async function handleAppUserLoginApi(request, response) {
       return;
     }
 
+    if (!enforceLoginRateLimit(request, response, email)) {
+      return;
+    }
+
     if (await isCustomerPostgresReady()) {
       const pgLogin = await loginCustomer({ email, password });
       if (pgLogin.ok) {
@@ -22711,10 +22844,17 @@ async function handleAppUserLoginApi(request, response) {
           return;
         }
 
+        clearLoginRateLimit(request, email);
+        const sessionToken = issueAuthSession(response, {
+          role: "buyer",
+          accountId: String(pgLogin.account.id ?? ""),
+          email: String(pgLogin.account.email ?? email),
+        });
         sendJson(response, 200, {
           account: serializeAccountForList(stripInternalFields(pgLogin.account)),
           message: "Login successful.",
           authStore: "postgres",
+          sessionToken,
         });
         return;
       }
@@ -22752,7 +22892,8 @@ async function handleAppUserLoginApi(request, response) {
       return;
     }
 
-    if (String(account.password ?? "") !== password) {
+    const passwordCheck = await authenticateStoredPassword(account.password, password);
+    if (!passwordCheck.valid) {
       sendJson(response, 401, {
         message: "Incorrect Password",
       });
@@ -22784,12 +22925,23 @@ async function handleAppUserLoginApi(request, response) {
       onlineStatus: "online",
       presenceUpdatedAt: now,
     });
+    if (passwordCheck.rehashed) {
+      account.password = passwordCheck.nextHash;
+      account.passwordUpdatedAt = now;
+    }
     await writeAccounts(accounts);
 
+    clearLoginRateLimit(request, email);
+    const sessionToken = issueAuthSession(response, {
+      role: "buyer",
+      accountId: String(account.id ?? ""),
+      email: String(account.email ?? email),
+    });
     sendJson(response, 200, {
       account: serializeAccountForList(account),
       message: "Login successful.",
       authStore: "json",
+      sessionToken,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -22946,7 +23098,7 @@ async function handleAdminAccountApi(request, response) {
 
       const passwordWasChanged = Boolean(
         submittedPassword &&
-        submittedPassword !== String(existingAccount.password ?? ""),
+        !(await verifyPassword(submittedPassword, existingAccount.password ?? "")),
       );
       const businessTypeWasChanged = requestedStoreType !== previousStoreType;
       const previousProfileSnapshot = JSON.stringify({
@@ -23001,7 +23153,9 @@ async function handleAdminAccountApi(request, response) {
         email,
         countryCode,
         mobileNumber,
-        password: submittedPassword || existingAccount.password,
+        password: passwordWasChanged
+          ? await hashPasswordForStorage(submittedPassword)
+          : existingAccount.password,
         passwordUpdatedAt: passwordWasChanged
           ? accountUpdatedAt
           : existingAccount.passwordUpdatedAt ?? existingAccount.createdAt ?? accountUpdatedAt,
@@ -23275,19 +23429,41 @@ async function handleSuperAdminLoginApi(request, response) {
     const username = String(payload.username ?? payload.email ?? "").trim();
     const password = String(payload.password ?? "").trim();
 
-    if (username !== SUPER_ADMIN_USERNAME || password !== SUPER_ADMIN_PASSWORD) {
+    if (!username || !password) {
       sendJson(response, 401, {
         message: "Root username or password is incorrect.",
       });
       return;
     }
 
+    if (!enforceLoginRateLimit(request, response, username)) {
+      return;
+    }
+
+    const usernameMatches = username === SUPER_ADMIN_USERNAME;
+    const passwordMatches = superAdminPasswordHash
+      ? await verifyPassword(password, superAdminPasswordHash)
+      : false;
+    if (!usernameMatches || !passwordMatches) {
+      sendJson(response, 401, {
+        message: "Root username or password is incorrect.",
+      });
+      return;
+    }
+
+    clearLoginRateLimit(request, username);
+    const sessionToken = issueAuthSession(response, {
+      role: "super-admin",
+      accountId: "super-admin",
+      username: SUPER_ADMIN_USERNAME,
+    });
     sendJson(response, 200, {
       root: {
         username: SUPER_ADMIN_USERNAME,
         role: "super-admin",
       },
-      token: SUPER_ADMIN_SESSION_TOKEN,
+      token: sessionToken,
+      sessionToken,
       redirectPath: "/super_admin.html",
       message: "Root login verified.",
     });
@@ -24849,7 +25025,7 @@ async function handleSuperAdminAdminPasswordResetApi(request, response, adminId)
 
     const updatedAccount = {
       ...previousAccount,
-      password: temporaryPassword,
+      password: await hashPasswordForStorage(temporaryPassword),
       passwordUpdatedAt: now,
       passwordResetRequired: true,
       mustChangePassword: true,
@@ -24940,7 +25116,7 @@ async function handleSuperAdminBuyerPasswordResetApi(request, response, buyerId)
 
     const updatedAccount = {
       ...previousAccount,
-      password: temporaryPassword,
+      password: await hashPasswordForStorage(temporaryPassword),
       passwordUpdatedAt: now,
       passwordResetRequired: true,
       mustChangePassword: true,
@@ -27860,6 +28036,10 @@ async function handleEmployeeLoginApi(request, response) {
       return;
     }
 
+    if (!enforceLoginRateLimit(request, response, employeeId)) {
+      return;
+    }
+
     if (await isEmployeePostgresReady()) {
       const pgLogin = await loginEmployee({ employeeId, password });
       if (pgLogin.ok) {
@@ -27869,6 +28049,13 @@ async function handleEmployeeLoginApi(request, response) {
           faceAttendanceData,
         );
         const dashboardPath = getEmployeeDashboardPath(serializedAccount);
+        clearLoginRateLimit(request, employeeId);
+        const sessionToken = issueAuthSession(response, {
+          role: "employee",
+          accountId: String(serializedAccount.id ?? ""),
+          adminId: serializedAccount.adminId,
+          email: String(serializedAccount.email ?? ""),
+        });
         sendJson(response, 200, {
           account: serializedAccount,
           adminId: serializedAccount.adminId,
@@ -27876,6 +28063,7 @@ async function handleEmployeeLoginApi(request, response) {
           redirectPath: "/main.html",
           message: "Employee login verified.",
           authStore: "postgres",
+          sessionToken,
         });
         return;
       }
@@ -27887,18 +28075,29 @@ async function handleEmployeeLoginApi(request, response) {
     }
 
     const accounts = await readAccounts();
-    const account = findEmployeeLoginAccountWithPassword(accounts, employeeId, password);
+    const matched = await findEmployeeLoginAccountWithPassword(accounts, employeeId, password);
 
-    if (!account) {
+    if (!matched?.account) {
       sendJson(response, 401, {
         message: "Employee ID or password is incorrect.",
       });
       return;
     }
 
+    if (matched.rehashed) {
+      await writeAccounts(accounts);
+    }
+
     const faceAttendanceData = await readFaceAttendanceData();
-    const serializedAccount = serializeEmployeeAccount(account, faceAttendanceData);
+    const serializedAccount = serializeEmployeeAccount(matched.account, faceAttendanceData);
     const dashboardPath = getEmployeeDashboardPath(serializedAccount);
+    clearLoginRateLimit(request, employeeId);
+    const sessionToken = issueAuthSession(response, {
+      role: "employee",
+      accountId: String(serializedAccount.id ?? ""),
+      adminId: serializedAccount.adminId,
+      email: String(serializedAccount.email ?? ""),
+    });
     sendJson(response, 200, {
       account: serializedAccount,
       adminId: serializedAccount.adminId,
@@ -27906,6 +28105,7 @@ async function handleEmployeeLoginApi(request, response) {
       redirectPath: "/main.html",
       message: "Employee login verified.",
       authStore: "json",
+      sessionToken,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -28148,6 +28348,9 @@ async function handleAccountsApi(request, response) {
         throw new Error("Phone number is already registered.");
       }
 
+      if (normalizedAccount.password) {
+        normalizedAccount.password = await hashPasswordForStorage(normalizedAccount.password);
+      }
       accounts.unshift(normalizedAccount);
       await writeAccounts(accounts);
       const accountActivityActor = createEmployeeRequestActivityActor(payload, normalizedAccount);
@@ -28217,7 +28420,7 @@ async function handleAccountsApi(request, response) {
       const accountUpdatedAt = new Date().toISOString();
       const passwordWasChanged = Boolean(
         submittedPassword &&
-        submittedPassword !== String(existingAccount.password ?? ""),
+        !(await verifyPassword(submittedPassword, existingAccount.password ?? "")),
       );
       const mergedPayload = {
         ...existingAccount,
@@ -28230,7 +28433,9 @@ async function handleAccountsApi(request, response) {
         employeeId: existingAccount.employeeId,
         source: "web",
         adminId: getRecordAdminId(existingAccount, requestAdminId),
-        password: submittedPassword || existingAccount.password,
+        password: passwordWasChanged
+          ? await hashPasswordForStorage(submittedPassword)
+          : existingAccount.password,
         passwordUpdatedAt: passwordWasChanged
           ? accountUpdatedAt
           : existingAccount.passwordUpdatedAt ?? null,
@@ -29532,6 +29737,9 @@ async function handleUploadApi(request, response, options = {}) {
     sendJson(response, 405, { message: "Method not allowed." });
     return;
   }
+  if (!requireUploadAuth(request, response)) {
+    return;
+  }
 
   try {
     const isReviewUpload = options?.reviewMedia === true;
@@ -29679,6 +29887,9 @@ async function handleProductModelFromFramesApi(request, response) {
     sendJson(response, 405, { message: "Method not allowed." });
     return;
   }
+  if (!requireUploadAuth(request, response)) {
+    return;
+  }
 
   try {
     await ensureStoragePaths();
@@ -29707,6 +29918,9 @@ async function handleProductModelFromScanApi(request, response) {
     sendJson(response, 405, { message: "Method not allowed." });
     return;
   }
+  if (!requireUploadAuth(request, response)) {
+    return;
+  }
 
   try {
     await ensureStoragePaths();
@@ -29733,6 +29947,9 @@ async function handleProductModelFromScanApi(request, response) {
 async function handleDocumentUploadApi(request, response) {
   if (request.method !== "POST") {
     sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  if (!requireUploadAuth(request, response)) {
     return;
   }
 
@@ -31011,12 +31228,34 @@ const ordersWaybillApi = createOrdersWaybillApi({
 
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
+  bindSecurityRequest(request, response);
 
   if (request.method === "OPTIONS") {
     setCorsHeaders(response);
     response.writeHead(204);
     response.end();
     return;
+  }
+
+  if (
+    requestUrl.pathname.startsWith("/api/") &&
+    isUploadApiPath(requestUrl.pathname) &&
+    String(request.method || "").toUpperCase() !== "OPTIONS"
+  ) {
+    if (!requireUploadAuth(request, response)) {
+      return;
+    }
+  }
+
+  if (
+    requestUrl.pathname.startsWith("/api/") &&
+    !isPublicApiPath(requestUrl.pathname, request.method)
+  ) {
+    const tenantCheck = evaluateTenantScope(request, requestUrl);
+    if (!tenantCheck.ok) {
+      sendJson(response, tenantCheck.statusCode, { message: tenantCheck.message });
+      return;
+    }
   }
 
   if (requestUrl.pathname === "/health") {
@@ -31773,6 +32012,7 @@ const server = http.createServer(async (request, response) => {
 
 ensureStoragePaths()
   .then(async () => {
+    superAdminPasswordHash = await hashPassword(securityConfig.superAdminPassword);
     const migratedLegacyGallery = await migrateProductsForImageGallery();
 
     if (migratedLegacyGallery) {

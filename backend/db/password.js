@@ -31,8 +31,37 @@ async function verifyPassword(plainPassword, passwordHashOrLegacy) {
   return password === stored;
 }
 
+async function hashPasswordForStorage(plainOrHash) {
+  const value = String(plainOrHash ?? "");
+  if (!value) {
+    return "";
+  }
+  if (looksLikeBcryptHash(value)) {
+    return value;
+  }
+  return hashPassword(value);
+}
+
+async function verifyAndRehash(plainPassword, passwordHashOrLegacy) {
+  const stored = String(passwordHashOrLegacy ?? "");
+  const valid = await verifyPassword(plainPassword, stored);
+  if (!valid) {
+    return { valid: false, nextHash: stored, rehashed: false };
+  }
+  if (looksLikeBcryptHash(stored)) {
+    return { valid: true, nextHash: stored, rehashed: false };
+  }
+  return {
+    valid: true,
+    nextHash: await hashPassword(plainPassword),
+    rehashed: true,
+  };
+}
+
 module.exports = {
   hashPassword,
   verifyPassword,
   looksLikeBcryptHash,
+  hashPasswordForStorage,
+  verifyAndRehash,
 };

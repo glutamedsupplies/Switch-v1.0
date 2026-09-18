@@ -2,177 +2,110 @@
 
 ## Current Authentication
 
-The system currently uses separate login endpoints:
+Login endpoints:
 
 - Customer login: `/api/accounts/login`
-- Admin login: `/api/admin-login`
+- Admin/seller login: `/api/admin-login`
 - Employee login: `/api/employee-login`
 - Super admin login: `/api/super-admin-login`
+- Google buyer/seller login: `/api/auth/google/login`, `/api/auth/google/seller-login`
 
-Browser admin sessions are stored in browser `sessionStorage`/`localStorage`. The backend uses request headers and query parameters to determine workspace scope, especially:
+Successful logins issue a **signed session** (HMAC-SHA256) using `ADMIN_API_SESSION_SECRET`:
 
-- `x-gms-admin-id`
-- `x-admin-id`
-- `adminId`
-- `tenantId`
-- `workspaceId`
+- HttpOnly `gms_session` cookie
+- `sessionToken` in the JSON body (super admin also returns it as `token` for existing clients)
 
-Super admin APIs require `x-gms-super-admin-token`, which is returned by the super admin login endpoint.
+The backend accepts the session from:
+
+- `Cookie: gms_session=...`
+- `X-GMS-Session-Token`
+- `Authorization: Bearer ...`
+- `X-GMS-Super-Admin-Token` (signed super-admin session from login)
+
+Browser `sessionStorage` / `localStorage` is still used by the admin UI for display state. It is **not** authorization. Tenant headers such as `x-gms-admin-id` cannot grant workspace scope by themselves.
 
 ## Authorization
 
-Current authorization is mostly handler-specific:
-
-- Super admin handlers call `requireSuperAdmin`.
-- Product/order/account/admin resources use `adminId` scope checks.
-- Employee page access is partly enforced in browser JavaScript through `employee_access_guard.js`.
+- Super admin handlers call `requireSuperAdmin`, which now requires a signed super-admin session.
+- Product/order/account/admin writes derive `adminId` from the signed session. A spoofed `x-gms-admin-id` / `x-admin-id` / `adminId` query without a matching session returns **401**. A signed admin session that claims a different tenant returns **403**.
+- Upload endpoints require any valid signed session.
+- Employee page access is still partly enforced in browser JavaScript through `employee_access_guard.js`.
 - Customer ownership is checked in selected flows such as seller follow and chat message deletion.
-
-There is no central authorization middleware, role policy layer, or signed session verification for most admin endpoints.
 
 ## Password Security
 
-Passwords are compared directly as strings in the backend. The data schema includes a `password` field on account records.
+Passwords are hashed with **bcrypt** (`backend/db/password.js`). Login for buyer, seller, admin, employee, and super-admin uses `verifyPassword` / `verifyAndRehash`:
 
-Risks:
+- bcrypt hashes are compared with bcrypt
+- Legacy plaintext values still verify, then are **re-hashed on successful login**
+- Account create/update/reset paths hash passwords before storing them
+- Super-admin password comes from `SUPER_ADMIN_PASSWORD` and is hashed in memory at startup
+- API serializers strip `password`, `_passwordHash`, and related secret fields
 
-- Plaintext passwords can be exposed if JSON files leak.
-- Super admin has default fallback credentials in code.
-- No password hashing, salting, rotation policy, lockout, or brute-force protection was found.
+Required environment (no hardcoded defaults):
 
-Recommendations:
+- `SUPER_ADMIN_USERNAME`
+- `SUPER_ADMIN_PASSWORD`
+- `ADMIN_API_SESSION_SECRET` (min 16 characters)
 
-- Hash passwords with Argon2id or bcrypt.
-- Require strong super admin credentials through environment variables.
-- Add password reset tokens with expiration.
-- Add login rate limiting and account lockout.
-- Never log or return password fields.
+The process **exits on startup** if any of these are missing, or if the well-known default password `Root@12345` is used.
 
 ## JWT and Sessions
 
-No JWT library or signed cookie session middleware was found.
+Sessions are compact HMAC tokens (`payload.signature`), not a JWT library. Claims include `role`, `adminId`, `accountId`, `exp`. Default TTL is 12 hours (`ADMIN_API_SESSION_TTL_SECONDS`).
 
-Current super admin token is derived from username and password and sent in a custom header. Admin and employee sessions are primarily browser-stored client data.
-
-Recommendations:
-
-- Use signed HTTP-only secure cookies or short-lived JWT access tokens plus refresh tokens.
-- Store roles/permissions server-side or in signed claims.
-- Validate tokens for every protected endpoint.
-- Add logout/session invalidation.
+Logout/session invalidation is cookie expiry / client token discard. Server-side revocation is not yet implemented.
 
 ## API Protection
 
-Current API protections include:
-
-- Per-handler method checks.
-- Some validation for required fields and duplicate records.
-- Admin scope filtering by `adminId`.
-- Super admin token checks on privileged endpoints.
-- Upload size limits.
-- CORS preflight handling.
-
-Risks:
-
-- `Access-Control-Allow-Origin` is currently `*`.
-- Tenant scope is accepted from caller-controlled headers/query parameters.
-- Many upload endpoints lack explicit auth checks inside the handler.
-- There is no global rate limiting.
-- There is no CSRF protection for browser-based admin actions.
-
-Recommendations:
-
-- Restrict CORS to trusted origins.
-- Require signed auth for every non-public API.
-- Add CSRF protection if cookie sessions are used.
-- Validate roles and permissions server-side.
-- Add audit logs for privileged actions.
-
-## Validation
-
-Validation exists in many places:
-
-- Emails and phone numbers are validated in admin/account update flows.
-- Duplicate admin email/mobile, customer email/mobile, employee ID, applicant name, and product barcode are checked.
-- Store Type and category names must be at least two characters and unique.
-- Upload types and sizes are checked.
-- Order group IDs and decisions are validated.
-
-Remaining gaps:
-
-- Validation is distributed across handlers and client scripts.
-- No schema validation library was found.
-- Some payloads accept flexible/legacy field names, making contracts harder to enforce.
-
-Recommendations:
-
-- Add schema validation with a library such as Zod, Joi, or JSON Schema.
-- Centralize request parsing and validation.
-- Add consistent error responses.
+- CORS origins come from `CORS_ALLOWED_ORIGINS` (comma-separated). There is no `Access-Control-Allow-Origin: *`.
+- Allowed origins are reflected with `Access-Control-Allow-Credentials: true`.
+- Requests with no `Origin` (same-origin, curl, mobile) are not treated as CORS.
+- Login endpoints are rate limited per IP and identifier.
+- Uploads require a signed session.
+- Super admin token checks use the signed session, not a static username:password token.
 
 ## File Upload Security
 
-Current upload behavior:
-
-- Uploads are written to `backend/public/uploads`.
+- Uploads still write to `backend/public/uploads`.
 - Images may be converted to WebP with `sharp`.
-- Upload max is 100 MB generally.
-- Review video max is 50 MB.
-- Documents allow PDF, DOC, and DOCX.
-- Uploaded files are publicly accessible through `/uploads/...`.
+- Size and type checks remain.
+- **Auth is required** on `/api/uploads`, `/api/chat-uploads`, `/api/review-uploads`, `/api/document-uploads`, product-model generators, and platform-feedback uploads.
 
-Risks:
-
-- Public uploads can expose sensitive documents.
-- MIME type and extension checks are not enough for malware protection.
-- Large uploads can consume disk space.
-- No per-user upload authorization was found in upload handlers.
-
-Recommendations:
-
-- Require auth for uploads.
-- Store employee documents outside public static storage.
-- Scan uploads for malware.
-- Enforce strict allowlists and content sniffing.
-- Add disk quotas and cleanup jobs.
-- Use object storage with signed URLs for private files.
+Clients must send the session cookie or `X-GMS-Session-Token` / `Authorization: Bearer`.
 
 ## Rate Limiting
 
-No rate limiter was found.
+Login rate limiting (`LOGIN_RATE_LIMIT_MAX`, default 8 attempts per `LOGIN_RATE_LIMIT_WINDOW_MS`, default 15 minutes) applies per:
 
-Endpoints needing rate limits:
+- client IP
+- IP + identifier (email, username, or employee ID)
 
-- Login endpoints
-- Upload endpoints
-- AI reply endpoint
-- Visual search endpoint
-- Product/account/order write endpoints
+Exceeded attempts return **429** with `Retry-After`. Successful logins clear the identifier bucket.
 
 ## Potential Security Risks
 
-| Severity | Risk | Files/Area |
+| Severity | Risk | Status |
 | --- | --- | --- |
-| Critical | Plaintext password storage and string comparison. | `backend/server.js`, `backend/data/accounts.json` |
-| Critical | Default super admin credentials exist in code. | `backend/server.js` |
-| High | Caller-controlled `adminId` headers/query parameters are trusted for tenant scope. | `backend/server.js`, admin JS clients |
-| High | Public file uploads can expose media/documents. | `backend/public/uploads`, upload handlers |
-| High | No centralized auth middleware for protected APIs. | `backend/server.js` |
-| Medium | CORS allows all origins. | `backend/server.js` |
-| Medium | No rate limiting or brute-force protection. | Backend API |
-| Medium | No CSRF protection for browser admin actions. | Admin web console |
-| Medium | JSON file database has no transaction/locking protections. | `backend/data` helpers |
-| Low | Browser local/session storage can be tampered with by scripts running on the same origin. | `backend/public/*.js` |
+| Critical | Plaintext password storage and string comparison | Mitigated: bcrypt + legacy re-hash on login |
+| Critical | Default super admin credentials in code | Mitigated: required env, startup fail-closed |
+| High | Caller-controlled `adminId` headers trusted for tenant scope | Mitigated: signed session required; spoof → 401/403 |
+| High | Public file uploads | Partially mitigated: upload auth required; files remain statically served |
+| High | No centralized auth middleware | Step 1: session attach + tenant/upload guards in the HTTP server |
+| Medium | CORS allows all origins | Mitigated: env allowlist |
+| Medium | No rate limiting | Step 1: login rate limit |
+| Medium | No CSRF protection for cookie sessions | Remaining: SameSite=Lax cookie; add CSRF if cookie-only browser writes expand |
+| Medium | JSON file database has no transaction/locking protections | Remaining |
+| Low | Browser local/session storage can be tampered with | Remaining, but it no longer grants API tenant scope |
 
 ## Recommended Security Roadmap
 
-1. Hash all existing passwords and migrate login comparisons.
-2. Replace default super admin credentials with required environment configuration.
-3. Add central authentication middleware.
-4. Implement server-side RBAC/permission checks.
-5. Restrict CORS and add CSRF protection.
-6. Protect uploads and move documents to private storage.
-7. Add rate limiting and request size controls per endpoint.
+1. ~~Hash all existing passwords and migrate login comparisons.~~ (Step 1: bcrypt helpers + legacy re-hash)
+2. ~~Replace default super admin credentials with required environment configuration.~~
+3. ~~Add central authentication middleware.~~ (Step 1: signed session + tenant guard)
+4. Implement server-side RBAC/permission checks for every route.
+5. ~~Restrict CORS~~ and add CSRF protection.
+6. Move documents to private storage and signed download URLs.
+7. Extend rate limiting to upload, AI, and visual-search endpoints.
 8. Add structured audit logs for admin/super admin actions.
-9. Move from JSON files to a database with constraints and backups.
-
+9. Complete the PostgreSQL migration and retire JSON password fields.

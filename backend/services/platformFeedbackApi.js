@@ -141,18 +141,32 @@ function createPlatformFeedbackApi(deps) {
   }
 
   async function requireSellerFeedbackSession(request, response) {
+    const session = request.gmsAuth;
+    const sessionAdminId = String(session?.adminId ?? "").trim();
     const headerAdminId = String(
       request.headers["x-gms-admin-id"] ?? request.headers["x-admin-id"] ?? "",
     ).trim();
-    if (!headerAdminId) {
+    if (!session || (!sessionAdminId && session.role !== "super-admin")) {
       sendJson(response, 401, {
         message: "A valid seller admin session is required to send feedback.",
       });
       return null;
     }
+    if (
+      headerAdminId &&
+      sessionAdminId &&
+      String(headerAdminId).trim().toLowerCase() !== sessionAdminId.toLowerCase() &&
+      session.role !== "super-admin"
+    ) {
+      sendJson(response, 403, {
+        message: "Tenant scope does not match the signed session.",
+      });
+      return null;
+    }
 
+    const adminId = sessionAdminId || headerAdminId;
     const accounts = await readAccounts();
-    const account = findAdminAccountByScopeId(accounts, headerAdminId);
+    const account = findAdminAccountByScopeId(accounts, adminId);
     if (!account || String(account.role ?? "").toLowerCase() !== "admin") {
       sendJson(response, 401, {
         message: "Your seller account could not be verified. Please sign in again.",
@@ -160,7 +174,7 @@ function createPlatformFeedbackApi(deps) {
       return null;
     }
 
-    return { account, adminId: headerAdminId };
+    return { account, adminId };
   }
 
   async function persistFeedbackSuperAdminNotification(notification) {

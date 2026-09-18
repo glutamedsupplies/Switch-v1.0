@@ -37,11 +37,30 @@ function coerceAccountStatus(value) {
   return allowed.has(status) ? status : "active";
 }
 
+const SENSITIVE_ACCOUNT_KEYS = new Set([
+  "password",
+  "passwordHash",
+  "password_hash",
+  "_passwordHash",
+  "sellerPinHash",
+  "seller_pin_hash",
+  "currentPassword",
+  "newPassword",
+  "confirmPassword",
+  "temporaryPassword",
+]);
+
 function stripInternalFields(account) {
   if (!account) {
     return null;
   }
-  const { _passwordHash, ...safe } = account;
+  const safe = {};
+  for (const [key, value] of Object.entries(account)) {
+    if (SENSITIVE_ACCOUNT_KEYS.has(key)) {
+      continue;
+    }
+    safe[key] = value;
+  }
   return safe;
 }
 
@@ -55,5 +74,6 @@ module.exports = {
   toIso,
   coerceAccountStatus,
   stripInternalFields,
+  SENSITIVE_ACCOUNT_KEYS,
   asObject,
 };

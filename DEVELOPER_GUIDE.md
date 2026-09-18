@@ -60,8 +60,10 @@ The backend loads `backend/.env` and root `.env` if present.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `8080` | Backend HTTP port. |
-| `SUPER_ADMIN_USERNAME` | `root` | Super admin username. Override in real environments. |
-| `SUPER_ADMIN_PASSWORD` | `Root@12345` | Super admin password. Override in real environments. |
+| `SUPER_ADMIN_USERNAME` | *(required)* | Super admin username. Server will not start if unset. |
+| `SUPER_ADMIN_PASSWORD` | *(required)* | Super admin password. Server will not start if unset. |
+| `ADMIN_API_SESSION_SECRET` | *(required)* | HMAC secret for signed API sessions. Min 16 characters. |
+| `CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed for CORS. Not `*`. |
 | `CHAT_AI_API_KEY` or `OPENAI_API_KEY` | empty | Enables AI chat replies. |
 | `CHAT_AI_MODEL` or `OPENAI_MODEL` | `gpt-4o-mini` | AI model name. |
 | `CHAT_AI_API_URL` | `https://api.openai.com/v1/chat/completions` | OpenAI-compatible API URL. |
@@ -192,7 +194,7 @@ For web/admin changes, manually test:
 
 For production-like deployment:
 
-1. Set strong `SUPER_ADMIN_USERNAME` and `SUPER_ADMIN_PASSWORD`.
+1. Set strong `SUPER_ADMIN_USERNAME`, `SUPER_ADMIN_PASSWORD`, and `ADMIN_API_SESSION_SECRET`. The backend refuses to start without them.
 2. Set an API URL for Flutter builds with `--dart-define=API_BASE_URL=...`.
 3. Move JSON persistence to a real database or enforce file locks/backups.
 4. Move uploads to object storage or protected storage.
