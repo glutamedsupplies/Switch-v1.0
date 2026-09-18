@@ -1,11 +1,11 @@
 {
-    "name": "gms_shopping",
-    "short_name": "gms_shopping",
+    "name": "Switch",
+    "short_name": "Switch",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#0A9297",
+    "description": "Switch shopping app",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

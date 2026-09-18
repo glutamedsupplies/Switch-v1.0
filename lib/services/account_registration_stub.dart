@@ -13,7 +13,11 @@ class _UnsupportedAccountRegistrationService
     required String countryCode,
     required String mobileNumber,
     required String email,
-    required String password,
+    String password = '',
+    required String verificationToken,
+    String verificationChannel = 'email',
+    String? preferredLanguage,
+    Map<String, dynamic>? googleProfile,
   }) {
     throw UnsupportedError(
       'This platform does not support account registration.',

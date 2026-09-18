@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Switch Privacy Policy</title>
+    <style>
+      :root {
+        --accent: #0a9297;
+        --text: #10213e;
+        --muted: #64748b;
+        --surface: #ffffff;
+        --bg: #f2f2f2;
+        --border: #dbe4f0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .policy-shell {
+        width: min(100%, 900px);
+        margin: 0 auto;
+        padding: 28px 18px 42px;
+      }
+
+      .policy-back,
+      .policy-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 16px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .policy-header {
+        margin-top: 18px;
+        padding: 28px;
+        border-radius: 28px;
+        background: linear-gradient(135deg, #0b263f 0%, #0a9297 100%);
+        color: #ffffff;
+      }
+
+      .policy-header h1 {
+        margin: 14px 0 10px;
+        font-size: clamp(30px, 5vw, 42px);
+      }
+
+      .policy-header p {
+        margin: 0;
+        max-width: 640px;
+        color: rgba(255, 255, 255, 0.85);
+        line-height: 1.7;
+      }
+
+      .policy-content {
+        margin-top: 20px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .policy-card {
+        padding: 22px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--surface);
+      }
+
+      .policy-card h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+
+      .policy-card p,
+      .policy-card li {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+        font-size: 14px;
+      }
+
+      .policy-card ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+      }
+
+      @media (max-width: 520px) {
+        .policy-shell {
+          padding: 18px 12px 28px;
+        }
+
+        .policy-header,
+        .policy-card {
+          padding: 18px;
+          border-radius: 20px;
+        }
+
+        .policy-back {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="policy-shell">
+      <a class="policy-back" href="/login.html">Back to Login</a>
+
+      <section class="policy-header">
+        <span class="policy-chip">Example Page</span>
+        <h1>Privacy Policy</h1>
+        <p>
+          This is a basic sample privacy policy page for Switch. Replace this content with your
+          final legal copy before production release.
+        </p>
+      </section>
+
+      <section class="policy-content">
+        <article class="policy-card">
+          <h2>Information We Collect</h2>
+          <p>
+            We may collect account information such as name, email address, login details, and
+            activity needed to provide access to the platform.
+          </p>
+        </article>
+
+        <article class="policy-card">
+          <h2>How We Use Information</h2>
+          <ul>
+            <li>To sign users in and manage account access.</li>
+            <li>To support password recovery and security checks.</li>
+            <li>To improve service quality and platform reliability.</li>
+          </ul>
+        </article>
+
+        <article class="policy-card">
+          <h2>Contact</h2>
+          <p>
+            For privacy-related questions, contact
+            <a href="mailto:support@gmsshopping.com">support@gmsshopping.com</a>.
+          </p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

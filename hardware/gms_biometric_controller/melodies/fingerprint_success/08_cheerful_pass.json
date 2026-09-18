@@ -1,0 +1,11 @@
+{
+  "name": "Cheerful Pass",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 523, "duration": 75 },
+    { "frequency": 659, "duration": 75 },
+    { "frequency": 784, "duration": 75 },
+    { "frequency": 988, "duration": 90 },
+    { "frequency": 1047, "duration": 190 }
+  ]
+}

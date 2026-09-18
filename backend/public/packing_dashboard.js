@@ -3,6 +3,8 @@
   const preparingCountPillEl = document.querySelector("[data-preparing-count-pill]");
   const shippingOrderListEl = document.querySelector("[data-shipping-order-list]");
   const shippingCountPillEl = document.querySelector("[data-shipping-count-pill]");
+  const preparingPaginationEl = document.querySelector("[data-packing-preparing-pagination]");
+  const shippingPaginationEl = document.querySelector("[data-packing-shipping-pagination]");
   const orderCountEl = document.querySelector("[data-packing-order-count]");
   const itemCountEl = document.querySelector("[data-packing-item-count]");
   const deductionTotalEl = document.querySelector("[data-packing-deduction-total]");
@@ -13,10 +15,23 @@
   const packingBarcodeList = document.querySelector("[data-packing-barcode-list]");
   const packingBarcodeFab = document.querySelector("[data-packing-barcode-fab]");
   const packingBarcodeSearchInput = document.querySelector("[data-packing-barcode-search]");
+  const packingWorkspaceSearchInput = document.getElementById("packing-workspace-search");
+  const packingInProgressCountEl = document.querySelector("[data-packing-in-progress-count]");
+  const packingReadyShipCountEl = document.querySelector("[data-packing-ready-ship-count]");
+  const packingShippedTodayCountEl = document.querySelector("[data-packing-shipped-today-count]");
+  const packingProgressPillEl = document.querySelector("[data-packing-progress-pill]");
+  const packingCompletePillEl = document.querySelector("[data-packing-complete-pill]");
+  const packingTransitPillEl = document.querySelector("[data-packing-transit-pill]");
+  const packingShippedPillEl = document.querySelector("[data-packing-shipped-pill]");
+  const packingFeedListEl = document.querySelector("[data-packing-feed-list]");
+  const packingFeedFilterEl = document.querySelector("[data-packing-feed-filter]");
+  const packingFeedUpdatedEl = document.querySelector("[data-packing-feed-updated]");
+  const packingSelectionCopyEl = document.querySelector("[data-packing-selection-copy]");
 
   if (!preparingOrderListEl || !shippingOrderListEl) {
     return;
   }
+  const isPackingAdminWorkspace = document.body.classList.contains("packing-admin-page");
 
   function readSessionStorageJson(key) {
     try {
@@ -100,6 +115,10 @@
   const state = {
     preparingGroups: [],
     shippingGroups: [],
+    inTransitGroups: [],
+    shippedGroups: [],
+    cancelledGroups: [],
+    allEntries: [],
     isLoading: false,
     activePackRequestId: "",
     activeShipRequestId: "",
@@ -109,6 +128,12 @@
     selectedScanKey: "",
     packingBarcodeProducts: [],
     packingBarcodeSearchTerm: "",
+    workspaceSearchTerm: "",
+    prepareFilter: "to-pack",
+    shippingFilter: "ready",
+    preparingPage: 1,
+    shippingPage: 1,
+    feedFilter: "all",
     expandedAddOnDropdowns: {},
   };
 
@@ -117,12 +142,17 @@
   const barcodeHiddenInput = document.querySelector("[data-hidden-barcode-input]");
   let packingBarcodePanelCloseTimer = 0;
   let packingBarcodeSearchTimer = 0;
+  let packingRealtimeRefreshTimer = 0;
+  let packingRealtimeRefreshInFlight = false;
+  let packingRealtimeProductsPending = false;
+  let packingRealtimeOrdersPending = false;
   const PACKING_BOX_ANIMATION_URL = "/animations/packing-box.json";
   const PACKING_BOX_JSON_START_OFFSET_MS = 900;
   const PACKING_BOX_JSON_END_OFFSET_MS = 3000;
   const PACKING_BOX_JSON_FALLBACK_REMAINING_MS = 3400;
   const PACKING_BOX_OVERLAY_EXIT_MS = 220;
   const PACKING_CARD_FLIGHT_MS = 820;
+  const PACKING_LIST_PAGE_SIZE = 8;
   const PACKING_LOTTIE_PLAYER_URL = "/vendor/lottie.min.js";
   const SCAN_COMPLETE_CHECK_ANIMATION_URL = "/animations/scan-complete-check.json";
   let packingBoxAnimationDataPromise = null;
@@ -1175,6 +1205,22 @@
       || null;
   }
 
+  function resolvePackingAssetUrl(value) {
+    const rawUrl = String(value || "").trim();
+    if (!rawUrl) {
+      return "";
+    }
+    try {
+      const resolvedUrl = new URL(rawUrl, window.location.origin);
+      if (resolvedUrl.pathname.startsWith("/uploads/") || resolvedUrl.pathname.startsWith("/assets/")) {
+        return `${resolvedUrl.pathname}${resolvedUrl.search}${resolvedUrl.hash}`;
+      }
+      return resolvedUrl.href;
+    } catch (error) {
+      return rawUrl;
+    }
+  }
+
   function getPackingEntryPhotoPreview(entry) {
     const product = getProductForEntry(entry);
     const title = String(entry?.productName || product?.name || "Product photo").trim();
@@ -1184,7 +1230,7 @@
 
     if (product && !entry?.isAddOn) {
       const variant = getProductVariantForEntry(product, entry);
-      const variantImageUrl = String(variant?.imageUrl ?? variant?.imageSourceUrl ?? "").trim();
+      const variantImageUrl = resolvePackingAssetUrl(variant?.imageUrl ?? variant?.imageSourceUrl);
       if (variantImageUrl) {
         return {
           title,
@@ -1195,9 +1241,9 @@
       }
     }
 
-    const productImageUrl = product ? getPrimaryProductImageUrl(product) : "";
-    const fallbackImageUrl = String(entry?.productImageUrl ?? "").trim();
-    const cardImageUrl = String(product?.cardImageUrl ?? "").trim();
+    const productImageUrl = product ? resolvePackingAssetUrl(getPrimaryProductImageUrl(product)) : "";
+    const fallbackImageUrl = resolvePackingAssetUrl(entry?.productImageUrl);
+    const cardImageUrl = resolvePackingAssetUrl(product?.cardImageUrl);
     const imageUrl = productImageUrl || fallbackImageUrl || cardImageUrl;
 
     return {
@@ -1519,7 +1565,11 @@
       : products;
 
     if (!visibleProducts.length) {
-      packingBarcodeList.innerHTML = '<div class="empty-state">No barcodes match your search.</div>';
+      if (searchTerm && window.GMS_ADMIN_SEARCH_NOT_FOUND) {
+        window.GMS_ADMIN_SEARCH_NOT_FOUND.replace(packingBarcodeList, { compact: true });
+      } else {
+        packingBarcodeList.innerHTML = '<div class="empty-state">No barcodes match your search.</div>';
+      }
       return;
     }
 
@@ -1816,6 +1866,178 @@
     `;
   }
 
+  function getPackingQueueTableHeaderMarkup(showAction = false) {
+    return `
+      <div class="packing-admin-table-header" role="row">
+        <span>Order</span>
+        <span>Customer</span>
+        <span>Courier</span>
+        <span>Items</span>
+        <span>Amount</span>
+        <span>Status</span>
+        ${showAction ? "<span>Action</span>" : "<span aria-hidden=\"true\"></span>"}
+      </div>
+    `;
+  }
+
+  function getPackingFeedTableHeaderMarkup() {
+    return `
+      <div class="packing-admin-feed-table-header" role="row">
+        <span>Order</span>
+        <span>Activity</span>
+        <span>Detail</span>
+        <span>Time</span>
+      </div>
+    `;
+  }
+
+  function buildPackingOrderItemsMarkup(group, options) {
+    const canScan = options.canScan !== false;
+    return `
+      <div class="insight-order-items">
+        ${group.entries
+          .map((entry) => renderOrderBundleMarkup(entry, group, { canScan }))
+          .join("")}
+      </div>
+    `;
+  }
+
+  function buildPackingOrderListRowMarkup(group, options) {
+    const isBusy = options.activeRequestId === String(group.createdAtEpochMs);
+    const paymentLabel =
+      String(group.paymentOption || "").toLowerCase().startsWith("cod")
+        ? "COD"
+        : group.paymentOption;
+    const showAction = Boolean(options.buttonAttribute);
+    const actionDisabled = isBusy || (typeof options.disableAction === "function" && options.disableAction(group));
+
+    return `
+      <article
+        class="packing-order-list-row insight-order-card product-insight-rank-card"
+        data-packing-order-card="${escapeHtml(String(group.createdAtEpochMs))}"
+        data-packing-order-stage="${escapeHtml(String(options.stageKey || options.stageLabel || ""))}"
+      >
+        <div class="packing-order-list-row__order">
+          <span class="packing-order-list-row__avatar">${escapeHtml(getCourierInitials(group.courierName))}</span>
+          <span class="packing-order-list-row__order-copy">
+            <strong>${escapeHtml(getPackingOrderId(group))}</strong>
+            <span>${escapeHtml(formatTimestamp(group.createdAtEpochMs))}</span>
+          </span>
+        </div>
+        <div class="packing-order-list-row__customer">
+          <strong>${escapeHtml(group.customerName)}</strong>
+          <span>${escapeHtml(group.address)}${paymentLabel ? ` · ${escapeHtml(paymentLabel)}` : ""}</span>
+        </div>
+        <div class="packing-order-list-row__courier">${escapeHtml(group.courierName || "—")}</div>
+        <div class="packing-order-list-row__items">${escapeHtml(formatItemsLabel(group.itemCount))}</div>
+        <div class="packing-order-list-row__amount">${escapeHtml(formatMoney(group.grandTotalAmount))}</div>
+        <div class="packing-order-list-row__status">
+          <span class="insight-order-chip ${escapeHtml(options.chipClass)}">${escapeHtml(options.stageLabel)}</span>
+        </div>
+        <div class="packing-order-list-row__action">
+          ${showAction ? `
+            <button
+              type="button"
+              class="dashboard-link-button"
+              ${options.buttonAttribute}="${escapeHtml(group.createdAtEpochMs)}"
+              ${actionDisabled ? "disabled" : ""}
+            >
+              ${isBusy ? options.loadingLabel : options.buttonLabel}
+            </button>
+          ` : ""}
+        </div>
+        <div class="packing-order-list-row__details">
+          ${buildPackingOrderItemsMarkup(group, options)}
+          <div class="insight-order-actions">
+            <span class="insight-order-meta-note">${escapeHtml(options.note(group))}</span>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  function bindPackingQueueInteractions(queueListEl, options) {
+    if (!queueListEl) {
+      return;
+    }
+
+    if (options.buttonAttribute && typeof options.onAction === "function") {
+      queueListEl.querySelectorAll(`[${options.buttonAttribute}]`).forEach((button) => {
+        button.addEventListener("click", () => {
+          const createdAtEpochMs = button.getAttribute(options.buttonAttribute) || "";
+          void options.onAction(createdAtEpochMs);
+        });
+      });
+    }
+
+    queueListEl.querySelectorAll("[data-scan-order-item-group]").forEach((item) => {
+      item.addEventListener("click", (event) => {
+        if (
+          event.target.closest("[data-item-menu-btn]")
+          || event.target.closest("[data-item-dropdown]")
+          || event.target.closest("[data-addon-dropdown-toggle]")
+          || event.target.closest("[data-packing-image-preview]")
+        ) {
+          return;
+        }
+        const groupId = item.getAttribute("data-scan-order-item-group") || "";
+        const scanKey = item.getAttribute("data-scan-order-item-key") || "";
+        void handleProductClick(groupId, scanKey);
+      });
+
+      item.addEventListener("keydown", (event) => {
+        if (
+          event.target.closest("[data-item-menu-btn]")
+          || event.target.closest("[data-item-dropdown]")
+          || event.target.closest("[data-addon-dropdown-toggle]")
+          || event.target.closest("[data-packing-image-preview]")
+        ) {
+          return;
+        }
+
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          const groupId = item.getAttribute("data-scan-order-item-group") || "";
+          const scanKey = item.getAttribute("data-scan-order-item-key") || "";
+          void handleProductClick(groupId, scanKey);
+        }
+      });
+    });
+
+    queueListEl.querySelectorAll("[data-addon-dropdown-toggle]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const dropdownKey = button.getAttribute("data-addon-dropdown-toggle") || "";
+        const nextIsExpanded = button.getAttribute("aria-expanded") !== "true";
+        setAddOnDropdownExpanded(dropdownKey, nextIsExpanded);
+      });
+    });
+
+    queueListEl.querySelectorAll("[data-packing-image-preview]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openPackingPhotoModal(
+          button.getAttribute("data-packing-image-preview-group") || "",
+          button.getAttribute("data-packing-image-preview-key") || "",
+          button,
+        );
+      });
+    });
+
+    queueListEl.querySelectorAll("[data-item-menu-btn]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const groupId = btn.getAttribute("data-item-menu-btn") || "";
+        const scanKey = btn.getAttribute("data-item-scan-key") || "";
+        selectBarcodeScanItem(groupId, scanKey, {
+          focusHiddenInput: false,
+        });
+        void openPackingModal(groupId, scanKey);
+      });
+    });
+  }
+
   function normalizeOrderEntries(payload) {
     const rawOrders = Array.isArray(payload)
       ? payload
@@ -1847,6 +2069,9 @@
         clientName: String(entry.clientName || "").trim(),
         clientContactNumber: String(entry.clientContactNumber || "").trim(),
         clientAddress: String(entry.clientAddress || "").trim(),
+        updatedAt: String(entry.updatedAt || entry.stageUpdatedAt || "").trim(),
+        packedAt: String(entry.packedAt || "").trim(),
+        shippedAt: String(entry.shippedAt || entry.handedOverAt || "").trim(),
       }))
       .filter((entry) => entry.id && entry.productId && entry.productName);
   }
@@ -1878,6 +2103,7 @@
 
     return {
       createdAtEpochMs: group.createdAtEpochMs,
+      stage: firstEntry.stage,
       entries: group.entries,
       customerName: firstEntry.clientName || "Unknown client",
       contactNumber: firstEntry.clientContactNumber || "No contact number",
@@ -1893,6 +2119,7 @@
       remainingBalanceAmount,
       deductionAmount,
       itemCount,
+      activityAt: firstEntry.shippedAt || firstEntry.packedAt || firstEntry.updatedAt || "",
     };
   }
 
@@ -1923,15 +2150,38 @@
       .sort((left, right) => right.createdAtEpochMs - left.createdAtEpochMs);
   }
 
+  function groupOrdersByStages(entries, stages) {
+    const acceptedStages = new Set((Array.isArray(stages) ? stages : []).map(String));
+    const groups = new Map();
+
+    entries.forEach((entry) => {
+      if (!acceptedStages.has(String(entry.stage || ""))) {
+        return;
+      }
+      const groupKey = String(entry.createdAtEpochMs);
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { createdAtEpochMs: entry.createdAtEpochMs, entries: [] });
+      }
+      groups.get(groupKey).entries.push(entry);
+    });
+
+    return [...groups.values()]
+      .map(buildOrderGroup)
+      .sort((left, right) => right.createdAtEpochMs - left.createdAtEpochMs);
+  }
+
   function setLoadingState(isLoading) {
     state.isLoading = isLoading;
   }
 
-  async function loadPackingOrders() {
+  async function loadPackingOrders(options = {}) {
+    const preserveWorkspaceState = options?.preserveWorkspaceState === true;
     setLoadingState(true);
-    state.groupScannedQuantities = {};
-    state.pendingScanGroupId = "";
-    state.expandedAddOnDropdowns = {};
+    if (!preserveWorkspaceState) {
+      state.groupScannedQuantities = {};
+      state.pendingScanGroupId = "";
+      state.expandedAddOnDropdowns = {};
+    }
 
     try {
       const response = await fetch("/api/orders", {
@@ -1946,16 +2196,31 @@
       }
 
       const entries = normalizeOrderEntries(data);
+      state.allEntries = entries;
       state.preparingGroups = groupOrdersByStage(entries, "toPrepare");
       state.shippingGroups = groupOrdersByStage(entries, "toShip");
+      state.inTransitGroups = groupOrdersByStages(entries, ["toReceive", "inTransit", "in-transit"]);
+      state.shippedGroups = groupOrdersByStages(entries, ["received", "completed", "delivered", "shipped"]);
+      state.cancelledGroups = groupOrdersByStages(entries, ["cancelled", "returned", "rejected"]);
+      if (preserveWorkspaceState && state.selectedScanGroupId && !getSelectedScanEntry()) {
+        clearBarcodeSelection();
+      }
       render();
     } catch (error) {
+      if (options?.preserveOnError === true) {
+        console.warn("Unable to refresh fulfillment queues in the background.", error);
+        return;
+      }
       const message =
         error instanceof Error
           ? error.message
           : "Unable to load the fulfillment queues.";
       state.preparingGroups = [];
       state.shippingGroups = [];
+      state.inTransitGroups = [];
+      state.shippedGroups = [];
+      state.cancelledGroups = [];
+      state.allEntries = [];
       renderSummary();
       preparingOrderListEl.innerHTML = `
         <div class="empty-state">${escapeHtml(message)}</div>
@@ -1963,6 +2228,12 @@
       shippingOrderListEl.innerHTML = `
         <div class="empty-state">${escapeHtml(message)}</div>
       `;
+      [preparingPaginationEl, shippingPaginationEl].forEach((paginationElement) => {
+        if (paginationElement instanceof HTMLElement) {
+          paginationElement.replaceChildren();
+          paginationElement.hidden = true;
+        }
+      });
       if (preparingCountPillEl) {
         preparingCountPillEl.textContent = "0 orders";
       }
@@ -1972,6 +2243,79 @@
     } finally {
       setLoadingState(false);
     }
+  }
+
+  function schedulePackingRealtimeRefresh(delay = 180) {
+    window.clearTimeout(packingRealtimeRefreshTimer);
+    packingRealtimeRefreshTimer = window.setTimeout(async () => {
+      packingRealtimeRefreshTimer = 0;
+      if (
+        packingRealtimeRefreshInFlight
+        || state.isLoading
+        || state.activePackRequestId
+        || state.activeShipRequestId
+      ) {
+        schedulePackingRealtimeRefresh(240);
+        return;
+      }
+
+      const refreshProducts = packingRealtimeProductsPending;
+      const refreshOrders = packingRealtimeOrdersPending;
+      packingRealtimeProductsPending = false;
+      packingRealtimeOrdersPending = false;
+      if (!refreshProducts && !refreshOrders) {
+        return;
+      }
+
+      packingRealtimeRefreshInFlight = true;
+      try {
+        if (refreshProducts) {
+          await loadProducts();
+        }
+        if (refreshOrders) {
+          await loadPackingOrders({
+            preserveWorkspaceState: true,
+            preserveOnError: true,
+          });
+        } else if (refreshProducts) {
+          render();
+        }
+      } finally {
+        packingRealtimeRefreshInFlight = false;
+        if (packingRealtimeProductsPending || packingRealtimeOrdersPending) {
+          schedulePackingRealtimeRefresh(120);
+        }
+      }
+    }, delay);
+  }
+
+  function handlePackingRealtimeChange(event) {
+    const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+    if (detail.type === "ready") {
+      if (detail.reconnected !== true) {
+        return;
+      }
+      packingRealtimeProductsPending = true;
+      packingRealtimeOrdersPending = true;
+    } else if (detail.type === "data-change") {
+      const topics = Array.isArray(detail.topics)
+        ? detail.topics.map((topic) => String(topic || "").trim().toLowerCase())
+        : [];
+      const refreshAll = topics.includes("all");
+      const refreshProducts = refreshAll
+        || topics.includes("products")
+        || topics.includes("inventory");
+      const refreshOrders = refreshAll || topics.includes("orders");
+      if (!refreshProducts && !refreshOrders) {
+        return;
+      }
+      packingRealtimeProductsPending ||= refreshProducts;
+      packingRealtimeOrdersPending ||= refreshOrders;
+    } else {
+      return;
+    }
+
+    schedulePackingRealtimeRefresh();
   }
 
   async function markOrderPacked(createdAtEpochMs) {
@@ -2102,6 +2446,150 @@
     }
   }
 
+  function getPreparingGroupBuckets() {
+    const buckets = { pending: [], progress: [], complete: [] };
+    state.preparingGroups.forEach((group) => {
+      const requiredEntries = getRequiredBarcodeEntries(group);
+      const requiredQuantity = requiredEntries.reduce(
+        (total, entry) => total + Math.max(1, Number(entry.quantity) || 1),
+        0,
+      );
+      const scannerSummary = getGroupScannerSummary(group);
+      const remainingQuantity = scannerSummary?.remainingQuantity ?? 0;
+      if (isGroupReadyToPack(group)) {
+        buckets.complete.push(group);
+      } else if (requiredQuantity > 0 && remainingQuantity < requiredQuantity) {
+        buckets.progress.push(group);
+      } else {
+        buckets.pending.push(group);
+      }
+    });
+    return buckets;
+  }
+
+  function groupMatchesWorkspaceSearch(group) {
+    const term = normalizeSearchTerm(state.workspaceSearchTerm);
+    if (!term) {
+      return true;
+    }
+    return [
+      getPackingOrderId(group),
+      group.customerName,
+      group.contactNumber,
+      group.address,
+      group.courierName,
+      group.paymentOption,
+      ...group.entries.flatMap((entry) => [entry.productName, entry.variantName]),
+    ].some((value) => normalizeSearchTerm(value).includes(term));
+  }
+
+  function getActivityEpochMs(group) {
+    const activityDate = new Date(group?.activityAt || "");
+    return Number.isFinite(activityDate.getTime())
+      ? activityDate.getTime()
+      : Number(group?.createdAtEpochMs) || 0;
+  }
+
+  function isToday(epochMs) {
+    const date = new Date(Number(epochMs) || 0);
+    const today = new Date();
+    return date.getFullYear() === today.getFullYear()
+      && date.getMonth() === today.getMonth()
+      && date.getDate() === today.getDate();
+  }
+
+  function getPackingFeedDescriptor(group) {
+    const stage = String(group?.stage || "");
+    if (["toShip"].includes(stage)) {
+      return { category: "shipping", className: "is-shipping", title: "Packing completed", detail: "Ready for courier handoff" };
+    }
+    if (["toReceive", "inTransit", "in-transit"].includes(stage)) {
+      return { category: "shipping", className: "is-shipping", title: "Handed to shipping station", detail: group.courierName || "Shipment is in transit" };
+    }
+    if (["received", "completed", "delivered", "shipped"].includes(stage)) {
+      return { category: "complete", className: "is-complete", title: "Delivery completed", detail: group.courierName || "Order completed" };
+    }
+    if (["cancelled", "returned", "rejected"].includes(stage)) {
+      return { category: "complete", className: "is-cancelled", title: "Order returned or cancelled", detail: group.customerName };
+    }
+    return { category: "packing", className: "is-packing", title: "Order queued for packing", detail: `${group.itemCount} item${group.itemCount === 1 ? "" : "s"} for ${group.customerName}` };
+  }
+
+  function getPackingFeedIconMarkup(descriptor) {
+    if (descriptor.className === "is-complete") {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>';
+    }
+    if (descriptor.className === "is-shipping") {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17h4V5H2v12h3"/><path d="M14 9h4l4 4v4h-3"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/></svg>';
+    }
+    if (descriptor.className === "is-cancelled") {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/></svg>';
+  }
+
+  function renderPackingFeed() {
+    if (!packingFeedListEl) {
+      return;
+    }
+    const groups = groupOrdersByStages(state.allEntries, [
+      "toPrepare", "toShip", "toReceive", "inTransit", "in-transit",
+      "received", "completed", "delivered", "shipped", "cancelled", "returned", "rejected",
+    ])
+      .filter(groupMatchesWorkspaceSearch)
+      .map((group) => ({ group, descriptor: getPackingFeedDescriptor(group) }))
+      .filter((entry) => state.feedFilter === "all" || entry.descriptor.category === state.feedFilter)
+      .sort((left, right) => getActivityEpochMs(right.group) - getActivityEpochMs(left.group))
+      .slice(0, 8);
+
+    if (!groups.length) {
+      if (
+        normalizeSearchTerm(state.workspaceSearchTerm)
+        && window.GMS_ADMIN_SEARCH_NOT_FOUND
+      ) {
+        window.GMS_ADMIN_SEARCH_NOT_FOUND.replace(packingFeedListEl, { compact: true });
+      } else {
+        packingFeedListEl.innerHTML = '<div class="empty-state">No packing activity matches the current view.</div>';
+      }
+    } else if (packingFeedListEl.classList.contains("is-list-view")) {
+      packingFeedListEl.innerHTML = [
+        getPackingFeedTableHeaderMarkup(),
+        ...groups.map(({ group, descriptor }) => {
+          const activityAt = getActivityEpochMs(group);
+          const activityTime = new Date(activityAt).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
+          return `
+            <article class="packing-feed-list-row ${escapeHtml(descriptor.className)}">
+              <div class="packing-feed-list-row__order">
+                <span class="packing-feed-list-row__icon">${getPackingFeedIconMarkup(descriptor)}</span>
+                <strong>${escapeHtml(getPackingOrderId(group))}</strong>
+              </div>
+              <div class="packing-feed-list-row__activity">${escapeHtml(descriptor.title)}</div>
+              <div class="packing-feed-list-row__detail">${escapeHtml(descriptor.detail)}</div>
+              <time datetime="${escapeHtml(new Date(activityAt).toISOString())}">${escapeHtml(activityTime)}</time>
+            </article>
+          `;
+        }),
+      ].join("");
+    } else {
+      packingFeedListEl.innerHTML = groups.map(({ group, descriptor }) => {
+        const activityAt = getActivityEpochMs(group);
+        const activityTime = new Date(activityAt).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
+        return `
+          <article class="packing-feed-entry ${escapeHtml(descriptor.className)}">
+            <span class="packing-feed-entry__icon">${getPackingFeedIconMarkup(descriptor)}</span>
+            <span class="packing-feed-entry__copy">
+              <strong>${escapeHtml(getPackingOrderId(group))}</strong>
+              <span>${escapeHtml(descriptor.title)}<br>${escapeHtml(descriptor.detail)}</span>
+            </span>
+            <time datetime="${escapeHtml(new Date(activityAt).toISOString())}">${escapeHtml(activityTime)}</time>
+          </article>`;
+      }).join("");
+    }
+    if (packingFeedUpdatedEl) {
+      packingFeedUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}`;
+    }
+  }
+
   function renderSummary() {
     const packingGroups = state.preparingGroups;
     const orderCount = packingGroups.length;
@@ -2117,18 +2605,14 @@
       (total, group) => total + group.remainingBalanceAmount,
       0,
     );
+    const preparingBuckets = getPreparingGroupBuckets();
+    const shippedTodayCount = state.shippedGroups.filter((group) => isToday(getActivityEpochMs(group))).length;
 
     if (preparingCountPillEl) {
-      const preparingCount = state.preparingGroups.length;
-      preparingCountPillEl.textContent = `${preparingCount} ${
-        preparingCount === 1 ? "order" : "orders"
-      }`;
+      preparingCountPillEl.textContent = String(preparingBuckets.pending.length);
     }
     if (shippingCountPillEl) {
-      const shippingCount = state.shippingGroups.length;
-      shippingCountPillEl.textContent = `${shippingCount} ${
-        shippingCount === 1 ? "order" : "orders"
-      }`;
+      shippingCountPillEl.textContent = String(state.shippingGroups.length);
     }
     if (orderCountEl) {
       orderCountEl.textContent = `${orderCount}`;
@@ -2142,6 +2626,34 @@
     if (balanceTotalEl) {
       balanceTotalEl.textContent = formatMoney(balanceTotal);
     }
+    if (packingInProgressCountEl) {
+      packingInProgressCountEl.textContent = String(preparingBuckets.progress.length);
+    }
+    if (packingReadyShipCountEl) {
+      packingReadyShipCountEl.textContent = String(state.shippingGroups.length);
+    }
+    if (packingShippedTodayCountEl) {
+      packingShippedTodayCountEl.textContent = String(shippedTodayCount);
+    }
+    if (packingProgressPillEl) {
+      packingProgressPillEl.textContent = String(preparingBuckets.progress.length);
+    }
+    if (packingCompletePillEl) {
+      packingCompletePillEl.textContent = String(preparingBuckets.complete.length);
+    }
+    if (packingTransitPillEl) {
+      packingTransitPillEl.textContent = String(state.inTransitGroups.length);
+    }
+    if (packingShippedPillEl) {
+      packingShippedPillEl.textContent = String(state.shippedGroups.length);
+    }
+    if (packingSelectionCopyEl) {
+      const selectedEntry = getSelectedScanEntry();
+      packingSelectionCopyEl.textContent = selectedEntry
+        ? `${selectedEntry.productName}: ready for barcode input.`
+        : "Select an order item to begin barcode verification.";
+    }
+    renderPackingFeed();
   }
 
   function getEntryMetaText(entry) {
@@ -2193,7 +2705,7 @@
         aria-label="${escapeHtml(label)}"
         title="View product photo"
       >
-        ${getThemedProductPhotoIconMarkup()}
+        <img src="${escapeHtml(preview.imageUrl)}" alt="" loading="lazy" />
       </button>
     `;
   }
@@ -2287,19 +2799,125 @@
     `;
   }
 
+  function renderPackingPagination(paginationElement, totalItems, pageStateKey) {
+    if (!(paginationElement instanceof HTMLElement)) {
+      return;
+    }
+
+    paginationElement.replaceChildren();
+    const total = Math.max(0, Number(totalItems) || 0);
+    if (total <= PACKING_LIST_PAGE_SIZE) {
+      paginationElement.hidden = true;
+      state[pageStateKey] = 1;
+      return;
+    }
+
+    paginationElement.hidden = false;
+    const pageCount = Math.max(1, Math.ceil(total / PACKING_LIST_PAGE_SIZE));
+    const currentPage = Math.min(Math.max(1, Number(state[pageStateKey]) || 1), pageCount);
+    state[pageStateKey] = currentPage;
+    const firstRecord = ((currentPage - 1) * PACKING_LIST_PAGE_SIZE) + 1;
+    const lastRecord = Math.min(total, currentPage * PACKING_LIST_PAGE_SIZE);
+
+    const info = document.createElement("p");
+    info.className = "packing-admin-pagination__info";
+    info.textContent = `Showing ${firstRecord} to ${lastRecord} of ${total} orders`;
+
+    const controls = document.createElement("div");
+    controls.className = "packing-admin-pagination__controls";
+    const createButton = (label, page, buttonOptions = {}) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `packing-admin-page-button${buttonOptions.current ? " is-current" : ""}`;
+      button.disabled = Boolean(buttonOptions.disabled);
+      button.setAttribute("aria-label", buttonOptions.ariaLabel || `Page ${page}`);
+      if (buttonOptions.current) {
+        button.setAttribute("aria-current", "page");
+      }
+      if (buttonOptions.icon) {
+        button.innerHTML = label;
+      } else {
+        button.textContent = String(label);
+      }
+      button.addEventListener("click", () => {
+        if (button.disabled || state[pageStateKey] === page) {
+          return;
+        }
+        state[pageStateKey] = page;
+        render();
+      });
+      return button;
+    };
+
+    const previousIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+    const nextIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+    controls.appendChild(createButton(previousIcon, Math.max(1, currentPage - 1), {
+      disabled: currentPage === 1,
+      ariaLabel: "Previous page",
+      icon: true,
+    }));
+    const firstVisiblePage = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
+    const lastVisiblePage = Math.min(pageCount, firstVisiblePage + 4);
+    for (let page = firstVisiblePage; page <= lastVisiblePage; page += 1) {
+      controls.appendChild(createButton(page, page, { current: page === currentPage }));
+    }
+    controls.appendChild(createButton(nextIcon, Math.min(pageCount, currentPage + 1), {
+      disabled: currentPage === pageCount,
+      ariaLabel: "Next page",
+      icon: true,
+    }));
+    paginationElement.append(info, controls);
+  }
+
   function renderQueue(queueListEl, groups, options) {
     if (!queueListEl) {
       return;
     }
 
+    const paginationElement = options.paginationElement;
+    const pageStateKey = options.pageStateKey;
+    const canPaginate = Boolean(
+      isPackingAdminWorkspace
+      && paginationElement instanceof HTMLElement
+      && pageStateKey,
+    );
+
     if (!groups.length) {
-      queueListEl.innerHTML = `<div class="empty-state">${escapeHtml(options.emptyMessage)}</div>`;
+      if (paginationElement instanceof HTMLElement) {
+        paginationElement.replaceChildren();
+        paginationElement.hidden = true;
+      }
+      if (options.searchEmpty && window.GMS_ADMIN_SEARCH_NOT_FOUND) {
+        window.GMS_ADMIN_SEARCH_NOT_FOUND.replace(queueListEl);
+      } else {
+        queueListEl.innerHTML = `<div class="empty-state">${escapeHtml(options.emptyMessage)}</div>`;
+      }
       return;
     }
 
     const canScan = options.canScan !== false;
+    const useListView = isPackingAdminWorkspace;
+    let visibleGroups = groups;
 
-    queueListEl.innerHTML = groups
+    if (canPaginate) {
+      const pageCount = Math.max(1, Math.ceil(groups.length / PACKING_LIST_PAGE_SIZE));
+      state[pageStateKey] = Math.min(Math.max(1, Number(state[pageStateKey]) || 1), pageCount);
+      const pageStart = (state[pageStateKey] - 1) * PACKING_LIST_PAGE_SIZE;
+      visibleGroups = groups.slice(pageStart, pageStart + PACKING_LIST_PAGE_SIZE);
+      renderPackingPagination(paginationElement, groups.length, pageStateKey);
+    }
+
+    if (useListView) {
+      queueListEl.innerHTML = [
+        getPackingQueueTableHeaderMarkup(Boolean(options.buttonAttribute)),
+        ...visibleGroups.map((group) => buildPackingOrderListRowMarkup(group, { ...options, canScan })),
+      ].join("");
+      bindPackingQueueInteractions(queueListEl, options);
+      return;
+    }
+
+    queueListEl.innerHTML = visibleGroups
       .map((group) => {
         const isBusy = options.activeRequestId === String(group.createdAtEpochMs);
         const paymentLabel =
@@ -2339,164 +2957,28 @@
               ${createPackingMetricMarkup("Place order time", formatTimestamp(group.createdAtEpochMs), "place-order-time")}
             </div>
 
-            <div class="insight-order-items">
-              ${group.entries
-                .map((entry) => renderOrderBundleMarkup(entry, group, { canScan }))
-                .join("")}
-              ${[]
-                .map((entry) => {
-                  const itemMeta = entry.isAddOn
-                    ? `Qty ${entry.quantity}`
-                    : [
-                        entry.variantName || "",
-                        `Qty ${entry.quantity}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" | ");
-                  const hasBarcode = Boolean(getEntryBarcode(entry));
-                  const canScanEntry = canScan && hasBarcode;
-                  const clickClass = canScanEntry ? "insight-order-item--clickable" : "";
-                  const scanClass = canScanEntry && hasBarcode ? " insight-order-item--scan-required" : "";
-                  const completeClass = canScan && isDisplayEntryScanComplete(group, entry)
-                    ? " insight-order-item--scan-complete"
-                    : "";
-                  const addOnClass = entry.isAddOn ? " insight-order-item--addon" : "";
-                  const bundleClass = !entry.isAddOn && entry.addOnCount
-                    ? " insight-order-item--has-addons"
-                    : "";
-                  const isSelected = canScanEntry &&
-                    String(state.selectedScanGroupId) === String(group.createdAtEpochMs) &&
-                    String(state.selectedScanKey) === String(entry.scanKey);
-                  const selectedClass = isSelected ? " insight-order-item--selected" : "";
-                  const entryRole = canScanEntry ? "button" : "presentation";
-                  const entryTabIndex = canScanEntry ? "0" : "-1";
-
-                  return `
-                    <div
-                      class="insight-order-item ${clickClass}${selectedClass}${scanClass}${completeClass}${addOnClass}${bundleClass}"
-                      role="${entryRole}"
-                      aria-pressed="${isSelected ? "true" : "false"}"
-                      tabindex="${entryTabIndex}"
-                      ${canScanEntry ? `data-scan-order-item-group="${escapeHtml(String(group.createdAtEpochMs))}" data-scan-order-item-key="${escapeHtml(String(entry.scanKey))}"` : ""}
-                    >
-                      <div class="insight-order-item__copy">
-                        <div class="insight-order-item__heading">
-                          ${canScanEntry ? getScanStatusBadge(entry, group) : ""}
-                          <strong>${escapeHtml(entry.productName)}</strong>
-                          <span class="insight-order-item__meta">${escapeHtml(itemMeta)}</span>
-                        </div>
-                      </div>
-                      <div class="insight-order-item__right">
-                        <span class="insight-order-item__amount">${entry.isAddOn ? "" : entry.unitPrice > 0 ? escapeHtml(formatMoney(entry.unitPrice * entry.quantity)) : "—"}</span>
-                        <button
-                          type="button"
-                          class="insight-order-item__menu-btn"
-                          data-item-menu-btn="${escapeHtml(String(group.createdAtEpochMs))}"
-                          data-item-scan-key="${escapeHtml(String(entry.scanKey))}"
-                          ${canScanEntry ? "" : "disabled"}
-                          aria-label="More options"
-                        >
-                          <i class="fas fa-ellipsis-v"></i>
-                        </button>
-                      </div>
-                    </div>
-                  `;
-                })
-                .join("")}
-            </div>
+            ${buildPackingOrderItemsMarkup(group, { canScan })}
 
             <div class="insight-order-actions">
               <span class="insight-order-meta-note">
                 ${escapeHtml(options.note(group))}
               </span>
-              <button
-                type="button"
-                class="dashboard-link-button"
-                ${options.buttonAttribute}="${escapeHtml(group.createdAtEpochMs)}"
-                ${isBusy || (typeof options.disableAction === "function" && options.disableAction(group)) ? "disabled" : ""}
-              >
-                ${isBusy ? options.loadingLabel : options.buttonLabel}
-              </button>
+              ${options.buttonAttribute ? `
+                <button
+                  type="button"
+                  class="dashboard-link-button"
+                  ${options.buttonAttribute}="${escapeHtml(group.createdAtEpochMs)}"
+                  ${isBusy || (typeof options.disableAction === "function" && options.disableAction(group)) ? "disabled" : ""}
+                >
+                  ${isBusy ? options.loadingLabel : options.buttonLabel}
+                </button>` : ""}
             </div>
           </article>
         `;
       })
       .join("");
 
-    queueListEl.querySelectorAll(`[${options.buttonAttribute}]`).forEach((button) => {
-      button.addEventListener("click", () => {
-        const createdAtEpochMs = button.getAttribute(options.buttonAttribute) || "";
-        void options.onAction(createdAtEpochMs);
-      });
-    });
-
-    queueListEl.querySelectorAll("[data-scan-order-item-group]").forEach((item) => {
-      item.addEventListener("click", (event) => {
-        if (
-          event.target.closest("[data-item-menu-btn]")
-          || event.target.closest("[data-item-dropdown]")
-          || event.target.closest("[data-addon-dropdown-toggle]")
-          || event.target.closest("[data-packing-image-preview]")
-        ) {
-          return;
-        }
-        const groupId = item.getAttribute("data-scan-order-item-group") || "";
-        const scanKey = item.getAttribute("data-scan-order-item-key") || "";
-        void handleProductClick(groupId, scanKey);
-      });
-
-      item.addEventListener("keydown", (event) => {
-        if (
-          event.target.closest("[data-item-menu-btn]")
-          || event.target.closest("[data-item-dropdown]")
-          || event.target.closest("[data-addon-dropdown-toggle]")
-          || event.target.closest("[data-packing-image-preview]")
-        ) {
-          return;
-        }
-
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          const groupId = item.getAttribute("data-scan-order-item-group") || "";
-          const scanKey = item.getAttribute("data-scan-order-item-key") || "";
-          void handleProductClick(groupId, scanKey);
-        }
-      });
-    });
-
-    queueListEl.querySelectorAll("[data-addon-dropdown-toggle]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const dropdownKey = button.getAttribute("data-addon-dropdown-toggle") || "";
-        const nextIsExpanded = button.getAttribute("aria-expanded") !== "true";
-        setAddOnDropdownExpanded(dropdownKey, nextIsExpanded);
-      });
-    });
-
-    queueListEl.querySelectorAll("[data-packing-image-preview]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openPackingPhotoModal(
-          button.getAttribute("data-packing-image-preview-group") || "",
-          button.getAttribute("data-packing-image-preview-key") || "",
-          button,
-        );
-      });
-    });
-
-    queueListEl.querySelectorAll("[data-item-menu-btn]").forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const groupId = btn.getAttribute("data-item-menu-btn") || "";
-        const scanKey = btn.getAttribute("data-item-scan-key") || "";
-        // Also select this card so the outline highlights it.
-        selectBarcodeScanItem(groupId, scanKey, {
-          focusHiddenInput: false,
-        });
-        void openPackingModal(groupId, scanKey);
-      });
-    });
+    bindPackingQueueInteractions(queueListEl, options);
   }
 
   const packingModal = document.querySelector("[data-packing-modal]");
@@ -3292,10 +3774,32 @@
     window.scrollTo(snapshot.left, snapshot.top);
   }
 
+  function getPreparingGroupsForRender(preparingBuckets) {
+    const hasPrepareFilterTabs = document.querySelectorAll("[data-packing-prepare-filter]").length > 0;
+    if (!isPackingAdminWorkspace) {
+      return state.preparingGroups;
+    }
+    if (!hasPrepareFilterTabs) {
+      return [
+        ...preparingBuckets.pending,
+        ...preparingBuckets.progress,
+        ...preparingBuckets.complete,
+      ];
+    }
+    return ({
+      "to-pack": preparingBuckets.pending,
+      packing: preparingBuckets.progress,
+      packed: preparingBuckets.complete,
+    })[state.prepareFilter] || preparingBuckets.pending;
+  }
+
   function render() {
     const scrollSnapshot = getScrollSnapshot();
     renderSummary();
-    renderQueue(preparingOrderListEl, state.preparingGroups, {
+    const preparingBuckets = getPreparingGroupBuckets();
+    const preparingGroups = getPreparingGroupsForRender(preparingBuckets);
+    const visiblePreparingGroups = preparingGroups.filter(groupMatchesWorkspaceSearch);
+    renderQueue(preparingOrderListEl, visiblePreparingGroups, {
       emptyMessage: "No orders in To Prepare right now.",
       chipClass: "is-preparing",
       stageLabel: "Preparing",
@@ -3304,6 +3808,7 @@
       activeRequestId: state.activePackRequestId,
       buttonLabel: "Order Packed",
       loadingLabel: "Moving...",
+      searchEmpty: Boolean(normalizeSearchTerm(state.workspaceSearchTerm)),
       note: (group) => {
         const summary = getGroupScannerSummary(group);
         if (summary && summary.remainingQuantity > 0) {
@@ -3313,21 +3818,73 @@
       },
       disableAction: (group) => !isGroupReadyToPack(group),
       onAction: markOrderPacked,
+      paginationElement: preparingPaginationEl,
+      pageStateKey: "preparingPage",
     });
-    renderQueue(shippingOrderListEl, state.shippingGroups, {
-      emptyMessage: "No orders in To Ship right now.",
-      chipClass: "is-in-transit",
-      stageLabel: "To Ship",
-      stageKey: "shipping",
-      buttonAttribute: "data-ship-order-group",
-      activeRequestId: state.activeShipRequestId,
-      buttonLabel: "Shipped",
-      loadingLabel: "Updating...",
-      canScan: false,
-      note: (group) =>
-        `Ready to dispatch: ${formatItemsLabel(group.itemCount)}. Press Shipped after courier handoff is complete.`,
-      onAction: markOrderShipped,
-    });
+    const shippingView = isPackingAdminWorkspace
+      ? ({
+          ready: {
+            groups: state.shippingGroups,
+            emptyMessage: "No packages are waiting for courier handoff.",
+            chipClass: "is-in-transit",
+            stageLabel: "Ready to Ship",
+            stageKey: "shipping",
+            buttonAttribute: "data-ship-order-group",
+            activeRequestId: state.activeShipRequestId,
+            buttonLabel: "Handover to Courier",
+            loadingLabel: "Updating...",
+            note: (group) => `Ready to dispatch: ${formatItemsLabel(group.itemCount)}.`,
+            onAction: markOrderShipped,
+          },
+          "in-transit": {
+            groups: state.inTransitGroups,
+            emptyMessage: "No shipments are currently in transit.",
+            chipClass: "is-in-transit",
+            stageLabel: "In Transit",
+            stageKey: "in-transit",
+            buttonAttribute: "",
+            activeRequestId: "",
+            buttonLabel: "",
+            loadingLabel: "",
+            note: (group) => `Courier: ${group.courierName}. Shipment is in transit.`,
+          },
+          shipped: {
+            groups: state.shippedGroups,
+            emptyMessage: "No completed shipments match this view.",
+            chipClass: "is-complete",
+            stageLabel: "Shipped",
+            stageKey: "shipped",
+            buttonAttribute: "",
+            activeRequestId: "",
+            buttonLabel: "",
+            loadingLabel: "",
+            note: (group) => `Completed shipment for ${group.customerName}.`,
+          },
+        })[state.shippingFilter]
+      : {
+          groups: state.shippingGroups,
+          emptyMessage: "No orders in To Ship right now.",
+          chipClass: "is-in-transit",
+          stageLabel: "To Ship",
+          stageKey: "shipping",
+          buttonAttribute: "data-ship-order-group",
+          activeRequestId: state.activeShipRequestId,
+          buttonLabel: "Shipped",
+          loadingLabel: "Updating...",
+          note: (group) => `Ready to dispatch: ${formatItemsLabel(group.itemCount)}. Press Shipped after courier handoff is complete.`,
+          onAction: markOrderShipped,
+        };
+    renderQueue(
+      shippingOrderListEl,
+      (shippingView?.groups || []).filter(groupMatchesWorkspaceSearch),
+      {
+        ...shippingView,
+        canScan: false,
+        searchEmpty: Boolean(normalizeSearchTerm(state.workspaceSearchTerm)),
+        paginationElement: shippingPaginationEl,
+        pageStateKey: "shippingPage",
+      },
+    );
     restoreScrollSnapshot(scrollSnapshot);
     requestAnimationFrame(() => {
       restoreScrollSnapshot(scrollSnapshot);
@@ -3353,10 +3910,67 @@
     selectBarcodeScanItem(groupId, scanKey);
   }
 
+  function setPackingFilter(attribute, value) {
+    document.querySelectorAll(`[${attribute}]`).forEach((button) => {
+      button.classList.toggle("is-active", button.getAttribute(attribute) === value);
+    });
+  }
+
+  document.querySelectorAll("[data-packing-prepare-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const filter = button.getAttribute("data-packing-prepare-filter") || "to-pack";
+      if (!["to-pack", "packing", "packed"].includes(filter)) {
+        return;
+      }
+      state.prepareFilter = filter;
+      state.preparingPage = 1;
+      setPackingFilter("data-packing-prepare-filter", filter);
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-packing-shipping-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const filter = button.getAttribute("data-packing-shipping-filter") || "ready";
+      if (!["ready", "in-transit", "shipped"].includes(filter)) {
+        return;
+      }
+      state.shippingFilter = filter;
+      state.shippingPage = 1;
+      setPackingFilter("data-packing-shipping-filter", filter);
+      render();
+    });
+  });
+
+  packingWorkspaceSearchInput?.addEventListener("input", () => {
+    state.workspaceSearchTerm = packingWorkspaceSearchInput.value;
+    state.preparingPage = 1;
+    state.shippingPage = 1;
+    render();
+  });
+
+  packingFeedFilterEl?.addEventListener("change", () => {
+    state.feedFilter = packingFeedFilterEl.value || "all";
+    renderPackingFeed();
+  });
+
+  document.querySelectorAll("[data-packing-refresh]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!state.isLoading && !state.activePackRequestId && !state.activeShipRequestId) {
+        void loadPackingOrders();
+      }
+    });
+  });
+
+  document.querySelector("[data-packing-print]")?.addEventListener("click", () => {
+    window.print();
+  });
+
   async function initializePackingDashboard() {
     await loadProducts();
     await loadPackingOrders();
   }
 
+  window.addEventListener("gms:realtime-change", handlePackingRealtimeChange);
   void initializePackingDashboard();
 })();

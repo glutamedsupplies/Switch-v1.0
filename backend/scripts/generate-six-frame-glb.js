@@ -379,7 +379,7 @@ function createGlb(textureRecords, fileStem) {
   const gltf = {
     asset: {
       version: "2.0",
-      generator: "GMS Shopping six-frame GLB generator",
+      generator: "Switch six-frame GLB generator",
     },
     scene: 0,
     scenes: [{ nodes: [0] }],

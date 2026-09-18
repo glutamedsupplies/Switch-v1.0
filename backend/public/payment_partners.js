@@ -69,6 +69,7 @@
   let validationModalOnSecondaryAction = null;
   let validationModalAllowOverlayClose = true;
   let validationModalAutoCloseTimer = 0;
+  let paymentPartnerRealtimeRefreshTimer = 0;
 
   function readSuperAdminSession() {
     try {
@@ -79,10 +80,56 @@
     }
   }
 
+  function readAdminSession() {
+    try {
+      const rawSession = window.sessionStorage.getItem("gms-admin-session");
+      return rawSession ? JSON.parse(rawSession) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function normalizeAdminTenantId(value) {
+    return String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function getAdminTenantId() {
+    const adminSession = readAdminSession();
+    const candidates = [
+      adminSession?.adminId,
+      adminSession?.ownerAdminId,
+      adminSession?.tenantId,
+      adminSession?.workspaceId,
+      adminSession?.storeAdminId,
+      adminSession?.id,
+      adminSession?.accountCode,
+      window.localStorage?.getItem("gms-admin-id"),
+    ];
+
+    for (const candidate of candidates) {
+      const normalizedCandidate = normalizeAdminTenantId(candidate);
+      if (normalizedCandidate) {
+        return normalizedCandidate;
+      }
+    }
+
+    return "";
+  }
+
   function withSuperAdminHeaders(headers = {}) {
     const token = String(readSuperAdminSession()?.token || "").trim();
     if (!token) {
-      return headers;
+      const adminId = getAdminTenantId();
+      return adminId
+        ? {
+            ...headers,
+            "X-GMS-Admin-ID": adminId,
+          }
+        : headers;
     }
 
     return {
@@ -105,7 +152,7 @@
     success: `<div class="product-validation-lottie-check" data-partner-validation-lottie-check></div>`,
     notice: `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>`,
     error: `<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>`,
-    delete: `<i class="fa-solid fa-trash-can" aria-hidden="true"></i>`,
+    delete: `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
   });
 
   function setFeedback(message, state) {
@@ -864,11 +911,15 @@
     return Array.isArray(data.partners) ? data.partners : [];
   }
 
-  async function loadPartners() {
+  async function loadPartners(options = {}) {
     try {
       const partners = await fetchPartners();
       renderPartners(partners);
     } catch (error) {
+      if (options?.preserveOnError === true) {
+        console.warn("Unable to refresh payment partners in the background.", error);
+        return;
+      }
       console.error(error);
       setFeedback(
         error instanceof Error
@@ -1210,6 +1261,31 @@
     }
   });
 
+  function handlePaymentPartnerRealtimeChange(event) {
+    const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+    if (detail.type === "ready") {
+      if (detail.reconnected !== true) {
+        return;
+      }
+    } else if (detail.type === "data-change") {
+      const topics = Array.isArray(detail.topics)
+        ? detail.topics.map((topic) => String(topic || "").trim().toLowerCase())
+        : [];
+      if (!topics.includes("all") && !topics.includes("payment-partners")) {
+        return;
+      }
+    } else {
+      return;
+    }
+
+    window.clearTimeout(paymentPartnerRealtimeRefreshTimer);
+    paymentPartnerRealtimeRefreshTimer = window.setTimeout(() => {
+      paymentPartnerRealtimeRefreshTimer = 0;
+      void loadPartners({ preserveOnError: true });
+    }, 180);
+  }
+
   renderImagePreview(null);
-  loadPartners();
+  window.addEventListener("gms:realtime-change", handlePaymentPartnerRealtimeChange);
+  void loadPartners();
 })();

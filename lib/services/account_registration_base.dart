@@ -5,6 +5,19 @@ abstract class AccountRegistrationService {
     required String countryCode,
     required String mobileNumber,
     required String email,
-    required String password,
+    String password = '',
+    required String verificationToken,
+    String verificationChannel = 'email',
+    String? preferredLanguage,
+    Map<String, dynamic>? googleProfile,
   });
+}
+
+class AccountRegistrationException implements Exception {
+  const AccountRegistrationException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

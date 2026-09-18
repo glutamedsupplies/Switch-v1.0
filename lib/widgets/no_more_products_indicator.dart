@@ -66,16 +66,35 @@ class _NoMoreProductsIndicatorState extends State<NoMoreProductsIndicator> {
     }
   }
 
+  ScrollPosition? _readablePosition(ScrollController controller) {
+    if (!controller.hasClients) {
+      return null;
+    }
+
+    // AnimatedSwitcher (and similar) can briefly keep two scrollables mounted
+    // against the same controller; `.position` asserts on that.
+    final positions = controller.positions;
+    if (positions.isEmpty) {
+      return null;
+    }
+    for (final position in positions) {
+      if (position.hasContentDimensions) {
+        return position;
+      }
+    }
+    return positions.last;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: widget.scrollController,
       builder: (context, child) {
-        if (!widget.scrollController.hasClients) {
+        final position = _readablePosition(widget.scrollController);
+        if (position == null || !position.hasContentDimensions) {
           return const SizedBox.shrink();
         }
 
-        final position = widget.scrollController.position;
         final remainingDistance = (position.maxScrollExtent - position.pixels)
             .clamp(0.0, double.infinity);
         final isNearBottom = remainingDistance <= 20;

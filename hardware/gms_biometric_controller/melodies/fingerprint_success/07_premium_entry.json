@@ -1,0 +1,10 @@
+{
+  "name": "Premium Entry",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 440, "duration": 80 },
+    { "frequency": 554, "duration": 80 },
+    { "frequency": 659, "duration": 95 },
+    { "frequency": 880, "duration": 210 }
+  ]
+}

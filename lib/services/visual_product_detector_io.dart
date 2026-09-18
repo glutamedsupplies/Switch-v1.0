@@ -19,6 +19,7 @@ Future<VisualProductDetectionResult> prepareMobileVisualSearchImage({
       imageBytes: imageBytes,
       filename: normalizedFilename,
       usedDetection: false,
+      originalImageBytes: imageBytes,
     );
   }
 
@@ -28,6 +29,7 @@ Future<VisualProductDetectionResult> prepareMobileVisualSearchImage({
       imageBytes: imageBytes,
       filename: normalizedFilename,
       usedDetection: false,
+      originalImageBytes: imageBytes,
     );
   }
 
@@ -54,6 +56,7 @@ Future<VisualProductDetectionResult> prepareMobileVisualSearchImage({
         imageBytes: imageBytes,
         filename: normalizedFilename,
         usedDetection: false,
+        originalImageBytes: imageBytes,
       );
     }
 
@@ -67,6 +70,7 @@ Future<VisualProductDetectionResult> prepareMobileVisualSearchImage({
         imageBytes: imageBytes,
         filename: normalizedFilename,
         usedDetection: false,
+        originalImageBytes: imageBytes,
       );
     }
 
@@ -77,20 +81,27 @@ Future<VisualProductDetectionResult> prepareMobileVisualSearchImage({
       width: cropRect.width,
       height: cropRect.height,
     );
-    final croppedBytes = Uint8List.fromList(img.encodeJpg(croppedImage, quality: 88));
+    // Saved detection crop sent to listing search.
+    final croppedBytes = Uint8List.fromList(
+      img.encodeJpg(croppedImage, quality: 88),
+    );
     final label = _bestObjectLabel(detectedObject);
+    final confidence = _bestObjectConfidence(detectedObject);
 
     return VisualProductDetectionResult(
       imageBytes: croppedBytes,
       filename: _detectedFilename(normalizedFilename),
       usedDetection: true,
       label: label,
+      confidence: confidence,
+      originalImageBytes: imageBytes,
     );
   } catch (_) {
     return VisualProductDetectionResult(
       imageBytes: imageBytes,
       filename: normalizedFilename,
       usedDetection: false,
+      originalImageBytes: imageBytes,
     );
   } finally {
     await objectDetector.close();

@@ -4,12 +4,8 @@ import 'dart:io';
 
 import 'package:gms_shopping/services/admin_scope.dart';
 import 'package:gms_shopping/services/chat_support_sync_base.dart';
+import 'package:gms_shopping/services/local_api_base_urls.dart';
 
-const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
-const _defaultDesktopBaseUrl = 'http://127.0.0.1:8080';
-const _defaultAndroidEmulatorBaseUrl = 'http://10.0.2.2:8080';
-const _defaultAndroidUsbBaseUrl = 'http://127.0.0.1:8080';
-const _defaultCurrentWifiBaseUrl = 'http://192.168.100.225:8080';
 const _requestTimeout = Duration(seconds: 3);
 String? _preferredBaseUrl;
 
@@ -20,30 +16,7 @@ ChatSupportSyncService createChatSupportSyncService({String? baseUrl}) {
 }
 
 List<String> _buildBaseUrls({String? baseUrl}) {
-  final urls = <String>[];
-
-  void addUrl(String? value) {
-    final trimmed = value?.trim() ?? '';
-    if (trimmed.isEmpty || urls.contains(trimmed)) {
-      return;
-    }
-    urls.add(trimmed);
-  }
-
-  addUrl(baseUrl);
-  addUrl(_environmentBaseUrl);
-
-  if (Platform.isAndroid) {
-    addUrl(_defaultAndroidEmulatorBaseUrl);
-    addUrl(_defaultAndroidUsbBaseUrl);
-    addUrl(_defaultCurrentWifiBaseUrl);
-    addUrl('http://localhost:8080');
-  } else {
-    addUrl(_defaultDesktopBaseUrl);
-    addUrl('http://localhost:8080');
-  }
-
-  return urls;
+  return buildLocalApiBaseUrls(baseUrl: baseUrl, isAndroid: Platform.isAndroid);
 }
 
 String _resolveChatScopeAdminId(String adminId) {
@@ -82,16 +55,11 @@ Map<String, dynamic> _withChatAdminScopePayload(
   if (resolvedAdminId.isEmpty || payload.containsKey('adminId')) {
     return payload;
   }
-  return <String, dynamic>{
-    ...payload,
-    'adminId': resolvedAdminId,
-  };
+  return <String, dynamic>{...payload, 'adminId': resolvedAdminId};
 }
 
 class _HttpChatSupportSyncService implements ChatSupportSyncService {
-  _HttpChatSupportSyncService({
-    required this.baseUrls,
-  });
+  _HttpChatSupportSyncService({required this.baseUrls});
 
   final List<String> baseUrls;
   final HttpClient _client = HttpClient();
@@ -115,21 +83,35 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     required Map<String, dynamic> thread,
   }) {
     final normalizedThread = Map<String, dynamic>.from(thread);
+    for (final field in <String>[
+      'productImageUrl',
+      'customerAvatarUrl',
+      'customerImageUrl',
+      'customerProfileImageUrl',
+      'companyPictureUrl',
+    ]) {
+      normalizedThread[field] = _resolveChatMediaUrl(
+        baseUrl,
+        normalizedThread[field],
+      );
+    }
     final rawMessages = normalizedThread['messages'];
     if (rawMessages is List) {
-      normalizedThread['messages'] = rawMessages.map((message) {
-        if (message is! Map) {
-          return message;
-        }
-        final normalizedMessage = Map<String, dynamic>.from(
-          message.cast<Object?, Object?>(),
-        );
-        normalizedMessage['imageUrl'] = _resolveChatMediaUrl(
-          baseUrl,
-          normalizedMessage['imageUrl'],
-        );
-        return normalizedMessage;
-      }).toList(growable: false);
+      normalizedThread['messages'] = rawMessages
+          .map((message) {
+            if (message is! Map) {
+              return message;
+            }
+            final normalizedMessage = Map<String, dynamic>.from(
+              message.cast<Object?, Object?>(),
+            );
+            normalizedMessage['imageUrl'] = _resolveChatMediaUrl(
+              baseUrl,
+              normalizedMessage['imageUrl'],
+            );
+            return normalizedMessage;
+          })
+          .toList(growable: false);
     }
 
     return normalizedThread;
@@ -141,9 +123,12 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     String adminId = '',
   }) async {
     try {
-      final uri = _withChatAdminScopeUri(Uri.parse(
-        '$baseUrl/api/chat-support?customerId=${Uri.encodeQueryComponent(customerId)}',
-      ), adminId: adminId);
+      final uri = _withChatAdminScopeUri(
+        Uri.parse(
+          '$baseUrl/api/chat-support?customerId=${Uri.encodeQueryComponent(customerId)}',
+        ),
+        adminId: adminId,
+      );
       final request = await _client.getUrl(uri).timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
@@ -188,9 +173,10 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     String adminId = '',
   }) async {
     try {
-      final uri = _withChatAdminScopeUri(Uri.parse(
-        '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}',
-      ), adminId: adminId);
+      final uri = _withChatAdminScopeUri(
+        Uri.parse('$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}'),
+        adminId: adminId,
+      );
       final request = await _client.getUrl(uri).timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
@@ -240,18 +226,22 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     try {
       final request = await _client
           .postUrl(
-            _withChatAdminScopeUri(Uri.parse(
-              '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/ai-reply',
-            ), adminId: adminId),
+            _withChatAdminScopeUri(
+              Uri.parse(
+                '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/ai-reply',
+              ),
+              adminId: adminId,
+            ),
           )
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
-      request.write(jsonEncode(_withChatAdminScopePayload(
-        <String, dynamic>{},
-        adminId: adminId,
-      )));
+      request.write(
+        jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{}, adminId: adminId),
+        ),
+      );
 
       final response = await request.close().timeout(_requestTimeout);
       final responseBody = await response
@@ -260,12 +250,12 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
           .timeout(_requestTimeout);
 
       if (response.statusCode != HttpStatus.ok) {
-        final decodedError =
-            responseBody.trim().isEmpty ? null : jsonDecode(responseBody);
-        final errorMessage =
-            decodedError is Map<String, dynamic>
-                ? decodedError['message']?.toString().trim()
-                : null;
+        final decodedError = responseBody.trim().isEmpty
+            ? null
+            : jsonDecode(responseBody);
+        final errorMessage = decodedError is Map<String, dynamic>
+            ? decodedError['message']?.toString().trim()
+            : null;
         throw _BaseUrlAttemptFailure(
           errorMessage?.isNotEmpty == true
               ? errorMessage!
@@ -295,6 +285,66 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     }
   }
 
+  Future<Map<String, dynamic>> _requestHumanAgentFromBaseUrl({
+    required String baseUrl,
+    required String threadId,
+    required String customerId,
+    String adminId = '',
+  }) async {
+    try {
+      final request = await _client
+          .postUrl(
+            _withChatAdminScopeUri(
+              Uri.parse(
+                '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/request-agent',
+              ),
+              adminId: adminId,
+            ),
+          )
+          .timeout(_requestTimeout);
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      _setAdminScopeHeader(request.headers, adminId: adminId);
+      request.write(
+        jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'customerId': customerId,
+          }, adminId: adminId),
+        ),
+      );
+
+      final response = await request.close().timeout(_requestTimeout);
+      final responseBody = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(_requestTimeout);
+      final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
+      if (response.statusCode != HttpStatus.ok) {
+        final message = decoded['message']?.toString().trim();
+        throw _BaseUrlAttemptFailure(
+          message?.isNotEmpty == true ? message! : '${response.statusCode}',
+        );
+      }
+      final thread = decoded['thread'];
+      if (thread is! Map<String, dynamic>) {
+        throw const _BaseUrlAttemptFailure('invalid thread response');
+      }
+      _preferredBaseUrl = baseUrl;
+      return _normalizeThreadMediaUrls(
+        baseUrl: baseUrl,
+        thread: Map<String, dynamic>.from(thread),
+      );
+    } on SocketException {
+      throw const _BaseUrlAttemptFailure('socket error');
+    } on TimeoutException {
+      throw const _BaseUrlAttemptFailure('timeout');
+    } on HttpException catch (error) {
+      throw _BaseUrlAttemptFailure(error.message);
+    } on FormatException {
+      throw const _BaseUrlAttemptFailure('invalid JSON');
+    }
+  }
+
   Future<Map<String, dynamic>> _syncThreadToBaseUrl({
     required String baseUrl,
     required Map<String, dynamic> thread,
@@ -302,19 +352,22 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
   }) async {
     try {
       final request = await _client
-          .postUrl(_withChatAdminScopeUri(
-            Uri.parse('$baseUrl/api/chat-support'),
-            adminId: adminId,
-          ))
+          .postUrl(
+            _withChatAdminScopeUri(
+              Uri.parse('$baseUrl/api/chat-support'),
+              adminId: adminId,
+            ),
+          )
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
       request.write(
-        jsonEncode(_withChatAdminScopePayload(
-          <String, dynamic>{'thread': thread},
-          adminId: adminId,
-        )),
+        jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'thread': thread,
+          }, adminId: adminId),
+        ),
       );
 
       final response = await request.close().timeout(_requestTimeout);
@@ -359,19 +412,24 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     try {
       final request = await _client
           .postUrl(
-            _withChatAdminScopeUri(Uri.parse(
-              '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/edit-message',
-            ), adminId: adminId),
+            _withChatAdminScopeUri(
+              Uri.parse(
+                '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/edit-message',
+              ),
+              adminId: adminId,
+            ),
           )
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
       request.write(
-        jsonEncode(_withChatAdminScopePayload(<String, dynamic>{
-          'messageId': messageId,
-          'text': text,
-        }, adminId: adminId)),
+        jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'messageId': messageId,
+            'text': text,
+          }, adminId: adminId),
+        ),
       );
 
       final response = await request.close().timeout(_requestTimeout);
@@ -419,19 +477,25 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     try {
       final request = await _client
           .postUrl(
-            _withChatAdminScopeUri(Uri.parse(
-              '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/delete-message',
-            ), adminId: adminId),
+            _withChatAdminScopeUri(
+              Uri.parse(
+                '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/delete-message',
+              ),
+              adminId: adminId,
+            ),
           )
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
       request.write(
-        jsonEncode(_withChatAdminScopePayload(<String, dynamic>{
-          'messageId': messageId,
-          if ((customerId ?? '').trim().isNotEmpty) 'customerId': customerId!.trim(),
-        }, adminId: adminId)),
+        jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'messageId': messageId,
+            if ((customerId ?? '').trim().isNotEmpty)
+              'customerId': customerId!.trim(),
+          }, adminId: adminId),
+        ),
       );
 
       final response = await request.close().timeout(_requestTimeout);
@@ -483,24 +547,30 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     try {
       final request = await _client
           .postUrl(
-            _withChatAdminScopeUri(Uri.parse(
-              '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/typing',
-            ), adminId: adminId),
+            _withChatAdminScopeUri(
+              Uri.parse(
+                '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/typing',
+              ),
+              adminId: adminId,
+            ),
           )
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       _setAdminScopeHeader(request.headers, adminId: adminId);
       request.write(
-        jsonEncode(_withChatAdminScopePayload(<String, dynamic>{
-          'actor': actor,
-          'isTyping': isTyping,
-          'isOnline': ?isOnline,
-          if ((displayName ?? '').trim().isNotEmpty)
-            'displayName': displayName!.trim(),
-          if ((avatarUrl ?? '').trim().isNotEmpty) 'avatarUrl': avatarUrl!.trim(),
-          'thread': ?thread,
-        }, adminId: adminId)),
+        jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'actor': actor,
+            'isTyping': isTyping,
+            'isOnline': ?isOnline,
+            if ((displayName ?? '').trim().isNotEmpty)
+              'displayName': displayName!.trim(),
+            if ((avatarUrl ?? '').trim().isNotEmpty)
+              'avatarUrl': avatarUrl!.trim(),
+            'thread': ?thread,
+          }, adminId: adminId),
+        ),
       );
 
       final response = await request.close().timeout(_requestTimeout);
@@ -604,9 +674,12 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     try {
       final request = await _client
           .deleteUrl(
-            _withChatAdminScopeUri(Uri.parse(
-              '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}',
-            ), adminId: adminId),
+            _withChatAdminScopeUri(
+              Uri.parse(
+                '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}',
+              ),
+              adminId: adminId,
+            ),
           )
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
@@ -654,16 +727,18 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
     }
 
     for (final baseUrl in baseUrls) {
-      run(baseUrl).then((result) {
-        if (!completer.isCompleted) {
-          completer.complete(result);
-        }
-      }).catchError((Object error) {
-        final failure = error is _BaseUrlAttemptFailure
-            ? error.message
-            : 'unknown error';
-        completeFailure(baseUrl, failure);
-      });
+      run(baseUrl)
+          .then((result) {
+            if (!completer.isCompleted) {
+              completer.complete(result);
+            }
+          })
+          .catchError((Object error) {
+            final failure = error is _BaseUrlAttemptFailure
+                ? error.message
+                : 'unknown error';
+            completeFailure(baseUrl, failure);
+          });
     }
 
     return completer.future;
@@ -763,6 +838,38 @@ class _HttpChatSupportSyncService implements ChatSupportSyncService {
         adminId: adminId,
       ),
       errorPrefix: 'Could not request chat AI reply.',
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestHumanAgent({
+    required String threadId,
+    required String customerId,
+    String adminId = '',
+  }) async {
+    final preferredBaseUrl = _preferredBaseUrl;
+    if (preferredBaseUrl != null) {
+      try {
+        return await _requestHumanAgentFromBaseUrl(
+          baseUrl: preferredBaseUrl,
+          threadId: threadId,
+          customerId: customerId,
+          adminId: adminId,
+        );
+      } on _BaseUrlAttemptFailure {
+        if (_preferredBaseUrl == preferredBaseUrl) {
+          _preferredBaseUrl = null;
+        }
+      }
+    }
+    return _runWithFallbacks<Map<String, dynamic>>(
+      run: (baseUrl) => _requestHumanAgentFromBaseUrl(
+        baseUrl: baseUrl,
+        threadId: threadId,
+        customerId: customerId,
+        adminId: adminId,
+      ),
+      errorPrefix: 'Could not request a human support agent.',
     );
   }
 

@@ -46,14 +46,12 @@ class ProductCompanyIdentity extends StatelessWidget {
                       color: textColor,
                       fontSize: fontSize,
                       fontWeight: FontWeight.w500,
-                      letterSpacing: 0,
                       height: 1.15,
                     ) ??
                 TextStyle(
                   color: textColor,
                   fontSize: fontSize,
                   fontWeight: FontWeight.w500,
-                  letterSpacing: 0,
                   height: 1.15,
                 ),
           ),

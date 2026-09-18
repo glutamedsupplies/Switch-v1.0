@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 
 const double _kAddToCartVariantCardHeight = 146;
 
@@ -72,8 +73,11 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedVariant = widget.selectedVariant ??
-        (widget.product.variants.isNotEmpty ? widget.product.variants.first : null);
+    _selectedVariant =
+        widget.selectedVariant ??
+        (widget.product.variants.isNotEmpty
+            ? widget.product.variants.first
+            : null);
     _quantityController = TextEditingController(text: '$_quantity');
     _quantityFocusNode = FocusNode();
     _quantityFocusNode.addListener(() {
@@ -96,12 +100,9 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
   }
 
   bool get _hasSalesPrice =>
-      _salesPrice != null &&
-      _salesPrice! >= 0 &&
-      _salesPrice! < _originalPrice;
+      _salesPrice != null && _salesPrice! >= 0 && _salesPrice! < _originalPrice;
 
-  double get _displayPrice =>
-      _hasSalesPrice ? _salesPrice! : _originalPrice;
+  double get _displayPrice => _hasSalesPrice ? _salesPrice! : _originalPrice;
 
   double get _originalPrice =>
       _selectedVariant?.originalPrice ?? widget.product.originalPrice;
@@ -128,8 +129,7 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
 
   double get _quantityAdjustedPrice => _displayPrice * _quantity;
 
-  double get _quantityAdjustedOriginalPrice =>
-      _originalPrice * _quantity;
+  double get _quantityAdjustedOriginalPrice => _originalPrice * _quantity;
 
   bool get _hasInventoryContext => widget.catalogProducts.isNotEmpty;
 
@@ -248,8 +248,9 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
         theme.colorScheme.onSurface.withOpacity(0.72);
     final titleColor = theme.colorScheme.onSurface;
     final isDarkMode = theme.brightness == Brightness.dark;
-    final filledButtonForegroundColor =
-        isDarkMode ? theme.cardColor : Colors.white;
+    final filledButtonForegroundColor = isDarkMode
+        ? theme.cardColor
+        : Colors.white;
     final filledButtonPriceColor = isDarkMode
         ? theme.cardColor.withOpacity(0.84)
         : Colors.white.withOpacity(0.92);
@@ -297,343 +298,432 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: 112,
-                           child: _AddToCartProductImage(
-                             product: widget.product,
-                             primaryColor: primaryColor,
-                             borderRadius: const BorderRadius.only(
-                               topLeft: Radius.circular(8),
-                               bottomLeft: Radius.circular(8),
-                             ),
-                           ),
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        Container(
+                          decoration: BoxDecoration(
+                            color: surfaceColor,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _AddToCartPriceText(
-                                  amount: _quantityAdjustedPrice,
-                                  color: primaryColor,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 30,
-                                ),
-                                if (_hasSalesPrice) ...[
-                                  const SizedBox(height: 2),
-                                  _AddToCartPriceText(
-                                    amount: _quantityAdjustedOriginalPrice,
-                                    color: secondaryColor,
-                                    fontWeight:
-                                        theme.textTheme.bodySmall?.fontWeight ??
-                                        FontWeight.w400,
-                                    fontSize:
-                                        theme.textTheme.bodySmall?.fontSize ?? 12,
-                                    decoration: TextDecoration.lineThrough,
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FittedBox(
-                                alignment: Alignment.centerLeft,
-                                fit: BoxFit.scaleDown,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (_discountPercent != null) ...[
-                                      _AddToCartChip(
-                                        icon: Icons.local_offer_outlined,
-                                        label: '-$_discountPercent%',
-                                        color: const Color(0xFFC62828),
-                                        backgroundColor: const Color(0xFFD32F2F),
-                                        labelColor: Colors.white,
-                                        iconColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 4,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        labelStyle: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 9,
-                                            ),
-                                      ),
-                                    ],
-                                    if (widget.showsTopBrand) ...[
-                                      if (_discountPercent != null)
-                                        const SizedBox(width: 6),
-                                      _AddToCartChip(
-                                        icon: Icons.workspace_premium_outlined,
-                                        label: 'Top Selling',
-                                        color: const Color.fromARGB(
-                                          255,
-                                          15,
-                                          194,
-                                          176,
-                                        ),
-                                        backgroundColor: const Color.fromARGB(
-                                          255,
-                                          15,
-                                          194,
-                                          176,
-                                        ),
-                                        labelColor: Colors.white,
-                                        iconColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 4,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        labelStyle: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 9,
-                                            ),
-                                      ),
-                                    ],
-                                    if (_showsTopReviewsChip) ...[
-                                      if (_discountPercent != null ||
-                                          widget.showsTopBrand)
-                                        const SizedBox(width: 6),
-                                      _AddToCartChip(
-                                        icon: Icons.star_outline_rounded,
-                                        label: 'Top Rating',
-                                        color: const Color(0xFFF9A825),
-                                        backgroundColor: const Color(0xFFF9A825),
-                                        labelColor: Colors.white,
-                                        iconColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 4,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        labelStyle: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 9,
-                                            ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.inventory_2_outlined,
-                                  size: 15,
-                                  color: hasStock
-                                      ? secondaryColor
-                                      : const Color(0xFFC62828),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  hasStock ? 'Stock: $variantStock' : 'Sold out',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: hasStock
-                                        ? secondaryColor
-                                        : const Color(0xFFC62828),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (hasStock) ...[
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.local_shipping_outlined,
-                                    size: 15,
-                                    color: secondaryColor,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    'Same Day Delivery',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: secondaryColor,
-                                      fontWeight: FontWeight.w700,
+                                SizedBox(
+                                  width: 112,
+                                  child: _AddToCartProductImage(
+                                    product: widget.product,
+                                    primaryColor: primaryColor,
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(8),
+                                      bottomLeft: Radius.circular(8),
                                     ),
                                   ),
-                                ],
-                              ),
-                            ],
+                                ),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      14,
+                                      14,
+                                      14,
+                                      14,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            _AddToCartPriceText(
+                                              amount: _quantityAdjustedPrice,
+                                              color: primaryColor,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 30,
+                                            ),
+                                            if (_hasSalesPrice) ...[
+                                              const SizedBox(height: 2),
+                                              _AddToCartPriceText(
+                                                amount:
+                                                    _quantityAdjustedOriginalPrice,
+                                                color: secondaryColor,
+                                                fontWeight:
+                                                    theme
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.fontWeight ??
+                                                    FontWeight.w400,
+                                                fontSize:
+                                                    theme
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.fontSize ??
+                                                    12,
+                                                decoration:
+                                                    TextDecoration.lineThrough,
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: FittedBox(
+                                            alignment: Alignment.centerLeft,
+                                            fit: BoxFit.scaleDown,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (_discountPercent !=
+                                                    null) ...[
+                                                  _AddToCartChip(
+                                                    icon: Icons
+                                                        .local_offer_outlined,
+                                                    label:
+                                                        '-$_discountPercent%',
+                                                    color: const Color(
+                                                      0xFFC62828,
+                                                    ),
+                                                    backgroundColor:
+                                                        const Color(0xFFD32F2F),
+                                                    labelColor: Colors.white,
+                                                    iconColor: Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 4,
+                                                        ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                    labelStyle: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          fontSize: 9,
+                                                        ),
+                                                  ),
+                                                ],
+                                                if (widget.showsTopBrand) ...[
+                                                  if (_discountPercent != null)
+                                                    const SizedBox(width: 6),
+                                                  _AddToCartChip(
+                                                    icon: Icons
+                                                        .workspace_premium_outlined,
+                                                    label: 'Top Selling',
+                                                    color: const Color.fromARGB(
+                                                      255,
+                                                      15,
+                                                      194,
+                                                      176,
+                                                    ),
+                                                    backgroundColor:
+                                                        const Color.fromARGB(
+                                                          255,
+                                                          15,
+                                                          194,
+                                                          176,
+                                                        ),
+                                                    labelColor: Colors.white,
+                                                    iconColor: Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 4,
+                                                        ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                    labelStyle: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          fontSize: 9,
+                                                        ),
+                                                  ),
+                                                ],
+                                                if (_showsTopReviewsChip) ...[
+                                                  if (_discountPercent !=
+                                                          null ||
+                                                      widget.showsTopBrand)
+                                                    const SizedBox(width: 6),
+                                                  _AddToCartChip(
+                                                    icon: Icons
+                                                        .star_outline_rounded,
+                                                    label: 'Top Rating',
+                                                    color: const Color(
+                                                      0xFFF9A825,
+                                                    ),
+                                                    backgroundColor:
+                                                        const Color(0xFFF9A825),
+                                                    labelColor: Colors.white,
+                                                    iconColor: Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 4,
+                                                        ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
+                                                    labelStyle: theme
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          fontSize: 9,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.inventory_2_outlined,
+                                              size: 15,
+                                              color: hasStock
+                                                  ? secondaryColor
+                                                  : const Color(0xFFC62828),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              hasStock
+                                                  ? 'Stock: $variantStock'
+                                                  : 'Sold out',
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: hasStock
+                                                        ? secondaryColor
+                                                        : const Color(
+                                                            0xFFC62828,
+                                                          ),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (hasStock) ...[
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                Icons.local_shipping_outlined,
+                                                size: 15,
+                                                color: secondaryColor,
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                'Same Day Delivery',
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: secondaryColor,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (widget.product.variants.isNotEmpty && _showsVariants) ...[
-                  const SizedBox(height: 18),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Variants',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: titleColor,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          const spacing = 12.0;
-                          const columns = 3;
-                          final itemWidth =
-                              (constraints.maxWidth - (spacing * (columns - 1))) /
-                              columns;
-                          final rowCount =
-                              (widget.product.variants.length / columns).ceil();
-
-                          final variantGrid = Wrap(
-                            spacing: spacing,
-                            runSpacing: spacing,
+                        if (widget.product.variants.isNotEmpty &&
+                            _showsVariants) ...[
+                          const SizedBox(height: 18),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              for (final variant in widget.product.variants)
-                                Builder(
-                                  builder: (context) {
-                                    final variantAvailableStock =
-                                        _resolveAvailableStock(variant);
-                                    return SizedBox(
-                                      width: itemWidth,
-                                      child: _AddToCartVariantOptionChip(
-                                        variant: variant,
-                                        isSelected: _selectedVariant?.id == variant.id,
-                                        isSoldOut: variantAvailableStock <= 0,
-                                        primaryColor: primaryColor,
-                                        secondaryColor: secondaryColor,
-                                        fallbackImageUrl: widget.product.imageUrl,
-                                        fallbackInitial: productName.trim().isEmpty
-                                            ? '?'
-                                            : productName.trim()[0].toUpperCase(),
-                                        onImageTap: () =>
-                                            _openVariantImagePreview(variant),
-                                        onTap: () => _handleVariantSelected(variant),
-                                      ),
-                                    );
-                                  },
-                                ),
-                            ],
-                          );
-
-                          if (rowCount <= 2) {
-                            return variantGrid;
-                          }
-
-                          return SizedBox(
-                            height: (_kAddToCartVariantCardHeight * 2) + spacing,
-                            child: SingleChildScrollView(
-                              child: variantGrid,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Text(
-                      'Quantity',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: titleColor,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: surfaceColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _AddToCartQuantityButton(
-                            icon: Icons.remove_rounded,
-                            onTap: hasStock ? () => _updateQuantity(_quantity - 1) : null,
-                          ),
-                          SizedBox(
-                            width: 34,
-                            child: Center(
-                              child: TextField(
-                                controller: _quantityController,
-                                focusNode: _quantityFocusNode,
-                                enabled: hasStock,
-                                textAlign: TextAlign.center,
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(2),
-                                ],
-                                style: theme.textTheme.titleMedium?.copyWith(
+                              Text(
+                                'Variants',
+                                style: theme.textTheme.titleSmall?.copyWith(
                                   color: titleColor,
                                   fontWeight: FontWeight.w800,
-                                  fontSize: 14,
                                 ),
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  counterText: '',
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                                onTap: () {
-                                  _quantityController.selection = TextSelection(
-                                    baseOffset: 0,
-                                    extentOffset: _quantityController.text.length,
+                              ),
+                              const SizedBox(height: 10),
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  const spacing = 12.0;
+                                  const columns = 3;
+                                  final itemWidth =
+                                      (constraints.maxWidth -
+                                          (spacing * (columns - 1))) /
+                                      columns;
+                                  final rowCount =
+                                      (widget.product.variants.length / columns)
+                                          .ceil();
+
+                                  final variantGrid = Wrap(
+                                    spacing: spacing,
+                                    runSpacing: spacing,
+                                    children: [
+                                      for (final variant
+                                          in widget.product.variants)
+                                        Builder(
+                                          builder: (context) {
+                                            final variantAvailableStock =
+                                                _resolveAvailableStock(variant);
+                                            return SizedBox(
+                                              width: itemWidth,
+                                              child: _AddToCartVariantOptionChip(
+                                                variant: variant,
+                                                isSelected:
+                                                    _selectedVariant?.id ==
+                                                    variant.id,
+                                                isSoldOut:
+                                                    variantAvailableStock <= 0,
+                                                primaryColor: primaryColor,
+                                                secondaryColor: secondaryColor,
+                                                fallbackImageUrl:
+                                                    widget.product.imageUrl,
+                                                fallbackInitial:
+                                                    productName.trim().isEmpty
+                                                    ? '?'
+                                                    : productName
+                                                          .trim()[0]
+                                                          .toUpperCase(),
+                                                onImageTap: () =>
+                                                    _openVariantImagePreview(
+                                                      variant,
+                                                    ),
+                                                onTap: () =>
+                                                    _handleVariantSelected(
+                                                      variant,
+                                                    ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                    ],
+                                  );
+
+                                  if (rowCount <= 2) {
+                                    return variantGrid;
+                                  }
+
+                                  return SizedBox(
+                                    height:
+                                        (_kAddToCartVariantCardHeight * 2) +
+                                        spacing,
+                                    child: SingleChildScrollView(
+                                      child: variantGrid,
+                                    ),
                                   );
                                 },
-                                onChanged: (value) {
-                                  if (value.isEmpty) {
-                                    return;
-                                  }
-                                  _updateQuantity(int.tryParse(value) ?? _quantity);
-                                },
-                                onSubmitted: (_) => _commitTypedQuantity(unfocus: true),
                               ),
-                            ),
-                          ),
-                          _AddToCartQuantityButton(
-                            icon: Icons.add_rounded,
-                            onTap: hasStock ? () => _updateQuantity(_quantity + 1) : null,
+                            ],
                           ),
                         ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            Text(
+                              'Quantity',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                color: titleColor,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: surfaceColor,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _AddToCartQuantityButton(
+                                    icon: Icons.remove_rounded,
+                                    onTap: hasStock
+                                        ? () => _updateQuantity(_quantity - 1)
+                                        : null,
+                                  ),
+                                  SizedBox(
+                                    width: 34,
+                                    child: Center(
+                                      child: TextField(
+                                        controller: _quantityController,
+                                        focusNode: _quantityFocusNode,
+                                        enabled: hasStock,
+                                        textAlign: TextAlign.center,
+                                        keyboardType: TextInputType.number,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter
+                                              .digitsOnly,
+                                          LengthLimitingTextInputFormatter(2),
+                                        ],
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              color: titleColor,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 14,
+                                            ),
+                                        decoration: const InputDecoration(
+                                          isDense: true,
+                                          border: InputBorder.none,
+                                          counterText: '',
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                        onTap: () {
+                                          _quantityController
+                                              .selection = TextSelection(
+                                            baseOffset: 0,
+                                            extentOffset:
+                                                _quantityController.text.length,
+                                          );
+                                        },
+                                        onChanged: (value) {
+                                          if (value.isEmpty) {
+                                            return;
+                                          }
+                                          _updateQuantity(
+                                            int.tryParse(value) ?? _quantity,
+                                          );
+                                        },
+                                        onSubmitted: (_) =>
+                                            _commitTypedQuantity(unfocus: true),
+                                      ),
+                                    ),
+                                  ),
+                                  _AddToCartQuantityButton(
+                                    icon: Icons.add_rounded,
+                                    onTap: hasStock
+                                        ? () => _updateQuantity(_quantity + 1)
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),
@@ -665,11 +755,11 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
                           child: FilledButton(
                             onPressed: hasStock
                                 ? () => Navigator.of(context).pop(
-                                      AddToCartSelection(
-                                        quantity: _quantity,
-                                        selectedVariant: _selectedVariant,
-                                      ),
-                                    )
+                                    AddToCartSelection(
+                                      quantity: _quantity,
+                                      selectedVariant: _selectedVariant,
+                                    ),
+                                  )
                                 : null,
                             style: FilledButton.styleFrom(
                               backgroundColor: primaryColor,
@@ -693,10 +783,12 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
                                       children: [
                                         Text(
                                           '${widget.submitButtonVerb} $_quantity Item${_quantity > 1 ? 's' : ''}',
-                                          style: theme.textTheme.labelLarge?.copyWith(
-                                            color: filledButtonForegroundColor,
-                                            fontWeight: FontWeight.w800,
-                                          ),
+                                          style: theme.textTheme.labelLarge
+                                              ?.copyWith(
+                                                color:
+                                                    filledButtonForegroundColor,
+                                                fontWeight: FontWeight.w800,
+                                              ),
                                         ),
                                         const SizedBox(height: 1),
                                         _AddToCartPriceText(
@@ -704,7 +796,11 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
                                           color: filledButtonPriceColor,
                                           fontWeight: FontWeight.w800,
                                           fontSize:
-                                              theme.textTheme.titleMedium?.fontSize ?? 16,
+                                              theme
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.fontSize ??
+                                              16,
                                           height: 1,
                                         ),
                                       ],
@@ -863,12 +959,12 @@ class _AddToCartAutoSizeText extends StatelessWidget {
         final lengthAdjustedFontSize = normalizedLength >= 20
             ? baseFontSize - 3.5
             : normalizedLength >= 14
-                ? baseFontSize - 2
-                : normalizedLength >= 9
-                    ? baseFontSize - 1
-                    : hasMultipleWords
-                        ? baseFontSize - 0.8
-                    : baseFontSize;
+            ? baseFontSize - 2
+            : normalizedLength >= 9
+            ? baseFontSize - 1
+            : hasMultipleWords
+            ? baseFontSize - 0.8
+            : baseFontSize;
         var resolvedFontSize = lengthAdjustedFontSize;
 
         if (constraints.maxWidth.isFinite) {
@@ -883,7 +979,8 @@ class _AddToCartAutoSizeText extends StatelessWidget {
               textScaler: textScaler,
             )..layout(maxWidth: constraints.maxWidth);
 
-            if (!painter.didExceedMaxLines && painter.width <= constraints.maxWidth) {
+            if (!painter.didExceedMaxLines &&
+                painter.width <= constraints.maxWidth) {
               break;
             }
 
@@ -930,15 +1027,18 @@ class _AddToCartVariantImage extends StatelessWidget {
             primaryColor: primaryColor,
             initial: fallbackInitial,
           )
-        : Image.network(
-            trimmedImageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return _AddToCartImageFallback(
-                primaryColor: primaryColor,
-                initial: fallbackInitial,
-              );
-            },
+        : ColoredBox(
+            color: Colors.white,
+            child: Image.network(
+              trimmedImageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return _AddToCartImageFallback(
+                  primaryColor: primaryColor,
+                  initial: fallbackInitial,
+                );
+              },
+            ),
           );
 
     return Stack(
@@ -946,17 +1046,31 @@ class _AddToCartVariantImage extends StatelessWidget {
         Container(
           height: height,
           width: double.infinity,
-          decoration: BoxDecoration(
-            color: primaryColor.withOpacity(0.12),
-          ),
+          decoration: BoxDecoration(color: primaryColor.withOpacity(0.12)),
           clipBehavior: Clip.antiAlias,
           child: isSoldOut
               ? ColorFiltered(
                   colorFilter: const ColorFilter.matrix(<double>[
-                    0.2126, 0.7152, 0.0722, 0, 0,
-                    0.2126, 0.7152, 0.0722, 0, 0,
-                    0.2126, 0.7152, 0.0722, 0, 0,
-                    0, 0, 0, 1, 0,
+                    0.2126,
+                    0.7152,
+                    0.0722,
+                    0,
+                    0,
+                    0.2126,
+                    0.7152,
+                    0.0722,
+                    0,
+                    0,
+                    0.2126,
+                    0.7152,
+                    0.0722,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
                   ]),
                   child: imageChild,
                 )
@@ -989,19 +1103,17 @@ class _AddToCartVariantImage extends StatelessWidget {
         if (isSoldOut)
           Positioned.fill(
             child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.18),
-              ),
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.18)),
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 4,
                   ),
-                   decoration: BoxDecoration(
-                     color: Colors.black.withOpacity(0.55),
-                     borderRadius: BorderRadius.circular(8),
-                   ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   child: Text(
                     'Sold out',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -1060,7 +1172,8 @@ class _AddToCartChip extends StatelessWidget {
             .copyWith(color: resolvedLabelColor);
 
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: resolvedBackgroundColor,
         borderRadius: borderRadius ?? BorderRadius.circular(8),
@@ -1072,10 +1185,7 @@ class _AddToCartChip extends StatelessWidget {
             Icon(icon, size: 16, color: resolvedIconColor),
             const SizedBox(width: 6),
           ],
-          Text(
-            label,
-            style: resolvedLabelStyle,
-          ),
+          Text(label, style: resolvedLabelStyle),
         ],
       ),
     );
@@ -1096,28 +1206,31 @@ class _AddToCartProductImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imageUrl = product.buyModalDisplayImageUrl.trim();
-    final productName = product.name.trim().isEmpty ? '?' : product.name.trim()[0];
+    final productName = product.name.trim().isEmpty
+        ? '?'
+        : product.name.trim()[0];
 
     return ClipRRect(
       borderRadius: borderRadius ?? BorderRadius.circular(8),
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: primaryColor.withOpacity(0.12),
-        ),
+        decoration: BoxDecoration(color: primaryColor.withOpacity(0.12)),
         child: imageUrl.isEmpty
             ? _AddToCartImageFallback(
                 primaryColor: primaryColor,
                 initial: productName.toUpperCase(),
               )
-            : Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return _AddToCartImageFallback(
-                    primaryColor: primaryColor,
-                    initial: productName.toUpperCase(),
-                  );
-                },
+            : ColoredBox(
+                color: Colors.white,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return _AddToCartImageFallback(
+                      primaryColor: primaryColor,
+                      initial: productName.toUpperCase(),
+                    );
+                  },
+                ),
               ),
       ),
     );
@@ -1192,15 +1305,18 @@ class _AddToCartVariantImagePreviewDialog extends StatelessWidget {
                         primaryColor: primaryColor,
                         initial: fallbackInitial,
                       )
-                    : Image.network(
-                        imageUrl,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return _AddToCartImageFallback(
-                            primaryColor: primaryColor,
-                            initial: fallbackInitial,
-                          );
-                        },
+                    : ColoredBox(
+                        color: Colors.white,
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return _AddToCartImageFallback(
+                              primaryColor: primaryColor,
+                              initial: fallbackInitial,
+                            );
+                          },
+                        ),
                       ),
               ),
             ),
@@ -1282,10 +1398,7 @@ class _AddToCartVariantImagePreviewDialog extends StatelessWidget {
 }
 
 class _AddToCartQuantityButton extends StatelessWidget {
-  const _AddToCartQuantityButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _AddToCartQuantityButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback? onTap;
@@ -1336,33 +1449,13 @@ class _AddToCartPriceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final symbolFontSize = fontSize * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: TextStyle(
-              color: color,
-              fontWeight: fontWeight,
-              fontSize: symbolFontSize,
-              decoration: decoration,
-              height: height,
-            ),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: TextStyle(
-              color: color,
-              fontWeight: fontWeight,
-              fontSize: fontSize,
-              decoration: decoration,
-              height: height,
-            ),
-          ),
-        ],
-      ),
+    return AppPriceText(
+      amount: amount,
+      color: color,
+      fontWeight: fontWeight,
+      fontSize: fontSize,
+      decoration: decoration,
+      height: height,
     );
   }
 }

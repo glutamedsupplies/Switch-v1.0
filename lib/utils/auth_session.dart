@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,10 +13,20 @@ class AuthSession {
   static const String _accountIdKey = 'accountId';
   static const String _accountEmailKey = 'accountEmail';
   static const String _accountNameKey = 'accountName';
+  static const String _activeModeKey = 'activeMode';
+  static const String _activeCompanyIdKey = 'activeCompanyId';
+  static const String _availableModesKey = 'availableModes';
 
   /// Notifier for synchronous login state checking.
   /// Use [isLoggedInSync] getter for sync checks, or [isLoggedIn] for async.
   static final ValueNotifier<bool> isLoggedInNotifier = ValueNotifier<bool>(false);
+  static final ValueNotifier<String> activeModeNotifier =
+      ValueNotifier<String>('buyer');
+  static final ValueNotifier<int> accountRevision = ValueNotifier<int>(0);
+
+  static void notifyAccountChanged() {
+    accountRevision.value = accountRevision.value + 1;
+  }
 
   /// Synchronous check if user is logged in (uses cached value).
   static bool get isLoggedInSync => isLoggedInNotifier.value;
@@ -31,6 +43,10 @@ class AuthSession {
     final isCurrentlyLoggedIn = await isLoggedIn();
     if (isLoggedInNotifier.value != isCurrentlyLoggedIn) {
       isLoggedInNotifier.value = isCurrentlyLoggedIn;
+    }
+    final savedMode = await getActiveMode();
+    if (activeModeNotifier.value != savedMode) {
+      activeModeNotifier.value = savedMode;
     }
   }
 
@@ -58,6 +74,7 @@ class AuthSession {
         isLoggedInNotifier.value = true;
       }
     }
+    notifyAccountChanged();
   }
 
   // ---------------------------------------------------------------------------
@@ -80,6 +97,7 @@ class AuthSession {
         isLoggedInNotifier.value = true;
       }
     }
+    notifyAccountChanged();
   }
 
   static Future<String?> getAccountName() async {
@@ -94,6 +112,163 @@ class AuthSession {
     } else {
       await prefs.setString(_accountNameKey, name.trim());
     }
+  }
+
+  static Future<String> getActiveMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_activeModeKey)?.trim().toLowerCase() ?? '';
+    if (saved.isEmpty) {
+      return 'buyer';
+    }
+    return saved;
+  }
+
+  static Future<void> setActiveMode(String? mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = mode?.trim().toLowerCase() ?? '';
+    final nextMode = normalized.isEmpty ? 'buyer' : normalized;
+    await prefs.setString(_activeModeKey, nextMode);
+    if (activeModeNotifier.value != nextMode) {
+      activeModeNotifier.value = nextMode;
+    }
+  }
+
+  static Future<String?> getActiveCompanyId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeCompanyIdKey);
+  }
+
+  static Future<void> setActiveCompanyId(String? companyId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = companyId?.trim() ?? '';
+    if (normalized.isEmpty) {
+      await prefs.remove(_activeCompanyIdKey);
+    } else {
+      await prefs.setString(_activeCompanyIdKey, normalized);
+    }
+  }
+
+  static Future<List<String>> getAvailableModes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_availableModesKey)?.trim() ?? '';
+    if (raw.isEmpty) {
+      return const ['buyer'];
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        final modes = decoded
+            .map((item) => item.toString().trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toSet()
+            .toList(growable: false);
+        return modes.isEmpty ? const ['buyer'] : modes;
+      }
+    } catch (_) {
+      // Ignore corrupt session metadata and fall back safely.
+    }
+    return const ['buyer'];
+  }
+
+  static Future<void> setAvailableModes(List<String> modes) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = modes
+        .map((item) => item.trim().toLowerCase())
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final nextModes = normalized.isEmpty ? const ['buyer'] : normalized;
+    await prefs.setString(_availableModesKey, jsonEncode(nextModes));
+  }
+
+  static Future<bool> hasMode(String mode) async {
+    final normalized = mode.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return false;
+    }
+    final modes = await getAvailableModes();
+    return modes.contains(normalized);
+  }
+
+  static Future<void> setUnifiedSession(Map<String, dynamic>? session) async {
+    final normalizedSession = session ?? const <String, dynamic>{};
+    final account = normalizedSession['account'];
+    final accountMap = account is Map<String, dynamic>
+        ? account
+        : account is Map
+            ? Map<String, dynamic>.from(account)
+            : const <String, dynamic>{};
+
+    String pick(Map<String, dynamic> source, List<String> keys) {
+      for (final key in keys) {
+        final value = source[key]?.toString().trim() ?? '';
+        if (value.isNotEmpty) {
+          return value;
+        }
+      }
+      return '';
+    }
+
+    final accountId = pick(accountMap, const [
+      'id',
+      'accountId',
+      'accountCode',
+      'userId',
+      'uid',
+    ]);
+    final email = pick(accountMap, const ['email', 'accountEmail']);
+    final displayName = pick(accountMap, const [
+      'name',
+      'displayName',
+      'fullName',
+    ]);
+    final firstName = pick(accountMap, const ['firstName', 'first_name']);
+    final lastName = pick(accountMap, const ['lastName', 'last_name']);
+    final phone = pick(accountMap, const [
+      'mobileNumber',
+      'phone',
+      'phoneNumber',
+    ]);
+    final profileImageUrl = pick(accountMap, const [
+      'profileImageUrl',
+      'avatarUrl',
+      'photoUrl',
+      'pictureUrl',
+      'imageUrl',
+    ]);
+    final resolvedName = displayName.isNotEmpty
+        ? displayName
+        : [firstName, lastName].where((value) => value.isNotEmpty).join(' ');
+    final activeMode =
+        normalizedSession['activeMode']?.toString().trim().toLowerCase() ??
+            '';
+    final activeCompanyId =
+        normalizedSession['activeCompanyId']?.toString().trim() ?? '';
+    final availableModesRaw = normalizedSession['availableModes'];
+    final availableModes = availableModesRaw is List
+        ? availableModesRaw
+            .map((item) => item.toString().trim().toLowerCase())
+            .where((item) => item.isNotEmpty)
+            .toList(growable: false)
+        : const <String>['buyer'];
+
+    await setAccountId(accountId.isNotEmpty ? accountId : email);
+    await setAccountEmail(email);
+    await setAccountName(resolvedName);
+    await setAvailableModes(availableModes);
+    await setActiveMode(activeMode);
+    await setActiveCompanyId(activeCompanyId);
+    notifyAccountChanged();
+
+    // Keep the customer app profile aligned with the same account record used
+    // by Super Admin User Data.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('profile_first_name', firstName);
+    await prefs.setString('profile_last_name', lastName);
+    await prefs.setString('profile_email', email);
+    await prefs.setString('profile_phone', phone);
+    await prefs.setString('profile_image_url', profileImageUrl);
   }
 
   // ---------------------------------------------------------------------------
@@ -120,9 +295,25 @@ class AuthSession {
     await prefs.remove(_accountIdKey);
     await prefs.remove(_accountEmailKey);
     await prefs.remove(_accountNameKey);
+    await prefs.remove(_activeModeKey);
+    await prefs.remove(_activeCompanyIdKey);
+    await prefs.remove(_availableModesKey);
+    // Profile identity must not survive logout — otherwise the next session
+    // (or guest shell) can briefly/wrongly show the previous account email.
+    await prefs.remove('profile_first_name');
+    await prefs.remove('profile_last_name');
+    await prefs.remove('profile_email');
+    await prefs.remove('profile_phone');
+    await prefs.remove('profile_image_url');
+    await prefs.remove('profile_image');
+    await prefs.remove('profile_address');
     if (isLoggedInSync) {
       isLoggedInNotifier.value = false;
     }
+    if (activeModeNotifier.value != 'buyer') {
+      activeModeNotifier.value = 'buyer';
+    }
+    notifyAccountChanged();
   }
 
   // ---------------------------------------------------------------------------

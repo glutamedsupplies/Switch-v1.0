@@ -3,20 +3,25 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:gms_shopping/utils/app_keyboard.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:lottie/lottie.dart';
 
 class LoadingScreen extends StatelessWidget {
   const LoadingScreen({super.key});
 
+  /// Lottie converted from the Switch mark — steady logo, stroke trim loading.
+  static const String logoLottiePath =
+      'assets/animations/switch_logo_loading.json';
+
   static Future<T> showWhile<T>(
     BuildContext context,
     FutureOr<T> Function() action, {
-    Duration minimumDuration = const Duration(milliseconds: 750),
+    Duration minimumDuration = const Duration(milliseconds: 450),
   }) async {
     dismissAppKeyboard();
     final navigator = Navigator.of(context, rootNavigator: true);
     final theme = Theme.of(context);
-    final barrierColor = theme.colorScheme.scrim.withOpacity(
-      theme.brightness == Brightness.dark ? 0.48 : 0.22,
+    final barrierColor = theme.colorScheme.scrim.withValues(
+      alpha: theme.brightness == Brightness.dark ? 0.52 : 0.28,
     );
     var isDialogOpen = true;
 
@@ -61,31 +66,30 @@ class LoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const WillPopScope(
-      onWillPop: _preventPop,
-      child: _LoadingModalBody(),
+    return const PopScope(
+      canPop: false,
+      child: _SwitchLottieLoader(),
     );
   }
-
-  static Future<bool> _preventPop() async => false;
 }
 
-class _LoadingModalBody extends StatelessWidget {
-  const _LoadingModalBody();
+class _SwitchLottieLoader extends StatelessWidget {
+  const _SwitchLottieLoader();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Material(
       type: MaterialType.transparency,
       child: Center(
         child: SizedBox(
-          width: 34,
-          height: 34,
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            color: theme.colorScheme.primary,
+          width: 92,
+          height: 92,
+          child: Lottie.asset(
+            LoadingScreen.logoLottiePath,
+            frameRate: appLottieFrameRate,
+            repeat: true,
+            animate: true,
+            fit: BoxFit.contain,
           ),
         ),
       ),

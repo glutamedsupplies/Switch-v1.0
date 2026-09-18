@@ -1,0 +1,10 @@
+{
+  "name": "Digital Clear",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 740, "duration": 65 },
+    { "frequency": 988, "duration": 65 },
+    { "frequency": 0, "duration": 35 },
+    { "frequency": 1480, "duration": 170 }
+  ]
+}

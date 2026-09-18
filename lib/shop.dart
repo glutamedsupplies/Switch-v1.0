@@ -32,6 +32,7 @@ import 'package:gms_shopping/services/product_repository.dart';
 
 // Utility for formatting currency values (PHP symbol and amount)
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 
 // Utility for smooth animations (60fps motion framework)
 import 'package:gms_shopping/utils/motion_60fps.dart';
@@ -40,7 +41,8 @@ import 'package:gms_shopping/utils/motion_60fps.dart';
 import 'package:gms_shopping/utils/session_image_cache.dart';
 
 // Loading indicator with bouncing dots animation
-import 'package:gms_shopping/widgets/bouncing_dots_loader.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
 
 // "No more products" indicator shown at end of product list
 import 'package:gms_shopping/widgets/no_more_products_indicator.dart';
@@ -504,8 +506,8 @@ class _ShopPageState extends State<ShopPage> {
     final remainingDistance = (notification.metrics.maxScrollExtent - offset)
         .clamp(0.0, double.infinity);
     // Check if there are more products to load
-    final hasMoreProducts = _resolvedVisibleProductCount(totalProductCount) <
-        totalProductCount;
+    final hasMoreProducts =
+        _resolvedVisibleProductCount(totalProductCount) < totalProductCount;
     var loadedMoreProducts = false;
 
     // Trigger lazy loading if near bottom and more products available
@@ -525,8 +527,9 @@ class _ShopPageState extends State<ShopPage> {
         _updateCarouselOpacity(1);
       } else if (scrollDelta > 0) {
         // Scrolling down, fade out carousel
-        final nextOpacity =
-            (1 - (offset / _carouselFadeScrollDistance)).clamp(0.0, 1.0).toDouble();
+        final nextOpacity = (1 - (offset / _carouselFadeScrollDistance))
+            .clamp(0.0, 1.0)
+            .toDouble();
         _updateCarouselOpacity(nextOpacity);
       }
     }
@@ -561,7 +564,9 @@ class _ShopPageState extends State<ShopPage> {
       return 0;
     }
 
-    return _visibleProductCount > totalCount ? totalCount : _visibleProductCount;
+    return _visibleProductCount > totalCount
+        ? totalCount
+        : _visibleProductCount;
   }
 
   // ========================================================================
@@ -704,7 +709,8 @@ class _ShopPageState extends State<ShopPage> {
       for (final category in product.categoryList) {
         final normalizedCategory = category.trim().toLowerCase();
         // Skip empty or duplicate categories
-        if (category.isEmpty || seenProductCategories.contains(normalizedCategory)) {
+        if (category.isEmpty ||
+            seenProductCategories.contains(normalizedCategory)) {
           continue;
         }
 
@@ -740,10 +746,7 @@ class _ShopPageState extends State<ShopPage> {
   // Checks if a product matches the search query.
   // Searches in product name, category, and description.
   // ========================================================================
-  bool _matchesSearchQuery(
-    Product product, {
-    required String normalizedQuery,
-  }) {
+  bool _matchesSearchQuery(Product product, {required String normalizedQuery}) {
     // Empty query matches all products
     if (normalizedQuery.isEmpty) {
       return true;
@@ -776,10 +779,7 @@ class _ShopPageState extends State<ShopPage> {
     // Filter products by visibility, search match, and category
     return products.where((product) {
       return _isVisibleInShop(product) &&
-          _matchesSearchQuery(
-            product,
-            normalizedQuery: normalizedQuery,
-          ) &&
+          _matchesSearchQuery(product, normalizedQuery: normalizedQuery) &&
           product.belongsToCategory(normalizedSelectedCategory);
     }).toList();
   }
@@ -796,11 +796,12 @@ class _ShopPageState extends State<ShopPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Calculate minimum height for product section
-        final sectionMinHeight = (constraints.maxHeight -
-                18 - // Top padding
-                16)  // Bottom padding
-            .clamp(0.0, double.infinity)
-            .toDouble();
+        final sectionMinHeight =
+            (constraints.maxHeight -
+                    18 - // Top padding
+                    16) // Bottom padding
+                .clamp(0.0, double.infinity)
+                .toDouble();
 
         // Outer FutureBuilder for categories
         return ValueListenableBuilder<Future<List<String>>>(
@@ -813,8 +814,8 @@ class _ShopPageState extends State<ShopPage> {
                 // Show loading indicator only if waiting and no data
                 final categoriesAreLoading =
                     categoriesSnapshot.connectionState ==
-                            ConnectionState.waiting &&
-                        categories.isEmpty;
+                        ConnectionState.waiting &&
+                    categories.isEmpty;
 
                 // Inner FutureBuilder for products
                 return ValueListenableBuilder<Future<List<Product>>>(
@@ -828,17 +829,17 @@ class _ShopPageState extends State<ShopPage> {
 
                         // Get IDs of top-selling products for badge display
                         final topSellerIds = {
-                          for (final product
-                              in _shopBuildTopSellingProducts(products))
+                          for (final product in _shopBuildTopSellingProducts(
+                            products,
+                          ))
                             product.id,
                         };
 
                         // Check for server errors
                         final hasServerError =
                             (categoriesSnapshot.hasError &&
-                                    categories.isEmpty) ||
-                                (productsSnapshot.hasError &&
-                                    products.isEmpty);
+                                categories.isEmpty) ||
+                            (productsSnapshot.hasError && products.isEmpty);
 
                         // Check if in visual search mode
                         final isVisualSearchMode =
@@ -864,9 +865,9 @@ class _ShopPageState extends State<ShopPage> {
                             // Filter products based on mode
                             final filteredProducts = isVisualSearchMode
                                 ? (widget.visualSearchProducts ??
-                                        const <Product>[])
-                                    .where(_isVisibleInShop)
-                                    .toList(growable: false)
+                                          const <Product>[])
+                                      .where(_isVisibleInShop)
+                                      .toList(growable: false)
                                 : _filterProductsByCategory(
                                     products,
                                     selectedCategory,
@@ -883,17 +884,13 @@ class _ShopPageState extends State<ShopPage> {
                                     child: ValueListenableBuilder<int>(
                                       valueListenable:
                                           _visibleProductCountNotifier,
-                                      builder: (
-                                        context,
-                                        visibleProductCount,
-                                        child,
-                                      ) {
+                                      builder: (context, visibleProductCount, child) {
                                         // Calculate visible products count
                                         final resolvedVisibleProductCount =
                                             visibleProductCount >
-                                                    filteredProducts.length
-                                                ? filteredProducts.length
-                                                : visibleProductCount;
+                                                filteredProducts.length
+                                            ? filteredProducts.length
+                                            : visibleProductCount;
                                         // Get slice of products to display
                                         final visibleProducts = filteredProducts
                                             .take(resolvedVisibleProductCount)
@@ -905,7 +902,8 @@ class _ShopPageState extends State<ShopPage> {
 
                                         // Scroll notification listener for lazy loading
                                         return NotificationListener<
-                                            ScrollNotification>(
+                                          ScrollNotification
+                                        >(
                                           onNotification: (notification) =>
                                               _handleShopScrollNotification(
                                                 notification,
@@ -919,25 +917,26 @@ class _ShopPageState extends State<ShopPage> {
                                                   const AlwaysScrollableScrollPhysics(),
                                               padding:
                                                   const EdgeInsets.fromLTRB(
-                                                0,
-                                                18,
-                                                0,
-                                                0,
-                                              ),
+                                                    0,
+                                                    18,
+                                                    0,
+                                                    0,
+                                                  ),
                                               // 2 items: product section + no more indicator
-                                              itemCount:
-                                                  showsNoMoreIndicator ? 2 : 1,
+                                              itemCount: showsNoMoreIndicator
+                                                  ? 2
+                                                  : 1,
                                               itemBuilder: (context, index) {
                                                 // Item 0: Product section
                                                 if (index == 0) {
                                                   return Padding(
                                                     padding:
                                                         const EdgeInsets.fromLTRB(
-                                                      10,
-                                                      0,
-                                                      10,
-                                                      0,
-                                                    ),
+                                                          10,
+                                                          0,
+                                                          10,
+                                                          0,
+                                                        ),
                                                     child: _ShopProductsSection(
                                                       surfaceColor:
                                                           widget.surfaceColor,
@@ -949,8 +948,8 @@ class _ShopPageState extends State<ShopPage> {
                                                           widget.primaryColor,
                                                       selectedCategory:
                                                           isVisualSearchMode
-                                                              ? ''
-                                                              : selectedCategory,
+                                                          ? ''
+                                                          : selectedCategory,
                                                       searchQuery:
                                                           widget.searchQuery,
                                                       products: visibleProducts,
@@ -958,30 +957,29 @@ class _ShopPageState extends State<ShopPage> {
                                                           topSellerIds,
                                                       isLoading:
                                                           isVisualSearchMode
-                                                              ? widget
-                                                                  .isVisualSearchLoading
-                                                              : productsSnapshot
-                                                                          .connectionState ==
-                                                                      ConnectionState
-                                                                          .waiting &&
-                                                                  products
-                                                                      .isEmpty,
+                                                          ? widget
+                                                                .isVisualSearchLoading
+                                                          : productsSnapshot
+                                                                        .connectionState ==
+                                                                    ConnectionState
+                                                                        .waiting &&
+                                                                products
+                                                                    .isEmpty,
                                                       errorMessage:
                                                           isVisualSearchMode &&
-                                                                  widget
-                                                                      .visualSearchError
-                                                                      .trim()
-                                                                      .isNotEmpty
-                                                              ? widget
+                                                              widget
                                                                   .visualSearchError
-                                                              : productsSnapshot
-                                                                          .hasError &&
-                                                                      products
-                                                                          .isEmpty
-                                                                  ? productsSnapshot
-                                                                      .error
-                                                                      .toString()
-                                                                  : null,
+                                                                  .trim()
+                                                                  .isNotEmpty
+                                                          ? widget
+                                                                .visualSearchError
+                                                          : productsSnapshot
+                                                                    .hasError &&
+                                                                products.isEmpty
+                                                          ? productsSnapshot
+                                                                .error
+                                                                .toString()
+                                                          : null,
                                                       minHeight:
                                                           sectionMinHeight,
                                                       isVisualSearchMode:
@@ -996,33 +994,31 @@ class _ShopPageState extends State<ShopPage> {
                                                 return Padding(
                                                   padding:
                                                       const EdgeInsets.fromLTRB(
-                                                    10,
-                                                    18,
-                                                    10,
-                                                    0,
-                                                  ),
-                                                  child:
-                                                      ValueListenableBuilder<
-                                                          int>(
+                                                        10,
+                                                        18,
+                                                        10,
+                                                        0,
+                                                      ),
+                                                  child: ValueListenableBuilder<int>(
                                                     valueListenable:
                                                         _bottomOverscrollSignalNotifier,
-                                                    builder: (
-                                                      context,
-                                                      bottomOverscrollSignal,
-                                                      child,
-                                                    ) {
-                                                      return NoMoreProductsIndicator(
-                                                        scrollController:
-                                                            _scrollController,
-                                                        overscrollSignal:
-                                                            bottomOverscrollSignal,
-                                                        primaryColor:
-                                                            widget.primaryColor,
-                                                        secondaryColor:
-                                                            widget
+                                                    builder:
+                                                        (
+                                                          context,
+                                                          bottomOverscrollSignal,
+                                                          child,
+                                                        ) {
+                                                          return NoMoreProductsIndicator(
+                                                            scrollController:
+                                                                _scrollController,
+                                                            overscrollSignal:
+                                                                bottomOverscrollSignal,
+                                                            primaryColor: widget
+                                                                .primaryColor,
+                                                            secondaryColor: widget
                                                                 .secondaryColor,
-                                                      );
-                                                    },
+                                                          );
+                                                        },
                                                   ),
                                                 );
                                               },
@@ -1041,22 +1037,24 @@ class _ShopPageState extends State<ShopPage> {
                                     left: 0,
                                     right: 0,
                                     child: ValueListenableBuilder<double>(
-                                      valueListenable:
-                                          _carouselOpacityNotifier,
+                                      valueListenable: _carouselOpacityNotifier,
                                       builder:
                                           (context, carouselOpacity, child) {
-                                        return _ShopCategoryCarousel(
-                                          categories: visibleCategories,
-                                          selectedCategory: selectedCategory,
-                                          isLoading: categoriesAreLoading,
-                                          backgroundColor: widget.surfaceColor,
-                                          activeColor: widget.primaryColor,
-                                          inactiveColor: widget.secondaryColor,
-                                          opacity: carouselOpacity,
-                                          showEmptyMessage: !hasServerError,
-                                          onTap: _handleCategorySelected,
-                                        );
-                                      },
+                                            return _ShopCategoryCarousel(
+                                              categories: visibleCategories,
+                                              selectedCategory:
+                                                  selectedCategory,
+                                              isLoading: categoriesAreLoading,
+                                              backgroundColor:
+                                                  widget.surfaceColor,
+                                              activeColor: widget.primaryColor,
+                                              inactiveColor:
+                                                  widget.secondaryColor,
+                                              opacity: carouselOpacity,
+                                              showEmptyMessage: !hasServerError,
+                                              onTap: _handleCategorySelected,
+                                            );
+                                          },
                                     ),
                                   ),
 
@@ -1067,11 +1065,7 @@ class _ShopPageState extends State<ShopPage> {
                                   child: ValueListenableBuilder<bool>(
                                     valueListenable:
                                         _showsScrollToTopButtonNotifier,
-                                    builder: (
-                                      context,
-                                      showsScrollToTopButton,
-                                      child,
-                                    ) {
+                                    builder: (context, showsScrollToTopButton, child) {
                                       // Animated switcher for smooth button appearance
                                       return AnimatedSwitcher(
                                         duration: appMotionFrames(13),
@@ -1213,92 +1207,90 @@ class _ShopCategoryCarousel extends StatelessWidget {
             height: height,
             // Show loading indicator while fetching categories
             child: isLoading
-                ? Center(
-                    child: BouncingDotsLoader(
-                      activeColor: activeColor,
-                      inactiveColor: inactiveColor.withOpacity(0.28),
-                    ),
-                  )
+                ? const SkeletonHorizontalChips(count: 6)
                 // Show empty message if no categories
                 : categories.isEmpty
-                    ? showEmptyMessage
-                        ? ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            children: [
-                              Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Text(
-                                  'No product categories yet',
-                                  style:
-                                      Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            color: inactiveColor,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                ),
+                ? showEmptyMessage
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          children: [
+                            Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Text(
+                                'No product categories yet',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: inactiveColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                               ),
-                            ],
-                          )
-                        : const SizedBox.shrink()
-                    // Show category chips list
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: categories.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 10),
-                        itemBuilder: (context, index) {
-                          final category = categories[index];
-                          // Check if this category is selected
-                          final isActive = category == selectedCategory;
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink()
+                // Show category chips list
+                : HorizontalEndFade(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 24, 0),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: categories.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 10),
+                      itemBuilder: (context, index) {
+                        final category = categories[index];
+                        // Check if this category is selected
+                        final isActive = category == selectedCategory;
 
-                          return InkWell(
-                            onTap: () => onTap(category),
-                            borderRadius: BorderRadius.circular(4),
-                            overlayColor: const WidgetStatePropertyAll(
-                              Colors.transparent,
-                            ),
-                            splashFactory: NoSplash.splashFactory,
-                            highlightColor: Colors.transparent,
-                            splashColor: Colors.transparent,
-                            hoverColor: Colors.transparent,
-                            focusColor: Colors.transparent,
-                            // Animated container for smooth active state transition
-                            child: AnimatedContainer(
-                              duration: appMotionFrames(11),
-                              padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-                              decoration: BoxDecoration(
-                                // Bottom border indicates active selection
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color:
-                                        isActive ? activeColor : Colors.transparent,
-                                    width: 2,
-                                  ),
-                                ),
-                              ),
-                              child: Align(
-                                alignment: Alignment.bottomCenter,
-                                child: Text(
-                                  category,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style:
-                                      Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            // Active category uses primary color
-                                            color: isActive
-                                                ? activeColor
-                                                : inactiveColor,
-                                            fontWeight: isActive
-                                                ? FontWeight.w700
-                                                : FontWeight.w600,
-                                          ),
+                        return InkWell(
+                          onTap: () => onTap(category),
+                          borderRadius: BorderRadius.circular(4),
+                          overlayColor: const WidgetStatePropertyAll(
+                            Colors.transparent,
+                          ),
+                          splashFactory: NoSplash.splashFactory,
+                          highlightColor: Colors.transparent,
+                          splashColor: Colors.transparent,
+                          hoverColor: Colors.transparent,
+                          focusColor: Colors.transparent,
+                          // Animated container for smooth active state transition
+                          child: AnimatedContainer(
+                            duration: appMotionFrames(11),
+                            padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+                            decoration: BoxDecoration(
+                              // Bottom border indicates active selection
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: isActive
+                                      ? activeColor
+                                      : Colors.transparent,
+                                  width: 2,
                                 ),
                               ),
                             ),
-                          );
-                        },
-                      ),
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Text(
+                                category,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      // Active category uses primary color
+                                      color: isActive
+                                          ? activeColor
+                                          : inactiveColor,
+                                      fontWeight: isActive
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ),
       ),
@@ -1457,8 +1449,8 @@ class _ShopProductsSection extends StatelessWidget {
     final sectionTitle = isVisualSearchMode
         ? 'Image Search Results'
         : selectedCategory.isEmpty
-            ? 'Products'
-            : '$selectedCategory Products';
+        ? 'Products'
+        : '$selectedCategory Products';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1471,9 +1463,9 @@ class _ShopProductsSection extends StatelessWidget {
                 child: Text(
                   sectionTitle,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: titleColor,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    color: titleColor,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               // Clear visual search button
@@ -1524,14 +1516,9 @@ class _ShopProductsSection extends StatelessWidget {
           )
         // Loading state
         else if (isLoading)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: BouncingDotsLoader(
-                activeColor: primaryColor,
-                inactiveColor: secondaryColor.withOpacity(0.28),
-              ),
-            ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 8, 12, 24),
+            child: SkeletonProductGrid(count: 6),
           )
         // Empty state
         else if (products.isEmpty)
@@ -1546,15 +1533,15 @@ class _ShopProductsSection extends StatelessWidget {
             title: isVisualSearchMode
                 ? 'No visual match found'
                 : searchQuery.trim().isNotEmpty
-                    ? 'No matching products'
-                    : 'No products in this category',
+                ? 'No matching products'
+                : 'No products in this category',
             message: isVisualSearchMode
                 ? 'Try another photo with the product clearly in frame.'
                 : searchQuery.trim().isNotEmpty
-                    ? 'Try another product name or clear the search field.'
-                    : selectedCategory.isEmpty
-                        ? 'Choose a category to show products here.'
-                        : 'Add products under $selectedCategory on the server and they will appear here.',
+                ? 'Try another product name or clear the search field.'
+                : selectedCategory.isEmpty
+                ? 'Choose a category to show products here.'
+                : 'Add products under $selectedCategory on the server and they will appear here.',
           )
         // Products grid
         else
@@ -1564,9 +1551,11 @@ class _ShopProductsSection extends StatelessWidget {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (var columnIndex = 0;
-                      columnIndex < productColumns.length;
-                      columnIndex++) ...[
+                  for (
+                    var columnIndex = 0;
+                    columnIndex < productColumns.length;
+                    columnIndex++
+                  ) ...[
                     // Add spacing between columns (except before first)
                     if (columnIndex > 0)
                       const SizedBox(width: _productColumnSpacing),
@@ -1574,9 +1563,11 @@ class _ShopProductsSection extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          for (var itemIndex = 0;
-                              itemIndex < productColumns[columnIndex].length;
-                              itemIndex++) ...[
+                          for (
+                            var itemIndex = 0;
+                            itemIndex < productColumns[columnIndex].length;
+                            itemIndex++
+                          ) ...[
                             // Add spacing between cards (except before first)
                             if (itemIndex > 0)
                               const SizedBox(height: _productColumnSpacing),
@@ -1646,34 +1637,31 @@ class _ShopStateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Content widget with icon, title, and message
     final content = Column(
-      mainAxisAlignment:
-          centerContent ? MainAxisAlignment.center : MainAxisAlignment.start,
+      mainAxisAlignment: centerContent
+          ? MainAxisAlignment.center
+          : MainAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment:
-          centerContent ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      crossAxisAlignment: centerContent
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          size: 28,
-          color: primaryColor,
-        ),
+        Icon(icon, size: 28, color: primaryColor),
         const SizedBox(height: 12),
         Text(
           title,
           textAlign: centerContent ? TextAlign.center : TextAlign.start,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: titleColor,
-                fontWeight: FontWeight.w700,
-              ),
+            color: titleColor,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 8),
         Text(
           message,
           textAlign: centerContent ? TextAlign.center : TextAlign.start,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: secondaryColor,
-                height: 1.45,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: secondaryColor, height: 1.45),
         ),
       ],
     );
@@ -1753,7 +1741,8 @@ class _ShopProductCard extends StatelessWidget {
   }
 
   // Check if product has a valid sales price
-  bool get _hasSalesPrice => product.salesPrice != null && product.salesPrice! >= 0;
+  bool get _hasSalesPrice =>
+      product.salesPrice != null && product.salesPrice! >= 0;
 
   // Check if original price should be shown (sales price is lower)
   bool get _showsOriginalPrice =>
@@ -1784,14 +1773,12 @@ class _ShopProductCard extends StatelessWidget {
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 0,
           height: 1,
         ) ??
         const TextStyle(
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 0,
           height: 1,
         );
   }
@@ -1808,10 +1795,7 @@ class _ShopProductCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: _inlineBadgeTextStyle(context),
-      ),
+      child: Text(label, style: _inlineBadgeTextStyle(context)),
     );
   }
 
@@ -1827,15 +1811,8 @@ class _ShopProductCard extends StatelessWidget {
         width: 15,
         height: 15,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          size: 11,
-          color: Colors.white,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, size: 11, color: Colors.white),
       ),
     );
   }
@@ -1854,10 +1831,7 @@ class _ShopProductCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: compactStyle,
-      ),
+      child: Text(label, style: compactStyle),
     );
   }
 
@@ -1873,15 +1847,8 @@ class _ShopProductCard extends StatelessWidget {
         width: 14,
         height: 14,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          size: 9,
-          color: Colors.white,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, size: 9, color: Colors.white),
       ),
     );
   }
@@ -1906,10 +1873,7 @@ class _ShopProductCard extends StatelessWidget {
 
     // Use TextPainter to measure text width
     final painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: labelStyle,
-      ),
+      text: TextSpan(text: label, style: labelStyle),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
@@ -1956,10 +1920,7 @@ class _ShopProductCard extends StatelessWidget {
 
     // Measure if product name exceeds 2 lines
     final painter = TextPainter(
-      text: TextSpan(
-        text: product.name,
-        style: style,
-      ),
+      text: TextSpan(text: product.name, style: style),
       maxLines: 2,
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
@@ -1967,11 +1928,7 @@ class _ShopProductCard extends StatelessWidget {
 
     // If name exceeds 2 lines, use compact layout
     if (painter.didExceedMaxLines) {
-      return _cacheMetric(
-        _compactBadgeLayoutCache,
-        compactBadgeCacheKey,
-        true,
-      );
+      return _cacheMetric(_compactBadgeLayoutCache, compactBadgeCacheKey, true);
     }
 
     final lineMetrics = painter.computeLineMetrics();
@@ -1986,10 +1943,7 @@ class _ShopProductCard extends StatelessWidget {
     // Calculate total badge widths
     final badgeWidths = <double>[
       if (_showsDiscountInlineBadge)
-        _measureInlineBadgeWidth(
-          context,
-          label: '-${_discountPercentValue!}%',
-        ),
+        _measureInlineBadgeWidth(context, label: '-${_discountPercentValue!}%'),
       if (_showsTopSellerInlineBadge) 15,
       if (_showsTopRatedInlineBadge) 15,
     ];
@@ -2016,21 +1970,16 @@ class _ShopProductCard extends StatelessWidget {
       currentLineWidth = badgeWidth;
     }
 
-    return _cacheMetric(
-      _compactBadgeLayoutCache,
-      compactBadgeCacheKey,
-      false,
-    );
+    return _cacheMetric(_compactBadgeLayoutCache, compactBadgeCacheKey, false);
   }
 
   // Build product name with inline badges and price section
   Widget _buildNameAndPrice(BuildContext context) {
     final productNameStyle = Theme.of(context).textTheme.titleSmall?.copyWith(
-          color: titleColor,
-          fontWeight: FontWeight.w500,
-          fontSize: 15,
-          letterSpacing: 0,
-          height: 1,
+      color: titleColor,
+      fontWeight: FontWeight.w500,
+      fontSize: 15,
+      height: 1,
     );
 
     return LayoutBuilder(
@@ -2106,7 +2055,8 @@ class _ShopProductCard extends StatelessWidget {
               );
 
         // Check if compact badge row should be shown below name
-        final showsCompactBadgeRow = useCompactTopBadges &&
+        final showsCompactBadgeRow =
+            useCompactTopBadges &&
             (_showsTopSellerInlineBadge ||
                 _showsDiscountInlineBadge ||
                 _showsTopRatedInlineBadge);
@@ -2156,22 +2106,20 @@ class _ShopProductCard extends StatelessWidget {
                 _ShopPriceText(
                   amount: _displayPrice,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 16,
-                        color: primaryColor,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0,
-                      ),
+                    fontSize: 16,
+                    color: primaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 // Original price (strikethrough if on sale)
                 if (_showsOriginalPrice)
                   _ShopPriceText(
                     amount: product.originalPrice,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: secondaryColor.withOpacity(0.72),
-                          decoration: TextDecoration.lineThrough,
-                          letterSpacing: 0,
-                        ),
+                      fontSize: 11,
+                      color: secondaryColor.withOpacity(0.72),
+                      decoration: TextDecoration.lineThrough,
+                    ),
                   ),
               ],
             ),
@@ -2222,11 +2170,10 @@ class _ShopProductCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: primaryColor,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0,
-                              height: 1.15,
-                            ),
+                          color: primaryColor,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15,
+                        ),
                       ),
                       const SizedBox(height: 0),
                       // Product name with price
@@ -2236,10 +2183,10 @@ class _ShopProductCard extends StatelessWidget {
                       _ShopProductStatsRow(
                         product: product,
                         iconColor: const Color(0xFFF9A825),
-                        textStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        textStyle: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(
                               color: secondaryColor,
                               fontWeight: FontWeight.w200,
-                              letterSpacing: 0,
                               height: 1,
                             ),
                       ),
@@ -2306,12 +2253,7 @@ class _ShopProductImage extends StatelessWidget {
     return Container(
       height: height,
       width: double.infinity,
-      decoration: BoxDecoration(
-        // Use dark background in dark mode, white in light mode
-        color: Theme.of(context).brightness == Brightness.dark
-            ? Colors.black
-            : Colors.white,
-      ),
+      decoration: BoxDecoration(color: Colors.white),
       clipBehavior: Clip.antiAlias,
       child: hasImage
           // Show network image if URL is available
@@ -2346,12 +2288,7 @@ class _ShopProductImage extends StatelessWidget {
                 }
 
                 // Show bouncing dots loader while loading for new images
-                return Center(
-                  child: BouncingDotsLoader(
-                    activeColor: primaryColor,
-                    inactiveColor: primaryColor.withOpacity(0.24),
-                  ),
-                );
+                return const SkeletonShimmer(baseColor: kSkeletonBaseColor);
               },
             )
           // No image URL available, show fallback
@@ -2394,9 +2331,9 @@ class _ShopProductImageFallback extends StatelessWidget {
         child: Text(
           initial,
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: primaryColor,
-                fontWeight: FontWeight.w800,
-              ),
+            color: primaryColor,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -2408,42 +2345,17 @@ class _ShopProductImageFallback extends StatelessWidget {
 // Displays a price amount with Philippine Peso (₱) currency symbol
 // =============================================================================
 // This widget renders a price value with the Philippine Peso symbol.
-// The currency symbol is sized at 75% of the main amount font size.
+// Uses Roboto with ₱ sized the same as the amount digits.
 // =============================================================================
 class _ShopPriceText extends StatelessWidget {
-  const _ShopPriceText({
-    required this.amount,
-    this.style,
-  });
+  const _ShopPriceText({required this.amount, this.style});
 
   final double amount;
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    // Merge provided style with default text style
-    final resolvedStyle =
-        DefaultTextStyle.of(context).style.merge(style).copyWith(
-              letterSpacing: 0,
-              height: 1,
-            );
-    // Currency symbol is slightly smaller than the amount
-    final symbolFontSize = (resolvedStyle.fontSize ?? 14) * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1', // Philippine Peso symbol
-            style: resolvedStyle.copyWith(fontSize: symbolFontSize),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: resolvedStyle,
-          ),
-        ],
-      ),
-    );
+    return AppPriceText(amount: amount, style: style);
   }
 }
 
@@ -2476,11 +2388,7 @@ class _ShopProductStatsRow extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Star icon for rating
-        Icon(
-          Icons.star_rounded,
-          size: 16,
-          color: iconColor,
-        ),
+        Icon(Icons.star_rounded, size: 16, color: iconColor),
         const SizedBox(width: 4),
         // Rating value (e.g., "4.5")
         Text(
@@ -2491,11 +2399,7 @@ class _ShopProductStatsRow extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         // Comment icon
-        Icon(
-          Icons.mode_comment_outlined,
-          size: 15,
-          color: commentIconColor,
-        ),
+        Icon(Icons.mode_comment_outlined, size: 15, color: commentIconColor),
         const SizedBox(width: 4),
         // Comment count (e.g., "125 comments")
         Flexible(
@@ -2615,21 +2519,21 @@ List<Product> _shopBuildTopSellingProducts(
   int limit = 10,
 }) {
   // Filter to products with sales and sort by sold count descending
-  final rankedProducts = [
-    ...filterVisibleProducts(products).where((product) => product.sold > 0),
-  ]..sort((first, second) {
-    final soldCompare = second.sold.compareTo(first.sold);
-    if (soldCompare != 0) {
-      return soldCompare;
-    }
+  final rankedProducts =
+      [...filterVisibleProducts(products).where((product) => product.sold > 0)]
+        ..sort((first, second) {
+          final soldCompare = second.sold.compareTo(first.sold);
+          if (soldCompare != 0) {
+            return soldCompare;
+          }
 
-    final ratingCompare = second.rating.compareTo(first.rating);
-    if (ratingCompare != 0) {
-      return ratingCompare;
-    }
+          final ratingCompare = second.rating.compareTo(first.rating);
+          if (ratingCompare != 0) {
+            return ratingCompare;
+          }
 
-    return first.name.compareTo(second.name);
-  });
+          return first.name.compareTo(second.name);
+        });
 
   return rankedProducts.take(limit).toList(growable: false);
 }

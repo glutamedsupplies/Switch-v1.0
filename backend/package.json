@@ -2,11 +2,23 @@
   "name": "gms-shopping-backend",
   "private": true,
   "version": "1.0.0",
-  "description": "Minimal local backend for GMS Shopping products",
+  "description": "Minimal local backend for Switch products",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "google-auth-library": "^9.15.1",
+    "nodemailer": "^6.10.1",
+    "pg": "^8.23.0",
     "sharp": "^0.33.5"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "db:migrate": "node db/migrate.js",
+    "db:migrate-users": "node scripts/migrate-accounts-json-to-postgres.js",
+    "gmail:connect": "node scripts/gmail-oauth-setup.js",
+    "gmail:test": "node scripts/test-gmail-otp.js"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/pg": "^8.23.1"
   }
 }

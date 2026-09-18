@@ -38,6 +38,17 @@ class _UnsupportedChatSupportSyncService implements ChatSupportSyncService {
   }
 
   @override
+  Future<Map<String, dynamic>> requestHumanAgent({
+    required String threadId,
+    required String customerId,
+    String adminId = '',
+  }) {
+    throw const ChatSupportSyncException(
+      'Chat support sync is not available on this platform.',
+    );
+  }
+
+  @override
   Future<Map<String, dynamic>> syncThread(
     Map<String, dynamic> thread, {
     String adminId = '',

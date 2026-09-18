@@ -1,0 +1,9 @@
+{
+  "name": "Gentle Unlock",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 659, "duration": 120 },
+    { "frequency": 784, "duration": 120 },
+    { "frequency": 988, "duration": 260 }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Victory Unlock",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 523, "duration": 80 },
+    { "frequency": 659, "duration": 80 },
+    { "frequency": 784, "duration": 100 },
+    { "frequency": 1047, "duration": 100 },
+    { "frequency": 1319, "duration": 240 }
+  ]
+}

@@ -2,14 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:gms_shopping/services/admin_scope.dart';
 import 'package:gms_shopping/services/account_registration_base.dart';
-
-const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
-const _defaultDesktopBaseUrl = 'http://127.0.0.1:8080';
-const _defaultAndroidEmulatorBaseUrl = 'http://10.0.2.2:8080';
-const _defaultAndroidUsbBaseUrl = 'http://127.0.0.1:8080';
-const _defaultCurrentWifiBaseUrl = 'http://192.168.100.225:8080';
+import 'package:gms_shopping/services/admin_scope.dart';
+import 'package:gms_shopping/services/local_api_base_urls.dart';
 
 AccountRegistrationService createAccountRegistrationService({String? baseUrl}) {
   return _HttpAccountRegistrationService(
@@ -18,33 +13,10 @@ AccountRegistrationService createAccountRegistrationService({String? baseUrl}) {
 }
 
 List<String> _buildBaseUrls({String? baseUrl}) {
-  final urls = <String>[];
-
-  void addUrl(String? value) {
-    final trimmed = value?.trim() ?? '';
-    if (trimmed.isEmpty || urls.contains(trimmed)) {
-      return;
-    }
-    urls.add(trimmed);
-  }
-
-  // Priority order: explicit baseUrl > environment > platform-specific defaults
-  addUrl(baseUrl);
-  addUrl(_environmentBaseUrl);
-
-  if (Platform.isAndroid) {
-    // WiFi IP first (most likely to work for physical device)
-    addUrl(_defaultCurrentWifiBaseUrl);
-    addUrl(_defaultAndroidUsbBaseUrl);
-    addUrl(_defaultAndroidEmulatorBaseUrl);
-    addUrl(_defaultDesktopBaseUrl);
-    addUrl('http://localhost:8080');
-  } else {
-    addUrl(_defaultDesktopBaseUrl);
-    addUrl('http://localhost:8080');
-  }
-
-  return urls;
+  return buildLocalApiBaseUrls(
+    baseUrl: baseUrl,
+    isAndroid: Platform.isAndroid,
+  );
 }
 
 /// Result of an account registration attempt at a specific URL
@@ -135,7 +107,11 @@ class _HttpAccountRegistrationService implements AccountRegistrationService {
     required String countryCode,
     required String mobileNumber,
     required String email,
-    required String password,
+    String password = '',
+    required String verificationToken,
+    String verificationChannel = 'email',
+    String? preferredLanguage,
+    Map<String, dynamic>? googleProfile,
   }) async {
     final payload = withAdminScopePayload(<String, dynamic>{
       'firstName': firstName.trim(),
@@ -146,6 +122,11 @@ class _HttpAccountRegistrationService implements AccountRegistrationService {
       'password': password.trim(),
       'source': 'app',
       'faceVerified': false,
+      'verificationToken': verificationToken.trim(),
+      'verificationChannel': verificationChannel.trim(),
+      if (preferredLanguage != null && preferredLanguage.trim().isNotEmpty)
+        'preferredLanguage': preferredLanguage.trim(),
+      if (googleProfile != null) 'googleProfile': googleProfile,
     });
 
     // Try each URL until one succeeds
@@ -170,13 +151,4 @@ class _HttpAccountRegistrationService implements AccountRegistrationService {
       'Unable to connect to server. Please check your internet connection and try again.',
     );
   }
-}
-
-class AccountRegistrationException implements Exception {
-  const AccountRegistrationException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
 }

@@ -1,1 +1,1 @@
-const String defaultFontFamily = 'TikTok Sans';
+const String defaultFontFamily = 'Poppins';

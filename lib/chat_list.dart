@@ -293,7 +293,6 @@ class _ChatListPageState extends State<ChatListPage> {
                     iconColor: primaryColor,
                     textColor: theme.colorScheme.onSurface,
                     backgroundColor: fieldBackgroundColor,
-                    hintText: 'Search for conversation',
                     autofocus: false,
                     showClearButton: true,
                   ),

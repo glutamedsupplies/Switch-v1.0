@@ -82,6 +82,10 @@ class _WebProductRepository implements ProductRepository {
         .map((imageUrl) => _resolveImageUrl(imageUrl, baseUrl))
         .where((imageUrl) => imageUrl.isNotEmpty)
         .toList(growable: false);
+    final resolvedDescriptionImageUrls = product.descriptionImageUrls
+        .map((imageUrl) => _resolveImageUrl(imageUrl, baseUrl))
+        .where((imageUrl) => imageUrl.isNotEmpty)
+        .toList(growable: false);
     final resolvedVariants = product.variants
         .map(
           (variant) => variant.copyWith(
@@ -135,6 +139,7 @@ class _WebProductRepository implements ProductRepository {
     return product.copyWith(
       imageUrl: resolvedMainImageUrl,
       imageUrls: resolvedGalleryImageUrls,
+      descriptionImageUrls: resolvedDescriptionImageUrls,
       cardImageUrl: resolvedCardImageUrl,
       cardImageSourceUrl: resolvedCardImageSourceUrl,
       detailsVideoSourceUrl: resolvedDetailsVideoSourceUrl,
@@ -162,11 +167,11 @@ class _WebProductRepository implements ProductRepository {
   Future<List<Product>> _fetchProductsFromBaseUrl(String baseUrl) async {
     try {
       final response = await HttpRequest.request(
-        withAdminScopeUrl('$baseUrl/api/products?approvalStatus=approved'),
+        '$baseUrl/api/products?approvalStatus=approved',
         method: 'GET',
-        requestHeaders: withAdminScopeHeaders(const {
+        requestHeaders: const {
           'Accept': 'application/json',
-        }),
+        },
       ).timeout(_requestTimeout);
 
       if (response.status != 200) {

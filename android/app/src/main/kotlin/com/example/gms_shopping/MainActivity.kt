@@ -10,7 +10,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import io.flutter.FlutterInjector
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
@@ -19,7 +19,7 @@ import io.flutter.plugin.platform.PlatformViewFactory
 import java.io.File
 import java.io.FileOutputStream
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private val notificationSoundChannel = "gms_shopping/notification_sound"
     private var mediaPlayer: MediaPlayer? = null
 

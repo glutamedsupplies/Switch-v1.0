@@ -72,7 +72,7 @@ class _WebDeliveryPartnerRepository implements DeliveryPartnerRepository {
   Future<List<DeliveryPartner>> _fetchPartnersFromBaseUrl(String baseUrl) async {
     try {
       final response = await HttpRequest.request(
-        '$baseUrl/api/delivery-partners',
+        '$baseUrl/api/delivery-partners?productOptions=1',
         method: 'GET',
         requestHeaders: const {
           'Accept': 'application/json',

@@ -8,12 +8,15 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/services/product_repository.dart';
+import 'package:gms_shopping/services/chat_support_realtime.dart';
 import 'package:gms_shopping/services/chat_support_sync.dart';
 import 'package:gms_shopping/services/chat_support_sync_base.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
 import 'package:gms_shopping/widgets/product_online_status_badge.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 import 'package:gms_shopping/utils/auth_session.dart';
 import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,14 +44,6 @@ double _chatSupportProductDisplayPrice(Product product) {
   }
 
   return product.originalPrice;
-}
-
-String _chatSupportProductPriceLabel(Product product) {
-  final price = _chatSupportProductDisplayPrice(product);
-  if (price <= 0) {
-    return 'Price unavailable';
-  }
-  return formatPesoCurrency(price);
 }
 
 bool _isChatSupportPinnableProduct(Product product) {
@@ -94,10 +89,7 @@ String _defaultChatCustomerLabel(String customerId) {
   return 'App User ${suffix.toUpperCase()}';
 }
 
-DateTime _parseChatDate(
-  String rawValue, {
-  DateTime? fallback,
-}) {
+DateTime _parseChatDate(String rawValue, {DateTime? fallback}) {
   final parsedDate = DateTime.tryParse(rawValue);
   if (parsedDate != null) {
     return parsedDate.toLocal();
@@ -161,23 +153,25 @@ bool _isChatSupportProductInTopSelling(
   List<Product> products, {
   int limit = 10,
 }) {
-  final rankedProducts = [
-    ...filterVisibleProducts(products).where((product) => product.sold > 0),
-  ]..sort((first, second) {
-    final soldCompare = second.sold.compareTo(first.sold);
-    if (soldCompare != 0) {
-      return soldCompare;
-    }
+  final rankedProducts =
+      [...filterVisibleProducts(products).where((product) => product.sold > 0)]
+        ..sort((first, second) {
+          final soldCompare = second.sold.compareTo(first.sold);
+          if (soldCompare != 0) {
+            return soldCompare;
+          }
 
-    final ratingCompare = second.rating.compareTo(first.rating);
-    if (ratingCompare != 0) {
-      return ratingCompare;
-    }
+          final ratingCompare = second.rating.compareTo(first.rating);
+          if (ratingCompare != 0) {
+            return ratingCompare;
+          }
 
-    return first.name.compareTo(second.name);
-  });
+          return first.name.compareTo(second.name);
+        });
 
-  return rankedProducts.take(limit).any((candidate) => candidate.id == product.id);
+  return rankedProducts
+      .take(limit)
+      .any((candidate) => candidate.id == product.id);
 }
 
 String _formatChatSupportSoldCount(int sold) {
@@ -196,12 +190,109 @@ String _normalizeChatPreviewText(String text) {
   return text.replaceAll(_chatWhitespacePattern, ' ').trim();
 }
 
+String _normalizeAiMessageText(String text) {
+  var normalized = text.trim();
+  if (normalized.isEmpty) {
+    return normalized;
+  }
+
+  normalized = normalized
+      .replaceFirst(
+        RegExp(r'^```(?:text|markdown)?\s*', caseSensitive: false),
+        '',
+      )
+      .replaceFirst(RegExp(r'\s*```$'), '')
+      .trim();
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'\*\*([^*\n]+)\*\*'),
+    (match) => match.group(1) ?? '',
+  );
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'__([^_\n]+)__'),
+    (match) => match.group(1) ?? '',
+  );
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'(?<!\w)\*([^*\n]+)\*(?!\w)'),
+    (match) => match.group(1) ?? '',
+  );
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'(?<!\w)_([^_\n]+)_(?!\w)'),
+    (match) => match.group(1) ?? '',
+  );
+  normalized = normalized.replaceAllMapped(
+    RegExp(r'`([^`\n]+)`'),
+    (match) => match.group(1) ?? '',
+  );
+  normalized = normalized.replaceAll(
+    RegExp(r'^\s{0,3}#{1,6}\s+', multiLine: true),
+    '',
+  );
+  normalized = normalized.replaceAll(
+    RegExp(r'^\s*[-*+]\s+', multiLine: true),
+    '',
+  );
+  normalized = normalized.replaceAll(
+    RegExp(r'^\s*\d+\.\s+', multiLine: true),
+    '',
+  );
+  normalized = normalized.replaceAll(RegExp(r'[*_`~]'), '');
+  normalized = normalized.replaceAll(RegExp(r'[ \t]{2,}'), ' ');
+
+  return normalized.trim();
+}
+
+final List<RegExp> _chatHumanAgentIntentPatterns = <RegExp>[
+  RegExp(
+    r'\b(?:i\s+)?(?:want|need|wanna|would\s+like|gusto|pwede|puede|can\s+i)\b[\s\S]{0,48}\b(?:talk|speak|chat|kausap|makipag[\s-]?usap)\b[\s\S]{0,32}\b(?:to\s+)?(?:a\s+)?(?:human\s+)?agent\b',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'\b(?:talk|speak|chat)(?:ing)?\b[\s\S]{0,24}\b(?:to\s+)?(?:a\s+)?(?:human\s+)?agent\b',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'\b(?:human|live|real)\s+(?:support\s+)?agent\b',
+    caseSensitive: false,
+  ),
+  RegExp(r'\b(?:talk|speak)\s+agen\b', caseSensitive: false),
+  RegExp(r'\bi\s+want\s+to\s+talk\s+agen\b', caseSensitive: false),
+  RegExp(
+    r'\bagent\b[\s\S]{0,20}\b(?:please|po|pls|naman|na)\b',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'\b(?:tawag|kausap)\b[\s\S]{0,24}\bagent\b',
+    caseSensitive: false,
+  ),
+];
+
+bool _chatMessageRequestsHumanAgent(String text) {
+  final normalized = text.replaceAll(_chatWhitespacePattern, ' ').trim();
+  if (normalized.isEmpty) {
+    return false;
+  }
+  return _chatHumanAgentIntentPatterns.any((pattern) => pattern.hasMatch(normalized));
+}
+
+String _displayChatMessageText(ChatSupportStoredMessage message) {
+  final text = message.text.trim();
+  if (text.isEmpty || !message.isAi) {
+    return message.text;
+  }
+  return _normalizeAiMessageText(text);
+}
+
+String _normalizeSupportDisplayName(String value) {
+  final normalizedValue = value.replaceAll(_chatWhitespacePattern, ' ').trim();
+  return normalizedValue.isEmpty ? 'Company' : normalizedValue;
+}
+
 String _chatReplyPreviewText(ChatSupportStoredMessage message) {
   if (_isQuickTapHeartMessage(message)) {
     return 'Heart';
   }
 
-  final messageText = _normalizeChatPreviewText(message.text);
+  final messageText = _normalizeChatPreviewText(_displayChatMessageText(message));
   if (messageText.isNotEmpty) {
     return messageText;
   }
@@ -223,9 +314,12 @@ bool _isCurrentChatReplySenderLabel(
     return false;
   }
 
-  final normalizedCurrentCustomerLabel = currentCustomerLabel.trim().toLowerCase();
-  final normalizedDefaultCustomerLabel =
-      _defaultChatCustomerLabel(currentCustomerId).trim().toLowerCase();
+  final normalizedCurrentCustomerLabel = currentCustomerLabel
+      .trim()
+      .toLowerCase();
+  final normalizedDefaultCustomerLabel = _defaultChatCustomerLabel(
+    currentCustomerId,
+  ).trim().toLowerCase();
   return normalizedSenderLabel == normalizedCurrentCustomerLabel ||
       normalizedSenderLabel == normalizedDefaultCustomerLabel;
 }
@@ -234,15 +328,20 @@ String _resolveReplySenderDisplayLabel(
   ChatSupportStoredMessage message, {
   required String currentCustomerLabel,
   required String currentCustomerId,
+  required String supportDisplayName,
 }) {
   final rawSenderLabel = message.replyTo?.senderLabel.trim() ?? '';
   if (rawSenderLabel.isEmpty) {
     return '';
   }
 
+  final normalizedSupportDisplayName = _normalizeSupportDisplayName(
+    supportDisplayName,
+  );
+
   if (rawSenderLabel.toLowerCase() == 'you') {
     if (message.isFromSupport) {
-      return message.isAi ? 'AI Assistant' : 'Support';
+      return normalizedSupportDisplayName;
     }
     return 'You';
   }
@@ -255,6 +354,14 @@ String _resolveReplySenderDisplayLabel(
     return 'You';
   }
 
+  if (message.isFromSupport) {
+    return normalizedSupportDisplayName;
+  }
+
+  if (rawSenderLabel.trim().isNotEmpty) {
+    return normalizedSupportDisplayName;
+  }
+
   return rawSenderLabel;
 }
 
@@ -262,22 +369,27 @@ String _buildReplyLineLabel(
   ChatSupportStoredMessage message, {
   required String currentCustomerLabel,
   required String currentCustomerId,
+  required String supportDisplayName,
 }) {
+  final normalizedSupportDisplayName = _normalizeSupportDisplayName(
+    supportDisplayName,
+  );
   final senderLabel = _resolveReplySenderDisplayLabel(
     message,
     currentCustomerLabel: currentCustomerLabel,
     currentCustomerId: currentCustomerId,
+    supportDisplayName: normalizedSupportDisplayName,
   );
   if (senderLabel.isEmpty) {
     return '';
   }
 
   if (senderLabel == 'You') {
-    return message.isFromSupport ? 'Replied to themself' : 'Replied to Yourself';
+    return message.isFromSupport ? 'Replied to You' : 'Replied to Yourself';
   }
 
-  if (message.isFromSupport && senderLabel == 'Support') {
-    return 'Replied to Themself';
+  if (message.isFromSupport && senderLabel == normalizedSupportDisplayName) {
+    return 'Replied to $normalizedSupportDisplayName';
   }
 
   return 'Replied to $senderLabel';
@@ -370,9 +482,7 @@ bool _shouldRenderAgedUserMedia(
   }
 
   final currentTime = now ?? DateTime.now();
-  return !currentTime.isBefore(
-    message.timestamp.add(_agedUserMediaThreshold),
-  );
+  return !currentTime.isBefore(message.timestamp.add(_agedUserMediaThreshold));
 }
 
 bool _isQuickTapHeartMessage(ChatSupportStoredMessage message) {
@@ -426,11 +536,9 @@ bool _isEmojiOnlyMessage(ChatSupportStoredMessage message) {
 
 List<ChatSupportStoredMessage> _mergeChatMessages(
   List<ChatSupportStoredMessage> primary,
-  List<ChatSupportStoredMessage> secondary,
-  {
-    bool authoritativeSecondary = false,
-  }
-) {
+  List<ChatSupportStoredMessage> secondary, {
+  bool authoritativeSecondary = false,
+}) {
   final messagesById = <String, ChatSupportStoredMessage>{};
 
   void addMessages(List<ChatSupportStoredMessage> messages) {
@@ -447,14 +555,17 @@ List<ChatSupportStoredMessage> _mergeChatMessages(
         continue;
       }
 
-      final shouldKeepDeletedState = existingMessage.isDeleted && !message.isDeleted;
+      final shouldKeepDeletedState =
+          existingMessage.isDeleted && !message.isDeleted;
 
       messagesById[normalizedMessageId] = existingMessage.copyWith(
         text: shouldKeepDeletedState
             ? existingMessage.text
             : message.isDeleted
             ? message.text
-            : (message.text.trim().isNotEmpty ? message.text : existingMessage.text),
+            : (message.text.trim().isNotEmpty
+                  ? message.text
+                  : existingMessage.text),
         isFromSupport: message.isFromSupport,
         timestamp: message.timestamp,
         imageUrl: shouldKeepDeletedState
@@ -462,15 +573,15 @@ List<ChatSupportStoredMessage> _mergeChatMessages(
             : message.isDeleted
             ? message.imageUrl
             : (message.imageUrl.trim().isNotEmpty
-                ? message.imageUrl
-                : existingMessage.imageUrl),
+                  ? message.imageUrl
+                  : existingMessage.imageUrl),
         imageName: shouldKeepDeletedState
             ? existingMessage.imageName
             : message.isDeleted
             ? message.imageName
             : (message.imageName.trim().isNotEmpty
-                ? message.imageName
-                : existingMessage.imageName),
+                  ? message.imageName
+                  : existingMessage.imageName),
         isSentToServer:
             existingMessage.isSentToServer || message.isSentToServer,
         reactionEmoji: shouldKeepDeletedState
@@ -478,8 +589,8 @@ List<ChatSupportStoredMessage> _mergeChatMessages(
             : message.isDeleted
             ? message.reactionEmoji
             : (message.reactionEmoji.trim().isNotEmpty
-                ? message.reactionEmoji
-                : existingMessage.reactionEmoji),
+                  ? message.reactionEmoji
+                  : existingMessage.reactionEmoji),
         source: message.source.trim().isNotEmpty
             ? message.source
             : existingMessage.source,
@@ -489,7 +600,9 @@ List<ChatSupportStoredMessage> _mergeChatMessages(
         deletedAt: message.deletedAt ?? existingMessage.deletedAt,
         replyTo: shouldKeepDeletedState
             ? null
-            : (message.isDeleted ? null : (message.replyTo ?? existingMessage.replyTo)),
+            : (message.isDeleted
+                  ? null
+                  : (message.replyTo ?? existingMessage.replyTo)),
       );
     }
   }
@@ -498,11 +611,10 @@ List<ChatSupportStoredMessage> _mergeChatMessages(
   addMessages(secondary);
 
   if (authoritativeSecondary) {
-    final secondaryMessageIds =
-        secondary
-            .map((message) => message.id.trim())
-            .where((messageId) => messageId.isNotEmpty)
-            .toSet();
+    final secondaryMessageIds = secondary
+        .map((message) => message.id.trim())
+        .where((messageId) => messageId.isNotEmpty)
+        .toSet();
     messagesById.removeWhere((messageId, message) {
       if (secondaryMessageIds.contains(messageId)) {
         return false;
@@ -543,7 +655,8 @@ Future<void> openChatSupportPage(
       final catalogProducts = await createProductRepository().fetchProducts();
       Product? catalogMatch;
       for (final candidate in catalogProducts) {
-        if (candidate.id.trim().toLowerCase() == product.id.trim().toLowerCase()) {
+        if (candidate.id.trim().toLowerCase() ==
+            product.id.trim().toLowerCase()) {
           catalogMatch = candidate;
           break;
         }
@@ -617,8 +730,9 @@ class ChatSupportReplyReference {
     final replyMap = rawValue.cast<Object?, Object?>();
     final messageId = replyMap['messageId']?.toString().trim() ?? '';
     final senderLabel = replyMap['senderLabel']?.toString().trim() ?? '';
-    final previewText =
-        _normalizeChatPreviewText(replyMap['previewText']?.toString() ?? '');
+    final previewText = _normalizeChatPreviewText(
+      replyMap['previewText']?.toString() ?? '',
+    );
     if (messageId.isEmpty || senderLabel.isEmpty || previewText.isEmpty) {
       return null;
     }
@@ -668,8 +782,7 @@ class ChatSupportTypingEntry {
     }
 
     final actor =
-        (typingMap['actor']?.toString().trim().toLowerCase() ??
-            fallbackActor)
+        (typingMap['actor']?.toString().trim().toLowerCase() ?? fallbackActor)
             .trim()
             .toLowerCase();
     if (actor != 'user' && actor != 'employee') {
@@ -691,7 +804,7 @@ class ChatSupportTypingEntry {
       actor: actor,
       displayName: displayName.isNotEmpty
           ? displayName
-          : (actor == 'employee' ? 'Employee' : 'App User'),
+          : (actor == 'employee' ? 'Company' : 'App User'),
       avatarUrl: typingMap['avatarUrl']?.toString().trim() ?? '',
       updatedAt: updatedAt,
     );
@@ -744,13 +857,13 @@ class ChatSupportStoredMessage {
   final ChatSupportReplyReference? replyTo;
 
   bool get isAi => source == 'ai';
-  bool get isPinProductIndicator => source == _chatSupportPinProductMessageSource;
+  bool get isPinProductIndicator =>
+      source == _chatSupportPinProductMessageSource;
   bool get isEdited => editedAt != null;
   bool get isDeleted => deletedAt != null;
   bool get hasMedia => imageUrl.trim().isNotEmpty;
   bool get hasVideo =>
-      hasMedia &&
-      _chatAttachmentLooksLikeVideo(url: imageUrl, name: imageName);
+      hasMedia && _chatAttachmentLooksLikeVideo(url: imageUrl, name: imageName);
   bool get hasImage => hasMedia && !hasVideo;
 
   Map<String, dynamic> toJson() {
@@ -798,9 +911,9 @@ class ChatSupportStoredMessage {
                 ? 'ai'
                 : 'support')
           : (json['source']?.toString().trim().toLowerCase() ==
-                  _chatSupportPinProductMessageSource
-              ? _chatSupportPinProductMessageSource
-              : 'user'),
+                    _chatSupportPinProductMessageSource
+                ? _chatSupportPinProductMessageSource
+                : 'user'),
       editedAt: _parseNullableChatDate(json['editedAt']?.toString()),
       deletedAt: _parseNullableChatDate(json['deletedAt']?.toString()),
       replyTo: ChatSupportReplyReference.tryParse(json['replyTo']),
@@ -872,6 +985,15 @@ class ChatSupportThreadData {
     required this.messages,
     this.userTyping,
     this.employeeTyping,
+    this.agentHandoffStatus = 'ai',
+    this.agentRequestedAt,
+    this.agentAcceptedAt,
+    this.agentLastActivityAt,
+    this.agentHandoffExpiresAt,
+    this.activeAgentRole = '',
+    this.activeAgentId = '',
+    this.activeAgentName = '',
+    this.activeAgentAvatarUrl = '',
   });
 
   final String threadId;
@@ -900,8 +1022,25 @@ class ChatSupportThreadData {
   final List<ChatSupportStoredMessage> messages;
   final ChatSupportTypingEntry? userTyping;
   final ChatSupportTypingEntry? employeeTyping;
+  final String agentHandoffStatus;
+  final DateTime? agentRequestedAt;
+  final DateTime? agentAcceptedAt;
+  final DateTime? agentLastActivityAt;
+  final DateTime? agentHandoffExpiresAt;
+  final String activeAgentRole;
+  final String activeAgentId;
+  final String activeAgentName;
+  final String activeAgentAvatarUrl;
 
   bool get hasEmployeeRating => employeeRating > 0;
+
+  bool get isAgentRequestPending => agentHandoffStatus == 'pending';
+
+  bool get isHumanAgentActive => agentHandoffStatus == 'accepted';
+
+  bool get isAiSupportActive => !isAgentRequestPending && !isHumanAgentActive;
+
+  String get supportDisplayName => _normalizeSupportDisplayName(companyName);
 
   String get latestMessage {
     if (messages.isEmpty) {
@@ -914,7 +1053,7 @@ class ChatSupportThreadData {
     }
     if (lastMessage.isDeleted) {
       return lastMessage.isFromSupport
-          ? 'Support deleted a message'
+          ? '$supportDisplayName deleted a message'
           : 'You deleted a message';
     }
     if (lastMessage.text.trim().isNotEmpty) {
@@ -971,7 +1110,9 @@ class ChatSupportThreadData {
       if (message.isPinProductIndicator) {
         continue;
       }
-      if (message.text.trim().isEmpty && !message.hasMedia && !message.isDeleted) {
+      if (message.text.trim().isEmpty &&
+          !message.hasMedia &&
+          !message.isDeleted) {
         continue;
       }
       return message;
@@ -982,24 +1123,20 @@ class ChatSupportThreadData {
 
   String get chatListPreviewMessage {
     if (employeeTyping != null) {
-      return '${employeeTyping!.displayName} is typing...';
+      return '$supportDisplayName is typing...';
     }
 
     final unreadSupportMessage = latestUnreadSupportMessage;
     if (unreadSupportMessage != null) {
       if (unreadSupportMessage.isDeleted) {
-        return 'Support deleted a message';
+        return '$supportDisplayName deleted a message';
       }
       if (unreadSupportMessage.text.trim().isNotEmpty) {
-        return unreadSupportMessage.isAi
-            ? 'AI: ${unreadSupportMessage.text}'
-            : unreadSupportMessage.text;
+        return unreadSupportMessage.text;
       }
 
       final mediaLabel = unreadSupportMessage.hasVideo ? 'video' : 'photo';
-      return unreadSupportMessage.isAi
-          ? 'AI sent a $mediaLabel'
-          : 'Support sent a $mediaLabel';
+      return '$supportDisplayName sent a $mediaLabel';
     }
 
     final latestMessageForDisplay = latestDisplayMessage;
@@ -1009,11 +1146,11 @@ class ChatSupportThreadData {
 
     if (latestMessageForDisplay.isAi) {
       if (latestMessageForDisplay.text.trim().isNotEmpty) {
-        return 'AI: ${latestMessageForDisplay.text}';
+        return latestMessageForDisplay.text;
       }
       return latestMessageForDisplay.hasVideo
-          ? 'AI sent a video'
-          : 'AI sent a photo';
+          ? '$supportDisplayName sent a video'
+          : '$supportDisplayName sent a photo';
     }
 
     if (latestMessageForDisplay.isPinProductIndicator) {
@@ -1022,7 +1159,7 @@ class ChatSupportThreadData {
 
     if (latestMessageForDisplay.isDeleted) {
       return latestMessageForDisplay.isFromSupport
-          ? 'Support deleted a message'
+          ? '$supportDisplayName deleted a message'
           : 'You deleted a message';
     }
 
@@ -1031,8 +1168,8 @@ class ChatSupportThreadData {
         return latestMessageForDisplay.text;
       }
       return latestMessageForDisplay.hasVideo
-          ? 'Support sent a video'
-          : 'Support sent a photo';
+          ? '$supportDisplayName sent a video'
+          : '$supportDisplayName sent a photo';
     }
 
     if (latestMessageForDisplay.text.trim().isNotEmpty) {
@@ -1104,6 +1241,15 @@ class ChatSupportThreadData {
     List<ChatSupportStoredMessage>? messages,
     Object? userTyping = _chatTypingEntryNoChange,
     Object? employeeTyping = _chatTypingEntryNoChange,
+    String? agentHandoffStatus,
+    DateTime? agentRequestedAt,
+    DateTime? agentAcceptedAt,
+    DateTime? agentLastActivityAt,
+    DateTime? agentHandoffExpiresAt,
+    String? activeAgentRole,
+    String? activeAgentId,
+    String? activeAgentName,
+    String? activeAgentAvatarUrl,
   }) {
     return ChatSupportThreadData(
       threadId: threadId ?? this.threadId,
@@ -1138,6 +1284,16 @@ class ChatSupportThreadData {
       employeeTyping: identical(employeeTyping, _chatTypingEntryNoChange)
           ? this.employeeTyping
           : employeeTyping as ChatSupportTypingEntry?,
+      agentHandoffStatus: agentHandoffStatus ?? this.agentHandoffStatus,
+      agentRequestedAt: agentRequestedAt ?? this.agentRequestedAt,
+      agentAcceptedAt: agentAcceptedAt ?? this.agentAcceptedAt,
+      agentLastActivityAt: agentLastActivityAt ?? this.agentLastActivityAt,
+      agentHandoffExpiresAt:
+          agentHandoffExpiresAt ?? this.agentHandoffExpiresAt,
+      activeAgentRole: activeAgentRole ?? this.activeAgentRole,
+      activeAgentId: activeAgentId ?? this.activeAgentId,
+      activeAgentName: activeAgentName ?? this.activeAgentName,
+      activeAgentAvatarUrl: activeAgentAvatarUrl ?? this.activeAgentAvatarUrl,
     );
   }
 
@@ -1189,9 +1345,23 @@ class ChatSupportThreadData {
       'updatedAt': updatedAt.toIso8601String(),
       'lastReadAt': lastReadAt.toIso8601String(),
       'supportReadAt': supportReadAt?.toIso8601String(),
-      'messages': [
-        for (final message in messages) message.toJson(),
-      ],
+      'agentHandoff': <String, dynamic>{
+        'status': agentHandoffStatus,
+        'supportMode': isHumanAgentActive ? 'human' : 'ai',
+        'requestedAt': agentRequestedAt?.toIso8601String(),
+        'acceptedAt': agentAcceptedAt?.toIso8601String(),
+        'lastActivityAt': agentLastActivityAt?.toIso8601String(),
+        'expiresAt': agentHandoffExpiresAt?.toIso8601String(),
+        'activeAgent': activeAgentId.trim().isEmpty
+            ? null
+            : <String, dynamic>{
+                'senderRole': activeAgentRole,
+                'senderId': activeAgentId,
+                'senderName': activeAgentName,
+                'senderAvatarUrl': activeAgentAvatarUrl,
+              },
+      },
+      'messages': [for (final message in messages) message.toJson()],
     };
   }
 
@@ -1203,24 +1373,45 @@ class ChatSupportThreadData {
             .trim() ??
         'customer-local';
     final updatedAt = _parseChatDate(json['updatedAt']?.toString() ?? '');
-    final rawMessages = (json['messages'] as List<dynamic>? ?? const <dynamic>[])
-        .whereType<Map<String, dynamic>>()
-        .map(ChatSupportStoredMessage.fromJson)
-        .toList(growable: false);
+    final rawMessages =
+        (json['messages'] as List<dynamic>? ?? const <dynamic>[])
+            .whereType<Map<String, dynamic>>()
+            .map(ChatSupportStoredMessage.fromJson)
+            .toList(growable: false);
     final rawTyping = json['typing'] is Map ? json['typing'] as Map : const {};
     final typingMap = rawTyping.cast<Object?, Object?>();
+    final rawAgentHandoff = json['agentHandoff'] is Map
+        ? (json['agentHandoff'] as Map).cast<Object?, Object?>()
+        : const <Object?, Object?>{};
+    final rawActiveAgent = rawAgentHandoff['activeAgent'] is Map
+        ? (rawAgentHandoff['activeAgent'] as Map).cast<Object?, Object?>()
+        : const <Object?, Object?>{};
+    final rawHandoffStatus =
+        (rawAgentHandoff['status'] ?? rawAgentHandoff['supportMode'])
+            ?.toString()
+            .trim()
+            .toLowerCase() ??
+        'ai';
+    final agentHandoffStatus =
+        <String>{'pending', 'accepted'}.contains(rawHandoffStatus)
+        ? rawHandoffStatus
+        : rawHandoffStatus == 'human'
+        ? 'accepted'
+        : 'ai';
 
-    final extractedAdminId = (json['adminId'] ??
-              json['tenantId'] ??
-              json['ownerAdminId'] ??
-              json['workspaceId'] ??
-              json['storeAdminId'] ??
-              json['sellerId'] ??
-              json['seller_id'] ??
-              json['shopId'] ??
-              json['shop_id'])
-          ?.toString()
-          .trim() ?? '';
+    final extractedAdminId =
+        (json['adminId'] ??
+                json['tenantId'] ??
+                json['ownerAdminId'] ??
+                json['workspaceId'] ??
+                json['storeAdminId'] ??
+                json['sellerId'] ??
+                json['seller_id'] ??
+                json['shopId'] ??
+                json['shop_id'])
+            ?.toString()
+            .trim() ??
+        '';
     final normalizedThreadId = _buildChatThreadId(
       customerId,
       productId,
@@ -1261,7 +1452,10 @@ class ChatSupportThreadData {
         fallback: updatedAt,
       ),
       supportReadAt: _parseNullableChatDate(json['supportReadAt']?.toString()),
-      messages: _mergeChatMessages(const <ChatSupportStoredMessage>[], rawMessages),
+      messages: _mergeChatMessages(
+        const <ChatSupportStoredMessage>[],
+        rawMessages,
+      ),
       userTyping: ChatSupportTypingEntry.tryParse(
         typingMap['user'],
         fallbackActor: 'user',
@@ -1270,6 +1464,39 @@ class ChatSupportThreadData {
         typingMap['employee'],
         fallbackActor: 'employee',
       ),
+      agentHandoffStatus: agentHandoffStatus,
+      agentRequestedAt: _parseNullableChatDate(
+        rawAgentHandoff['requestedAt']?.toString(),
+      ),
+      agentAcceptedAt: _parseNullableChatDate(
+        rawAgentHandoff['acceptedAt']?.toString(),
+      ),
+      agentLastActivityAt: _parseNullableChatDate(
+        rawAgentHandoff['lastActivityAt']?.toString(),
+      ),
+      agentHandoffExpiresAt: _parseNullableChatDate(
+        rawAgentHandoff['expiresAt']?.toString(),
+      ),
+      activeAgentRole:
+          (rawActiveAgent['senderRole'] ?? rawActiveAgent['role'])
+              ?.toString()
+              .trim() ??
+          '',
+      activeAgentId:
+          (rawActiveAgent['senderId'] ?? rawActiveAgent['id'])
+              ?.toString()
+              .trim() ??
+          '',
+      activeAgentName:
+          (rawActiveAgent['senderName'] ?? rawActiveAgent['name'])
+              ?.toString()
+              .trim() ??
+          '',
+      activeAgentAvatarUrl:
+          (rawActiveAgent['senderAvatarUrl'] ?? rawActiveAgent['avatarUrl'])
+              ?.toString()
+              .trim() ??
+          '',
     );
   }
 }
@@ -1303,10 +1530,12 @@ String _resolveMergedEmployeeRatingComment({
 }) {
   final localUpdatedAt = localThread.employeeRatingUpdatedAt;
   final remoteUpdatedAt = remoteThread.employeeRatingUpdatedAt;
-  final localComment =
-      _normalizeEmployeeRatingComment(localThread.employeeRatingComment);
-  final remoteComment =
-      _normalizeEmployeeRatingComment(remoteThread.employeeRatingComment);
+  final localComment = _normalizeEmployeeRatingComment(
+    localThread.employeeRatingComment,
+  );
+  final remoteComment = _normalizeEmployeeRatingComment(
+    remoteThread.employeeRatingComment,
+  );
   if (localUpdatedAt == null && remoteUpdatedAt == null) {
     return remoteComment.isNotEmpty ? remoteComment : localComment;
   }
@@ -1334,9 +1563,8 @@ List<ChatSupportThreadData> _decodeStoredChatThreads(String rawData) {
   return decoded
       .whereType<Map>()
       .map(
-        (entry) => ChatSupportThreadData.fromJson(
-          Map<String, dynamic>.from(entry),
-        ),
+        (entry) =>
+            ChatSupportThreadData.fromJson(Map<String, dynamic>.from(entry)),
       )
       .where((thread) => thread.productId.trim().isNotEmpty)
       .toList(growable: false);
@@ -1348,13 +1576,16 @@ class ChatSupportStore {
   static const String _profileFirstNameStorageKey = 'profile_first_name';
   static const String _profileLastNameStorageKey = 'profile_last_name';
   static const String _storageVersionKey = 'chat_support_storage_version';
+
   /// Bump this when the thread storage format changes to force a clean reload.
   static const int _currentStorageVersion = 2;
   static final ChatSupportStore instance = ChatSupportStore._();
 
   final ValueNotifier<int> incomingSupportEventNotifier = ValueNotifier<int>(0);
   final ValueNotifier<List<ChatSupportThreadData>> threadListNotifier =
-      ValueNotifier<List<ChatSupportThreadData>>(const <ChatSupportThreadData>[]);
+      ValueNotifier<List<ChatSupportThreadData>>(
+        const <ChatSupportThreadData>[],
+      );
 
   bool _hasLoaded = false;
   bool _hasCompletedFirstServerRefresh = false;
@@ -1389,7 +1620,8 @@ class ChatSupportStore {
     final preferences = await SharedPreferences.getInstance();
     final keys = preferences.getKeys().toList(growable: false);
     for (final key in keys) {
-      final shouldRemove = key == 'chat_support_threads' ||
+      final shouldRemove =
+          key == 'chat_support_threads' ||
           key == 'chat_support_customer_id' ||
           key == _storageVersionKey ||
           key.startsWith('chat_support_threads_') ||
@@ -1436,11 +1668,13 @@ class ChatSupportStore {
         preferences.getString(_profileFirstNameStorageKey)?.trim() ?? '';
     final storedLastName =
         preferences.getString(_profileLastNameStorageKey)?.trim() ?? '';
-    final storedProfileName = [storedFirstName, storedLastName]
-        .where((n) => n.isNotEmpty)
-        .join(' ');
+    final storedProfileName = [
+      storedFirstName,
+      storedLastName,
+    ].where((n) => n.isNotEmpty).join(' ');
     if (storedProfileName.isNotEmpty &&
-        threadCustomerId.trim().toLowerCase() == customerId.trim().toLowerCase()) {
+        threadCustomerId.trim().toLowerCase() ==
+            customerId.trim().toLowerCase()) {
       return storedProfileName;
     }
 
@@ -1488,7 +1722,9 @@ class ChatSupportStore {
       }
 
       final normalizedThread = thread.copyWith(
-        customerId: thread.customerId.trim().isEmpty ? customerId : thread.customerId,
+        customerId: thread.customerId.trim().isEmpty
+            ? customerId
+            : thread.customerId,
         threadId: _buildChatThreadId(
           thread.customerId.trim().isEmpty ? customerId : thread.customerId,
           thread.productId,
@@ -1544,8 +1780,7 @@ class ChatSupportStore {
     final storageKey = await _resolveStorageKey();
     final customerIdKey = await _resolveCustomerIdKey();
     final storedVersion = preferences.getInt(_storageVersionKey) ?? 0;
-    final storedCustomerId =
-        preferences.getString(customerIdKey)?.trim() ?? '';
+    final storedCustomerId = preferences.getString(customerIdKey)?.trim() ?? '';
     if (storedCustomerId.isNotEmpty) {
       _customerId = storedCustomerId;
     } else {
@@ -1576,8 +1811,9 @@ class ChatSupportStore {
             preferences,
           ),
         );
-        threadListNotifier.value =
-            List<ChatSupportThreadData>.unmodifiable(resolvedThreads);
+        threadListNotifier.value = List<ChatSupportThreadData>.unmodifiable(
+          resolvedThreads,
+        );
       } catch (_) {
         threadListNotifier.value = const <ChatSupportThreadData>[];
       }
@@ -1588,7 +1824,10 @@ class ChatSupportStore {
     await refreshThreadsFromServer();
   }
 
-  ChatSupportThreadData? threadForProduct(String productId, {String adminId = ''}) {
+  ChatSupportThreadData? threadForProduct(
+    String productId, {
+    String adminId = '',
+  }) {
     final normalizedId = productId.trim().toLowerCase();
     final normalizedCustomerId = customerId.trim().toLowerCase();
     final normalizedAdminId = adminId.trim().toLowerCase();
@@ -1684,8 +1923,10 @@ class ChatSupportStore {
     required ChatSupportThreadData remoteThread,
   }) {
     final existingSupportMessageIds = <String>{
-      for (final message in localThread?.messages ?? const <ChatSupportStoredMessage>[])
-        if (message.isFromSupport && message.text.trim().isNotEmpty) message.id.trim(),
+      for (final message
+          in localThread?.messages ?? const <ChatSupportStoredMessage>[])
+        if (message.isFromSupport && message.text.trim().isNotEmpty)
+          message.id.trim(),
     };
 
     return remoteThread.messages.where((message) {
@@ -1771,7 +2012,10 @@ class ChatSupportStore {
       ),
       employeeRatingUpdatedAt: mergedEmployeeRatingUpdatedAt,
       updatedAt: mergedUpdatedAt,
-      lastReadAt: _laterChatDate(localThread.lastReadAt, remoteThread.lastReadAt),
+      lastReadAt: _laterChatDate(
+        localThread.lastReadAt,
+        remoteThread.lastReadAt,
+      ),
       supportReadAt: _laterNullableChatDate(
         localThread.supportReadAt,
         remoteThread.supportReadAt,
@@ -1788,8 +2032,9 @@ class ChatSupportStore {
       return;
     }
 
-    final refreshAccountId =
-        _normalizeAccountId(await AuthSession.getAccountId());
+    final refreshAccountId = _normalizeAccountId(
+      await AuthSession.getAccountId(),
+    );
     if (_lastAccountId != refreshAccountId) {
       await ensureLoaded();
       return;
@@ -1813,10 +2058,7 @@ class ChatSupportStore {
         final seenThreadIds = <String>{};
 
         for (final customerIdForSync in _knownCustomerIdsForSync) {
-          final adminIdsForSync = <String>[
-            '',
-            ..._knownAdminIdsForSync,
-          ];
+          final adminIdsForSync = <String>['', ..._knownAdminIdsForSync];
 
           for (final adminIdForSync in adminIdsForSync) {
             final fetchedThreads = await _chatSupportSyncService.fetchThreads(
@@ -1826,8 +2068,10 @@ class ChatSupportStore {
 
             for (final fetchedThread in fetchedThreads) {
               final normalizedThreadId =
-                  fetchedThread['threadId']?.toString().trim().toLowerCase() ?? '';
-              if (normalizedThreadId.isEmpty || seenThreadIds.contains(normalizedThreadId)) {
+                  fetchedThread['threadId']?.toString().trim().toLowerCase() ??
+                  '';
+              if (normalizedThreadId.isEmpty ||
+                  seenThreadIds.contains(normalizedThreadId)) {
                 continue;
               }
 
@@ -1858,8 +2102,9 @@ class ChatSupportStore {
           return;
         }
 
-        final latestAccountId =
-            _normalizeAccountId(await AuthSession.getAccountId());
+        final latestAccountId = _normalizeAccountId(
+          await AuthSession.getAccountId(),
+        );
         if (_lastAccountId != refreshAccountId ||
             latestAccountId != refreshAccountId) {
           return;
@@ -1872,7 +2117,9 @@ class ChatSupportStore {
 
         for (final remoteThread in parsedRemoteThreads) {
           final existingIndex = _indexOfThread(nextThreads, remoteThread);
-          final existingThread = existingIndex >= 0 ? nextThreads[existingIndex] : null;
+          final existingThread = existingIndex >= 0
+              ? nextThreads[existingIndex]
+              : null;
 
           if (shouldEmitIncomingSupportEvent) {
             newSupportMessageCount += _countNewSupportMessagesFromRemote(
@@ -1893,10 +2140,7 @@ class ChatSupportStore {
 
         final preferences = await SharedPreferences.getInstance();
         final resolvedThreads = _collapseThreadsByCustomer(
-          _applyPreferredCustomerLabels(
-            nextThreads,
-            preferences,
-          ),
+          _applyPreferredCustomerLabels(nextThreads, preferences),
         );
         await _persist(resolvedThreads);
         _hasCompletedFirstServerRefresh = true;
@@ -1942,22 +2186,28 @@ class ChatSupportStore {
           )
           .toList(growable: false),
     );
-    final existingThread = threadForProduct(product.id, adminId: product.adminId);
+    final existingThread = threadForProduct(
+      product.id,
+      adminId: product.adminId,
+    );
     final resolvedCustomerId = customerId;
     final normalizedProductId = product.id.trim();
-    final normalizedProductName =
-        product.name.trim().isEmpty ? 'Unnamed Product' : product.name;
+    final normalizedProductName = product.name.trim().isEmpty
+        ? 'Unnamed Product'
+        : product.name;
     final hasEmployeeRatingCommentOverride = employeeRatingComment != null;
     final hasEmployeeRatingOverride =
         employeeRating != null ||
         employeeRatingUpdatedAt != null ||
         hasEmployeeRatingCommentOverride;
-    final productChanged = existingThread == null ||
+    final productChanged =
+        existingThread == null ||
         existingThread.adminId.trim() != product.adminId.trim() ||
         existingThread.productId.trim() != normalizedProductId ||
         existingThread.productName.trim() != normalizedProductName.trim() ||
         existingThread.productCategory.trim() != product.category.trim() ||
-        existingThread.productDescription.trim() != product.description.trim() ||
+        existingThread.productDescription.trim() !=
+            product.description.trim() ||
         existingThread.productImageUrl.trim() != product.imageUrl.trim() ||
         existingThread.productOriginalPrice != product.originalPrice ||
         existingThread.productSalesPrice != product.salesPrice ||
@@ -1967,18 +2217,24 @@ class ChatSupportStore {
     final now = DateTime.now();
     final updatedAt = productChanged || hasEmployeeRatingOverride
         ? now
-        : (normalizedMessages.isNotEmpty ? normalizedMessages.last.timestamp : now);
+        : (normalizedMessages.isNotEmpty
+              ? normalizedMessages.last.timestamp
+              : now);
     final nextThread = ChatSupportThreadData(
-      threadId: existingThread?.threadId ??
-          _buildChatThreadId(resolvedCustomerId, normalizedProductId, adminId: product.adminId),
+      threadId:
+          existingThread?.threadId ??
+          _buildChatThreadId(
+            resolvedCustomerId,
+            normalizedProductId,
+            adminId: product.adminId,
+          ),
       adminId: product.adminId,
       customerId: resolvedCustomerId,
-      customerLabel:
-          _resolvePreferredCustomerLabel(
-            preferences,
-            threadCustomerId: resolvedCustomerId,
-            existingLabel: existingThread?.customerLabel,
-          ),
+      customerLabel: _resolvePreferredCustomerLabel(
+        preferences,
+        threadCustomerId: resolvedCustomerId,
+        existingLabel: existingThread?.customerLabel,
+      ),
       productId: normalizedProductId,
       productName: normalizedProductName,
       productCategory: product.category,
@@ -1998,8 +2254,8 @@ class ChatSupportStore {
           : (existingThread?.employeeRating ?? 0),
       employeeRatingComment: hasEmployeeRatingOverride
           ? (hasEmployeeRatingCommentOverride
-              ? _normalizeEmployeeRatingComment(employeeRatingComment)
-              : (existingThread?.employeeRatingComment ?? ''))
+                ? _normalizeEmployeeRatingComment(employeeRatingComment)
+                : (existingThread?.employeeRatingComment ?? ''))
           : (existingThread?.employeeRatingComment ?? ''),
       employeeRatingUpdatedAt: hasEmployeeRatingOverride
           ? employeeRatingUpdatedAt?.toLocal()
@@ -2010,9 +2266,20 @@ class ChatSupportStore {
       messages: normalizedMessages,
       userTyping: null,
       employeeTyping: existingThread?.employeeTyping,
+      agentHandoffStatus: existingThread?.agentHandoffStatus ?? 'ai',
+      agentRequestedAt: existingThread?.agentRequestedAt,
+      agentAcceptedAt: existingThread?.agentAcceptedAt,
+      agentLastActivityAt: existingThread?.agentLastActivityAt,
+      agentHandoffExpiresAt: existingThread?.agentHandoffExpiresAt,
+      activeAgentRole: existingThread?.activeAgentRole ?? '',
+      activeAgentId: existingThread?.activeAgentId ?? '',
+      activeAgentName: existingThread?.activeAgentName ?? '',
+      activeAgentAvatarUrl: existingThread?.activeAgentAvatarUrl ?? '',
     );
 
-    final nextThreads = List<ChatSupportThreadData>.from(threadListNotifier.value);
+    final nextThreads = List<ChatSupportThreadData>.from(
+      threadListNotifier.value,
+    );
     final existingIndex = _indexOfThread(nextThreads, nextThread);
 
     if (existingIndex >= 0) {
@@ -2067,16 +2334,15 @@ class ChatSupportStore {
         debugPrintStack(stackTrace: fullSyncStackTrace);
 
         syncedThreadMap = await _chatSupportSyncService.syncThread(
-          _buildThreadSyncPayload(
-            resolvedThread,
-            includeAllMessages: false,
-          ),
+          _buildThreadSyncPayload(resolvedThread, includeAllMessages: false),
           adminId: resolvedThread.adminId,
         );
       }
 
       final syncedThread = ChatSupportThreadData.fromJson(syncedThreadMap);
-      final nextThreads = List<ChatSupportThreadData>.from(threadListNotifier.value);
+      final nextThreads = List<ChatSupportThreadData>.from(
+        threadListNotifier.value,
+      );
       final existingIndex = _indexOfThread(nextThreads, syncedThread);
 
       if (existingIndex >= 0) {
@@ -2108,7 +2374,9 @@ class ChatSupportStore {
       return;
     }
 
-    final nextThreads = List<ChatSupportThreadData>.from(threadListNotifier.value);
+    final nextThreads = List<ChatSupportThreadData>.from(
+      threadListNotifier.value,
+    );
     final threadIndex = _indexOfThread(nextThreads, targetThread);
 
     if (threadIndex < 0) {
@@ -2179,9 +2447,7 @@ class ChatSupportStore {
     await preferences.setInt(_storageVersionKey, _currentStorageVersion);
     await preferences.setString(
       storageKey,
-      jsonEncode([
-        for (final thread in normalizedThreads) thread.toJson(),
-      ]),
+      jsonEncode([for (final thread in normalizedThreads) thread.toJson()]),
     );
   }
 }
@@ -2364,7 +2630,6 @@ class _ChatSupportPageState extends State<ChatSupportPage>
         _ChatSupportEmojiOption(
           emoji: '\u{1F60E}',
           assetPath: 'assets/animations/lottie_sunglasses_face.json',
-
         ),
         _ChatSupportEmojiOption(
           emoji: '\u{1F607}',
@@ -2465,6 +2730,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   DateTime? _employeeRatingUpdatedAt;
   DateTime? _supportReadAt;
   ChatSupportTypingEntry? _employeeTyping;
+  String _agentHandoffStatus = 'ai';
+  String _activeAgentName = '';
+  DateTime? _agentHandoffExpiresAt;
   String? _revealedMessageId;
   String? _replyJumpTargetMessageId;
   _PendingChatReply? _pendingReply;
@@ -2473,6 +2741,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   Timer? _typingIdleTimer;
   Timer? _presenceHeartbeatTimer;
   Timer? _replyJumpHighlightTimer;
+  ChatSupportRealtimeListener? _realtimeListener;
+  bool _refreshConversationQueued = false;
   DateTime? _lastUserTypingSentAt;
   String _lastUserTypingThreadId = '';
   bool _isChatPresenceOnline = false;
@@ -2480,6 +2750,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   bool _isRefreshingFromServer = false;
   bool _isConversationViewportReady = false;
   bool _isUploadingPhoto = false;
+  bool _isRequestingAgent = false;
   bool _isLoadingOlderMessages = false;
   bool _showScrollToLatestButton = false;
   bool _hasLocalPinnedProductOverride = false;
@@ -2500,8 +2771,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     _scrollController.addListener(_handleConversationScroll);
     _imagePicker = ImagePicker();
     _productRepository = createProductRepository();
-    final existingThread =
-        ChatSupportStore.instance.threadForProduct(widget.product.id, adminId: widget.product.adminId);
+    final existingThread = ChatSupportStore.instance.threadForProduct(
+      widget.product.id,
+      adminId: widget.product.adminId,
+    );
     final shouldUseIncomingProduct =
         widget.pinProductOnOpen || widget.pinProductOnFirstUserChat;
     _hasLocalPinnedProductOverride = widget.pinProductOnOpen;
@@ -2514,6 +2787,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       _employeeRating = existingThread.employeeRating;
       _employeeRatingComment = existingThread.employeeRatingComment;
       _employeeRatingUpdatedAt = existingThread.employeeRatingUpdatedAt;
+      _applyAgentHandoff(existingThread);
     }
     if (existingThread != null && existingThread.messages.isNotEmpty) {
       _messages = List<ChatSupportStoredMessage>.from(existingThread.messages);
@@ -2522,7 +2796,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     } else {
       _messages = _buildSeedConversation();
     }
-    if (widget.pinProductOnOpen && !_hasPinnedProductIndicatorFor(widget.product)) {
+    if (widget.pinProductOnOpen &&
+        !_hasPinnedProductIndicatorFor(widget.product)) {
       _appendPinnedProductIndicatorMessage(widget.product);
     }
     unawaited(_loadSavedConversation());
@@ -2532,13 +2807,57 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     _refreshTimer = Timer.periodic(_conversationRefreshInterval, (_) {
       unawaited(_refreshConversationFromServer());
     });
+    _realtimeListener = createChatSupportRealtimeListener(() {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_refreshConversationFromServer());
+    });
+    _realtimeListener!.start(
+      customerId: ChatSupportStore.instance.customerId,
+      adminId: _pinnedProduct.adminId,
+    );
+    ChatSupportStore.instance.threadListNotifier.addListener(
+      _handleThreadListRealtimeUpdate,
+    );
     _markChatPresenceOnline();
     _prepareInitialConversationViewport();
+  }
+
+  void _applyAgentHandoff(ChatSupportThreadData thread) {
+    _agentHandoffStatus = thread.agentHandoffStatus;
+    _activeAgentName = thread.activeAgentName;
+    _agentHandoffExpiresAt = thread.agentHandoffExpiresAt;
+  }
+
+  bool _didAgentHandoffChange(ChatSupportThreadData thread) {
+    return _agentHandoffStatus != thread.agentHandoffStatus ||
+        _activeAgentName != thread.activeAgentName ||
+        _agentHandoffExpiresAt != thread.agentHandoffExpiresAt;
+  }
+
+  bool get _isAgentRequestPending => _agentHandoffStatus == 'pending';
+
+  bool get _isHumanAgentActive => _agentHandoffStatus == 'accepted';
+
+  String get _chatSupportModeLabel {
+    if (_isAgentRequestPending) {
+      return 'Waiting for an agent';
+    }
+    if (_isHumanAgentActive) {
+      final name = _activeAgentName.trim();
+      return name.isEmpty ? 'Human agent is assisting' : '$name is assisting';
+    }
+    return 'AI Assistant';
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _realtimeListener?.stop();
+    ChatSupportStore.instance.threadListNotifier.removeListener(
+      _handleThreadListRealtimeUpdate,
+    );
     _markChatPresenceOffline();
     WidgetsBinding.instance.removeObserver(this);
     _typingIdleTimer?.cancel();
@@ -2570,8 +2889,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return productCompanyName;
     }
 
-    final existingThread =
-        ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
+    final existingThread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
     final threadCompanyName = existingThread?.companyName.trim() ?? '';
     if (threadCompanyName.isNotEmpty) {
       return threadCompanyName;
@@ -2586,8 +2907,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return productCompanyPictureUrl;
     }
 
-    final existingThread =
-        ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
+    final existingThread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
     return existingThread?.companyPictureUrl.trim() ?? '';
   }
 
@@ -2683,8 +3006,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   }
 
   bool _hasPinnedProductIndicatorFor(Product product) {
-    final normalizedProductName =
-        _chatSupportProductDisplayName(product).trim().toLowerCase();
+    final normalizedProductName = _chatSupportProductDisplayName(
+      product,
+    ).trim().toLowerCase();
     for (final message in _messages) {
       if (message.isPinProductIndicator &&
           !message.isDeleted &&
@@ -2719,8 +3043,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   }) {
     final resolvedTimestamp = timestamp ?? DateTime.now();
     return ChatSupportStoredMessage(
-      id:
-          'pin-${resolvedTimestamp.microsecondsSinceEpoch}-${product.id.trim().hashCode}',
+      id: 'pin-${resolvedTimestamp.microsecondsSinceEpoch}-${product.id.trim().hashCode}',
       text: _chatSupportProductDisplayName(product),
       isFromSupport: false,
       timestamp: resolvedTimestamp,
@@ -2734,12 +3057,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     DateTime? timestamp,
   }) {
     _messages = List<ChatSupportStoredMessage>.from(_messages)
-      ..add(
-        _buildPinnedProductIndicatorMessage(
-          product,
-          timestamp: timestamp,
-        ),
-      );
+      ..add(_buildPinnedProductIndicatorMessage(product, timestamp: timestamp));
     _revealedMessageId = null;
     _replyJumpTargetMessageId = null;
   }
@@ -2783,16 +3101,24 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   }
 
   String get _activeThreadId {
-    final existingThread =
-        ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
+    final existingThread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
     final resolvedProductId = _pinnedProductId;
     return existingThread?.threadId ??
-        _buildChatThreadId(ChatSupportStore.instance.customerId, resolvedProductId, adminId: _pinnedProduct.adminId);
+        _buildChatThreadId(
+          ChatSupportStore.instance.customerId,
+          resolvedProductId,
+          adminId: _pinnedProduct.adminId,
+        );
   }
 
   String get _currentCustomerDisplayName {
-    final existingThread =
-        ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
+    final existingThread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
     final customerLabel = existingThread?.customerLabel.trim() ?? '';
     if (customerLabel.isNotEmpty) {
       return customerLabel;
@@ -2804,8 +3130,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   bool get _showsEmployeeTypingIndicator => _employeeTyping != null;
 
   Map<String, dynamic> _buildTypingThreadContext() {
-    final existingThread =
-        ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
+    final existingThread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
     final now = DateTime.now();
     final updatedAt =
         existingThread?.updatedAt ??
@@ -2840,8 +3168,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
               ?.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'lastReadAt': (existingThread?.lastReadAt ?? updatedAt).toIso8601String(),
-      'supportReadAt':
-          (existingThread?.supportReadAt ?? _supportReadAt)?.toIso8601String(),
+      'supportReadAt': (existingThread?.supportReadAt ?? _supportReadAt)
+          ?.toIso8601String(),
       'messages': const <Map<String, dynamic>>[],
     };
   }
@@ -2882,11 +3210,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     _typingIdleTimer?.cancel();
 
     unawaited(
-      _sendUserTypingState(
-        false,
-        force: true,
-        isOnlineOverride: false,
-      ),
+      _sendUserTypingState(false, force: true, isOnlineOverride: false),
     );
   }
 
@@ -2967,7 +3291,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     }
 
     final senderLabel = message.isFromSupport
-        ? (message.isAi ? 'AI Assistant' : 'Support')
+        ? _displayCompanyName
         : _currentCustomerDisplayName;
     final previewText = _chatReplyPreviewText(message);
     if (senderLabel.trim().isEmpty || previewText.trim().isEmpty) {
@@ -2989,7 +3313,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
     _hideReactionPicker();
     final displaySenderLabel = message.isFromSupport
-        ? (message.isAi ? 'AI Assistant' : 'Support')
+        ? _displayCompanyName
         : 'You';
     setState(() {
       _editingMessage = null;
@@ -3059,10 +3383,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
     return _PendingChatReply(
       reference: replyReference,
-      displaySenderLabel:
-          targetMessage.isFromSupport
-              ? (targetMessage.isAi ? 'AI Assistant' : 'Support')
-              : 'You',
+      displaySenderLabel: targetMessage.isFromSupport
+          ? _displayCompanyName
+          : 'You',
     );
   }
 
@@ -3136,10 +3459,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     await _persistConversation();
   }
 
-  String _describeMessageActionError(
-    Object error, {
-    required String fallback,
-  }) {
+  String _describeMessageActionError(Object error, {required String fallback}) {
     if (error is ChatSupportSyncException) {
       final message = error.message.trim();
       if (message.isNotEmpty) {
@@ -3200,13 +3520,13 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     final isNearBottom = currentOffset <= _scrollToLatestButtonHideDistance;
     final isFarFromBottom = currentOffset >= _scrollToLatestButtonShowDistance;
     final isScrollingUpConversation =
-        currentOffset >
-        previousOffset + _scrollToLatestButtonDirectionEpsilon;
+        currentOffset > previousOffset + _scrollToLatestButtonDirectionEpsilon;
     final shouldShowScrollToLatestButton =
         !isNearBottom &&
         isFarFromBottom &&
         (isScrollingUpConversation || _showScrollToLatestButton);
-    if (shouldShowScrollToLatestButton != _showScrollToLatestButton && mounted) {
+    if (shouldShowScrollToLatestButton != _showScrollToLatestButton &&
+        mounted) {
       setState(() {
         _showScrollToLatestButton = shouldShowScrollToLatestButton;
       });
@@ -3342,8 +3662,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return null;
     }
 
-    final percent =
-        ((discountAmount / _pinnedProduct.originalPrice) * 100).round();
+    final percent = ((discountAmount / _pinnedProduct.originalPrice) * 100)
+        .round();
     return percent > 0 ? percent : null;
   }
 
@@ -3404,14 +3724,19 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
   Future<void> _loadSavedConversation() async {
     await ChatSupportStore.instance.ensureLoaded();
-    final savedThread = ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
+    final savedThread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
 
     if (!mounted) {
       return;
     }
 
     if (savedThread != null && savedThread.messages.isNotEmpty) {
-      final savedMessages = List<ChatSupportStoredMessage>.from(savedThread.messages);
+      final savedMessages = List<ChatSupportStoredMessage>.from(
+        savedThread.messages,
+      );
       final nextMessages = _hasLocalPinnedProductOverride
           ? _mergeChatMessages(savedMessages, _messages)
           : savedMessages;
@@ -3427,9 +3752,14 @@ class _ChatSupportPageState extends State<ChatSupportPage>
             return _didChatMessageChange(_messages[index], message);
           }) ||
           _supportReadAt != savedThread.supportReadAt ||
-          _didChatTypingEntryChange(_employeeTyping, savedThread.employeeTyping);
+          _didChatTypingEntryChange(
+            _employeeTyping,
+            savedThread.employeeTyping,
+          ) ||
+          _didAgentHandoffChange(savedThread);
       final employeeRatingChanged = _didEmployeeRatingChange(savedThread);
-      final pinnedProductChanged = nextPinnedProduct != null &&
+      final pinnedProductChanged =
+          nextPinnedProduct != null &&
           _didPinnedProductChange(nextPinnedProduct);
 
       if (needsRefresh || employeeRatingChanged || pinnedProductChanged) {
@@ -3440,6 +3770,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
           _employeeRating = savedThread.employeeRating;
           _employeeRatingComment = savedThread.employeeRatingComment;
           _employeeRatingUpdatedAt = savedThread.employeeRatingUpdatedAt;
+          _applyAgentHandoff(savedThread);
           if (nextPinnedProduct != null) {
             _pinnedProduct = nextPinnedProduct;
           }
@@ -3465,6 +3796,52 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       messages: _messages,
       showsTopBrand: _pinnedProductShowsTopBrand,
     );
+  }
+
+  Future<void> _requestHumanAgent() async {
+    if (_isRequestingAgent || _isAgentRequestPending || _isHumanAgentActive) {
+      return;
+    }
+    setState(() {
+      _isRequestingAgent = true;
+    });
+    try {
+      await _persistConversation();
+      final threadMap = await _chatSupportSyncService.requestHumanAgent(
+        threadId: _activeThreadId,
+        customerId: ChatSupportStore.instance.customerId,
+        adminId: _activeChatAdminId,
+      );
+      final thread = ChatSupportThreadData.fromJson(threadMap);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _applyAgentHandoff(thread);
+        _messages = _mergeChatMessages(
+          _messages,
+          thread.messages,
+          authoritativeSecondary: true,
+        );
+      });
+      await ChatSupportStore.instance.refreshThreadsFromServer();
+      if (mounted) {
+        _showComposerSnackBar(
+          'Agent requested. Only one support participant can accept.',
+          isSuccess: true,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _showComposerSnackBar(_describeMediaSendError(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRequestingAgent = false;
+        });
+      }
+    }
   }
 
   void _showComposerSnackBar(String text, {bool isSuccess = false}) {
@@ -3567,7 +3944,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       case 5:
         return 'Excellent support';
       default:
-        return 'Tap a star to rate this employee.';
+        return 'Tap a star to rate this support.';
     }
   }
 
@@ -3575,15 +3952,15 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     ChatSupportStoredMessage olderMessage,
     ChatSupportStoredMessage newerMessage,
   ) {
-    return newerMessage.timestamp.difference(olderMessage.timestamp).inMinutes >=
+    return newerMessage.timestamp
+            .difference(olderMessage.timestamp)
+            .inMinutes >=
         60;
   }
 
   bool _shouldShowCenteredTimestamp(int chronologicalMessageIndex) {
-    if (
-        chronologicalMessageIndex < 0 ||
-        chronologicalMessageIndex >= _messages.length
-    ) {
+    if (chronologicalMessageIndex < 0 ||
+        chronologicalMessageIndex >= _messages.length) {
       return false;
     }
 
@@ -3609,7 +3986,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return true;
     }
 
-    if (currentMessage.isFromSupport && previousComparableMessage.isFromSupport) {
+    if (currentMessage.isFromSupport &&
+        previousComparableMessage.isFromSupport) {
       return false;
     }
 
@@ -3626,7 +4004,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     const editedMessageTopGap = 16.0;
     const pinIndicatorTopGap = 16.0;
 
-    if (_hasHiddenOlderMessages && displayIndex >= _effectiveVisibleMessageCount - 1) {
+    if (_hasHiddenOlderMessages &&
+        displayIndex >= _effectiveVisibleMessageCount - 1) {
       return defaultGap;
     }
 
@@ -3645,9 +4024,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
         ? editedMessageTopGap
         : 0.0;
     final pinAwareGap =
-        newerMessage.isPinProductIndicator && !olderMessage.isPinProductIndicator
-            ? pinIndicatorTopGap
-            : 0.0;
+        newerMessage.isPinProductIndicator &&
+            !olderMessage.isPinProductIndicator
+        ? pinIndicatorTopGap
+        : 0.0;
     final stateAwareGap = replyAwareGap + editAwareGap + pinAwareGap;
     if (!newerMessage.isFromSupport || !olderMessage.isFromSupport) {
       return defaultGap + stateAwareGap;
@@ -3747,7 +4127,6 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     Offset globalPosition, {
     double reservedBottomSpace = 0,
   }) {
-
     final overlay = Overlay.of(context, rootOverlay: true);
 
     _hideReactionPicker();
@@ -3761,10 +4140,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     final safeTop = mediaQuery.padding.top + screenPadding;
     final safeBottom = mediaQuery.padding.bottom + screenPadding;
 
-    double left =
-        message.isFromSupport
-            ? globalPosition.dx - 8
-            : globalPosition.dx - pickerWidth + 8;
+    double left = message.isFromSupport
+        ? globalPosition.dx - 8
+        : globalPosition.dx - pickerWidth + 8;
     final maxLeft = mediaQuery.size.width - pickerWidth - screenPadding;
     if (left < screenPadding) {
       left = screenPadding;
@@ -3829,7 +4207,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                         )
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 2,
+                              ),
                               child: TweenAnimationBuilder<double>(
                                 duration: appMotionFrames(34 + (index * 8)),
                                 curve: Curves.easeOutBack,
@@ -3865,10 +4245,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                                     decoration: BoxDecoration(
                                       color:
                                           currentReaction ==
-                                                  _reactionPickerOptions[index]
-                                                      .emoji
-                                              ? primaryColor.withOpacity(0.12)
-                                              : Colors.transparent,
+                                              _reactionPickerOptions[index]
+                                                  .emoji
+                                          ? primaryColor.withOpacity(0.12)
+                                          : Colors.transparent,
                                       borderRadius: BorderRadius.circular(
                                         _chatSupportBorderRadius,
                                       ),
@@ -3908,30 +4288,31 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     String nextText,
   ) {
     final nextEditedAt = DateTime.now();
-    return _messages.map((message) {
-      if (message.id == targetMessage.id) {
-        return message.copyWith(
-          text: nextText,
-          editedAt: nextEditedAt,
-        );
-      }
+    return _messages
+        .map((message) {
+          if (message.id == targetMessage.id) {
+            return message.copyWith(text: nextText, editedAt: nextEditedAt);
+          }
 
-      final replyTo = message.replyTo;
-      if (replyTo?.messageId == targetMessage.id) {
-        return message.copyWith(
-          replyTo: ChatSupportReplyReference(
-            messageId: replyTo!.messageId,
-            senderLabel: replyTo.senderLabel,
-            previewText: nextText,
-          ),
-        );
-      }
+          final replyTo = message.replyTo;
+          if (replyTo?.messageId == targetMessage.id) {
+            return message.copyWith(
+              replyTo: ChatSupportReplyReference(
+                messageId: replyTo!.messageId,
+                senderLabel: replyTo.senderLabel,
+                previewText: nextText,
+              ),
+            );
+          }
 
-      return message;
-    }).toList(growable: false);
+          return message;
+        })
+        .toList(growable: false);
   }
 
-  List<ChatSupportStoredMessage> _buildLocallyDeletedMessages(String messageId) {
+  List<ChatSupportStoredMessage> _buildLocallyDeletedMessages(
+    String messageId,
+  ) {
     final nextMessages = <ChatSupportStoredMessage>[];
     for (final message in _messages) {
       if (message.id == messageId) {
@@ -3940,9 +4321,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
       final replyTo = message.replyTo;
       if (replyTo?.messageId == messageId) {
-        nextMessages.add(
-          message.copyWith(replyTo: null),
-        );
+        nextMessages.add(message.copyWith(replyTo: null));
         continue;
       }
 
@@ -3958,7 +4337,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return;
     }
 
-    final nextText = _messageController.text.replaceAll(_chatWhitespacePattern, ' ').trim();
+    final nextText = _messageController.text
+        .replaceAll(_chatWhitespacePattern, ' ')
+        .trim();
     if (nextText.isEmpty) {
       _showComposerSnackBar('Message cannot be empty.');
       return;
@@ -4071,9 +4452,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       showDragHandle: false,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(8),
-        ),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (sheetContext) {
         return SafeArea(
@@ -4156,12 +4535,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
   String? get _latestUserMessageId {
     for (final message in _messages.reversed) {
-      if (
-          message.isFromSupport ||
+      if (message.isFromSupport ||
           message.isDeleted ||
           message.isPinProductIndicator ||
-          (message.text.trim().isEmpty && !message.hasMedia)
-      ) {
+          (message.text.trim().isEmpty && !message.hasMedia)) {
         continue;
       }
       return message.id;
@@ -4177,13 +4554,11 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     }
 
     for (final message in _messages.reversed) {
-      if (
-          message.isFromSupport ||
+      if (message.isFromSupport ||
           message.isDeleted ||
           message.isPinProductIndicator ||
           !message.isSentToServer ||
-          (message.text.trim().isEmpty && !message.hasMedia)
-      ) {
+          (message.text.trim().isEmpty && !message.hasMedia)) {
         continue;
       }
       if (message.timestamp.isAfter(supportReadAt)) {
@@ -4222,18 +4597,16 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     return IgnorePointer(
       ignoring: !_showScrollToLatestButton,
       child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(
-          begin: 0,
-          end: _showScrollToLatestButton ? 1 : 0,
-        ),
+        tween: Tween<double>(begin: 0, end: _showScrollToLatestButton ? 1 : 0),
         duration: appMotionFrames(_showScrollToLatestButton ? 24 : 14),
         curve: _showScrollToLatestButton
             ? Curves.easeOutCubic
             : Curves.easeInCubic,
         builder: (context, value, child) {
           final opacity = value.clamp(0.0, 1.0);
-          final verticalOffset =
-              _showScrollToLatestButton ? 18 * (1 - opacity) : 0.0;
+          final verticalOffset = _showScrollToLatestButton
+              ? 18 * (1 - opacity)
+              : 0.0;
           return Opacity(
             opacity: opacity,
             child: Transform.translate(
@@ -4310,7 +4683,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     });
   }
 
-  Future<ChatSupportStoredMessage?> _sendUserMessage([String? presetText]) async {
+  Future<ChatSupportStoredMessage?> _sendUserMessage([
+    String? presetText,
+  ]) async {
     final nextText = (presetText ?? _messageController.text).trim();
     if (nextText.isEmpty) {
       return null;
@@ -4358,6 +4733,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     _scrollToBottom();
     await _persistConversation();
     await _refreshConversationFromServer(jumpOnly: true);
+    if (_chatMessageRequestsHumanAgent(nextText)) {
+      unawaited(_requestHumanAgent());
+    }
     return nextMessage;
   }
 
@@ -4555,8 +4933,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
   Future<void> _showProductPinSheet() async {
     final activeChatAdminId = _activeChatAdminId;
     Future<List<Product>> productsFuture = () async {
-      final allProducts =
-          await _productRepository.fetchProducts(forceRefresh: true);
+      final allProducts = await _productRepository.fetchProducts(
+        forceRefresh: true,
+      );
       return allProducts;
     }();
 
@@ -4599,40 +4978,40 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     }
 
     final selectedAction = await showModalBottomSheet<String>(
-        context: context,
-        backgroundColor: Theme.of(context).cardColor,
-        showDragHandle: true,
-        builder: (sheetContext) {
-          return SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.inventory_2_outlined),
-                  title: const Text('Product'),
-                  onTap: () => Navigator.of(sheetContext).pop('product'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.receipt_long_outlined),
-                  title: const Text('Order'),
-                  onTap: () => Navigator.of(sheetContext).pop('order'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.photo_outlined),
-                  title: const Text('Photo'),
-                  onTap: () => Navigator.of(sheetContext).pop('photo'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.videocam_outlined),
-                  title: const Text('Video'),
-                  onTap: () => Navigator.of(sheetContext).pop('video'),
-                ),
-              ],
-            ),
-          );
-        },
-      );
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Product'),
+                onTap: () => Navigator.of(sheetContext).pop('product'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('Order'),
+                onTap: () => Navigator.of(sheetContext).pop('order'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_outlined),
+                title: const Text('Photo'),
+                onTap: () => Navigator.of(sheetContext).pop('photo'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.videocam_outlined),
+                title: const Text('Video'),
+                onTap: () => Navigator.of(sheetContext).pop('video'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
 
     if (!mounted || selectedAction == null) {
       return;
@@ -4704,8 +5083,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
         final theme = Theme.of(sheetContext);
         return SafeArea(
           top: false,
-            child: SizedBox(
-              height: 320,
+          child: SizedBox(
+            height: 320,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: Column(
@@ -4730,11 +5109,10 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                       itemBuilder: (context, index) {
                         final emojiOption = _chooserEmojiOptions[index];
                         return TextButton(
-                          onPressed: () =>
-                              _handleEmojiSelected(
-                                emojiOption.emoji,
-                                sheetContext,
-                              ),
+                          onPressed: () => _handleEmojiSelected(
+                            emojiOption.emoji,
+                            sheetContext,
+                          ),
                           style: TextButton.styleFrom(
                             padding: EdgeInsets.zero,
                             shape: RoundedRectangleBorder(
@@ -4789,7 +5167,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return;
     }
 
-    _showComposerSnackBar('Employee rating saved.', isSuccess: true);
+    _showComposerSnackBar('Support rating saved.', isSuccess: true);
   }
 
   Future<void> _clearEmployeeRating() async {
@@ -4814,7 +5192,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       return;
     }
 
-    _showComposerSnackBar('Employee rating removed.', isSuccess: true);
+    _showComposerSnackBar('Support rating removed.', isSuccess: true);
   }
 
   Future<void> _showEmployeeRatingSheet() async {
@@ -4822,8 +5200,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     _messageFocusNode.unfocus();
 
     var selectedRating = _employeeRating > 0 ? _employeeRating.round() : 0;
-    final otherCommentController =
-        TextEditingController(text: _employeeRatingComment);
+    final otherCommentController = TextEditingController(
+      text: _employeeRatingComment,
+    );
     final theme = Theme.of(context);
     final titleColor = theme.colorScheme.onSurface;
     final secondaryColor =
@@ -4859,8 +5238,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                     children: [
                       Text(
                         _employeeRating > 0
-                            ? 'Update employee rating'
-                            : 'Rate this employee',
+                            ? 'Update support rating'
+                            : 'Rate this support',
                         style: theme.textTheme.titleLarge?.copyWith(
                           color: titleColor,
                           fontWeight: FontWeight.w800,
@@ -4889,7 +5268,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                             tooltip:
                                 'Rate $starValue star${starValue == 1 ? '' : 's'}',
                             iconSize: 38,
-                            color: isSelected ? selectedStarColor : secondaryColor,
+                            color: isSelected
+                                ? selectedStarColor
+                                : secondaryColor,
                             icon: Icon(
                               isSelected
                                   ? Icons.star_rounded
@@ -4914,9 +5295,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                           maxLines: 3,
                           textInputAction: TextInputAction.done,
                           textCapitalization: TextCapitalization.sentences,
-                          decoration: InputDecoration(
-                            hintText: _employeeRatingCommentHint(selectedRating),
-                          ),
+                          decoration: const InputDecoration(),
                         ),
                       ],
                       const SizedBox(height: 20),
@@ -4933,7 +5312,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                                   );
                                 },
                           child: Text(
-                            _employeeRating > 0 ? 'Update rating' : 'Save rating',
+                            _employeeRating > 0
+                                ? 'Update rating'
+                                : 'Save rating',
                           ),
                         ),
                       ),
@@ -4965,6 +5346,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
   Future<void> _refreshConversationFromServer({bool jumpOnly = false}) async {
     if (_isRefreshingFromServer) {
+      _refreshConversationQueued = true;
       return;
     }
 
@@ -4989,19 +5371,23 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       );
       final effectiveRefreshedThread =
           refreshedThread == null || localThread == null
-              ? refreshedThread
-              : ChatSupportStore.instance._mergeThreadData(
-                  localThread,
-                  refreshedThread,
-                );
+          ? refreshedThread
+          : ChatSupportStore.instance._mergeThreadData(
+              localThread,
+              refreshedThread,
+            );
 
       if (!mounted ||
           effectiveRefreshedThread == null ||
           effectiveRefreshedThread.messages.isEmpty) {
         await ChatSupportStore.instance.refreshThreadsFromServer();
-        final fallbackThread =
-            ChatSupportStore.instance.threadForProduct(_pinnedProductId, adminId: _pinnedProduct.adminId);
-        if (!mounted || fallbackThread == null || fallbackThread.messages.isEmpty) {
+        final fallbackThread = ChatSupportStore.instance.threadForProduct(
+          _pinnedProductId,
+          adminId: _pinnedProduct.adminId,
+        );
+        if (!mounted ||
+            fallbackThread == null ||
+            fallbackThread.messages.isEmpty) {
           return;
         }
 
@@ -5021,21 +5407,26 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                 nextMessage,
               );
             });
-        final fallbackEmployeeRatingChanged =
-            _didEmployeeRatingChange(fallbackThread);
-        final fallbackTypingChanged =
-            _didChatTypingEntryChange(_employeeTyping, fallbackThread.employeeTyping);
-        final fallbackPinnedProduct =
-            _productFromThreadForCurrentView(fallbackThread);
-        final fallbackPinnedProductChanged = fallbackPinnedProduct != null &&
+        final fallbackEmployeeRatingChanged = _didEmployeeRatingChange(
+          fallbackThread,
+        );
+        final fallbackTypingChanged = _didChatTypingEntryChange(
+          _employeeTyping,
+          fallbackThread.employeeTyping,
+        );
+        final fallbackPinnedProduct = _productFromThreadForCurrentView(
+          fallbackThread,
+        );
+        final fallbackPinnedProductChanged =
+            fallbackPinnedProduct != null &&
             _didPinnedProductChange(fallbackPinnedProduct);
+        final fallbackHandoffChanged = _didAgentHandoffChange(fallbackThread);
 
-        if (
-            fallbackConversationChanged ||
+        if (fallbackConversationChanged ||
             fallbackEmployeeRatingChanged ||
             fallbackTypingChanged ||
-            fallbackPinnedProductChanged
-        ) {
+            fallbackPinnedProductChanged ||
+            fallbackHandoffChanged) {
           setState(() {
             _messages = fallbackMessages;
             _supportReadAt = fallbackThread.supportReadAt;
@@ -5043,6 +5434,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
             _employeeRating = fallbackThread.employeeRating;
             _employeeRatingComment = fallbackThread.employeeRatingComment;
             _employeeRatingUpdatedAt = fallbackThread.employeeRatingUpdatedAt;
+            _applyAgentHandoff(fallbackThread);
             if (fallbackPinnedProduct != null) {
               _pinnedProduct = fallbackPinnedProduct;
             }
@@ -5069,9 +5461,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
 
       final nextMessages = _mergeChatMessages(
         previousMessages,
-        List<ChatSupportStoredMessage>.from(
-          effectiveRefreshedThread.messages,
-        ),
+        List<ChatSupportStoredMessage>.from(effectiveRefreshedThread.messages),
         authoritativeSecondary: true,
       );
       final hasConversationChanged =
@@ -5082,26 +5472,28 @@ class _ChatSupportPageState extends State<ChatSupportPage>
             if (index >= previousMessages.length) {
               return true;
             }
-            return _didChatMessageChange(
-              previousMessages[index],
-              nextMessage,
-            );
+            return _didChatMessageChange(previousMessages[index], nextMessage);
           });
-      final employeeRatingChanged =
-          _didEmployeeRatingChange(effectiveRefreshedThread);
+      final employeeRatingChanged = _didEmployeeRatingChange(
+        effectiveRefreshedThread,
+      );
       final typingChanged = _didChatTypingEntryChange(
         _employeeTyping,
         effectiveRefreshedThread.employeeTyping,
       );
-      final refreshedPinnedProduct =
-          _productFromThreadForCurrentView(effectiveRefreshedThread);
-      final refreshedPinnedProductChanged = refreshedPinnedProduct != null &&
+      final refreshedPinnedProduct = _productFromThreadForCurrentView(
+        effectiveRefreshedThread,
+      );
+      final refreshedPinnedProductChanged =
+          refreshedPinnedProduct != null &&
           _didPinnedProductChange(refreshedPinnedProduct);
+      final handoffChanged = _didAgentHandoffChange(effectiveRefreshedThread);
 
       if (hasConversationChanged ||
           employeeRatingChanged ||
           typingChanged ||
-          refreshedPinnedProductChanged) {
+          refreshedPinnedProductChanged ||
+          handoffChanged) {
         setState(() {
           _messages = nextMessages;
           _supportReadAt = effectiveRefreshedThread.supportReadAt;
@@ -5111,6 +5503,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
               effectiveRefreshedThread.employeeRatingComment;
           _employeeRatingUpdatedAt =
               effectiveRefreshedThread.employeeRatingUpdatedAt;
+          _applyAgentHandoff(effectiveRefreshedThread);
           if (refreshedPinnedProduct != null) {
             _pinnedProduct = refreshedPinnedProduct;
           }
@@ -5134,6 +5527,57 @@ class _ChatSupportPageState extends State<ChatSupportPage>
       }
     } finally {
       _isRefreshingFromServer = false;
+      if (_refreshConversationQueued) {
+        _refreshConversationQueued = false;
+        unawaited(_refreshConversationFromServer(jumpOnly: jumpOnly));
+      }
+    }
+  }
+
+  void _handleThreadListRealtimeUpdate() {
+    if (!mounted) {
+      return;
+    }
+
+    final thread = ChatSupportStore.instance.threadForProduct(
+      _pinnedProductId,
+      adminId: _pinnedProduct.adminId,
+    );
+    if (thread == null || thread.messages.isEmpty) {
+      return;
+    }
+
+    final nextMessages = _mergeChatMessages(
+      List<ChatSupportStoredMessage>.from(_messages),
+      List<ChatSupportStoredMessage>.from(thread.messages),
+      authoritativeSecondary: true,
+    );
+    final hasConversationChanged =
+        nextMessages.length != _messages.length ||
+        nextMessages.asMap().entries.any((entry) {
+          final index = entry.key;
+          final nextMessage = entry.value;
+          if (index >= _messages.length) {
+            return true;
+          }
+          return _didChatMessageChange(_messages[index], nextMessage);
+        });
+
+    if (!hasConversationChanged &&
+        !_didAgentHandoffChange(thread) &&
+        !_didChatTypingEntryChange(_employeeTyping, thread.employeeTyping)) {
+      return;
+    }
+
+    setState(() {
+      _messages = nextMessages;
+      _supportReadAt = thread.supportReadAt;
+      _employeeTyping = thread.employeeTyping;
+      _applyAgentHandoff(thread);
+      _revealLatestMessageFrom(nextMessages);
+    });
+    if (hasConversationChanged) {
+      _scrollToBottom(jumpOnly: true);
     }
   }
 
@@ -5178,14 +5622,17 @@ class _ChatSupportPageState extends State<ChatSupportPage>
     final surfaceColor =
         theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface;
     final isDarkMode = theme.brightness == Brightness.dark;
-    final headerBottomShadowColor =
-        Colors.black.withOpacity(isDarkMode ? 0.11 : 0.04);
+    final headerBottomShadowColor = Colors.black.withOpacity(
+      isDarkMode ? 0.11 : 0.04,
+    );
     const preConversationSpacing = 0.0;
     const conversationBottomPadding = 16.0;
     const composerPadding = EdgeInsets.fromLTRB(16, 8, 8, 8);
     final hasEmployeeRating = _employeeRating > 0;
     final currentCustomerLabel = _currentCustomerDisplayName;
     final currentCustomerId = ChatSupportStore.instance.customerId;
+    final supportDisplayName = _displayCompanyName;
+    final supportAvatarUrl = _displayCompanyPictureUrl;
     final showsEmployeeTypingIndicator = _showsEmployeeTypingIndicator;
     final typingIndicatorCount = showsEmployeeTypingIndicator ? 1 : 0;
     const selectedStarColor = Color(0xFFFFB11A);
@@ -5201,17 +5648,37 @@ class _ChatSupportPageState extends State<ChatSupportPage>
         foregroundColor: headerForegroundColor,
         titleSpacing: 0,
         actions: [
+          IconButton(
+            onPressed:
+                _isRequestingAgent ||
+                    _isAgentRequestPending ||
+                    _isHumanAgentActive
+                ? null
+                : _requestHumanAgent,
+            tooltip: _isAgentRequestPending
+                ? 'Waiting for an agent'
+                : _isHumanAgentActive
+                ? _chatSupportModeLabel
+                : 'Request a human agent',
+            icon: _isRequestingAgent
+                ? const SkeletonCircle(size: 20)
+                : Icon(
+                    _isAgentRequestPending
+                        ? Icons.hourglass_top_rounded
+                        : Icons.support_agent_rounded,
+                    color: _isHumanAgentActive
+                        ? primaryColor
+                        : headerForegroundColor,
+                  ),
+          ),
           if (_showsEmployeeRatingButton)
             IconButton(
               onPressed: _showEmployeeRatingSheet,
               isSelected: hasEmployeeRating,
               tooltip: hasEmployeeRating
-                  ? 'Update employee rating'
-                  : 'Rate employee',
-              selectedIcon: Icon(
-                Icons.star,
-                color: selectedStarColor,
-              ),
+                  ? 'Update support rating'
+                  : 'Rate support',
+              selectedIcon: Icon(Icons.star, color: selectedStarColor),
               icon: Icon(
                 Icons.star_outline_rounded,
                 color: headerForegroundColor,
@@ -5244,7 +5711,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Chat Support',
+                          _chatSupportModeLabel,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.left,
@@ -5254,10 +5721,7 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                           ),
                         ),
                         const SizedBox(width: 6),
-                        const ProductOnlineStatusBadge(
-                          compact: true,
-                          size: 8,
-                        ),
+                        const ProductOnlineStatusBadge(compact: true, size: 8),
                       ],
                     ),
                   ],
@@ -5274,6 +5738,42 @@ class _ChatSupportPageState extends State<ChatSupportPage>
         child: Column(
           children: [
             SizedBox(height: preConversationSpacing),
+            if (_isAgentRequestPending || _isHumanAgentActive)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 9,
+                ),
+                color: _isHumanAgentActive
+                    ? const Color(0xFFEAF7F1)
+                    : primaryColor.withValues(alpha: 0.08),
+                child: Row(
+                  children: [
+                    Icon(
+                      _isHumanAgentActive
+                          ? Icons.support_agent_rounded
+                          : Icons.hourglass_top_rounded,
+                      size: 18,
+                      color: _isHumanAgentActive
+                          ? const Color(0xFF16885A)
+                          : primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _isHumanAgentActive
+                            ? '$_chatSupportModeLabel. AI replies are paused.'
+                            : 'Your agent request is waiting for one participant to accept.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: titleColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             AnimatedSwitcher(
               duration: appMotionFrames(14),
               switchInCurve: Curves.easeOutCubic,
@@ -5347,26 +5847,29 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                               primaryColor: primaryColor,
                               supportBubbleColor: surfaceColor,
                               secondaryColor: secondaryColor,
+                              supportDisplayName: supportDisplayName,
+                              supportAvatarUrl: supportAvatarUrl,
                             );
                           }
 
                           final messageDisplayIndex =
                               index - typingIndicatorCount;
-                          if (
-                              _hasHiddenOlderMessages &&
-                              messageDisplayIndex == _effectiveVisibleMessageCount
-                          ) {
+                          if (_hasHiddenOlderMessages &&
+                              messageDisplayIndex ==
+                                  _effectiveVisibleMessageCount) {
                             return _buildOlderMessagesLoader(secondaryColor);
                           }
 
                           final chronologicalMessageIndex =
                               _messages.length - 1 - messageDisplayIndex;
                           final message = _messages[chronologicalMessageIndex];
-                          final showCenteredTimestamp = _shouldShowCenteredTimestamp(
-                            chronologicalMessageIndex,
-                          );
+                          final showCenteredTimestamp =
+                              _shouldShowCenteredTimestamp(
+                                chronologicalMessageIndex,
+                              );
                           final latestUserMessageId = _latestUserMessageId;
-                          final latestSeenUserMessageId = _latestSeenUserMessageId;
+                          final latestSeenUserMessageId =
+                              _latestSeenUserMessageId;
                           final isSeen =
                               !message.isFromSupport &&
                               !message.isDeleted &&
@@ -5381,8 +5884,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                           final showMetadata = _revealedMessageId == message.id;
                           final nextChronologicalMessage =
                               chronologicalMessageIndex < _messages.length - 1
-                                  ? _messages[chronologicalMessageIndex + 1]
-                                  : null;
+                              ? _messages[chronologicalMessageIndex + 1]
+                              : null;
                           final startsNewSupportTimeGroup =
                               message.isFromSupport &&
                               nextChronologicalMessage != null &&
@@ -5405,7 +5908,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                               children: [
                                 if (showCenteredTimestamp) ...[
                                   _ChatSupportCenteredTimestamp(
-                                    label: _formatTimeAndDate(message.timestamp),
+                                    label: _formatTimeAndDate(
+                                      message.timestamp,
+                                    ),
                                     secondaryColor: secondaryColor,
                                   ),
                                   const SizedBox(height: 16),
@@ -5437,7 +5942,11 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                                 secondaryColor: secondaryColor,
                                 currentCustomerLabel: currentCustomerLabel,
                                 currentCustomerId: currentCustomerId,
-                                timeLabel: _formatTimeAndDate(message.timestamp),
+                                supportDisplayName: supportDisplayName,
+                                supportAvatarUrl: supportAvatarUrl,
+                                timeLabel: _formatTimeAndDate(
+                                  message.timestamp,
+                                ),
                                 statusLabel: isSent ? 'Sent' : null,
                                 showSeenAvatar: isSeen,
                                 showSupportProfile: showSupportProfile,
@@ -5445,8 +5954,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                                 isReplyJumpTarget:
                                     _replyJumpTargetMessageId == message.id,
                                 onTap: () => _toggleMessageDetails(message.id),
-                                onLongPressStart:
-                                    (details) => _handleBubbleLongPress(
+                                onLongPressStart: (details) =>
+                                    _handleBubbleLongPress(
                                       message,
                                       details.globalPosition,
                                     ),
@@ -5454,8 +5963,8 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                                 onReplyPreviewTap: message.replyTo == null
                                     ? null
                                     : () => _jumpToRepliedMessage(
-                                          message.replyTo!.messageId,
-                                        ),
+                                        message.replyTo!.messageId,
+                                      ),
                               ),
                             ],
                           );
@@ -5518,29 +6027,29 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                   ),
                 ],
               ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_editingMessage != null) ...[
-                      _ChatSupportComposerEditBanner(
-                        previewText: _editingMessage!.text,
-                        primaryColor: primaryColor,
-                        titleColor: titleColor,
-                        secondaryColor: secondaryColor,
-                        onClear: () => _clearEditingMessage(),
-                      ),
-                      const SizedBox(height: 8),
-                    ] else if (_pendingReply != null) ...[
-                      _ChatSupportComposerReplyBanner(
-                        displaySenderLabel: _pendingReply!.displaySenderLabel,
-                        previewText: _pendingReply!.reference.previewText,
-                        primaryColor: primaryColor,
-                        titleColor: titleColor,
-                        secondaryColor: secondaryColor,
-                        onClear: _clearPendingReply,
-                      ),
-                      const SizedBox(height: 8),
-                    ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_editingMessage != null) ...[
+                    _ChatSupportComposerEditBanner(
+                      previewText: _editingMessage!.text,
+                      primaryColor: primaryColor,
+                      titleColor: titleColor,
+                      secondaryColor: secondaryColor,
+                      onClear: () => _clearEditingMessage(),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (_pendingReply != null) ...[
+                    _ChatSupportComposerReplyBanner(
+                      displaySenderLabel: _pendingReply!.displaySenderLabel,
+                      previewText: _pendingReply!.reference.previewText,
+                      primaryColor: primaryColor,
+                      titleColor: titleColor,
+                      secondaryColor: secondaryColor,
+                      onClear: _clearPendingReply,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Row(
                     children: [
                       Expanded(
@@ -5553,13 +6062,9 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                           minLines: 1,
                           maxLines: 4,
                           decoration: InputDecoration(
-                            hintText:
-                                _editingMessage != null
-                                    ? 'Edit your message...'
-                                    : 'Type your message...',
                             isDense: true,
                             filled: true,
-                            fillColor: theme.cardColor,
+                            fillColor: Colors.transparent,
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 10,
@@ -5568,19 +6073,30 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                               borderRadius: BorderRadius.circular(
                                 _chatSupportBorderRadius,
                               ),
-                              borderSide: BorderSide.none,
+                              borderSide: BorderSide(
+                                color: const Color(0xFF9AA0A6),
+                                width: 1.0,
+                              ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(
                                 _chatSupportBorderRadius,
                               ),
-                              borderSide: BorderSide.none,
+                              borderSide: BorderSide(
+                                color: const Color(0xFF9AA0A6),
+                                width: 1.0,
+                              ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(
                                 _chatSupportBorderRadius,
                               ),
-                              borderSide: BorderSide.none,
+                              borderSide: BorderSide(
+                                color: theme.brightness == Brightness.dark
+                                    ? Colors.white
+                                    : Colors.black,
+                                width: 1.25,
+                              ),
                             ),
                           ),
                         ),
@@ -5617,51 +6133,42 @@ class _ChatSupportPageState extends State<ChatSupportPage>
                       ),
                       const SizedBox(width: 0),
                       ValueListenableBuilder<TextEditingValue>(
-                         valueListenable: _messageController,
-                         builder: (context, value, _) {
-                           final isEditingMessage = _editingMessage != null;
-                           final hasTypedMessage = value.text.trim().isNotEmpty;
-                           if (!hasTypedMessage &&
-                               !isEditingMessage &&
-                               !_isUploadingPhoto) {
-                             return const SizedBox.shrink();
-                           }
-                           return IconButton(
-                             onPressed: hasTypedMessage
-                                 ? _handleComposerPrimaryAction
-                                 : (isEditingMessage
-                                       ? () => _clearEditingMessage()
-                                       : null),
-                             tooltip: hasTypedMessage
-                                 ? (isEditingMessage
-                                       ? 'Save edit'
-                                       : 'Send message')
-                                 : (isEditingMessage ? 'Cancel edit' : 'Send'),
-                             padding: EdgeInsets.zero,
-                             constraints: const BoxConstraints(
-                               minWidth: 36,
+                        valueListenable: _messageController,
+                        builder: (context, value, _) {
+                          final isEditingMessage = _editingMessage != null;
+                          final hasTypedMessage = value.text.trim().isNotEmpty;
+                          if (!hasTypedMessage &&
+                              !isEditingMessage &&
+                              !_isUploadingPhoto) {
+                            return const SizedBox.shrink();
+                          }
+                          return IconButton(
+                            onPressed: hasTypedMessage
+                                ? _handleComposerPrimaryAction
+                                : (isEditingMessage
+                                      ? () => _clearEditingMessage()
+                                      : null),
+                            tooltip: hasTypedMessage
+                                ? (isEditingMessage
+                                      ? 'Save edit'
+                                      : 'Send message')
+                                : (isEditingMessage ? 'Cancel edit' : 'Send'),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
                               minHeight: 36,
                             ),
                             icon: !hasTypedMessage && _isUploadingPhoto
-                                ? SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                      valueColor:
-                                          AlwaysStoppedAnimation<Color>(
-                                        primaryColor,
-                                      ),
-                                    ),
-                                  )
-                                 : Icon(
+                                ? const SkeletonCircle(size: 22)
+                                : Icon(
                                     hasTypedMessage
                                         ? (isEditingMessage
                                               ? Icons.check_rounded
                                               : Icons.send_rounded)
                                         : (isEditingMessage
                                               ? Icons.close_rounded
-                                              : Icons.add_circle_outline_rounded),
+                                              : Icons
+                                                    .add_circle_outline_rounded),
                                     color: primaryColor,
                                     size: 30,
                                   ),
@@ -5717,25 +6224,27 @@ class _ChatSupportProductCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(_chatSupportBorderRadius),
       ),
       clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 94,
-              height: 94,
-              child: OverflowBox(
-                alignment: Alignment.centerRight,
-                minWidth: 94,
-                maxWidth: 108,
-                minHeight: 94,
-                maxHeight: 94,
-                child: Transform.translate(
-                  offset: const Offset(6, 0),
-                  child: SizedBox(
-                    width: 88,
-                    height: 88,
-                    child: ClipOval(
-                      child: product.imageUrl.trim().isNotEmpty
-                          ? Image.network(
+      child: Row(
+        children: [
+          SizedBox(
+            width: 94,
+            height: 94,
+            child: OverflowBox(
+              alignment: Alignment.centerRight,
+              minWidth: 94,
+              maxWidth: 108,
+              minHeight: 94,
+              maxHeight: 94,
+              child: Transform.translate(
+                offset: const Offset(6, 0),
+                child: SizedBox(
+                  width: 88,
+                  height: 88,
+                  child: ClipOval(
+                    child: product.imageUrl.trim().isNotEmpty
+                        ? ColoredBox(
+                            color: Colors.white,
+                            child: Image.network(
                               product.imageUrl,
                               key: ValueKey(product.imageUrl),
                               fit: BoxFit.cover,
@@ -5748,20 +6257,21 @@ class _ChatSupportProductCard extends StatelessWidget {
                                   label: productName,
                                 );
                               },
-                            )
-                          : _ChatSupportImageFallback(
-                              primaryColor: primaryColor,
-                              label: productName,
                             ),
-                    ),
+                          )
+                        : _ChatSupportImageFallback(
+                            primaryColor: primaryColor,
+                            label: productName,
+                          ),
                   ),
                 ),
               ),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                child: Column(
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
@@ -6018,7 +6528,8 @@ class _ChatSupportProductChip extends StatelessWidget {
             .copyWith(color: resolvedLabelColor);
 
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: resolvedBackgroundColor,
         borderRadius: borderRadius ?? BorderRadius.circular(999),
@@ -6117,15 +6628,8 @@ class _ChatSupportComposerReplyBanner extends StatelessWidget {
             tooltip: 'Cancel reply',
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(
-              minWidth: 32,
-              minHeight: 32,
-            ),
-            icon: Icon(
-              Icons.close_rounded,
-              color: secondaryColor,
-              size: 20,
-            ),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(Icons.close_rounded, color: secondaryColor, size: 20),
           ),
         ],
       ),
@@ -6203,15 +6707,8 @@ class _ChatSupportComposerEditBanner extends StatelessWidget {
             tooltip: 'Cancel edit',
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(
-              minWidth: 32,
-              minHeight: 32,
-            ),
-            icon: Icon(
-              Icons.close_rounded,
-              color: secondaryColor,
-              size: 20,
-            ),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(Icons.close_rounded, color: secondaryColor, size: 20),
           ),
         ],
       ),
@@ -6251,8 +6748,9 @@ class _ChatSupportSwipeReplyWrapperState
 
     final delta = details.primaryDelta ?? 0;
     if (widget.isSupport) {
-      final nextOffset =
-          (_dragOffset + delta).clamp(0.0, _maxSwipeOffset).toDouble();
+      final nextOffset = (_dragOffset + delta)
+          .clamp(0.0, _maxSwipeOffset)
+          .toDouble();
       if (nextOffset != _dragOffset) {
         setState(() {
           _dragOffset = nextOffset;
@@ -6261,8 +6759,9 @@ class _ChatSupportSwipeReplyWrapperState
       return;
     }
 
-    final nextOffset =
-        (_dragOffset + delta).clamp(-_maxSwipeOffset, 0.0).toDouble();
+    final nextOffset = (_dragOffset + delta)
+        .clamp(-_maxSwipeOffset, 0.0)
+        .toDouble();
     if (nextOffset != _dragOffset) {
       setState(() {
         _dragOffset = nextOffset;
@@ -6275,10 +6774,9 @@ class _ChatSupportSwipeReplyWrapperState
       return;
     }
 
-    final shouldReply =
-        widget.isSupport
-            ? _dragOffset >= _replyTriggerDistance
-            : _dragOffset <= -_replyTriggerDistance;
+    final shouldReply = widget.isSupport
+        ? _dragOffset >= _replyTriggerDistance
+        : _dragOffset <= -_replyTriggerDistance;
     if (shouldReply) {
       widget.onReplyTap?.call();
     }
@@ -6295,12 +6793,12 @@ class _ChatSupportSwipeReplyWrapperState
   @override
   Widget build(BuildContext context) {
     final progress = (_dragOffset.abs() / _maxSwipeOffset).clamp(0.0, 1.0);
-    final hintAlignment =
-        widget.isSupport ? Alignment.centerLeft : Alignment.centerRight;
-    final hintPadding =
-        widget.isSupport
-            ? const EdgeInsets.only(left: 8)
-            : const EdgeInsets.only(right: 8);
+    final hintAlignment = widget.isSupport
+        ? Alignment.centerLeft
+        : Alignment.centerRight;
+    final hintPadding = widget.isSupport
+        ? const EdgeInsets.only(left: 8)
+        : const EdgeInsets.only(right: 8);
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -6340,14 +6838,21 @@ class _ChatSupportTypingIndicator extends StatelessWidget {
     required this.primaryColor,
     required this.supportBubbleColor,
     required this.secondaryColor,
+    required this.supportDisplayName,
+    required this.supportAvatarUrl,
   });
 
   final Color primaryColor;
   final Color supportBubbleColor;
   final Color secondaryColor;
+  final String supportDisplayName;
+  final String supportAvatarUrl;
 
   @override
   Widget build(BuildContext context) {
+    final supportDisplayLabel = _normalizeSupportDisplayName(
+      supportDisplayName,
+    );
     return Align(
       alignment: Alignment.centerLeft,
       child: Row(
@@ -6358,14 +6863,16 @@ class _ChatSupportTypingIndicator extends StatelessWidget {
             padding: const EdgeInsets.only(right: 7),
             child: Transform.translate(
               offset: const Offset(-8, 0),
-              child: _ChatSupportEmployeeAvatar(
+              child: _ChatSupportCompanyAvatar(
                 size: 28,
                 primaryColor: primaryColor,
+                imageUrl: supportAvatarUrl,
+                label: supportDisplayLabel,
               ),
             ),
           ),
           Semantics(
-            label: 'Employee is typing',
+            label: '$supportDisplayLabel is typing',
             liveRegion: true,
             child: Container(
               height: 36,
@@ -6549,18 +7056,17 @@ class _ChatSupportPinnedProductCard extends StatelessWidget {
     return trimmedCategory.isEmpty ? 'No category' : trimmedCategory;
   }
 
-  String get _priceLabel {
+  double? get _displayPriceAmount {
     final salesPrice = product.salesPrice;
-    final displayPrice = salesPrice != null &&
+    final displayPrice =
+        salesPrice != null &&
             salesPrice >= 0 &&
             product.originalPrice > 0 &&
             salesPrice < product.originalPrice
         ? salesPrice
         : product.originalPrice;
-    if (displayPrice <= 0) {
-      return 'Price unavailable';
-    }
-    return formatPesoCurrency(displayPrice);
+    if (displayPrice <= 0) return null;
+    return displayPrice;
   }
 
   bool get _hasOriginalPriceLabel {
@@ -6569,13 +7075,6 @@ class _ChatSupportPinnedProductCard extends StatelessWidget {
         salesPrice >= 0 &&
         product.originalPrice > 0 &&
         salesPrice < product.originalPrice;
-  }
-
-  String get _originalPriceLabel {
-    if (product.originalPrice <= 0) {
-      return '';
-    }
-    return formatPesoCurrency(product.originalPrice);
   }
 
   String get _ratingLabel {
@@ -6596,20 +7095,20 @@ class _ChatSupportPinnedProductCard extends StatelessWidget {
     final mutedForegroundColor = theme.colorScheme.onSurfaceVariant;
 
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: backgroundColor,
-      ),
+      decoration: BoxDecoration(color: backgroundColor),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Row(
-            children: [
-              SizedBox(
-                width: 58,
-                height: 58,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.all(Radius.circular(4)),
-                  child: imageUrl.isNotEmpty
-                      ? Image.network(
+          children: [
+            SizedBox(
+              width: 58,
+              height: 58,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(4)),
+                child: imageUrl.isNotEmpty
+                    ? ColoredBox(
+                        color: Colors.white,
+                        child: Image.network(
                           imageUrl,
                           key: ValueKey(imageUrl),
                           fit: BoxFit.cover,
@@ -6622,108 +7121,118 @@ class _ChatSupportPinnedProductCard extends StatelessWidget {
                               label: _productName,
                             );
                           },
-                        )
-                      : _ChatSupportImageFallback(
-                          primaryColor: primaryColor,
-                          label: _productName,
                         ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _categoryLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: mutedForegroundColor,
-                        fontWeight: FontWeight.w700,
+                      )
+                    : _ChatSupportImageFallback(
+                        primaryColor: primaryColor,
+                        label: _productName,
                       ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _categoryLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: mutedForegroundColor,
+                      fontWeight: FontWeight.w700,
                     ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.push_pin_rounded,
-                          color: primaryColor,
-                          size: 15,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            _productName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: foregroundColor,
-                              fontWeight: FontWeight.w800,
-                            ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.push_pin_rounded,
+                        color: primaryColor,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _productName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: foregroundColor,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 3,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 3,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (_displayPriceAmount == null)
                         Text(
-                          _priceLabel,
+                          'Price unavailable',
                           style: theme.textTheme.labelMedium?.copyWith(
                             color: primaryColor,
                             fontWeight: FontWeight.w800,
                           ),
+                        )
+                      else
+                        AppPriceText(
+                          amount: _displayPriceAmount!,
+                          color: primaryColor,
+                          fontSize:
+                              theme.textTheme.labelMedium?.fontSize ?? 12,
+                          fontWeight: FontWeight.w800,
                         ),
-                        if (_hasOriginalPriceLabel)
-                          Text(
-                            _originalPriceLabel,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: mutedForegroundColor,
-                              decoration: TextDecoration.lineThrough,
-                              decorationColor: mutedForegroundColor,
-                              fontWeight: FontWeight.w700,
-                            ),
+                      if (_hasOriginalPriceLabel)
+                        AppPriceText(
+                          amount: product.originalPrice,
+                          color: mutedForegroundColor,
+                          fontSize:
+                              theme.textTheme.labelSmall?.fontSize ?? 11,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.star_rounded,
+                            color: const Color(0xFFFFB11A),
+                            size: 14,
                           ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.star_rounded,
-                              color: const Color(0xFFFFB11A),
-                              size: 14,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              _ratingLabel,
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: mutedForegroundColor,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (!_hasOriginalPriceLabel &&
-                            _originalPriceLabel.isNotEmpty &&
-                            _originalPriceLabel != _priceLabel)
+                          const SizedBox(width: 2),
                           Text(
-                            _originalPriceLabel,
-                            style: theme.textTheme.labelSmall?.copyWith(
+                            _ratingLabel,
+                            style: theme.textTheme.labelMedium?.copyWith(
                               color: mutedForegroundColor,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                      ],
-                    ),
-                  ],
-                ),
+                        ],
+                      ),
+                      if (!_hasOriginalPriceLabel &&
+                          product.originalPrice > 0 &&
+                          _displayPriceAmount != null &&
+                          product.originalPrice != _displayPriceAmount)
+                        AppPriceText(
+                          amount: product.originalPrice,
+                          color: mutedForegroundColor,
+                          fontSize:
+                              theme.textTheme.labelSmall?.fontSize ?? 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -6759,11 +7268,7 @@ class _ChatSupportProductPinSheet extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
           child: Row(
             children: [
-              Icon(
-                Icons.push_pin_rounded,
-                color: primaryColor,
-                size: 22,
-              ),
+              Icon(Icons.push_pin_rounded, color: primaryColor, size: 22),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -6788,11 +7293,7 @@ class _ChatSupportProductPinSheet extends StatelessWidget {
             future: productsFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-                  ),
-                );
+                return const SkeletonListRows(count: 5);
               }
 
               if (snapshot.hasError) {
@@ -6812,21 +7313,21 @@ class _ChatSupportProductPinSheet extends StatelessWidget {
               final normalizedAdminId = adminIdFilter.trim().toLowerCase();
               final filteredByAdmin = normalizedAdminId.isNotEmpty
                   ? products
-                      .where(
-                        (product) =>
-                            product.adminId.trim().toLowerCase() ==
-                            normalizedAdminId,
-                      )
-                      .toList(growable: false)
+                        .where(
+                          (product) =>
+                              product.adminId.trim().toLowerCase() ==
+                              normalizedAdminId,
+                        )
+                        .toList(growable: false)
                   : products;
 
               final sortedProducts = List<Product>.from(filteredByAdmin)
                 ..sort((first, second) {
-                  return _chatSupportProductDisplayName(first)
-                      .toLowerCase()
-                      .compareTo(
-                        _chatSupportProductDisplayName(second).toLowerCase(),
-                      );
+                  return _chatSupportProductDisplayName(
+                    first,
+                  ).toLowerCase().compareTo(
+                    _chatSupportProductDisplayName(second).toLowerCase(),
+                  );
                 });
 
               if (sortedProducts.isEmpty) {
@@ -6912,19 +7413,22 @@ class _ChatSupportProductPinTile extends StatelessWidget {
             child: ClipRRect(
               borderRadius: const BorderRadius.all(Radius.circular(4)),
               child: imageUrl.isNotEmpty
-                  ? Image.network(
-                      imageUrl,
-                      key: ValueKey(imageUrl),
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      cacheWidth: 112,
-                      cacheHeight: 112,
-                      errorBuilder: (context, error, stackTrace) {
-                        return _ChatSupportImageFallback(
-                          primaryColor: primaryColor,
-                          label: productName,
-                        );
-                      },
+                  ? ColoredBox(
+                      color: Colors.white,
+                      child: Image.network(
+                        imageUrl,
+                        key: ValueKey(imageUrl),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        cacheWidth: 112,
+                        cacheHeight: 112,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _ChatSupportImageFallback(
+                            primaryColor: primaryColor,
+                            label: productName,
+                          );
+                        },
+                      ),
                     )
                   : _ChatSupportImageFallback(
                       primaryColor: primaryColor,
@@ -6958,14 +7462,29 @@ class _ChatSupportProductPinTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 5),
-                Text(
-                  _chatSupportProductPriceLabel(product),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: primaryColor,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Builder(
+                  builder: (context) {
+                    final price = _chatSupportProductDisplayPrice(product);
+                    if (price <= 0) {
+                      return Text(
+                        'Price unavailable',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: primaryColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      );
+                    }
+                    return AppPriceText(
+                      amount: price,
+                      color: primaryColor,
+                      fontSize: theme.textTheme.labelMedium?.fontSize ?? 12,
+                      fontWeight: FontWeight.w800,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    );
+                  },
                 ),
                 const SizedBox(height: 8),
                 Align(
@@ -7025,11 +7544,7 @@ class _ChatSupportProductPinEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: primaryColor,
-              size: 34,
-            ),
+            Icon(icon, color: primaryColor, size: 34),
             const SizedBox(height: 12),
             Text(
               title,
@@ -7064,6 +7579,8 @@ class _ChatSupportBubble extends StatelessWidget {
     required this.secondaryColor,
     required this.currentCustomerLabel,
     required this.currentCustomerId,
+    required this.supportDisplayName,
+    required this.supportAvatarUrl,
     required this.timeLabel,
     required this.showMetadata,
     required this.onTap,
@@ -7083,6 +7600,8 @@ class _ChatSupportBubble extends StatelessWidget {
   final Color secondaryColor;
   final String currentCustomerLabel;
   final String currentCustomerId;
+  final String supportDisplayName;
+  final String supportAvatarUrl;
   final String timeLabel;
   final bool showMetadata;
   final VoidCallback onTap;
@@ -7121,6 +7640,7 @@ class _ChatSupportBubble extends StatelessWidget {
     final isDeleted = message.isDeleted;
     final isAgedUserMedia = _shouldRenderAgedUserMedia(message);
     final isQuickTapHeart = _isQuickTapHeartMessage(message);
+    final displayText = _displayChatMessageText(message);
     final isEmojiOnlyMessage = _isEmojiOnlyMessage(message);
     final animatedEmojiOption = isEmojiOnlyMessage
         ? _findChatSupportEmojiOption(
@@ -7128,38 +7648,47 @@ class _ChatSupportBubble extends StatelessWidget {
             _ChatSupportPageState._chooserEmojiOptions,
           )
         : null;
-    final hasMediaContent = !isDeleted && (message.hasImage || message.hasVideo);
+    final hasMediaContent =
+        !isDeleted && (message.hasImage || message.hasVideo);
     final hasStatusLabel = (statusLabel ?? '').trim().isNotEmpty;
     final hasStatusIndicator = !isDeleted && (hasStatusLabel || showSeenAvatar);
     final hasReplyPreview = !isDeleted && message.replyTo != null;
     final isDarkMode = theme.brightness == Brightness.dark;
     final deletedBubbleColor = theme.colorScheme.surfaceContainerHighest;
     final deletedForegroundColor = theme.colorScheme.onSurfaceVariant;
-    final supportMessageBubbleColor =
-        isDarkMode ? supportBubbleColor : _chatSupportLightBubbleBackgroundColor;
-    final userBubbleColor =
-        isDarkMode ? primaryColor : _chatSupportLightBubbleBackgroundColor;
+    final supportMessageBubbleColor = isDarkMode
+        ? supportBubbleColor
+        : _chatSupportLightBubbleBackgroundColor;
+    final userBubbleColor = isDarkMode
+        ? primaryColor
+        : _chatSupportLightBubbleBackgroundColor;
     final bubbleColor = isDeleted
         ? deletedBubbleColor
         : (isSupport ? supportMessageBubbleColor : userBubbleColor);
     final foregroundColor = isDeleted
         ? deletedForegroundColor
         : (isSupport
-            ? titleColor
-            : (isDarkMode ? theme.cardColor : titleColor));
+              ? titleColor
+              : (isDarkMode ? theme.cardColor : titleColor));
     final deletedPlaceholderText = isSupport
         ? 'Message deleted'
         : 'You deleted a message';
+    final supportDisplayLabel = _normalizeSupportDisplayName(
+      supportDisplayName,
+    );
     final replyLineLabel = _buildReplyLineLabel(
       message,
       currentCustomerLabel: currentCustomerLabel,
       currentCustomerId: currentCustomerId,
+      supportDisplayName: supportDisplayLabel,
     );
     final screenWidth = MediaQuery.sizeOf(context).width;
     final supportBubbleBaseWidth = screenWidth > 64 ? screenWidth - 64 : 0.0;
     final supportBubbleMaxWidth = supportBubbleBaseWidth * 0.68;
     final userBubbleMaxWidth = screenWidth * 0.75;
-    final bubbleMaxWidth = isSupport ? supportBubbleMaxWidth : userBubbleMaxWidth;
+    final bubbleMaxWidth = isSupport
+        ? supportBubbleMaxWidth
+        : userBubbleMaxWidth;
     final messageRowMaxWidth = screenWidth > 32 ? screenWidth - 32 : 0.0;
     final replyPreviewColor = theme.colorScheme.surfaceContainerHighest
         .withOpacity(isDarkMode ? 0.82 : 0.92);
@@ -7170,13 +7699,15 @@ class _ChatSupportBubble extends StatelessWidget {
     final replyPreviewThreadedTopInset = 34.0;
     const replyPreviewBottomGap = 8.0;
     final shouldShowEditedIndicatorInReplyLine =
-        !isDeleted && message.isEdited && hasReplyPreview && replyLineLabel.isNotEmpty;
+        !isDeleted &&
+        message.isEdited &&
+        hasReplyPreview &&
+        replyLineLabel.isNotEmpty;
     final shouldShowEditedIndicatorInBubble =
         !isDeleted && message.isEdited && !shouldShowEditedIndicatorInReplyLine;
-    final replyLineTextMaxWidth =
-        shouldShowEditedIndicatorInReplyLine
-            ? bubbleMaxWidth * 0.58
-            : bubbleMaxWidth * 0.72;
+    final replyLineTextMaxWidth = shouldShowEditedIndicatorInReplyLine
+        ? bubbleMaxWidth * 0.58
+        : bubbleMaxWidth * 0.72;
     final shouldThreadReplyPreview =
         hasReplyPreview &&
         replyLineLabel.isNotEmpty &&
@@ -7236,7 +7767,9 @@ class _ChatSupportBubble extends StatelessWidget {
 
     Widget buildSeenAvatarIndicator() {
       if (!showSeenAvatar) {
-        return const SizedBox.shrink(key: ValueKey<String>('seen-avatar-empty'));
+        return const SizedBox.shrink(
+          key: ValueKey<String>('seen-avatar-empty'),
+        );
       }
 
       return TweenAnimationBuilder<double>(
@@ -7255,9 +7788,11 @@ class _ChatSupportBubble extends StatelessWidget {
             ),
           );
         },
-        child: _ChatSupportEmployeeAvatar(
+        child: _ChatSupportCompanyAvatar(
           size: 14,
           primaryColor: primaryColor,
+          imageUrl: supportAvatarUrl,
+          label: supportDisplayLabel,
         ),
       );
     }
@@ -7271,9 +7806,7 @@ class _ChatSupportBubble extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: bubbleColor,
-                borderRadius: BorderRadius.circular(
-                  _chatSupportBorderRadius,
-                ),
+                borderRadius: BorderRadius.circular(_chatSupportBorderRadius),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -7324,7 +7857,7 @@ class _ChatSupportBubble extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
-                message.text.trim(),
+                displayText.trim(),
                 style: theme.textTheme.displaySmall?.copyWith(
                   fontSize: 30,
                   height: 1,
@@ -7345,39 +7878,40 @@ class _ChatSupportBubble extends StatelessWidget {
                           borderRadius: BorderRadius.circular(
                             _chatSupportBorderRadius,
                           ),
-                          child: Image.network(
-                            message.imageUrl,
-                            width: 210,
-                            height: 210,
-                            fit: BoxFit.cover,
-                            cacheWidth: _chatSupportImageCacheWidth,
-                            cacheHeight: _chatSupportImageCacheHeight,
-                            filterQuality: isAgedUserMedia
-                                ? FilterQuality.low
-                                : FilterQuality.medium,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: 210,
-                                height: 210,
-                                color:
-                                    theme.colorScheme.surfaceContainerHighest,
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  color: secondaryColor,
-                                  size: 30,
-                                ),
-                              );
-                            },
+                          child: ColoredBox(
+                            color: Colors.white,
+                            child: Image.network(
+                              message.imageUrl,
+                              width: 210,
+                              height: 210,
+                              fit: BoxFit.cover,
+                              cacheWidth: _chatSupportImageCacheWidth,
+                              cacheHeight: _chatSupportImageCacheHeight,
+                              filterQuality: isAgedUserMedia
+                                  ? FilterQuality.low
+                                  : FilterQuality.medium,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: 210,
+                                  height: 210,
+                                  color:
+                                      theme.colorScheme.surfaceContainerHighest,
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: secondaryColor,
+                                    size: 30,
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                         ),
                         if (isAgedUserMedia)
                           const Positioned(
                             right: 8,
                             bottom: 8,
-                            child: _ChatSupportMediaQualityBadge(
-                              label: '720p',
-                            ),
+                            child: _ChatSupportMediaQualityBadge(label: '720p'),
                           ),
                       ],
                     ),
@@ -7414,9 +7948,7 @@ class _ChatSupportBubble extends StatelessWidget {
                           const Positioned(
                             right: 8,
                             bottom: 8,
-                            child: _ChatSupportMediaQualityBadge(
-                              label: '720p',
-                            ),
+                            child: _ChatSupportMediaQualityBadge(label: '720p'),
                           ),
                       ],
                     ),
@@ -7442,11 +7974,10 @@ class _ChatSupportBubble extends StatelessWidget {
                       children: [
                         if (isAi) ...[
                           Text(
-                            'AI Assistant',
+                            supportDisplayLabel,
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: primaryColor,
                               fontWeight: FontWeight.w800,
-                              letterSpacing: 0.2,
                             ),
                           ),
                           if (message.text.trim().isNotEmpty)
@@ -7454,7 +7985,7 @@ class _ChatSupportBubble extends StatelessWidget {
                         ],
                         if (message.text.trim().isNotEmpty)
                           Text(
-                            message.text,
+                            displayText,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: foregroundColor,
                               height: 1.45,
@@ -7470,27 +8001,24 @@ class _ChatSupportBubble extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: bubbleColor,
-                borderRadius: BorderRadius.circular(
-                  _chatSupportBorderRadius,
-                ),
+                borderRadius: BorderRadius.circular(_chatSupportBorderRadius),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (isAi) ...[
                     Text(
-                      'AI Assistant',
+                      supportDisplayLabel,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: primaryColor,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.2,
                       ),
                     ),
                     const SizedBox(height: 6),
                   ],
                   if (message.text.trim().isNotEmpty)
                     Text(
-                      message.text,
+                      displayText,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: foregroundColor,
                         height: 1.45,
@@ -7523,10 +8051,7 @@ class _ChatSupportBubble extends StatelessWidget {
       return Stack(
         clipBehavior: Clip.none,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: bubbleStack,
-          ),
+          Padding(padding: const EdgeInsets.only(top: 16), child: bubbleStack),
           Positioned(
             top: 0,
             left: alignEditedIndicatorLeft ? 0 : null,
@@ -7538,35 +8063,31 @@ class _ChatSupportBubble extends StatelessWidget {
     }
 
     final bubbleContent = ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: bubbleMaxWidth,
-      ),
+      constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
       child: GestureDetector(
         onTap: onTap,
         onLongPressStart: onLongPressStart,
         behavior: HitTestBehavior.opaque,
         child: Column(
-          crossAxisAlignment:
-              isSupport ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+          crossAxisAlignment: isSupport
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.end,
           children: [
             if (hasReplyPreview && replyLineLabel.isNotEmpty) ...[
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: bubbleMaxWidth),
                 child: Row(
                   mainAxisSize: MainAxisSize.max,
-                  mainAxisAlignment:
-                      isSupport
-                          ? MainAxisAlignment.start
-                          : MainAxisAlignment.end,
+                  mainAxisAlignment: isSupport
+                      ? MainAxisAlignment.start
+                      : MainAxisAlignment.end,
                   children: [
-                    Icon(
-                      Icons.reply_rounded,
-                      size: 14,
-                      color: replyLabelColor,
-                    ),
+                    Icon(Icons.reply_rounded, size: 14, color: replyLabelColor),
                     const SizedBox(width: 4),
                     ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: replyLineTextMaxWidth),
+                      constraints: BoxConstraints(
+                        maxWidth: replyLineTextMaxWidth,
+                      ),
                       child: Text(
                         replyLineLabel,
                         maxLines: 1,
@@ -7620,8 +8141,9 @@ class _ChatSupportBubble extends StatelessWidget {
             else ...[
               if (hasReplyPreview && replyLineLabel.isNotEmpty) ...[
                 Align(
-                  alignment:
-                      isSupport ? Alignment.centerLeft : Alignment.centerRight,
+                  alignment: isSupport
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
                   child: buildReplyPreviewBubble(),
                 ),
                 SizedBox(height: replyPreviewBottomGap),
@@ -7658,8 +8180,7 @@ class _ChatSupportBubble extends StatelessWidget {
               Wrap(
                 spacing: 6,
                 runSpacing: 2,
-                alignment:
-                    isSupport ? WrapAlignment.start : WrapAlignment.end,
+                alignment: isSupport ? WrapAlignment.start : WrapAlignment.end,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (showMetadata)
@@ -7702,48 +8223,48 @@ class _ChatSupportBubble extends StatelessWidget {
       child: bubbleContent,
     );
 
-    final messageContent =
-        isSupport
-            ? Transform.translate(
-                offset: const Offset(-8, 0),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: messageRowMaxWidth),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (showSupportProfile) ...[
-                        Padding(
-                          padding: EdgeInsets.only(
-                            right: 7,
-                            bottom: showMetadata ? 14 : 0,
-                          ),
-                          child: _ChatSupportEmployeeAvatar(
-                              size: 28,
-                              primaryColor: primaryColor,
-                          ),
-                        ),
-                      ] else
-                        const SizedBox(width: 35),
-                      highlightedBubbleContent,
-                    ],
-                  ),
-                ),
-              )
-            : Transform.translate(
-                offset: const Offset(8, 0),
-                child: highlightedBubbleContent,
-              );
+    final messageContent = isSupport
+        ? Transform.translate(
+            offset: const Offset(-8, 0),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: messageRowMaxWidth),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (showSupportProfile) ...[
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: 7,
+                        bottom: showMetadata ? 14 : 0,
+                      ),
+                      child: _ChatSupportCompanyAvatar(
+                        size: 28,
+                        primaryColor: primaryColor,
+                        imageUrl: supportAvatarUrl,
+                        label: supportDisplayLabel,
+                      ),
+                    ),
+                  ] else
+                    const SizedBox(width: 35),
+                  highlightedBubbleContent,
+                ],
+              ),
+            ),
+          )
+        : Transform.translate(
+            offset: const Offset(8, 0),
+            child: highlightedBubbleContent,
+          );
 
-    final swipeReplyContent =
-        onReplyTap == null
-            ? messageContent
-            : _ChatSupportSwipeReplyWrapper(
-                isSupport: isSupport,
-                hintColor: replyLabelColor,
-                onReplyTap: onReplyTap,
-                child: messageContent,
-              );
+    final swipeReplyContent = onReplyTap == null
+        ? messageContent
+        : _ChatSupportSwipeReplyWrapper(
+            isSupport: isSupport,
+            hintColor: replyLabelColor,
+            onReplyTap: onReplyTap,
+            child: messageContent,
+          );
     return Align(
       alignment: isSupport ? Alignment.centerLeft : Alignment.centerRight,
       child: swipeReplyContent,
@@ -7781,36 +8302,41 @@ class _ChatSupportMediaPreviewDialog extends StatelessWidget {
                       maxScale: 4,
                       child: Stack(
                         children: [
-                          Image.network(
-                            message.imageUrl,
-                            fit: BoxFit.contain,
-                            cacheWidth: hasQualityLabel
-                                ? _chatSupportImageCacheWidth
-                                : null,
-                            cacheHeight: hasQualityLabel
-                                ? _chatSupportImageCacheHeight
-                                : null,
-                            filterQuality: hasQualityLabel
-                                ? FilterQuality.low
-                                : FilterQuality.medium,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: 240,
-                                height: 240,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(
-                                    _chatSupportBorderRadius,
+                          ColoredBox(
+                            color: Colors.white,
+                            child: Image.network(
+                              message.imageUrl,
+                              fit: BoxFit.contain,
+                              cacheWidth: hasQualityLabel
+                                  ? _chatSupportImageCacheWidth
+                                  : null,
+                              cacheHeight: hasQualityLabel
+                                  ? _chatSupportImageCacheHeight
+                                  : null,
+                              filterQuality: hasQualityLabel
+                                  ? FilterQuality.low
+                                  : FilterQuality.medium,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: 240,
+                                  height: 240,
+                                  decoration: BoxDecoration(
+                                    color: theme
+                                        .colorScheme
+                                        .surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(
+                                      _chatSupportBorderRadius,
+                                    ),
                                   ),
-                                ),
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  color: secondaryColor,
-                                  size: 38,
-                                ),
-                              );
-                            },
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: secondaryColor,
+                                    size: 38,
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                           if (hasQualityLabel)
                             Positioned(
@@ -7851,8 +8377,8 @@ class _ChatSupportMediaPreviewDialog extends StatelessWidget {
                       child: Text(
                         message.hasVideo
                             ? (message.imageName.trim().isEmpty
-                                ? 'Video Preview'
-                                : message.imageName)
+                                  ? 'Video Preview'
+                                  : message.imageName)
                             : 'Image Preview',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -7957,9 +8483,7 @@ class _ChatSupportFullscreenVideoPlayerState
     if (_isInitializing) {
       return SizedBox(
         width: MediaQuery.of(context).size.width * 0.82,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        child: const SkeletonShimmer(baseColor: kSkeletonBaseColor),
       );
     }
 
@@ -7971,9 +8495,7 @@ class _ChatSupportFullscreenVideoPlayerState
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.78),
           borderRadius: BorderRadius.circular(_chatSupportBorderRadius),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.08),
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.08)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -8014,9 +8536,7 @@ class _ChatSupportFullscreenVideoPlayerState
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    RepaintBoundary(
-                      child: VideoPlayer(controller),
-                    ),
+                    RepaintBoundary(child: VideoPlayer(controller)),
                     GestureDetector(
                       onTap: () {
                         if (!mounted) {
@@ -8108,9 +8628,7 @@ class _ChatSupportFullscreenVideoPlayerState
             Positioned(
               right: 12,
               bottom: 12,
-              child: _ChatSupportMediaQualityBadge(
-                label: widget.qualityLabel!,
-              ),
+              child: _ChatSupportMediaQualityBadge(label: widget.qualityLabel!),
             ),
         ],
       ),
@@ -8139,10 +8657,7 @@ class _ChatSupportReactionChip extends StatelessWidget {
           color: theme.cardColor,
           borderRadius: BorderRadius.circular(999),
         ),
-        child: Text(
-          emoji,
-          style: const TextStyle(fontSize: 16, height: 1),
-        ),
+        child: Text(emoji, style: const TextStyle(fontSize: 16, height: 1)),
       ),
     );
   }
@@ -8163,10 +8678,10 @@ class _ChatSupportMediaQualityBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        style:
+            Theme.of(context).textTheme.labelSmall?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w800,
-              letterSpacing: 0.2,
             ) ??
             const TextStyle(
               color: Colors.white,
@@ -8221,10 +8736,12 @@ class _ChatSupportCenteredPinIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final normalizedCustomerLabel =
-        customerLabel.trim().isEmpty ? 'Client' : customerLabel.trim();
-    final normalizedProductName =
-        productName.trim().isEmpty ? 'product' : productName.trim();
+    final normalizedCustomerLabel = customerLabel.trim().isEmpty
+        ? 'Client'
+        : customerLabel.trim();
+    final normalizedProductName = productName.trim().isEmpty
+        ? 'product'
+        : productName.trim();
     final maxWidth = MediaQuery.sizeOf(context).width - 64;
 
     return Center(
@@ -8233,11 +8750,7 @@ class _ChatSupportCenteredPinIndicator extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.push_pin_rounded,
-              size: 13,
-              color: primaryColor,
-            ),
+            Icon(Icons.push_pin_rounded, size: 13, color: primaryColor),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
@@ -8278,9 +8791,7 @@ class _ChatSupportCompanyAvatar extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: ClipOval(
-        child: _buildImage(normalizedImageUrl),
-      ),
+      child: ClipOval(child: _buildImage(normalizedImageUrl)),
     );
   }
 
@@ -8300,21 +8811,24 @@ class _ChatSupportCompanyAvatar extends StatelessWidget {
           final base64String = normalizedImageUrl.substring(base64Index + 7);
           final bytes = base64Decode(base64String);
           final cacheDim = (size * 2).round();
-          return Image.memory(
-            Uint8List.fromList(bytes),
-            key: ValueKey(normalizedImageUrl),
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            cacheWidth: cacheDim,
-            cacheHeight: cacheDim,
-            errorBuilder: (context, error, stackTrace) {
-              return _ChatSupportImageFallback(
-                primaryColor: primaryColor,
-                label: label,
-              );
-            },
+          return ColoredBox(
+            color: Colors.white,
+            child: Image.memory(
+              Uint8List.fromList(bytes),
+              key: ValueKey(normalizedImageUrl),
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              cacheWidth: cacheDim,
+              cacheHeight: cacheDim,
+              errorBuilder: (context, error, stackTrace) {
+                return _ChatSupportImageFallback(
+                  primaryColor: primaryColor,
+                  label: label,
+                );
+              },
+            ),
           );
         }
       } catch (_) {}
@@ -8326,21 +8840,24 @@ class _ChatSupportCompanyAvatar extends StatelessWidget {
 
     // Regular HTTP/HTTPS URLs
     final cacheDim = (size * 2).round();
-    return Image.network(
-      normalizedImageUrl,
-      key: ValueKey(normalizedImageUrl),
-      width: size,
-      height: size,
-      fit: BoxFit.cover,
-      gaplessPlayback: true,
-      cacheWidth: cacheDim,
-      cacheHeight: cacheDim,
-      errorBuilder: (context, error, stackTrace) {
-        return _ChatSupportImageFallback(
-          primaryColor: primaryColor,
-          label: label,
-        );
-      },
+    return ColoredBox(
+      color: Colors.white,
+      child: Image.network(
+        normalizedImageUrl,
+        key: ValueKey(normalizedImageUrl),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        cacheWidth: cacheDim,
+        cacheHeight: cacheDim,
+        errorBuilder: (context, error, stackTrace) {
+          return _ChatSupportImageFallback(
+            primaryColor: primaryColor,
+            label: label,
+          );
+        },
+      ),
     );
   }
 }
@@ -8375,11 +8892,7 @@ class _ChatSupportEmployeeAvatar extends StatelessWidget {
 
   Widget _buildFallback() {
     return Center(
-      child: Icon(
-        Icons.support_agent_rounded,
-        color: primaryColor,
-        size: size,
-      ),
+      child: Icon(Icons.support_agent_rounded, color: primaryColor, size: size),
     );
   }
 }
@@ -8403,9 +8916,9 @@ class _ChatSupportImageFallback extends StatelessWidget {
       child: Text(
         initial,
         style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: primaryColor,
-              fontWeight: FontWeight.w800,  
-            ),
+          color: primaryColor,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

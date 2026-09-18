@@ -4,8 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:gms_shopping/order_store.dart';
 import 'package:gms_shopping/services/product_repository.dart';
+import 'package:gms_shopping/theme/app_snack_bar.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 
 const int _maxReviewVideoBytes = 50 * 1024 * 1024;
 const double _reviewMediaTileSize = 86;
@@ -223,13 +226,7 @@ class _CommentRatePageState extends State<CommentRatePage> {
   }
 
   void _showReviewMediaError(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-        ),
-      );
+    AppSnackBar.showError(context, message: message);
   }
 
   Future<void> _openReviewMediaUploadModal() async {
@@ -382,18 +379,7 @@ class _CommentRatePageState extends State<CommentRatePage> {
                 ),
               ),
               child: _isSaving
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          theme.brightness == Brightness.dark
-                              ? Colors.black
-                              : Colors.white,
-                        ),
-                      ),
-                    )
+                  ? const SkeletonCircle(size: 18)
                   : Text(
                       entry.hasProductReviewRating
                           ? 'Update Review'
@@ -514,7 +500,6 @@ class _CommentRatePageState extends State<CommentRatePage> {
                               height: 1.4,
                             ),
                             decoration: const InputDecoration(
-                              hintText: 'Share your experience with this product',
                               counterText: '',
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
@@ -733,23 +718,7 @@ class _CommentRatePriceText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedStyle = DefaultTextStyle.of(context).style.merge(style);
-    final symbolFontSize = (resolvedStyle.fontSize ?? 14) * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: resolvedStyle.copyWith(fontSize: symbolFontSize),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: resolvedStyle,
-          ),
-        ],
-      ),
-    );
+    return AppPriceText(amount: amount, style: style);
   }
 }
 

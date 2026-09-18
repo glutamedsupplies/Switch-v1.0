@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Switch Help Centre</title>
+    <style>
+      :root {
+        --accent: #0a9297;
+        --accent-strong: #08797d;
+        --text: #10213e;
+        --muted: #64748b;
+        --surface: #ffffff;
+        --bg: #f2f2f2;
+        --border: #dbe4f0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .help-shell {
+        width: min(100%, 1040px);
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      .help-topbar {
+        margin-bottom: 24px;
+      }
+
+      .help-back {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 16px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .help-hero {
+        padding: 28px;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: linear-gradient(135deg, #0b263f 0%, #0a9297 100%);
+        color: #ffffff;
+      }
+
+      .help-hero h1 {
+        margin: 0 0 10px;
+        font-size: clamp(30px, 5vw, 44px);
+        line-height: 1.05;
+      }
+
+      .help-hero p {
+        max-width: 620px;
+        margin: 0;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      .help-grid {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .help-card {
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--surface);
+      }
+
+      .help-card h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+
+      .help-card p,
+      .help-card li {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .help-card ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .help-actions {
+        margin-top: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .help-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 18px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: var(--accent);
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .help-action--secondary {
+        border-color: var(--border);
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      .help-action:hover,
+      .help-action:focus-visible,
+      .help-back:hover,
+      .help-back:focus-visible {
+        outline: none;
+        transform: translateY(-1px);
+      }
+
+      @media (max-width: 820px) {
+        .help-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .help-shell {
+          padding: 18px 12px 32px;
+        }
+
+        .help-hero,
+        .help-card {
+          padding: 18px;
+          border-radius: 20px;
+        }
+
+        .help-actions {
+          flex-direction: column;
+        }
+
+        .help-action,
+        .help-back {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="help-shell">
+      <div class="help-topbar">
+        <a class="help-back" href="/login.html">Back to Login</a>
+      </div>
+
+      <section class="help-hero">
+        <h1>Help Centre</h1>
+        <p>
+          Need help signing in, resetting your password, or accessing your Switch account?
+          Start with these quick guides and support options.
+        </p>
+      </section>
+
+      <section class="help-grid" aria-label="Support topics">
+        <article class="help-card">
+          <h2>Login Help</h2>
+          <p>
+            Double-check your seller email or employee ID, then make sure your password matches
+            the account you are trying to open.
+          </p>
+        </article>
+
+        <article class="help-card">
+          <h2>Password Reset</h2>
+          <ul>
+            <li>Use `Forgot password?` on the login page.</li>
+            <li>Enter your registered Gmail address.</li>
+            <li>Check your inbox for the 6-digit reset code.</li>
+          </ul>
+        </article>
+
+        <article class="help-card">
+          <h2>Need More Help?</h2>
+          <p>
+            If you still cannot access your account, contact support so your login details or
+            account status can be checked.
+          </p>
+        </article>
+      </section>
+
+      <div class="help-actions">
+        <a class="help-action" href="mailto:support@gmsshopping.com">Email Support</a>
+        <a class="help-action help-action--secondary" href="/login.html">Return to Login</a>
+      </div>
+    </main>
+  </body>
+</html>

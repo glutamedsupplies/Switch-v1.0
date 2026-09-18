@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Packing Operations</title>
+    <link rel="stylesheet" href="/styles.css?v=transparent-listing-media-1" />
+    <link rel="stylesheet" href="/packing-admin.css?v=admin-seller-table-headers-main-only-1" />
+    <link rel="stylesheet" href="/main.css?v=admin-seller-table-headers-main-only-1" data-main-owned-styles="true" />
+  </head>
+  <body class="packing-admin-page">
+    <main class="packing-admin-workspace">
+      <input
+        class="packing-admin-search-bridge"
+        id="packing-workspace-search"
+        type="search"
+        aria-label="Search packing orders"
+        autocomplete="off"
+      />
+
+      <section class="super-admin-stats packing-admin-summary" aria-label="Packing summary">
+        <article class="super-admin-stat" data-admin-summary-stat="orders" data-admin-summary-tone="total">
+          <span class="super-admin-stat__label">Total Orders to Pack</span>
+          <span class="super-admin-stat__icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list-icon lucide-list"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg>
+          </span>
+          <strong data-packing-order-count>0</strong>
+          <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Live</span><span class="super-admin-stat__trend-period">fulfillment queue</span></span>
+        </article>
+
+        <article class="super-admin-stat" data-admin-summary-stat="progress" data-admin-summary-tone="progress">
+          <span class="super-admin-stat__label">Packing in Progress</span>
+          <span class="super-admin-stat__icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-package-open-icon lucide-package-open"><path d="M12 22v-9"/><path d="M15.17 2.21a1.67 1.67 0 0 1 1.63 0L21 4.57a1.93 1.93 0 0 1 0 3.36L8.82 14.79a1.655 1.655 0 0 1-1.64 0L3 12.43a1.93 1.93 0 0 1 0-3.36z"/><path d="M20 13v3.87a2.06 2.06 0 0 1-1.11 1.83l-6 3.08a1.93 1.93 0 0 1-1.78 0l-6-3.08A2.06 2.06 0 0 1 4 16.87V13"/><path d="M21 12.43a1.93 1.93 0 0 0 0-3.36L8.83 2.2a1.64 1.64 0 0 0-1.63 0L3 4.57a1.93 1.93 0 0 0 0 3.36l12.18 6.86a1.636 1.636 0 0 0 1.63 0z"/></svg>
+          </span>
+          <strong data-packing-in-progress-count>0</strong>
+          <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Scan</span><span class="super-admin-stat__trend-period">verified items</span></span>
+        </article>
+
+        <article class="super-admin-stat" data-admin-summary-stat="ready" data-admin-summary-tone="ready">
+          <span class="super-admin-stat__label">Ready to Ship</span>
+          <span class="super-admin-stat__icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-truck-icon lucide-truck"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+          </span>
+          <strong data-packing-ready-ship-count>0</strong>
+          <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Ready</span><span class="super-admin-stat__trend-period">for courier handoff</span></span>
+        </article>
+
+        <article class="super-admin-stat" data-admin-summary-stat="shipped" data-admin-summary-tone="shipped">
+          <span class="super-admin-stat__label">Shipped Today</span>
+          <span class="super-admin-stat__icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-check-icon lucide-circle-check"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          </span>
+          <strong data-packing-shipped-today-count>0</strong>
+          <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Today</span><span class="super-admin-stat__trend-period">completed handoffs</span></span>
+        </article>
+      </section>
+
+      <section class="packing-admin-board">
+        <article class="packing-admin-station packing-admin-station--packing">
+          <div class="packing-admin-table-card">
+            <div class="packing-admin-table-wrap">
+              <div class="packing-admin-queue is-list-view" data-preparing-order-list>
+                <div class="empty-state">Loading preparing items...</div>
+              </div>
+            </div>
+          </div>
+
+          <footer class="packing-admin-pagination" data-packing-preparing-pagination hidden></footer>
+
+          <footer class="packing-admin-station__footer">
+            <span class="packing-admin-station__status"><i aria-hidden="true"></i><span data-packing-selection-copy>Select an order item to begin barcode verification.</span></span>
+            <button class="packing-admin-footer-command" type="button" data-packing-refresh>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66L20 8"/><path d="M20 3v5h-5"/></svg>
+              Refresh Queue
+            </button>
+          </footer>
+        </article>
+
+        <article class="packing-admin-station packing-admin-station--shipping">
+          <div class="packing-admin-table-card">
+            <div class="packing-admin-table-wrap">
+              <div class="packing-admin-queue is-list-view" data-shipping-order-list>
+                <div class="empty-state">Loading shipping queue...</div>
+              </div>
+            </div>
+          </div>
+
+          <footer class="packing-admin-pagination" data-packing-shipping-pagination hidden></footer>
+
+          <footer class="packing-admin-station__footer packing-admin-station__footer--shipping">
+            <span class="packing-admin-station__status"><i aria-hidden="true"></i>Courier actions update the live order stage.</span>
+          </footer>
+        </article>
+      </section>
+    </main>
+
+    <div class="packing-modal" data-packing-modal>
+      <div class="packing-modal__backdrop" data-packing-modal-backdrop></div>
+      <div class="packing-modal__content" role="dialog" aria-modal="true" aria-labelledby="packing-modal-title">
+        <div class="packing-modal__header">
+          <div class="packing-modal__title">
+            <h2 id="packing-modal-title" data-modal-product-name>Product Name</h2>
+            <span data-modal-product-meta>Variant | Qty 1</span>
+          </div>
+          <button type="button" class="product-gallery-modal__close validation-modal__close" data-packing-modal-close aria-label="Close" title="Close">&#215;</button>
+        </div>
+        <div class="packing-modal__body">
+          <div class="packing-modal__form-grid">
+            <label class="packing-modal__field" for="packing-modal-input">
+              <span>Manual Barcode</span>
+              <input id="packing-modal-input" type="text" class="packing-modal__input" data-packing-modal-input placeholder="Enter or scan barcode..." autocomplete="off" />
+            </label>
+            <label class="packing-modal__field" for="packing-modal-qty">
+              <span>Qty</span>
+              <input id="packing-modal-qty" type="number" class="packing-modal__input" data-packing-modal-qty min="1" value="1" autocomplete="off" />
+            </label>
+          </div>
+          <div class="packing-modal__count" data-packing-modal-count>Scanned: 0/0</div>
+        </div>
+        <div class="packing-modal__footer">
+          <button type="button" class="packing-modal__btn packing-modal__btn--secondary" data-packing-modal-cancel>Cancel</button>
+          <button type="button" class="packing-modal__btn packing-modal__btn--primary" data-packing-modal-submit>Add Scan</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="validation-modal-overlay packing-validation-modal-overlay" data-packing-validation-modal hidden>
+      <section class="validation-modal packing-validation-modal" role="dialog" aria-modal="true" aria-labelledby="packing-validation-modal-title">
+        <button type="button" class="product-gallery-modal__close validation-modal__close" data-packing-validation-close aria-label="Close" title="Close">&#215;</button>
+        <div class="validation-modal__top"><div class="validation-modal__icon validation-modal__icon--notice" data-packing-validation-icon aria-hidden="true">!</div></div>
+        <div class="validation-modal__body">
+          <h2 class="validation-modal__title" id="packing-validation-modal-title" data-packing-validation-title>Important Notice</h2>
+          <p class="validation-modal__copy" data-packing-validation-copy>Incorrect product barcode.</p>
+          <div class="validation-modal__actions"><button type="button" class="packing-modal__btn packing-modal__btn--primary" data-packing-validation-action>OK</button></div>
+        </div>
+      </section>
+    </div>
+
+    <input type="text" autocomplete="off" class="barcode-hidden-input" data-hidden-barcode-input aria-hidden="true" />
+
+    <aside class="packing-barcode-panel" id="packing-barcode-panel" data-packing-barcode-panel aria-label="Product barcodes" tabindex="-1" hidden>
+      <div class="packing-barcode-panel__header">
+        <div><h2>Product Barcodes</h2><p>Select an item, then scan its matching barcode.</p></div>
+        <button type="button" class="packing-admin-icon-command" data-packing-barcode-close aria-label="Close barcode panel" title="Close">&#215;</button>
+      </div>
+      <label class="packing-barcode-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" data-packing-barcode-search placeholder="Search product or barcode..." autocomplete="off" />
+      </label>
+      <div class="packing-barcode-list" data-packing-barcode-list><div class="empty-state">No product barcodes selected yet.</div></div>
+    </aside>
+
+    <script src="/theme.js?v=platform-workspace-settings-1"></script>
+    <script src="/admin-search-not-found.js?v=admin-search-not-found-1"></script>
+    <script src="/packing_dashboard.js?v=feedback-list-pagination-1"></script>
+  </body>
+</html>

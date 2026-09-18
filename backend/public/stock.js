@@ -14,11 +14,22 @@ const stockPriorityFilterButtons = Array.from(
 );
 const stockTotalProducts = document.getElementById("stock-total-products");
 const stockTotalUnits = document.getElementById("stock-total-units");
+const stockNewCount = document.getElementById("stock-new-count");
 const stockLowCount = document.getElementById("stock-low-count");
 const stockEmptyCount = document.getElementById("stock-empty-count");
 const stockNearExpiryCount = document.getElementById("stock-near-expiry-count");
+const stockExpiredCount = document.getElementById("stock-expired-count");
 const stockRefreshButton = document.getElementById("stock-refresh-button");
 const stockRecordHeadings = document.querySelector(".stock-record-headings");
+const stockRecordDrawerTitle = document.querySelector("[data-stock-record-drawer-title]");
+const stockRecordDrawerSubtitle = document.querySelector("[data-stock-record-drawer-subtitle]");
+const stockRecordDrawerIcon = document.querySelector(".stock-record-drawer-titlebar__icon");
+const stockRecordDrawerCloseButtons = Array.from(
+  document.querySelectorAll("[data-stock-record-drawer-close]"),
+);
+const stockRecordDrawerBackdrop = document.querySelector(".stock-record-drawer-backdrop");
+const stockRecordDrawerPanel = document.querySelector(".stock-detail-panel");
+const stockRecordBatchFilterHost = document.querySelector("[data-stock-record-batch-filter]");
 const stockWorkspaceLink = document.querySelector("[data-stock-workspace-link]");
 const stockWorkspaceNav = document.querySelector("[data-stock-nav]");
 const stockWorkspaceLabel = document.querySelector("[data-stock-workspace-label]");
@@ -33,6 +44,7 @@ const stockNotificationFocusSurface =
   document.querySelector(".stock-monitor-shell .dashboard-content");
 const stockMonitorControlsPanel = document.querySelector(".stock-monitor-controls-panel");
 const stockListShell = document.querySelector(".stock-list-shell");
+const stockInventoryPagination = document.querySelector("[data-stock-inventory-pagination]");
 const stockWorkspaceNavItems = Object.freeze({
   dashboard: document.querySelector('[data-stock-nav-item="dashboard"]'),
   insight: document.querySelector('[data-stock-nav-item="insight"]'),
@@ -49,28 +61,43 @@ const stockWorkspaceNavItems = Object.freeze({
 
 function getStockWorkspaceDefaultLogoIconMarkup() {
   return `
-    <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
-      <path d="M179-120q-24 0-42-18t-18-42v-339q-28-24-37-59t2-70l43-135q8-27 28-42t46-15h553q28 0 49 15.5t29 41.5l44 135q11 35 1.5 70T840-519v339q0 24-18 42t-42 18H179Zm391-430q29 0 49-19t16-46l-25-165H510v165q0 26 17 45.5t43 19.5Zm-187 0q28 0 47.5-19t19.5-46v-165H350l-25 165q-4 26 14 45.5t44 19.5Zm-182 0q24 0 41.5-16.5T263-607l26-173H189l-46 146q-10 31 8 57.5t50 26.5Zm557 0q32 0 50.5-26t8.5-58l-46-146H671l26 173q3 24 20.5 40.5T758-550ZM179-180h601v-311q1 1-6.5 1H758q-25 0-47.5-10.5T666-533q-16 20-40 31.5T573-490q-30 0-51.5-8.5T480-527q-15 18-38 27.5t-52 9.5q-31 0-55-11t-41-32q-24 21-47 32t-46 11h-13.5q-6.5 0-8.5-1v311Zm601 0H179h601Z" fill="currentColor"></path>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-building2-icon lucide-building-2" aria-hidden="true">
+      <path d="M10 12h4"></path><path d="M10 8h4"></path><path d="M14 21v-3a2 2 0 0 0-4 0v3"></path><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"></path><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"></path>
     </svg>`;
 }
 
 const STOCK_METER_MAX = 50;
+const STOCK_INVENTORY_PAGE_SIZE = 6;
+const stockSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
+const STOCK_ADD_ACTION_ICON_MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>';
+const STOCK_DEDUCT_ACTION_ICON_MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>';
+const STOCK_ACTIVITY_ACTION_ICON_MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
+const STOCK_DELETE_ACTION_ICON_MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+const STOCK_NEAR_EXPIRY_REASON_ICON_MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+const STOCK_EXPIRY_DETAILS_ICON_MARKUP = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days-icon lucide-calendar-days" aria-hidden="true"><path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M8 13h.01"/><path d="M12 13h.01"/><path d="M16 13h.01"/><path d="M8 17h.01"/><path d="M12 17h.01"/><path d="M16 17h.01"/></svg>';
+const STOCK_EXPIRED_REASON_ICON_MARKUP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>';
 const STOCK_NEW_WINDOW_DAYS = 7;
 const STOCK_NEAR_EXPIRY_WINDOW_DAYS = 365;
+const STOCK_SELL_PRIORITY_LOCK_DAYS = 3;
+const STOCK_SNACKBAR_AUTO_DISMISS_MS = 15000;
 const STOCK_TIME_ZONE = "Asia/Singapore";
 const STOCK_TIME_ZONE_OFFSET_MINUTES = 8 * 60;
 const STOCK_WORKSPACE_ROLE_QUERY_PARAM = "role";
+const STOCK_MAIN_INVENTORY_QUERY_PARAM = "main_inventory";
 const STOCK_WORKSPACE_ROLES = Object.freeze({
   ADMIN: "admin",
   EMPLOYEE: "employee",
 });
 const STOCK_EMPLOYEE_WORKSPACE_PERMISSION_BY_PATH = Object.freeze({
   "/stock.html": "admin-inventory",
+  "/main_inventory_embed.html": "admin-inventory",
   "/employee_stock.html": "employee-inventory",
 });
 const STOCK_EMPLOYEE_REFERRER_PATTERN = /\/(?:employee_dashboard|face_verfication)\.html(?:[?#]|$)/i;
 const STOCK_EMPLOYEE_PAGE_PATH_PATTERN = /\/employee_stock\.html$/i;
 const STOCK_EMBEDDED_LIVE_CHAT_SELECTOR = ".live-chat-shell";
+let embeddedMainInventoryAdminId = "";
+let embeddedMainInventorySessionToken = "";
 const STOCK_PRODUCTS_UPDATED_STORAGE_KEY = "gms-stock-products-updated-at";
 const STOCK_SUCCESS_LOTTIE_PLAYER_URL = "/vendor/lottie.min.js";
 const STOCK_SUCCESS_ANIMATION_PATH = "/animations/employee-account-check.json";
@@ -187,24 +214,58 @@ const STOCK_EXPIRY_DATE_ICON_MARKUP = `
 `;
 
 let currentStockProducts = [];
+let hasLoadedStockData = false;
 let stockSearchTerm = "";
 let stockSearchTimer = 0;
+let stockRealtimeRefreshTimer = 0;
+let stockRealtimeRefreshInFlight = false;
+let stockRealtimeRefreshQueued = false;
 let stockCategoryFilter = "";
 let stockPriorityFilter = "all";
 let selectedStockProductId = "";
 let editingStockProductId = "";
+let stockInventoryPage = 1;
 let stockEditModalClockIntervalId = 0;
+let stockActionDropdown = null;
+let stockActionDropdownToggle = null;
+let stockActionDropdownCard = null;
+let stockActionDropdownMode = "";
+let stockNearExpiryOverlay = null;
+let stockNearExpiryOverlayToggle = null;
+let stockNearExpiryOverlayCard = null;
+let stockNearExpiryDisclosureSerial = 0;
+let closeOpenStockDeductReasonMenu = null;
+let stockDeductReasonDropdownSerial = 0;
+let stockDeductBatchDropdownSerial = 0;
+let stockRecordDrawerMode = "records";
+let stockRecordBatchFilterKey = "all";
+let stockRecordBatchFilterSerial = 0;
+let closeOpenStockRecordBatchFilterMenu = null;
 let stockDeleteModalElements = null;
 let stockSuccessModalElements = null;
 let stockSuccessAutoCloseTimer = 0;
 let stockSuccessAnimation = null;
 let stockSuccessLottieLoadPromise = null;
 let stockDeleteSuccessAudio = null;
+let stockEditorSnackbarElements = null;
+let stockEditorSnackbarTimer = 0;
 let activeStockWorkspaceRole = resolveStockWorkspaceRole();
 let pendingStockNotificationFocusRequest = resolveInitialStockNotificationFocusRequest();
 let stockNotificationFocusTimer = 0;
 let stockNotificationFocusTimers = [];
 let stockNotificationFocusSpotlightFrame = 0;
+const stockRealtimeTopics = new Set([
+  "all",
+  "products",
+  "product-requests",
+  "inventory",
+  "orders",
+]);
+let stockIgnoreRealtimeRefreshUntil = 0;
+
+function suppressStockRealtimeRefresh(durationMs = 1600) {
+  stockIgnoreRealtimeRefreshUntil = Date.now() + Math.max(0, Number(durationMs) || 0);
+}
 
 function normalizeStockWorkspaceRole(value) {
   return String(value ?? "").trim().toLowerCase() === STOCK_WORKSPACE_ROLES.EMPLOYEE
@@ -218,6 +279,37 @@ function isEmployeeStockPagePath(pathname = window.location.pathname) {
 
 function isEmbeddedLiveChatStockWorkspace() {
   return Boolean(document.querySelector(STOCK_EMBEDDED_LIVE_CHAT_SELECTOR) && stockProductList);
+}
+
+function isMainInventoryStockWorkspace() {
+  const searchParams = new URLSearchParams(window.location.search);
+  return (
+    searchParams.get(STOCK_MAIN_INVENTORY_QUERY_PARAM) === "1" ||
+    document.body?.classList.contains("stock-main-inventory-embedded")
+  );
+}
+
+function isStockInventoryTableWorkspace() {
+  return Boolean(
+    isMainInventoryStockWorkspace()
+    || document.body?.classList.contains("stock-employee-inventory-table-view"),
+  );
+}
+
+function activateEmployeeInventoryTableMode() {
+  const searchParams = new URLSearchParams(window.location.search);
+  if (
+    searchParams.get("employee_inventory_table") !== "1"
+    && !isEmployeeStockPagePath(window.location.pathname)
+  ) {
+    return false;
+  }
+
+  document.body?.classList.add(
+    "stock-employee-inventory-table-view",
+    "stock-inventory-table-view",
+  );
+  return true;
 }
 
 function isAdminLiveChatReadOnlyWorkspace() {
@@ -251,10 +343,15 @@ function resolveStockWorkspaceRole() {
     : STOCK_WORKSPACE_ROLES.ADMIN;
 }
 
+function isAdminInventoryPagePath(pathname = window.location.pathname) {
+  const normalizedPath = String(pathname ?? "").trim().toLowerCase();
+  return normalizedPath === "/stock.html" || normalizedPath === "/main_inventory_embed.html";
+}
+
 function buildStockWorkspaceUrl(role = activeStockWorkspaceRole) {
   return normalizeStockWorkspaceRole(role) === STOCK_WORKSPACE_ROLES.EMPLOYEE
     ? "/employee_stock.html"
-    : "/stock.html";
+    : "/main.html#inventory";
 }
 
 function isEmployeeStockWorkspace() {
@@ -262,11 +359,31 @@ function isEmployeeStockWorkspace() {
 }
 
 function readStockSessionStorageJson(key) {
-  try {
-    return JSON.parse(window.sessionStorage?.getItem(key) || "null");
-  } catch (error) {
-    return null;
+  const readFromStorage = (storage) => {
+    try {
+      const parsed = JSON.parse(storage?.getItem(key) || "null");
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const localValue = readFromStorage(window.sessionStorage);
+  if (localValue) {
+    return localValue;
   }
+
+  if (window.parent !== window) {
+    try {
+      if (window.parent.location.origin === window.location.origin) {
+        return readFromStorage(window.parent.sessionStorage);
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 function normalizeStockAdminTenantId(value, fallback = "") {
@@ -313,7 +430,32 @@ function getStoredStockAdminTenantId() {
   }
 }
 
+function rememberEmbeddedMainInventoryAuth(adminId, sessionToken = "") {
+  const normalizedAdminId = normalizeStockAdminTenantId(adminId, "");
+  if (!isUsableStockAdminTenantId(normalizedAdminId)) {
+    return false;
+  }
+
+  embeddedMainInventoryAdminId = normalizedAdminId;
+  embeddedMainInventorySessionToken = String(sessionToken ?? "").trim();
+
+  try {
+    window.localStorage?.setItem("gms-admin-id", normalizedAdminId);
+  } catch (error) {
+    // Ignore storage failures in embedded mode.
+  }
+
+  return true;
+}
+
 function getActiveStockAdminTenantId() {
+  if (
+    isMainInventoryStockWorkspace()
+    && isUsableStockAdminTenantId(embeddedMainInventoryAdminId)
+  ) {
+    return embeddedMainInventoryAdminId;
+  }
+
   const employeeSession = readStockSessionStorageJson("gms-employee-session");
   const employeeAdminId = resolveStockAdminTenantIdFromSession(employeeSession, "");
   if (isUsableStockAdminTenantId(employeeAdminId)) {
@@ -457,7 +599,7 @@ function hasStockEmployeeAccessToCurrentPage(session) {
     return !isAdminLiveChatReadOnlyWorkspace();
   }
 
-  if (pathname === "/stock.html" && explicitRole === STOCK_WORKSPACE_ROLES.ADMIN) {
+  if (isAdminInventoryPagePath(pathname) && explicitRole === STOCK_WORKSPACE_ROLES.ADMIN) {
     return true;
   }
 
@@ -995,7 +1137,7 @@ function applyStockWorkspaceRole() {
   if (stockWorkspaceLink) {
     stockWorkspaceLink.setAttribute(
       "href",
-      isEmployeeWorkspace ? "/employee_dashboard.html" : "/admin_dashboard.html",
+      isEmployeeWorkspace ? "/employee_dashboard.html" : "/main.html#inventory",
     );
     stockWorkspaceLink.setAttribute(
       "aria-label",
@@ -1043,7 +1185,7 @@ function applyStockWorkspaceRole() {
   }
 
   configureStockWorkspaceNavItem(stockWorkspaceNavItems.dashboard, {
-    href: isEmployeeWorkspace ? "/employee_dashboard.html" : "/admin_dashboard.html",
+    href: isEmployeeWorkspace ? "/employee_dashboard.html" : "/main.html#dashboard",
     ariaLabel: isEmployeeWorkspace ? "Employee dashboard" : "Dashboard",
     title: isEmployeeWorkspace ? "Employee dashboard" : "Dashboard",
     label: "Dashboard",
@@ -1116,12 +1258,14 @@ function applyStockWorkspaceRole() {
 }
 
 function syncStockModalOpenClass() {
+  const hasEditModal = Boolean(document.querySelector(".stock-edit-modal-overlay"));
   const hasOpenModal = Boolean(
-    document.querySelector(".stock-edit-modal-overlay")
+    hasEditModal
     || document.querySelector(".stock-delete-modal-overlay:not([hidden])")
     || document.querySelector(".stock-success-modal-overlay:not([hidden])"),
   );
   document.body.classList.toggle("modal-open", hasOpenModal);
+  notifyMainInventoryStockEditModalState(hasEditModal);
 }
 
 function setSummaryValue(element, value) {
@@ -1130,6 +1274,440 @@ function setSummaryValue(element, value) {
   }
 
   element.textContent = String(value);
+}
+
+function activateMainInventoryStockMode() {
+  if (!isMainInventoryStockWorkspace()) {
+    return false;
+  }
+
+  document.body.classList.add(
+    "stock-main-inventory-embedded",
+    "stock-inventory-table-view",
+    "stock-record-modal-surface",
+  );
+  document.querySelector(".stock-summary-grid")?.classList.add("super-admin-stats");
+  return true;
+}
+
+function notifyMainInventoryStockRecordModalState(isOpen) {
+  if (window.parent === window) {
+    return;
+  }
+
+  window.parent.postMessage(
+    {
+      type: "gms-main-inventory-stock-record-modal-state",
+      isOpen: Boolean(isOpen),
+    },
+    window.location.origin,
+  );
+}
+
+function notifyMainInventoryStockEditModalState(isOpen) {
+  if (window.parent === window) {
+    return;
+  }
+
+  window.parent.postMessage(
+    {
+      type: "gms-main-inventory-stock-edit-modal-state",
+      isOpen: Boolean(isOpen),
+    },
+    window.location.origin,
+  );
+}
+
+function setStockRecordDrawerOpen(isOpen) {
+  if (!activateMainInventoryStockMode()) {
+    return;
+  }
+
+  const shouldOpen = Boolean(isOpen);
+  document.body.classList.toggle("stock-record-drawer-open", shouldOpen);
+  if (stockRecordDrawerBackdrop instanceof HTMLElement) {
+    stockRecordDrawerBackdrop.hidden = !shouldOpen;
+  }
+  if (stockRecordDrawerPanel instanceof HTMLElement) {
+    stockRecordDrawerPanel.setAttribute("aria-hidden", shouldOpen ? "false" : "true");
+  }
+  notifyMainInventoryStockRecordModalState(shouldOpen);
+}
+
+function renderStockRecordDrawerIcon(product) {
+  if (!stockRecordDrawerIcon) {
+    return;
+  }
+
+  stockRecordDrawerIcon.innerHTML = "";
+  if (product?.imageUrl) {
+    const image = document.createElement("img");
+    image.src = product.imageUrl;
+    image.alt = product.name ? `${product.name} image` : "Product image";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.addEventListener("error", () => {
+      stockRecordDrawerIcon.innerHTML = stockSquarePenIconMarkup;
+    });
+    stockRecordDrawerIcon.appendChild(image);
+    return;
+  }
+
+  stockRecordDrawerIcon.innerHTML = stockSquarePenIconMarkup;
+}
+
+function isStockMovementDrawerMode() {
+  return stockRecordDrawerMode === "movement";
+}
+
+function syncStockRecordDrawer(product, subtitleOverride = "") {
+  const hasProduct = Boolean(product);
+  const isMovementView = hasProduct && isStockMovementDrawerMode();
+  if (stockRecordDrawerPanel instanceof HTMLElement) {
+    stockRecordDrawerPanel.classList.toggle("is-movement-view", isMovementView);
+  }
+  if (stockRecordDrawerTitle) {
+    stockRecordDrawerTitle.textContent = isMovementView ? "Stock Movement" : "Stock Records";
+  }
+  if (stockRecordDrawerSubtitle) {
+    stockRecordDrawerSubtitle.textContent = hasProduct
+      ? `${product.name || "Unnamed Product"} - ${
+        subtitleOverride
+        || (isMovementView
+          ? `${product.category || "General"} add stock history`
+          : `${product.category || "General"} record list`)
+      }`
+      : isStockMovementDrawerMode()
+        ? "Select a product to review its added stock history."
+        : "Select a product to review its stock history.";
+  }
+  renderStockRecordDrawerIcon(product);
+  if (!hasProduct) {
+    stockRecordBatchFilterKey = "all";
+  }
+  syncStockRecordBatchFilterControl(product);
+  if (!activateMainInventoryStockMode()) {
+    return;
+  }
+  setStockRecordDrawerOpen(hasProduct);
+}
+
+function getStockRecordBatchFilterLabel(expiryDate) {
+  return hasStockExpiryDate(expiryDate)
+    ? formatExpiryDateDisplay(expiryDate, "Dated batch")
+    : "No expiry date";
+}
+
+function getStockRecordBatchFilterOptions(product) {
+  const options = [{ key: "all", label: "All" }];
+  const seen = new Set(["all"]);
+
+  const addOption = (expiryDate) => {
+    const key = getInventoryExpiryBatchKey(expiryDate);
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    options.push({
+      key,
+      label: getStockRecordBatchFilterLabel(expiryDate),
+      expiryDate: hasStockExpiryDate(expiryDate) ? String(expiryDate).trim() : "",
+    });
+  };
+
+  getInventoryExpiryBatches(product).forEach((batch) => {
+    addOption(batch?.expiryDate);
+  });
+  getProductStockHistoryRecords(product).forEach((record) => {
+    addOption(record?.expiryDate);
+  });
+
+  const [allOption, ...batchOptions] = options;
+  batchOptions.sort((left, right) => {
+    const leftIsUndated = left.key === "none";
+    const rightIsUndated = right.key === "none";
+    if (leftIsUndated !== rightIsUndated) {
+      return leftIsUndated ? -1 : 1;
+    }
+    const leftDay = getLocalDateStartTimestamp(left.expiryDate);
+    const rightDay = getLocalDateStartTimestamp(right.expiryDate);
+    return (Number.isFinite(leftDay) ? leftDay : Number.MAX_SAFE_INTEGER)
+      - (Number.isFinite(rightDay) ? rightDay : Number.MAX_SAFE_INTEGER);
+  });
+  return [allOption, ...batchOptions];
+}
+
+function countStockRecordBatchFilterBatches(product) {
+  return Math.max(0, getStockRecordBatchFilterOptions(product).length - 1);
+}
+
+function productHasStockRecordBatchFilter(product) {
+  // Only offer batch sorting when there are at least 2 distinct expiry batches.
+  return countStockRecordBatchFilterBatches(product) >= 2;
+}
+
+function getActiveStockRecordDisplayProduct() {
+  if (!selectedStockProductId) {
+    return null;
+  }
+  const displayProducts = getStockDisplayProducts(currentStockProducts);
+  return displayProducts.find(
+    (product) => getStockProductIdentifier(product) === selectedStockProductId,
+  ) || null;
+}
+
+function closeStockRecordBatchFilterMenu() {
+  if (typeof closeOpenStockRecordBatchFilterMenu === "function") {
+    closeOpenStockRecordBatchFilterMenu();
+  }
+}
+
+function syncStockRecordBatchFilterControl(product) {
+  if (!(stockRecordBatchFilterHost instanceof HTMLElement)) {
+    return;
+  }
+
+  closeStockRecordBatchFilterMenu();
+  stockRecordBatchFilterHost.replaceChildren();
+  stockRecordBatchFilterHost.hidden = true;
+
+  if (!product || !activateMainInventoryStockMode()) {
+    stockRecordBatchFilterKey = "all";
+    delete stockRecordBatchFilterHost.dataset.stockRecordFilterProductId;
+    return;
+  }
+
+  const productIdentifier = getStockProductIdentifier(product);
+  if (
+    stockRecordBatchFilterHost.dataset.stockRecordFilterProductId !== productIdentifier
+  ) {
+    stockRecordBatchFilterHost.dataset.stockRecordFilterProductId = productIdentifier;
+    stockRecordBatchFilterKey = "all";
+  }
+
+  const filterOptions = getStockRecordBatchFilterOptions(product);
+  // Hide sorting for single-batch / no-batch products so all records stay visible.
+  if (!productHasStockRecordBatchFilter(product)) {
+    stockRecordBatchFilterKey = "all";
+    return;
+  }
+
+  if (!filterOptions.some((option) => option.key === stockRecordBatchFilterKey)) {
+    stockRecordBatchFilterKey = "all";
+  }
+
+  const dropdownId = `stock-record-batch-filter-${++stockRecordBatchFilterSerial}`;
+  const fieldGroup = document.createElement("div");
+  fieldGroup.className = "stock-record-batch-filter__dropdown stock-deduct-reason-dropdown";
+
+  const select = document.createElement("select");
+  select.className = "stock-deduct-reason-dropdown__native";
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
+  filterOptions.forEach((option) => {
+    const optionElement = document.createElement("option");
+    optionElement.value = option.key;
+    optionElement.textContent = option.label;
+    select.appendChild(optionElement);
+  });
+  select.value = stockRecordBatchFilterKey;
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "stock-deduct-reason-dropdown__trigger stock-record-batch-filter__trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-controls", `${dropdownId}-menu`);
+  trigger.setAttribute("aria-label", "Filter stock records by batch");
+  trigger.title = "Filter by batch";
+
+  const triggerLabel = document.createElement("span");
+  triggerLabel.className = "stock-deduct-reason-dropdown__label";
+
+  const triggerIcon = document.createElement("span");
+  triggerIcon.className = "stock-record-batch-filter__icon";
+  triggerIcon.setAttribute("aria-hidden", "true");
+  triggerIcon.innerHTML = STOCK_EXPIRY_DETAILS_ICON_MARKUP;
+
+  const triggerArrow = document.createElement("span");
+  triggerArrow.className = "stock-deduct-reason-dropdown__arrow";
+  triggerArrow.setAttribute("aria-hidden", "true");
+  triggerArrow.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>`;
+  trigger.append(triggerIcon, triggerLabel, triggerArrow);
+
+  const menu = document.createElement("div");
+  menu.id = `${dropdownId}-menu`;
+  menu.className = "stock-deduct-reason-dropdown__menu stock-record-batch-filter__menu";
+  menu.setAttribute("role", "listbox");
+  menu.setAttribute("aria-label", "Filter stock records by batch");
+  menu.hidden = true;
+
+  const optionButtons = filterOptions.map((option) => {
+    const optionButton = document.createElement("button");
+    optionButton.type = "button";
+    optionButton.className = "stock-deduct-reason-dropdown__option";
+    optionButton.dataset.batchFilterKey = option.key;
+    optionButton.setAttribute("role", "option");
+    optionButton.setAttribute("aria-selected", "false");
+    optionButton.textContent = option.label;
+    optionButton.addEventListener("click", () => {
+      select.value = option.key;
+      setBatchMenuOpen(false);
+      applyStockRecordBatchFilter(option.key);
+      trigger.focus();
+    });
+    menu.appendChild(optionButton);
+    return optionButton;
+  });
+
+  function syncBatchFilterUi() {
+    const currentValue = String(select.value || "all");
+    const selectedOption = filterOptions.find((option) => option.key === currentValue)
+      || filterOptions[0];
+    triggerLabel.textContent = selectedOption?.label || "All";
+    optionButtons.forEach((optionButton) => {
+      const isSelected = optionButton.dataset.batchFilterKey === currentValue;
+      optionButton.classList.toggle("is-selected", isSelected);
+      optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
+    });
+  }
+
+  function setBatchMenuOpen(isOpen) {
+    const nextOpen = Boolean(isOpen);
+    fieldGroup.classList.toggle("is-open", nextOpen);
+    trigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    menu.hidden = !nextOpen;
+    if (nextOpen) {
+      if (
+        typeof closeOpenStockRecordBatchFilterMenu === "function"
+        && closeOpenStockRecordBatchFilterMenu !== closeThisMenu
+      ) {
+        closeOpenStockRecordBatchFilterMenu();
+      }
+      closeOpenStockRecordBatchFilterMenu = closeThisMenu;
+      const selectedButton = optionButtons.find((button) => button.classList.contains("is-selected"));
+      window.requestAnimationFrame(() => (selectedButton || optionButtons[0])?.focus());
+    } else if (closeOpenStockRecordBatchFilterMenu === closeThisMenu) {
+      closeOpenStockRecordBatchFilterMenu = null;
+    }
+  }
+
+  function closeThisMenu() {
+    setBatchMenuOpen(false);
+  }
+
+  function handlePointerDown(event) {
+    if (!fieldGroup.isConnected) {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      return;
+    }
+    if (!fieldGroup.classList.contains("is-open")) {
+      return;
+    }
+    if (event.target instanceof Node && fieldGroup.contains(event.target)) {
+      return;
+    }
+    setBatchMenuOpen(false);
+  }
+
+  trigger.addEventListener("click", () => {
+    setBatchMenuOpen(!fieldGroup.classList.contains("is-open"));
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setBatchMenuOpen(false);
+      trigger.focus();
+    }
+  });
+  document.addEventListener("pointerdown", handlePointerDown, true);
+
+  fieldGroup.append(select, trigger, menu);
+  stockRecordBatchFilterHost.appendChild(fieldGroup);
+  stockRecordBatchFilterHost.hidden = false;
+  syncBatchFilterUi();
+}
+
+function applyStockRecordBatchFilter(nextFilterKey) {
+  const normalizedKey = String(nextFilterKey ?? "all").trim() || "all";
+  if (stockRecordBatchFilterKey === normalizedKey) {
+    return;
+  }
+  stockRecordBatchFilterKey = normalizedKey;
+  const activeProduct = getActiveStockRecordDisplayProduct();
+  if (activeProduct) {
+    renderStockDetails(activeProduct);
+  }
+}
+
+function filterStockRecordRowsByBatch(rows, filterKey = stockRecordBatchFilterKey, product = null) {
+  const normalizedFilterKey = String(filterKey ?? "all").trim() || "all";
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  // Products without multiple batches should always show the full record list.
+  if (
+    normalizedFilterKey === "all"
+    || (product && !productHasStockRecordBatchFilter(product))
+  ) {
+    return sourceRows;
+  }
+  return sourceRows.filter((row) =>
+    String(row?.expiryBatchKey ?? "") === normalizedFilterKey
+  );
+}
+
+function closeStockRecordDrawer() {
+  if (!isMainInventoryStockWorkspace()) {
+    return;
+  }
+
+  if (document.body.classList.contains("stock-record-modal-closing")) {
+    return;
+  }
+
+  const previouslySelectedProductId = selectedStockProductId;
+  selectedStockProductId = "";
+  editingStockProductId = "";
+  stockRecordDrawerMode = "records";
+  stockRecordBatchFilterKey = "all";
+  closeStockRecordBatchFilterMenu();
+  removeStockEditModalOverlay();
+  closeStockActionDropdown();
+  closeNearExpiryBatchOverlay();
+
+  // Freeze the record surface and hide inventory underneath while the parent
+  // modal animates out — prevents the inventory table flashing mid-close.
+  document.body.classList.add("stock-record-modal-closing");
+  notifyMainInventoryStockRecordModalState(false);
+  if (stockRecordDrawerBackdrop instanceof HTMLElement) {
+    stockRecordDrawerBackdrop.hidden = true;
+  }
+
+  window.setTimeout(() => {
+    document.body.classList.remove(
+      "stock-record-drawer-open",
+      "stock-record-modal-closing",
+    );
+    if (stockRecordDrawerPanel instanceof HTMLElement) {
+      stockRecordDrawerPanel.setAttribute("aria-hidden", "true");
+      stockRecordDrawerPanel.classList.remove("is-movement-view");
+    }
+
+    const displayProducts = getStockDisplayProducts(currentStockProducts);
+    const filteredProducts = getFilteredStockProducts(displayProducts);
+    syncSelectedStockProduct(filteredProducts);
+    syncStockPriorityFilterButtons();
+    setSummary(filteredProducts);
+    renderProducts(filteredProducts);
+
+    if (!selectedStockProductId) {
+      renderStockDetails(null);
+    }
+
+    window.requestAnimationFrame(() => {
+      getStockProductCardElement(previouslySelectedProductId)?.focus();
+    });
+  }, 280);
 }
 
 function normalizeStockSearchTerm(value) {
@@ -1260,7 +1838,10 @@ function getFilteredStockProducts(
   }
 
   if (normalizedFilter === "near-expiry") {
-    return categoryFilteredProducts.filter((product) => isNearExpiryProduct(product));
+    return categoryFilteredProducts.filter((product) =>
+      isNearExpiryProduct(product)
+      || groupNearExpiryInventoryBatches(product).length > 0,
+    );
   }
 
   if (normalizedFilter === "expired-product" || normalizedFilter === "expired") {
@@ -1306,6 +1887,11 @@ function normalizeStockPriorityFilter(value) {
   }
 
   return "all";
+}
+
+function isInventoryWarningTableView() {
+  const filter = normalizeStockPriorityFilter(stockPriorityFilter);
+  return filter === "near-expiry" || filter === "expired-product";
 }
 
 function getStockPriorityFilterLabel(filter = stockPriorityFilter) {
@@ -1395,6 +1981,7 @@ function renderStockCategoryFilterOptions(products = currentStockProducts) {
     option.textContent = optionConfig.label;
     option.addEventListener("click", () => {
       stockCategoryFilter = optionConfig.value;
+      stockInventoryPage = 1;
       syncStockCategoryFilterSummary();
       renderStockCategoryFilterOptions(currentStockProducts);
       setStockCategoryFilterOpen(false);
@@ -1509,9 +2096,65 @@ function getProductNewStockDate(product) {
     return explicitDate;
   }
 
-  return getProductNewStockCount(product) > 0
-    ? String(getProductExpiryDate(product) ?? "").trim()
-    : "";
+  return "";
+}
+
+function getProductBatchExpiryDate(product) {
+  if (isSplitStockDisplayEntry(product)) {
+    return String(getProductExpiryDate(product) ?? "").trim();
+  }
+
+  const newStockExpiryDate = getProductNewStockDate(product);
+  const oldStockExpiryDate = getProductOldStockExpiryDate(product);
+  const { oldStock, newStock } = getProductStockBreakdown(product);
+  if (oldStock > 0 && newStock > 0) {
+    if (newStockExpiryDate && !oldStockExpiryDate) {
+      return newStockExpiryDate;
+    }
+    if (oldStockExpiryDate && !newStockExpiryDate) {
+      return oldStockExpiryDate;
+    }
+    if (oldStockExpiryDate && newStockExpiryDate) {
+      return isStockExpiryDateAhead(oldStockExpiryDate, newStockExpiryDate)
+        ? oldStockExpiryDate
+        : newStockExpiryDate;
+    }
+    return "";
+  }
+
+  return String(getProductExpiryDate(product) ?? "").trim();
+}
+
+function inferPreviousStockExpiryFromHistory(product) {
+  const historyRecords = getProductStockHistoryRecords(product);
+  if (!historyRecords.length) {
+    return "";
+  }
+
+  const restockedAt = String(getProductLastRestockedDate(product) ?? "").trim();
+  const restockedAtTimestamp = Date.parse(restockedAt);
+  const candidateRecords = historyRecords
+    .filter((record) => {
+      const recordExpiryDate = String(record?.expiryDate ?? "").trim();
+      if (!recordExpiryDate) {
+        return false;
+      }
+
+      if (!Number.isFinite(restockedAtTimestamp)) {
+        return true;
+      }
+
+      const recordTimestamp = Date.parse(String(record?.modifiedAt ?? "").trim());
+      return !Number.isFinite(recordTimestamp) || recordTimestamp < restockedAtTimestamp;
+    })
+    .sort((left, right) => {
+      const leftTimestamp = Date.parse(String(left?.modifiedAt ?? "").trim());
+      const rightTimestamp = Date.parse(String(right?.modifiedAt ?? "").trim());
+      return (Number.isFinite(rightTimestamp) ? rightTimestamp : 0) -
+        (Number.isFinite(leftTimestamp) ? leftTimestamp : 0);
+    });
+
+  return String(candidateRecords[0]?.expiryDate ?? "").trim();
 }
 
 function getProductOldStockExpiryDate(product) {
@@ -1527,8 +2170,26 @@ function getProductOldStockExpiryDate(product) {
   }
 
   const currentExpiryDate = String(getProductExpiryDate(product) ?? "").trim();
-  if (getProductOldStockCount(product) > 0 && getProductNewStockCount(product) <= 0 && currentExpiryDate) {
+  const oldStockCount = getProductOldStockCount(product);
+  const newStockCount = getProductNewStockCount(product);
+  if (oldStockCount > 0 && newStockCount <= 0 && currentExpiryDate) {
     return currentExpiryDate;
+  }
+
+  if (oldStockCount > 0 && newStockCount > 0) {
+    const inferredHistoryExpiryDate = inferPreviousStockExpiryFromHistory(product);
+    if (inferredHistoryExpiryDate) {
+      return inferredHistoryExpiryDate;
+    }
+
+    // Keep a usable previous expiry when restock meta lost the old date but the
+    // product still carries one (prevents OK + expired stock from staying merged).
+    if (currentExpiryDate) {
+      const newStockExpiryDate = String(getProductNewStockDate(product) ?? "").trim();
+      if (!newStockExpiryDate || newStockExpiryDate !== currentExpiryDate) {
+        return currentExpiryDate;
+      }
+    }
   }
 
   return "";
@@ -1547,18 +2208,40 @@ function getProductStockBreakdown(product) {
     };
   }
 
-  const storedOldStock = Math.max(0, getProductOldStockCount(product));
-  const storedNewStock = Math.max(0, getProductNewStockCount(product));
-  if (storedOldStock > 0 || storedNewStock > 0) {
+  let storedOldStock = Math.max(0, getProductOldStockCount(product));
+  let storedNewStock = Math.max(0, getProductNewStockCount(product));
+  if (storedOldStock <= 0 && storedNewStock <= 0) {
     return {
-      oldStock: storedOldStock,
-      newStock: storedNewStock,
+      oldStock: totalStock,
+      newStock: 0,
     };
   }
 
+  const storedTotalStock = storedOldStock + storedNewStock;
+  if (storedTotalStock > totalStock) {
+    // Reconcile legacy records using the same priority order as app checkout.
+    // Newer order movements update both totals and batch metadata atomically.
+    let remainingToRemove = storedTotalStock - totalStock;
+    const deductOldFirst = mapSellPriorityBatchKeyToOldNew(
+      getSellPrioritySourceBatch(product),
+      product,
+    ) === "old";
+    if (deductOldFirst) {
+      const removedFromOldStock = Math.min(storedOldStock, remainingToRemove);
+      storedOldStock -= removedFromOldStock;
+      remainingToRemove -= removedFromOldStock;
+      storedNewStock = Math.max(0, storedNewStock - remainingToRemove);
+    } else {
+      const removedFromNewStock = Math.min(storedNewStock, remainingToRemove);
+      storedNewStock -= removedFromNewStock;
+      remainingToRemove -= removedFromNewStock;
+      storedOldStock = Math.max(0, storedOldStock - remainingToRemove);
+    }
+  }
+
   return {
-    oldStock: totalStock,
-    newStock: 0,
+    oldStock: storedOldStock,
+    newStock: storedNewStock,
   };
 }
 
@@ -1572,6 +2255,10 @@ function isExpiryDateValueExpired(value) {
 }
 
 function isNearExpiryDateValue(value) {
+  if (!hasStockExpiryDate(value)) {
+    return false;
+  }
+
   const expiryDayStartTimestamp = getLocalDateStartTimestamp(value);
   if (!Number.isFinite(expiryDayStartTimestamp) || isExpiryDateValueExpired(value)) {
     return false;
@@ -1579,6 +2266,347 @@ function isNearExpiryDateValue(value) {
 
   const timeUntilExpiry = expiryDayStartTimestamp - getTodayStartTimestamp();
   return timeUntilExpiry >= 0 && timeUntilExpiry <= STOCK_NEAR_EXPIRY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
+
+function getDaysUntilExpiryValue(value) {
+  const expiryDayStartTimestamp = getLocalDateStartTimestamp(value);
+  if (!Number.isFinite(expiryDayStartTimestamp)) {
+    return null;
+  }
+
+  return Math.round(
+    (expiryDayStartTimestamp - getTodayStartTimestamp()) / (24 * 60 * 60 * 1000),
+  );
+}
+
+function isSellPriorityLockedForExpiryDate(value) {
+  const daysUntilExpiry = getDaysUntilExpiryValue(value);
+  return daysUntilExpiry !== null
+    && daysUntilExpiry >= 0
+    && daysUntilExpiry <= STOCK_SELL_PRIORITY_LOCK_DAYS;
+}
+
+function normalizeSellPriorityBatchKey(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  if (
+    normalizedValue === "old"
+    || normalizedValue === "new"
+    || normalizedValue === "undated"
+  ) {
+    return normalizedValue;
+  }
+  if (/^dated-\d+$/.test(normalizedValue)) {
+    return normalizedValue;
+  }
+  return "";
+}
+
+function resolveExpiryDetailPriorityBatchKey(batch, sourceBatchOverride = "") {
+  if (batch && !hasStockExpiryDate(batch.expiryDate)) {
+    return "undated";
+  }
+  return normalizeSellPriorityBatchKey(
+    sourceBatchOverride || batch?.sourceBatch || "",
+  );
+}
+
+function mapSellPriorityBatchKeyToOldNew(priorityKey, product) {
+  const key = normalizeSellPriorityBatchKey(priorityKey);
+  if (key === "old" || key === "new") {
+    return key;
+  }
+
+  const oldExpiryDate = String(getProductOldStockExpiryDate(product) ?? "").trim();
+  const newExpiryDate = String(getProductNewStockDate(product) ?? "").trim();
+
+  if (key === "undated") {
+    if (!hasStockExpiryDate(oldExpiryDate)) {
+      return "old";
+    }
+    if (!hasStockExpiryDate(newExpiryDate)) {
+      return "new";
+    }
+    return "old";
+  }
+
+  if (key.startsWith("dated-")) {
+    const priorityDay = Number(key.slice(6));
+    const oldDay = getLocalDateStartTimestamp(oldExpiryDate);
+    const newDay = getLocalDateStartTimestamp(newExpiryDate);
+    if (Number.isFinite(priorityDay) && Number.isFinite(oldDay) && priorityDay === oldDay) {
+      return "old";
+    }
+    if (Number.isFinite(priorityDay) && Number.isFinite(newDay) && priorityDay === newDay) {
+      return "new";
+    }
+  }
+
+  return "";
+}
+
+function getSellPrioritySourceBatch(product) {
+  const sourceProduct = getStockSourceProduct(product);
+  const productId = String(sourceProduct?.id ?? "").trim();
+  const liveProduct = productId
+    ? currentStockProducts.find((candidate) => String(candidate?.id ?? "").trim() === productId)
+    : null;
+  return normalizeSellPriorityBatchKey(
+    (liveProduct ?? sourceProduct)?.sellPrioritySourceBatch ?? "",
+  );
+}
+
+function canShowSellPriorityControl(product, sourceBatchOverride = "") {
+  if (isEmployeeStockWorkspace() || isEmbeddedLiveChatStockWorkspace()) {
+    return false;
+  }
+  if (isExpiredStockDisplayEntry(product) || isExpiredInventoryRow(product)) {
+    return false;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  const sellableBatches = getClassifiedInventoryBatches(sourceProduct)
+    .filter((batch) => !batch.isExpired && batch.stock > 0);
+  if (sellableBatches.length < 2 || !sellableBatches.some((batch) => batch.isNearExpiry)) {
+    return false;
+  }
+
+  const currentSourceBatch = normalizeSellPriorityBatchKey(
+    sourceBatchOverride || getStockDisplaySourceBatch(product) || "",
+  );
+  if (currentSourceBatch !== "old" && currentSourceBatch !== "new") {
+    return false;
+  }
+
+  const currentBatch = sellableBatches.find((batch) => batch.sourceBatch === currentSourceBatch);
+  if (!currentBatch || isExpiryDateValueExpired(currentBatch.expiryDate)) {
+    return false;
+  }
+
+  return true;
+}
+
+function canShowExpiryDetailSellPriorityControl(product, sourceBatchOverride = "") {
+  if (isEmployeeStockWorkspace() || isEmbeddedLiveChatStockWorkspace()) {
+    return false;
+  }
+  if (isExpiredStockDisplayEntry(product) || isExpiredInventoryRow(product)) {
+    return false;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  const sellableBatches = getInventoryExpiryBatches(sourceProduct)
+    .filter((batch) => !batch.isExpired && batch.stock > 0);
+  if (sellableBatches.length < 2) {
+    return false;
+  }
+
+  const currentSourceBatch = normalizeSellPriorityBatchKey(sourceBatchOverride);
+  if (!currentSourceBatch) {
+    return false;
+  }
+
+  const currentBatch = sellableBatches.find((batch) =>
+    resolveExpiryDetailPriorityBatchKey(batch) === currentSourceBatch
+  );
+  if (!currentBatch || currentBatch.isExpired || currentBatch.stock <= 0) {
+    return false;
+  }
+
+  return true;
+}
+
+function notifyExpiredStockNotAllowed() {
+  showStockEditorSnackbar(
+    "Expired stock",
+    "Expired stock cannot be added. Expired batches stay as records only and cannot be listed in the app.",
+    "error",
+  );
+}
+
+function notifyNearExpiryStockAddNotAllowed() {
+  showStockEditorSnackbar(
+    "Expiry too soon",
+    `Choose a date more than ${STOCK_SELL_PRIORITY_LOCK_DAYS} days from today. Dates within ${STOCK_SELL_PRIORITY_LOCK_DAYS} days cannot be added as new stock.`,
+    "error",
+  );
+}
+
+function isStockAddExpiryDateBlocked(value) {
+  return isExpiryDateValueExpired(value) || isSellPriorityLockedForExpiryDate(value);
+}
+
+function getSellPriorityLockedReason() {
+  return `Set Priority is locked within ${STOCK_SELL_PRIORITY_LOCK_DAYS} days of expiry. This batch is deducted from the listing.`;
+}
+
+function notifySellPriorityLocked() {
+  showStockEditorSnackbar(
+    "Set Priority unavailable",
+    `${getSellPriorityLockedReason()} It stays as an inventory record only.`,
+    "error",
+  );
+}
+
+function isExpiredInventoryRow(product) {
+  return isExpiredStockDisplayEntry(product) || isExpiredProduct(product);
+}
+
+function isNearExpiryInventoryRow(product) {
+  if (isExpiredInventoryRow(product)) {
+    return false;
+  }
+  if (getInventoryMainGoodBatch(product)) {
+    return false;
+  }
+  return isNearExpiryProduct(product)
+    || getClassifiedInventoryBatches(product).some((batch) => batch.isNearExpiry);
+}
+
+function canDeleteExpiredInventoryRow(product) {
+  if (isEmployeeStockWorkspace() || isEmbeddedLiveChatStockWorkspace()) {
+    return false;
+  }
+
+  return isExpiredInventoryRow(product) && getStock(product) > 0;
+}
+
+function getDeletableNearExpiryInventoryBatches(product) {
+  const sourceProduct = getStockSourceProduct(product);
+  const displaySourceBatch = isSplitStockDisplayEntry(product)
+    ? getStockDisplaySourceBatch(product)
+    : "";
+
+  return getInventoryExpiryBatches(sourceProduct).filter((batch) => {
+    if (batch.stock <= 0 || batch.isExpired) {
+      return false;
+    }
+    if (displaySourceBatch && batch.sourceBatch !== displaySourceBatch) {
+      return false;
+    }
+    return isSellPriorityLockedForExpiryDate(batch.expiryDate);
+  });
+}
+
+function canDeleteNearExpiryInventoryRow(product) {
+  if (isEmployeeStockWorkspace() || isEmbeddedLiveChatStockWorkspace()) {
+    return false;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  if (!String(sourceProduct?.id ?? "").trim()) {
+    return false;
+  }
+
+  const nearExpiryBatches = getDeletableNearExpiryInventoryBatches(product);
+  if (!nearExpiryBatches.length) {
+    return false;
+  }
+
+  // Keep delete hidden while any good/sellable stock remains.
+  // Only allow it when every remaining unit is near-expiry (within lock days) or expired.
+  const remainingBatches = getInventoryExpiryBatches(sourceProduct)
+    .filter((batch) => Math.max(0, Math.trunc(Number(batch?.stock) || 0)) > 0);
+  if (!remainingBatches.length) {
+    return false;
+  }
+
+  return remainingBatches.every((batch) =>
+    Boolean(batch?.isExpired)
+    || isSellPriorityLockedForExpiryDate(batch?.expiryDate)
+  );
+}
+
+function hideStockEditorSnackbar() {
+  const snackbar = stockEditorSnackbarElements?.root;
+  if (!(snackbar instanceof HTMLElement)) {
+    return;
+  }
+  window.clearTimeout(stockEditorSnackbarTimer);
+  stockEditorSnackbarTimer = 0;
+  const timerBar = stockEditorSnackbarElements?.timerBar;
+  if (timerBar instanceof HTMLElement) {
+    timerBar.classList.remove("is-running");
+  }
+  snackbar.classList.remove("is-visible");
+  window.setTimeout(() => {
+    if (!snackbar.classList.contains("is-visible")) {
+      snackbar.hidden = true;
+    }
+  }, 180);
+}
+
+function ensureStockEditorSnackbar() {
+  if (stockEditorSnackbarElements?.root?.isConnected) {
+    return stockEditorSnackbarElements;
+  }
+
+  const root = document.createElement("div");
+  root.className = "product-editor-snackbar";
+  root.hidden = true;
+  root.setAttribute("role", "status");
+  root.setAttribute("aria-live", "polite");
+
+  const icon = document.createElement("span");
+  icon.className = "product-editor-snackbar__icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <path d="M12 8v4"></path>
+      <path d="M12 16h.01"></path>
+    </svg>
+  `;
+
+  const copy = document.createElement("span");
+  copy.className = "product-editor-snackbar__copy";
+  const title = document.createElement("strong");
+  const message = document.createElement("span");
+  copy.append(title, message);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "product-editor-snackbar__close";
+  closeButton.setAttribute("aria-label", "Dismiss notification");
+  closeButton.title = "Dismiss";
+  closeButton.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M18 6 6 18"></path>
+      <path d="m6 6 12 12"></path>
+    </svg>
+  `;
+  closeButton.addEventListener("click", () => hideStockEditorSnackbar());
+
+  const timer = document.createElement("div");
+  timer.className = "product-editor-snackbar__timer";
+  timer.setAttribute("aria-hidden", "true");
+  const timerBar = document.createElement("span");
+  timerBar.className = "product-editor-snackbar__timer-bar";
+  timer.appendChild(timerBar);
+
+  root.append(icon, copy, closeButton, timer);
+  document.body?.appendChild(root);
+  stockEditorSnackbarElements = { root, title, message, timerBar };
+  return stockEditorSnackbarElements;
+}
+
+function showStockEditorSnackbar(title, message, mode = "warning") {
+  const snackbar = ensureStockEditorSnackbar();
+  snackbar.title.textContent = String(title || "Notice").trim() || "Notice";
+  snackbar.message.textContent = String(message || "").replace(/\s+/g, " ").trim();
+  snackbar.root.classList.toggle("is-error", mode === "error");
+  snackbar.root.classList.toggle("is-success", mode === "success");
+  snackbar.root.hidden = false;
+  window.clearTimeout(stockEditorSnackbarTimer);
+  window.requestAnimationFrame(() => {
+    snackbar.root.classList.add("is-visible");
+    snackbar.timerBar.classList.remove("is-running");
+    void snackbar.timerBar.offsetWidth;
+    snackbar.timerBar.classList.add("is-running");
+  });
+  stockEditorSnackbarTimer = window.setTimeout(
+    hideStockEditorSnackbar,
+    STOCK_SNACKBAR_AUTO_DISMISS_MS,
+  );
 }
 
 function isSplitStockDisplayEntry(product) {
@@ -1866,6 +2894,479 @@ function getStockDisplayIdentifierForRole(product, role = "") {
   return role ? `${baseIdentifier}::${role}` : baseIdentifier;
 }
 
+function getInventorySourceBatches(product) {
+  const sourceProduct = getStockSourceProduct(product);
+  const { oldStock, newStock } = getProductStockBreakdown(sourceProduct);
+  const productStockedDate = String(getProductStockedDate(sourceProduct) ?? "").trim();
+  const lastRestockedDate = String(getProductLastRestockedDate(sourceProduct) ?? "").trim();
+  const oldStockExpiryDate = String(getProductOldStockExpiryDate(sourceProduct) ?? "").trim();
+  const newStockExpiryDate = String(getProductNewStockDate(sourceProduct) ?? "").trim();
+  const batches = [];
+
+  if (oldStock > 0) {
+    batches.push({
+      sourceBatch: "old",
+      stock: oldStock,
+      expiryDate: oldStockExpiryDate,
+      stockedDate: productStockedDate,
+    });
+  }
+
+  if (newStock > 0) {
+    batches.push({
+      sourceBatch: "new",
+      stock: newStock,
+      expiryDate: newStockExpiryDate,
+      stockedDate: lastRestockedDate || productStockedDate,
+    });
+  }
+
+  return batches;
+}
+
+function classifyInventoryBatch(batch) {
+  const expiryDate = String(batch?.expiryDate ?? "").trim();
+  const isExpired = hasStockExpiryDate(expiryDate) && isExpiryDateValueExpired(expiryDate);
+  const isNearExpiry = !isExpired && isNearExpiryDateValue(expiryDate);
+  const rawSourceBatch = String(batch?.sourceBatch ?? "").trim().toLowerCase();
+  const sourceBatch = rawSourceBatch === "new"
+    ? "new"
+    : rawSourceBatch === "undated"
+      ? "undated"
+      : rawSourceBatch.startsWith("dated-")
+        ? rawSourceBatch
+        : "old";
+  return {
+    sourceBatch,
+    stock: Math.max(0, Math.trunc(Number(batch?.stock) || 0)),
+    expiryDate,
+    stockedDate: String(batch?.stockedDate ?? "").trim(),
+    isExpired,
+    isNearExpiry,
+    isGood: !isExpired && !isNearExpiry,
+  };
+}
+
+function getClassifiedInventoryBatches(product) {
+  return getInventorySourceBatches(product).map(classifyInventoryBatch);
+}
+
+function getInventoryExpiryBatchKey(expiryDate) {
+  if (!hasStockExpiryDate(expiryDate)) {
+    return "none";
+  }
+  const expiryDay = getLocalDateStartTimestamp(expiryDate);
+  if (Number.isFinite(expiryDay)) {
+    return `day:${expiryDay}`;
+  }
+  return `value:${String(expiryDate ?? "").trim().toLowerCase()}`;
+}
+
+function compareInventoryExpiryBatchDeductOrder(left, right) {
+  const leftExpired = hasStockExpiryDate(left?.expiryDate) && isExpiryDateValueExpired(left.expiryDate);
+  const rightExpired = hasStockExpiryDate(right?.expiryDate) && isExpiryDateValueExpired(right.expiryDate);
+  if (leftExpired !== rightExpired) {
+    return leftExpired ? -1 : 1;
+  }
+
+  const leftHasExpiry = hasStockExpiryDate(left?.expiryDate);
+  const rightHasExpiry = hasStockExpiryDate(right?.expiryDate);
+  if (leftHasExpiry !== rightHasExpiry) {
+    return leftHasExpiry ? -1 : 1;
+  }
+
+  const leftExpiry = getLocalDateStartTimestamp(left?.expiryDate);
+  const rightExpiry = getLocalDateStartTimestamp(right?.expiryDate);
+  if (Number.isFinite(leftExpiry) || Number.isFinite(rightExpiry)) {
+    return (Number.isFinite(leftExpiry) ? leftExpiry : Number.MAX_SAFE_INTEGER)
+      - (Number.isFinite(rightExpiry) ? rightExpiry : Number.MAX_SAFE_INTEGER);
+  }
+
+  const leftStocked = Date.parse(String(left?.stockedDate ?? "").trim());
+  const rightStocked = Date.parse(String(right?.stockedDate ?? "").trim());
+  return (Number.isFinite(leftStocked) ? leftStocked : 0)
+    - (Number.isFinite(rightStocked) ? rightStocked : 0);
+}
+
+function deductInventoryExpiryBatchStock(batchesByKey, quantity) {
+  let remaining = Math.max(0, Math.trunc(Number(quantity) || 0));
+  if (remaining <= 0) {
+    return;
+  }
+
+  const orderedBatches = [...batchesByKey.values()]
+    .filter((batch) => batch.stock > 0)
+    .sort(compareInventoryExpiryBatchDeductOrder);
+
+  for (const batch of orderedBatches) {
+    if (remaining <= 0) {
+      break;
+    }
+    const take = Math.min(batch.stock, remaining);
+    batch.stock -= take;
+    remaining -= take;
+  }
+}
+
+function reconcileInventoryExpiryBatchStocks(batchesByKey, totalStock) {
+  const targetStock = Math.max(0, Math.trunc(Number(totalStock) || 0));
+  let currentStock = [...batchesByKey.values()].reduce((sum, batch) => sum + batch.stock, 0);
+
+  if (currentStock > targetStock) {
+    deductInventoryExpiryBatchStock(batchesByKey, currentStock - targetStock);
+    return;
+  }
+
+  if (currentStock < targetStock) {
+    const undatedKey = getInventoryExpiryBatchKey("");
+    let undatedBatch = batchesByKey.get(undatedKey);
+    if (!undatedBatch) {
+      undatedBatch = {
+        key: undatedKey,
+        expiryDate: "",
+        stock: 0,
+        stockedDate: "",
+      };
+      batchesByKey.set(undatedKey, undatedBatch);
+    }
+    undatedBatch.stock += targetStock - currentStock;
+  }
+}
+
+function buildInventoryExpiryBatchesFromHistory(product) {
+  const historyRecords = getProductStockHistoryRecords(product);
+  if (!historyRecords.length) {
+    return null;
+  }
+
+  const chronologicalRecords = historyRecords
+    .slice()
+    .sort((left, right) => {
+      const leftTimestamp = Number.isFinite(left?.sortTimestamp) ? left.sortTimestamp : 0;
+      const rightTimestamp = Number.isFinite(right?.sortTimestamp) ? right.sortTimestamp : 0;
+      return leftTimestamp - rightTimestamp;
+    });
+
+  const hasAddOrInitialRecord = chronologicalRecords.some((record) => {
+    if (record.addedQuantity > 0) {
+      return true;
+    }
+    return isInitialAddProductStockHistoryRecord(record, product) && record.stock > 0;
+  });
+  if (!hasAddOrInitialRecord) {
+    return null;
+  }
+
+  const batchesByKey = new Map();
+  const ensureBatch = (expiryDate, stockedDate = "") => {
+    const key = getInventoryExpiryBatchKey(expiryDate);
+    let batch = batchesByKey.get(key);
+    if (!batch) {
+      batch = {
+        key,
+        expiryDate: hasStockExpiryDate(expiryDate) ? String(expiryDate).trim() : "",
+        stock: 0,
+        stockedDate: String(stockedDate ?? "").trim(),
+      };
+      batchesByKey.set(key, batch);
+      return batch;
+    }
+
+    const nextStockedDate = String(stockedDate ?? "").trim();
+    if (nextStockedDate) {
+      const existingTimestamp = Date.parse(batch.stockedDate);
+      const nextTimestamp = Date.parse(nextStockedDate);
+      if (
+        !batch.stockedDate
+        || !Number.isFinite(existingTimestamp)
+        || (Number.isFinite(nextTimestamp) && nextTimestamp < existingTimestamp)
+      ) {
+        batch.stockedDate = nextStockedDate;
+      }
+    }
+    return batch;
+  };
+
+  chronologicalRecords.forEach((record) => {
+    const addedQuantity = Math.max(0, Math.trunc(Number(record?.addedQuantity) || 0));
+    const deductedQuantity = Math.max(0, Math.trunc(Number(record?.deductedQuantity) || 0));
+    const recordStock = Math.max(0, Math.trunc(Number(record?.stock) || 0));
+    const isInitialRecord = isInitialAddProductStockHistoryRecord(record, product);
+    const effectiveAddQuantity = addedQuantity > 0
+      ? addedQuantity
+      : (isInitialRecord && deductedQuantity <= 0 ? recordStock : 0);
+
+    if (effectiveAddQuantity > 0) {
+      const batch = ensureBatch(record.expiryDate, record.modifiedAt);
+      batch.stock += effectiveAddQuantity;
+    }
+
+    if (deductedQuantity > 0) {
+      if (hasStockExpiryDate(record.expiryDate)) {
+        const batch = ensureBatch(record.expiryDate, record.modifiedAt);
+        batch.stock = Math.max(0, batch.stock - deductedQuantity);
+      } else {
+        const sourceKey = normalizeSellPriorityBatchKey(record?.sourceBatch);
+        if (sourceKey === "undated") {
+          const undatedBatch = batchesByKey.get(getInventoryExpiryBatchKey(""));
+          if (undatedBatch) {
+            undatedBatch.stock = Math.max(0, undatedBatch.stock - deductedQuantity);
+          } else {
+            deductInventoryExpiryBatchStock(batchesByKey, deductedQuantity);
+          }
+        } else {
+          deductInventoryExpiryBatchStock(batchesByKey, deductedQuantity);
+        }
+      }
+    }
+  });
+
+  reconcileInventoryExpiryBatchStocks(batchesByKey, getStock(product));
+
+  const remainingBatches = [...batchesByKey.values()].filter((batch) => batch.stock > 0);
+  return remainingBatches.length ? remainingBatches : null;
+}
+
+function resolveInventoryExpiryDetailSourceBatch(batch, product, latestExpiryDate, previousExpiryDate) {
+  if (!hasStockExpiryDate(batch?.expiryDate)) {
+    return "undated";
+  }
+  if (
+    hasStockExpiryDate(latestExpiryDate)
+    && stockBatchesShareExpiryDate(batch.expiryDate, latestExpiryDate)
+  ) {
+    return "new";
+  }
+  if (
+    hasStockExpiryDate(previousExpiryDate)
+    && stockBatchesShareExpiryDate(batch.expiryDate, previousExpiryDate)
+  ) {
+    return "old";
+  }
+  const expiryDay = getLocalDateStartTimestamp(batch.expiryDate);
+  return Number.isFinite(expiryDay) ? `dated-${expiryDay}` : "old";
+}
+
+function resolveInventoryExpiryDetailLabel(batch, sourceBatch, datedBatchCount) {
+  if (!hasStockExpiryDate(batch?.expiryDate)) {
+    return "No expiry date";
+  }
+  if (sourceBatch === "new") {
+    return "Latest stock";
+  }
+  if (sourceBatch === "old" || datedBatchCount <= 2) {
+    return "Previous stock";
+  }
+  return "Dated stock";
+}
+
+function getInventoryExpiryBatches(product) {
+  const sourceProduct = getStockSourceProduct(product);
+  const { oldStock, newStock } = getProductStockBreakdown(sourceProduct);
+  const hasRestockDetails = hasProductRestockDetails(sourceProduct);
+  const currentExpiryDate = String(getProductExpiryDate(sourceProduct) ?? "").trim();
+  const displayExpiryDate = String(getProductExpiryDate(product) ?? currentExpiryDate).trim();
+  const oldStockExpiryDate = String(
+    getProductOldStockExpiryDate(sourceProduct)
+      || (!hasRestockDetails ? currentExpiryDate : ""),
+  ).trim();
+  const newStockExpiryDate = String(getProductNewStockDate(sourceProduct) ?? "").trim();
+  const productStockedDate = String(getProductStockedDate(sourceProduct) ?? "").trim();
+  const lastRestockedDate = String(getProductLastRestockedDate(sourceProduct) ?? "").trim();
+  const displaySourceBatch = isSplitStockDisplayEntry(product)
+    ? getStockDisplaySourceBatch(product)
+    : "";
+  const candidates = [];
+
+  const addCandidate = (candidate) => {
+    const expiryDate = String(candidate?.expiryDate ?? "").trim();
+    const sourceBatch = String(candidate?.sourceBatch ?? "").trim().toLowerCase();
+    if (displaySourceBatch && sourceBatch !== displaySourceBatch) {
+      return;
+    }
+    const classifiedBatch = classifyInventoryBatch({
+      ...candidate,
+      expiryDate,
+    });
+    candidates.push({
+      ...classifiedBatch,
+      label: String(candidate?.label ?? "Current stock").trim() || "Current stock",
+      daysUntilExpiry: hasStockExpiryDate(expiryDate)
+        ? getDaysUntilExpiryValue(expiryDate)
+        : null,
+    });
+  };
+
+  const historyBatches = buildInventoryExpiryBatchesFromHistory(sourceProduct);
+  if (Array.isArray(historyBatches) && historyBatches.length) {
+    const datedBatchCount = historyBatches.filter((batch) => hasStockExpiryDate(batch.expiryDate)).length;
+    historyBatches.forEach((batch) => {
+      const sourceBatch = resolveInventoryExpiryDetailSourceBatch(
+        batch,
+        sourceProduct,
+        newStockExpiryDate,
+        oldStockExpiryDate,
+      );
+      addCandidate({
+        sourceBatch,
+        label: resolveInventoryExpiryDetailLabel(batch, sourceBatch, datedBatchCount),
+        stock: batch.stock,
+        expiryDate: batch.expiryDate,
+        stockedDate: batch.stockedDate || productStockedDate,
+      });
+    });
+  } else if (hasRestockDetails) {
+    if (oldStock > 0) {
+      addCandidate({
+        sourceBatch: hasStockExpiryDate(oldStockExpiryDate) ? "old" : "undated",
+        label: hasStockExpiryDate(oldStockExpiryDate) ? "Previous stock" : "No expiry date",
+        stock: oldStock,
+        expiryDate: oldStockExpiryDate,
+        stockedDate: productStockedDate,
+      });
+    }
+    if (newStock > 0) {
+      addCandidate({
+        sourceBatch: hasStockExpiryDate(newStockExpiryDate) ? "new" : "undated",
+        label: hasStockExpiryDate(newStockExpiryDate) ? "Latest stock" : "No expiry date",
+        stock: newStock,
+        expiryDate: newStockExpiryDate,
+        stockedDate: lastRestockedDate || productStockedDate,
+      });
+    }
+  } else {
+    const totalStock = getStock(sourceProduct);
+    if (totalStock > 0) {
+      addCandidate({
+        sourceBatch: hasStockExpiryDate(currentExpiryDate || oldStockExpiryDate) ? "old" : "undated",
+        label: hasStockExpiryDate(currentExpiryDate || oldStockExpiryDate)
+          ? "Current stock"
+          : "No expiry date",
+        stock: totalStock,
+        expiryDate: currentExpiryDate || oldStockExpiryDate,
+        stockedDate: productStockedDate,
+      });
+    }
+  }
+
+  if (!candidates.length && getStock(product) > 0 && hasStockExpiryDate(displayExpiryDate)) {
+    addCandidate({
+      sourceBatch: displaySourceBatch || "old",
+      label: displaySourceBatch === "new" ? "Latest stock" : "Current stock",
+      stock: getStock(product),
+      expiryDate: displayExpiryDate,
+      stockedDate: productStockedDate,
+    });
+  }
+
+  return candidates.sort((left, right) => {
+    const leftHasExpiry = hasStockExpiryDate(left.expiryDate);
+    const rightHasExpiry = hasStockExpiryDate(right.expiryDate);
+    if (leftHasExpiry !== rightHasExpiry) {
+      return leftHasExpiry ? -1 : 1;
+    }
+
+    const leftIsLatestStock = left.sourceBatch === "new";
+    const rightIsLatestStock = right.sourceBatch === "new";
+    if (leftIsLatestStock !== rightIsLatestStock) {
+      return leftIsLatestStock ? -1 : 1;
+    }
+
+    const leftStockedTimestamp = Date.parse(String(left.stockedDate ?? "").trim());
+    const rightStockedTimestamp = Date.parse(String(right.stockedDate ?? "").trim());
+    if (Number.isFinite(leftStockedTimestamp) || Number.isFinite(rightStockedTimestamp)) {
+      const stockedDateOrder = (Number.isFinite(rightStockedTimestamp) ? rightStockedTimestamp : 0)
+        - (Number.isFinite(leftStockedTimestamp) ? leftStockedTimestamp : 0);
+      if (stockedDateOrder !== 0) {
+        return stockedDateOrder;
+      }
+    }
+
+    const leftTimestamp = getLocalDateStartTimestamp(left.expiryDate);
+    const rightTimestamp = getLocalDateStartTimestamp(right.expiryDate);
+    const expiryOrder = (Number.isFinite(rightTimestamp) ? rightTimestamp : 0)
+      - (Number.isFinite(leftTimestamp) ? leftTimestamp : 0);
+    if (expiryOrder !== 0) {
+      return expiryOrder;
+    }
+    return 0;
+  });
+}
+
+function hasInventoryExpiryDetails(product) {
+  // Calendar / expiry details is only needed when there are multiple batches to manage.
+  // A single stock pool is the automatic default deduct target — no priority setup.
+  return getInventoryExpiryBatches(product).filter((batch) => batch.stock > 0).length >= 2;
+}
+
+function getInventoryBatchExpiryKey(expiryDate) {
+  const expiryDay = getLocalDateStartTimestamp(expiryDate);
+  if (Number.isFinite(expiryDay)) {
+    return `day:${expiryDay}`;
+  }
+  const normalizedExpiryDate = String(expiryDate ?? "").trim().toLowerCase();
+  return normalizedExpiryDate ? `value:${normalizedExpiryDate}` : "none";
+}
+
+function getInventoryMainGoodBatch(product) {
+  const goodBatches = getClassifiedInventoryBatches(product)
+    .filter((batch) => batch.isGood && batch.stock > 0);
+  if (!goodBatches.length) {
+    return null;
+  }
+
+  return [...goodBatches].sort((left, right) => {
+    const leftTimestamp = getLocalDateStartTimestamp(left.expiryDate);
+    const rightTimestamp = getLocalDateStartTimestamp(right.expiryDate);
+    return (Number.isFinite(rightTimestamp) ? rightTimestamp : 0)
+      - (Number.isFinite(leftTimestamp) ? leftTimestamp : 0);
+  })[0];
+}
+
+function groupNearExpiryInventoryBatches(product) {
+  const groupedBatches = new Map();
+  for (const batch of getClassifiedInventoryBatches(product)) {
+    if (!batch.isNearExpiry || batch.stock <= 0) {
+      continue;
+    }
+
+    const groupKey = getInventoryBatchExpiryKey(batch.expiryDate);
+    const existingGroup = groupedBatches.get(groupKey);
+    if (existingGroup) {
+      existingGroup.stock += batch.stock;
+      if (!existingGroup.sourceBatches.includes(batch.sourceBatch)) {
+        existingGroup.sourceBatches.push(batch.sourceBatch);
+      }
+      continue;
+    }
+
+    groupedBatches.set(groupKey, {
+      ...batch,
+      sourceBatches: [batch.sourceBatch],
+    });
+  }
+
+  return [...groupedBatches.values()].sort((left, right) => {
+    const leftTimestamp = getLocalDateStartTimestamp(left.expiryDate);
+    const rightTimestamp = getLocalDateStartTimestamp(right.expiryDate);
+    return (Number.isFinite(leftTimestamp) ? leftTimestamp : Number.MAX_SAFE_INTEGER)
+      - (Number.isFinite(rightTimestamp) ? rightTimestamp : Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function shouldShowNearExpiryBatchDropdown(product) {
+  if (isExpiredStockDisplayEntry(product) || isExpiredInventoryRow(product)) {
+    return false;
+  }
+
+  const nearExpiryGroups = groupNearExpiryInventoryBatches(product);
+  if (!nearExpiryGroups.length) {
+    return false;
+  }
+
+  return true;
+}
+
 function getSplitStockDisplayConfig(product) {
   const { oldStock, newStock } = getProductStockBreakdown(product);
   if (oldStock <= 0 || newStock <= 0) {
@@ -1875,56 +3376,43 @@ function getSplitStockDisplayConfig(product) {
   const productStockedDate = String(getProductStockedDate(product) ?? "").trim();
   const lastRestockedDate = String(getProductLastRestockedDate(product) ?? "").trim();
   const oldStockExpiryDate = String(getProductOldStockExpiryDate(product) ?? "").trim();
-  const newStockExpiryDate = String(
-    getProductNewStockDate(product) ?? getProductExpiryDate(product) ?? "",
-  ).trim();
-  const oldStockIsExpired = isExpiryDateValueExpired(getProductOldStockExpiryDate(product));
-  const newStockIsExpired = isExpiryDateValueExpired(
-    getProductNewStockDate(product) ?? getProductExpiryDate(product),
-  );
+  const newStockExpiryDate = String(getProductNewStockDate(product) ?? "").trim();
+  const oldStockIsExpired = isExpiryDateValueExpired(oldStockExpiryDate);
+  const newStockIsExpired = isExpiryDateValueExpired(newStockExpiryDate);
+
+  // Keep expired stock on its own row. Do not split OK vs near-expiry.
   if (oldStockIsExpired === newStockIsExpired) {
     return null;
   }
 
-  if (oldStockIsExpired) {
+  const oldIsAhead = isStockExpiryDateAhead(oldStockExpiryDate, newStockExpiryDate);
+  const oldBatch = {
+    sourceBatch: "old",
+    stock: oldStock,
+    expiryDate: oldStockExpiryDate,
+    stockedDate: productStockedDate,
+    isActive: oldStockIsExpired ? false : product?.isActive,
+    label: oldStockIsExpired ? "Expired Stock" : (oldIsAhead ? "New Stock" : "Old Stock"),
+    role: oldStockIsExpired ? "expired" : "fresh",
+  };
+  const newBatch = {
+    sourceBatch: "new",
+    stock: newStock,
+    expiryDate: newStockExpiryDate,
+    stockedDate: lastRestockedDate || productStockedDate,
+    isActive: newStockIsExpired ? false : product?.isActive,
+    label: newStockIsExpired ? "Expired Stock" : (oldIsAhead ? "Old Stock" : "New Stock"),
+    role: newStockIsExpired ? "expired" : "fresh",
+  };
+
+  if (oldStockIsExpired !== newStockIsExpired) {
     return {
-      expired: {
-        sourceBatch: "old",
-        stock: oldStock,
-        expiryDate: oldStockExpiryDate,
-        stockedDate: productStockedDate,
-        isActive: false,
-        label: "Expired Stock",
-      },
-      fresh: {
-        sourceBatch: "new",
-        stock: newStock,
-        expiryDate: newStockExpiryDate,
-        stockedDate: lastRestockedDate || productStockedDate,
-        isActive: product?.isActive,
-        label: isNewStockProduct(product) ? "New Stock" : "",
-      },
+      expired: oldStockIsExpired ? oldBatch : newBatch,
+      fresh: oldStockIsExpired ? newBatch : oldBatch,
     };
   }
 
-  return {
-    expired: {
-      sourceBatch: "new",
-      stock: newStock,
-      expiryDate: newStockExpiryDate,
-      stockedDate: lastRestockedDate || productStockedDate,
-      isActive: false,
-      label: "Expired Stock",
-    },
-      fresh: {
-        sourceBatch: "old",
-        stock: oldStock,
-        expiryDate: oldStockExpiryDate,
-        stockedDate: productStockedDate,
-        isActive: product?.isActive,
-        label: "",
-      },
-    };
+  return null;
 }
 
 function shouldSplitProductIntoStockDisplayCards(product) {
@@ -1955,30 +3443,38 @@ function getStockDisplayProducts(products = currentStockProducts) {
 
     const productIdentifier = getStockProductIdentifier(product);
     const productModifiedDate = String(getProductModifiedDate(product) ?? "").trim();
+    const expiredBatch = splitDisplayConfig.expired;
+    const freshBatch = splitDisplayConfig.fresh;
+    const expiredRole = expiredBatch.role || "expired";
+    const freshRole = freshBatch.role || "fresh";
+    const expiredDisplayKey =
+      expiredRole === freshRole ? `${expiredRole}-${expiredBatch.sourceBatch}` : expiredRole;
+    const freshDisplayKey =
+      expiredRole === freshRole ? `${freshRole}-${freshBatch.sourceBatch}` : freshRole;
 
     const expiredEntry = createSplitStockDisplayEntry(product, {
-      stockDisplayId: `${productIdentifier}::expired`,
-      stockDisplayRole: "expired",
-      stockDisplayLabel: splitDisplayConfig.expired.label,
-      stockDisplaySourceBatch: splitDisplayConfig.expired.sourceBatch,
-      stockDisplaySortOrder: 1,
-      stock: splitDisplayConfig.expired.stock,
-      expiryDate: splitDisplayConfig.expired.expiryDate,
-      stockedDate: splitDisplayConfig.expired.stockedDate,
-      isActive: false,
+      stockDisplayId: `${productIdentifier}::${expiredDisplayKey}`,
+      stockDisplayRole: expiredRole,
+      stockDisplayLabel: expiredBatch.label,
+      stockDisplaySourceBatch: expiredBatch.sourceBatch,
+      stockDisplaySortOrder: expiredRole === "expired" ? 1 : 1,
+      stock: expiredBatch.stock,
+      expiryDate: expiredBatch.expiryDate,
+      stockedDate: expiredBatch.stockedDate,
+      isActive: expiredBatch.isActive,
       updatedAt: productModifiedDate,
     });
 
     const freshEntry = createSplitStockDisplayEntry(product, {
-      stockDisplayId: `${productIdentifier}::fresh`,
-      stockDisplayRole: "fresh",
-      stockDisplayLabel: splitDisplayConfig.fresh.label,
-      stockDisplaySourceBatch: splitDisplayConfig.fresh.sourceBatch,
-      stockDisplaySortOrder: 0,
-      stock: splitDisplayConfig.fresh.stock,
-      expiryDate: splitDisplayConfig.fresh.expiryDate,
-      stockedDate: splitDisplayConfig.fresh.stockedDate,
-      isActive: product?.isActive,
+      stockDisplayId: `${productIdentifier}::${freshDisplayKey}`,
+      stockDisplayRole: freshRole,
+      stockDisplayLabel: freshBatch.label,
+      stockDisplaySourceBatch: freshBatch.sourceBatch,
+      stockDisplaySortOrder: freshRole === "fresh" ? 0 : 0,
+      stock: freshBatch.stock,
+      expiryDate: freshBatch.expiryDate,
+      stockedDate: freshBatch.stockedDate,
+      isActive: freshBatch.isActive,
       updatedAt: productModifiedDate,
     });
 
@@ -2453,13 +3949,12 @@ function isNearExpiryProduct(product) {
     return false;
   }
 
-  const expiryDayStartTimestamp = getProductExpiryDayStartTimestamp(product);
-  if (!Number.isFinite(expiryDayStartTimestamp)) {
+  const expiryDate = getProductBatchExpiryDate(product);
+  if (!hasStockExpiryDate(expiryDate)) {
     return false;
   }
 
-  const timeUntilExpiry = expiryDayStartTimestamp - getTodayStartTimestamp();
-  return timeUntilExpiry >= 0 && timeUntilExpiry <= STOCK_NEAR_EXPIRY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  return isNearExpiryDateValue(expiryDate);
 }
 
 function getProductLastOutOfStockDate(product) {
@@ -2527,6 +4022,79 @@ function normalizeStockHistoryBatchRole(value) {
     : "";
 }
 
+function normalizeStockHistorySourceBatch(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  return normalizedValue === "old" || normalizedValue === "new"
+    ? normalizedValue
+    : "";
+}
+
+function stockHistoryExpiryDatesMatch(left, right) {
+  const normalizedLeft = normalizeExpiryDateInputValue(left);
+  const normalizedRight = normalizeExpiryDateInputValue(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+function hasStockExpiryDate(value) {
+  return Boolean(normalizeExpiryDateInputValue(value));
+}
+
+function stockBatchesShareExpiryDate(left, right) {
+  const normalizedLeft = normalizeExpiryDateInputValue(left);
+  const normalizedRight = normalizeExpiryDateInputValue(right);
+  if (!normalizedLeft && !normalizedRight) {
+    return true;
+  }
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+function isStockExpiryDateAhead(left, right) {
+  const leftTimestamp = getLocalDateStartTimestamp(left);
+  const rightTimestamp = getLocalDateStartTimestamp(right);
+  if (!Number.isFinite(leftTimestamp) || !Number.isFinite(rightTimestamp)) {
+    return false;
+  }
+  return leftTimestamp > rightTimestamp;
+}
+
+function alignOldNewBatchesByAheadExpiry(oldStock, newStock, oldExpiry, newExpiry) {
+  const normalizedOldStock = Math.max(0, Math.trunc(Number(oldStock) || 0));
+  const normalizedNewStock = Math.max(0, Math.trunc(Number(newStock) || 0));
+  if (
+    normalizedOldStock > 0
+    && normalizedNewStock > 0
+    && isStockExpiryDateAhead(oldExpiry, newExpiry)
+  ) {
+    return {
+      oldStock: normalizedNewStock,
+      newStock: normalizedOldStock,
+      oldExpiry: newExpiry,
+      newExpiry: oldExpiry,
+      swapped: true,
+    };
+  }
+
+  return {
+    oldStock: normalizedOldStock,
+    newStock: normalizedNewStock,
+    oldExpiry,
+    newExpiry,
+    swapped: false,
+  };
+}
+
+function getAheadStockExpiryDate(product) {
+  const oldExpiry = getProductOldStockExpiryDate(product);
+  const newExpiry = getProductNewStockDate(product) || getProductExpiryDate(product);
+  return isStockExpiryDateAhead(oldExpiry, newExpiry) ? oldExpiry : newExpiry;
+}
+
+function getBehindStockExpiryDate(product) {
+  const oldExpiry = getProductOldStockExpiryDate(product);
+  const newExpiry = getProductNewStockDate(product) || getProductExpiryDate(product);
+  return isStockExpiryDateAhead(oldExpiry, newExpiry) ? newExpiry : oldExpiry;
+}
+
 function extractStockDeductReasonFromLabel(label) {
   const normalizedLabel = String(label ?? "").trim();
   if (!/^deducted\s*:/i.test(normalizedLabel)) {
@@ -2542,12 +4110,20 @@ function getStockRecordLabelClassName(label) {
     return "";
   }
 
-  if (normalizedLabel === "new stock") {
+  if (normalizedLabel === "new stock" || normalizedLabel.includes("new stock")) {
     return "stock-detail-table__label--new";
   }
 
-  if (normalizedLabel === "old stock") {
+  if (normalizedLabel === "old stock" || normalizedLabel.includes("old stock")) {
     return "stock-detail-table__label--old";
+  }
+
+  if (normalizedLabel.includes("expired")) {
+    return "stock-detail-table__label--expired";
+  }
+
+  if (normalizedLabel.startsWith("deducted")) {
+    return "stock-detail-table__label--deducted";
   }
 
   return "";
@@ -2684,8 +4260,11 @@ function getProductStockHistoryRecords(product) {
         : normalizedLabel;
       const batchRole = normalizeStockHistoryBatchRole(
         record?.batchRole ??
-          record?.stockBatchRole ??
-          record?.batch,
+          record?.stockBatchRole,
+      );
+      const sourceBatch = normalizeStockHistorySourceBatch(
+        record?.sourceBatch ??
+          record?.stockSourceBatch,
       );
       const deductReason = normalizeStockDeductReasonDetail(
         record?.reason ??
@@ -2705,6 +4284,7 @@ function getProductStockHistoryRecords(product) {
         modifiedAt,
         label,
         batchRole,
+        sourceBatch,
         deductReason,
         sortTimestamp,
       };
@@ -2745,6 +4325,9 @@ function createStockHistoryPayloadRecord(record) {
     label: normalizeStockHistoryLabel(record?.label),
     ...(normalizeStockHistoryBatchRole(record?.batchRole)
       ? { batchRole: normalizeStockHistoryBatchRole(record.batchRole) }
+      : {}),
+    ...(normalizeStockHistorySourceBatch(record?.sourceBatch)
+      ? { sourceBatch: normalizeStockHistorySourceBatch(record.sourceBatch) }
       : {}),
   };
 }
@@ -2912,7 +4495,7 @@ function ensureStockDeleteConfirmationModal() {
           role="presentation"
           tabindex="-1"
         >
-          <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </div>
       </div>
       <div class="validation-modal__body">
@@ -3397,6 +4980,707 @@ function openStockDeleteConfirmationModal(
   });
 }
 
+function openStockExpiredDeleteConfirmationModal(product, actionElement = null) {
+  const modal = ensureStockDeleteConfirmationModal();
+  if (!modal || !canDeleteExpiredInventoryRow(product)) {
+    return;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  const productName = String(sourceProduct?.name ?? "this product").trim() || "this product";
+  const isSplitExpiredBatch = isSplitStockDisplayEntry(product) && isExpiredStockDisplayEntry(product);
+  modal.copy.textContent = isSplitExpiredBatch
+    ? `Are you sure you want to delete this expired stock from ${productName}?`
+    : `Are you sure you want to delete expired product "${productName}"?`;
+  modal.onAction = () => {
+    prepareStockDeleteSuccessAudio();
+    closeStockDeleteConfirmationModal(() => {
+      void deleteExpiredInventoryRow(product, actionElement);
+    });
+    return true;
+  };
+  modal.onSecondaryAction = () => {
+    closeStockDeleteConfirmationModal();
+    return true;
+  };
+  modal.allowOverlayClose = false;
+  modal.overlay.hidden = false;
+  window.requestAnimationFrame(() => {
+    modal.overlay.classList.add("is-open");
+  });
+  syncStockModalOpenClass();
+
+  window.requestAnimationFrame(() => {
+    if (modal.actionButton instanceof HTMLButtonElement) {
+      modal.actionButton.focus();
+    }
+  });
+}
+
+function openStockNearExpiryDeleteConfirmationModal(product, actionElement = null) {
+  const modal = ensureStockDeleteConfirmationModal();
+  const nearExpiryBatches = getDeletableNearExpiryInventoryBatches(product);
+  if (!modal || !nearExpiryBatches.length || !canDeleteNearExpiryInventoryRow(product)) {
+    return;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  const productName = String(sourceProduct?.name ?? "this product").trim() || "this product";
+  modal.copy.textContent = nearExpiryBatches.length === 1
+    ? `Are you sure you want to delete the batch of "${productName}" that expires within ${STOCK_SELL_PRIORITY_LOCK_DAYS} days?`
+    : `Are you sure you want to delete all ${nearExpiryBatches.length} batches of "${productName}" that expire within ${STOCK_SELL_PRIORITY_LOCK_DAYS} days?`;
+  modal.onAction = () => {
+    prepareStockDeleteSuccessAudio();
+    closeStockDeleteConfirmationModal(() => {
+      void deleteNearExpiryInventoryRow(product, actionElement);
+    });
+    return true;
+  };
+  modal.onSecondaryAction = () => {
+    closeStockDeleteConfirmationModal();
+    return true;
+  };
+  modal.allowOverlayClose = false;
+  modal.overlay.hidden = false;
+  window.requestAnimationFrame(() => {
+    modal.overlay.classList.add("is-open");
+  });
+  syncStockModalOpenClass();
+
+  window.requestAnimationFrame(() => {
+    if (modal.actionButton instanceof HTMLButtonElement) {
+      modal.actionButton.focus();
+    }
+  });
+}
+
+async function deleteExpiredInventoryRow(product, actionElement = null) {
+  const sourceProduct = getStockSourceProduct(product);
+  const productId = String(sourceProduct?.id ?? "").trim();
+  const productName = String(sourceProduct?.name ?? "this product").trim() || "this product";
+  if (!productId || !canDeleteExpiredInventoryRow(product)) {
+    return false;
+  }
+
+  const isSplitExpiredBatch = isSplitStockDisplayEntry(product) && isExpiredStockDisplayEntry(product);
+  const sourceBatch = getStockDisplaySourceBatch(product);
+  const currentBreakdown = getProductStockBreakdown(sourceProduct);
+  const expiredStock = getStock(product);
+  let updatedOldStock = currentBreakdown.oldStock;
+  let updatedNewStock = currentBreakdown.newStock;
+  if (isSplitExpiredBatch && sourceBatch === "old") {
+    updatedOldStock = 0;
+  } else if (isSplitExpiredBatch && sourceBatch === "new") {
+    updatedNewStock = 0;
+  } else {
+    updatedOldStock = 0;
+    updatedNewStock = 0;
+  }
+
+  const remainingStock = updatedOldStock + updatedNewStock;
+  const shouldDeleteProduct = remainingStock <= 0;
+
+  try {
+    actionElement?.classList.add("is-saving");
+    if ("disabled" in (actionElement ?? {})) {
+      actionElement.disabled = true;
+    }
+
+    if (shouldDeleteProduct) {
+      const response = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+        method: "DELETE",
+        headers: withStockAdminScopeHeaders({
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify(withStockAdminScopePayload({
+          __activityContext: "inventory",
+          __activityActor: getStockActivityActor(),
+        })),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to delete expired stock.");
+      }
+
+      currentStockProducts = currentStockProducts.filter(
+        (candidate) => String(candidate?.id ?? "").trim() !== productId,
+      );
+      if (String(selectedStockProductId ?? "").startsWith(productId)) {
+        selectedStockProductId = "";
+      }
+      editingStockProductId = "";
+      renderStockDashboard(currentStockProducts);
+      broadcastStockProductsUpdated();
+      openStockSuccessModal(`Deleted expired product "${productName}" successfully.`, {
+        hideAction: true,
+        hideClose: true,
+        allowOverlayClose: false,
+        autoCloseMs: 2000,
+        playDeleteSound: true,
+      });
+      return true;
+    }
+
+    const currentOldStockExpiryDate = String(getProductOldStockExpiryDate(sourceProduct) ?? "").trim();
+    const currentNewStockExpiryDate = String(getProductNewStockDate(sourceProduct) ?? "").trim();
+    const nextOldStockExpiryDate = updatedOldStock > 0 ? currentOldStockExpiryDate : "";
+    const nextNewStockDate = updatedNewStock > 0 ? currentNewStockExpiryDate : "";
+    const nextProductExpiryDate = updatedNewStock > 0
+      ? nextNewStockDate
+      : nextOldStockExpiryDate;
+    const currentPriority = getSellPrioritySourceBatch(sourceProduct);
+    const nextPriority = currentPriority && (
+      (sourceBatch === "old" && currentPriority === "old")
+      || (sourceBatch === "new" && currentPriority === "new")
+    )
+      ? ""
+      : currentPriority;
+    const nextModifiedAt = new Date().toISOString();
+    const stockHistoryRecordId = createStockHistoryRecordId(nextModifiedAt);
+    const stockHistoryEntry = {
+      id: stockHistoryRecordId,
+      stock: remainingStock,
+      addedQuantity: 0,
+      deductedQuantity: expiredStock,
+      expiryDate: "",
+      modifiedAt: nextModifiedAt,
+      reason: getStockDeductReasonLabel("expired-disposed") || "Expired / Disposed",
+      label: "Deleted Expired Stock",
+      batchRole: "expired",
+      ...(sourceBatch ? { sourceBatch } : {}),
+    };
+
+    const response = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+      method: "PUT",
+      headers: withStockAdminScopeHeaders({
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(withStockAdminScopePayload({
+        ...sourceProduct,
+        stock: remainingStock,
+        inventoryStock: remainingStock,
+        expiryDate: nextProductExpiryDate,
+        lastRestockPreviousStock: updatedOldStock,
+        lastRestockPreviousExpiryDate: nextOldStockExpiryDate,
+        lastRestockAddedStock: updatedNewStock,
+        lastRestockExpiryDate: nextNewStockDate,
+        sellPrioritySourceBatch: nextPriority,
+        stockHistoryEntry,
+        __activityContext: "inventory",
+        __activityTarget: "card",
+        __activityInventoryChangeCount: 2,
+        __activityDisplayStockProductId: getStockProductIdentifier(sourceProduct),
+        __activityStockRecordId: stockHistoryRecordId,
+        __activityStockRecordModifiedAt: nextModifiedAt,
+        __activityActor: getStockActivityActor(),
+      })),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || "Unable to delete expired stock.");
+    }
+
+    const updatedProduct = {
+      ...sourceProduct,
+      ...(data?.product ?? {}),
+      stock: remainingStock,
+      inventoryStock: remainingStock,
+      expiryDate: nextProductExpiryDate,
+      lastRestockPreviousStock: updatedOldStock,
+      lastRestockPreviousExpiryDate: nextOldStockExpiryDate,
+      lastRestockAddedStock: updatedNewStock,
+      lastRestockExpiryDate: nextNewStockDate,
+      sellPrioritySourceBatch: nextPriority,
+    };
+    currentStockProducts = currentStockProducts.map((candidate) =>
+      String(candidate?.id ?? "").trim() === productId
+        ? updatedProduct
+        : candidate,
+    );
+    selectedStockProductId = getStockProductIdentifier(updatedProduct);
+    renderStockDashboard(currentStockProducts);
+    broadcastStockProductsUpdated();
+    openStockSuccessModal(`Deleted expired stock from "${productName}" successfully.`, {
+      hideAction: true,
+      hideClose: true,
+      allowOverlayClose: false,
+      autoCloseMs: 2000,
+      playDeleteSound: true,
+    });
+    return true;
+  } catch (error) {
+    console.error(error);
+    showStockEditorSnackbar(
+      "Delete expired stock",
+      error instanceof Error ? error.message : "Unable to delete expired stock.",
+      "error",
+    );
+    return false;
+  } finally {
+    actionElement?.classList.remove("is-saving");
+    if ("disabled" in (actionElement ?? {})) {
+      actionElement.disabled = false;
+    }
+  }
+}
+
+async function deleteNearExpiryInventoryRow(product, actionElement = null) {
+  const sourceProduct = getStockSourceProduct(product);
+  const productId = String(sourceProduct?.id ?? "").trim();
+  const productName = String(sourceProduct?.name ?? "this product").trim() || "this product";
+  const nearExpiryBatches = getDeletableNearExpiryInventoryBatches(product);
+  if (!productId || !nearExpiryBatches.length || !canDeleteNearExpiryInventoryRow(product)) {
+    return false;
+  }
+
+  const sourceBatchesToDelete = new Set(
+    nearExpiryBatches.map((batch) => batch.sourceBatch),
+  );
+  const currentBreakdown = getProductStockBreakdown(sourceProduct);
+  const updatedOldStock = sourceBatchesToDelete.has("old")
+    ? 0
+    : currentBreakdown.oldStock;
+  const updatedNewStock = sourceBatchesToDelete.has("new")
+    ? 0
+    : currentBreakdown.newStock;
+  const removedStock = nearExpiryBatches.reduce(
+    (total, batch) => total + Math.max(0, Math.trunc(Number(batch.stock) || 0)),
+    0,
+  );
+  const remainingStock = updatedOldStock + updatedNewStock;
+  const shouldDeleteProduct = remainingStock <= 0;
+
+  try {
+    actionElement?.classList.add("is-saving");
+    if ("disabled" in (actionElement ?? {})) {
+      actionElement.disabled = true;
+    }
+
+    if (shouldDeleteProduct) {
+      const response = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+        method: "DELETE",
+        headers: withStockAdminScopeHeaders({
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify(withStockAdminScopePayload({
+          __activityContext: "inventory",
+          __activityActor: getStockActivityActor(),
+        })),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to delete near-expiry stock.");
+      }
+
+      currentStockProducts = currentStockProducts.filter(
+        (candidate) => String(candidate?.id ?? "").trim() !== productId,
+      );
+      if (String(selectedStockProductId ?? "").startsWith(productId)) {
+        selectedStockProductId = "";
+      }
+      editingStockProductId = "";
+      renderStockDashboard(currentStockProducts);
+      broadcastStockProductsUpdated();
+      openStockSuccessModal(`Deleted near-expiry product "${productName}" successfully.`, {
+        hideAction: true,
+        hideClose: true,
+        allowOverlayClose: false,
+        autoCloseMs: 2000,
+        playDeleteSound: true,
+      });
+      return true;
+    }
+
+    const currentOldStockExpiryDate = String(getProductOldStockExpiryDate(sourceProduct) ?? "").trim();
+    const currentNewStockExpiryDate = String(getProductNewStockDate(sourceProduct) ?? "").trim();
+    const nextOldStockExpiryDate = updatedOldStock > 0 ? currentOldStockExpiryDate : "";
+    const nextNewStockDate = updatedNewStock > 0 ? currentNewStockExpiryDate : "";
+    const nextProductExpiryDate = updatedNewStock > 0
+      ? nextNewStockDate
+      : nextOldStockExpiryDate;
+    const currentPriority = getSellPrioritySourceBatch(sourceProduct);
+    const nextPriority = sourceBatchesToDelete.has(currentPriority) ? "" : currentPriority;
+    const nextModifiedAt = new Date().toISOString();
+    const stockHistoryRecordId = createStockHistoryRecordId(nextModifiedAt);
+    const singleSourceBatch = sourceBatchesToDelete.size === 1
+      ? [...sourceBatchesToDelete][0]
+      : "";
+    const stockHistoryEntry = {
+      id: stockHistoryRecordId,
+      stock: remainingStock,
+      addedQuantity: 0,
+      deductedQuantity: removedStock,
+      expiryDate: nearExpiryBatches.length === 1 ? nearExpiryBatches[0].expiryDate : "",
+      modifiedAt: nextModifiedAt,
+      reason: "Near Expiry / Disposed",
+      label: "Deleted Near Expiry Stock",
+      batchRole: "fresh",
+      ...(singleSourceBatch ? { sourceBatch: singleSourceBatch } : {}),
+    };
+
+    const response = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+      method: "PUT",
+      headers: withStockAdminScopeHeaders({
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify(withStockAdminScopePayload({
+        ...sourceProduct,
+        stock: remainingStock,
+        inventoryStock: remainingStock,
+        expiryDate: nextProductExpiryDate,
+        lastRestockPreviousStock: updatedOldStock,
+        lastRestockPreviousExpiryDate: nextOldStockExpiryDate,
+        lastRestockAddedStock: updatedNewStock,
+        lastRestockExpiryDate: nextNewStockDate,
+        sellPrioritySourceBatch: nextPriority,
+        stockHistoryEntry,
+        __activityContext: "inventory",
+        __activityTarget: "card",
+        __activityInventoryChangeCount: 2,
+        __activityDisplayStockProductId: getStockProductIdentifier(sourceProduct),
+        __activityStockRecordId: stockHistoryRecordId,
+        __activityStockRecordModifiedAt: nextModifiedAt,
+        __activityActor: getStockActivityActor(),
+      })),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || "Unable to delete near-expiry stock.");
+    }
+
+    const updatedProduct = {
+      ...sourceProduct,
+      ...(data?.product ?? {}),
+      stock: remainingStock,
+      inventoryStock: remainingStock,
+      expiryDate: nextProductExpiryDate,
+      lastRestockPreviousStock: updatedOldStock,
+      lastRestockPreviousExpiryDate: nextOldStockExpiryDate,
+      lastRestockAddedStock: updatedNewStock,
+      lastRestockExpiryDate: nextNewStockDate,
+      sellPrioritySourceBatch: nextPriority,
+    };
+    currentStockProducts = currentStockProducts.map((candidate) =>
+      String(candidate?.id ?? "").trim() === productId
+        ? updatedProduct
+        : candidate,
+    );
+    selectedStockProductId = getStockProductIdentifier(updatedProduct);
+    renderStockDashboard(currentStockProducts);
+    broadcastStockProductsUpdated();
+    openStockSuccessModal(`Deleted near-expiry stock from "${productName}" successfully.`, {
+      hideAction: true,
+      hideClose: true,
+      allowOverlayClose: false,
+      autoCloseMs: 2000,
+      playDeleteSound: true,
+    });
+    return true;
+  } catch (error) {
+    console.error(error);
+    showStockEditorSnackbar(
+      "Delete near-expiry stock",
+      error instanceof Error ? error.message : "Unable to delete near-expiry stock.",
+      "error",
+    );
+    return false;
+  } finally {
+    actionElement?.classList.remove("is-saving");
+    if ("disabled" in (actionElement ?? {})) {
+      actionElement.disabled = false;
+    }
+  }
+}
+
+function canDeleteInventoryExpiryDetailBatch(product, batch = null) {
+  if (isEmployeeStockWorkspace() || isEmbeddedLiveChatStockWorkspace()) {
+    return false;
+  }
+  const sourceProduct = getStockSourceProduct(product);
+  const productId = String(sourceProduct?.id ?? "").trim();
+  if (!productId) {
+    return false;
+  }
+  // Hammer only: hide batch hover-delete while listing stock is not fully expired.
+  if (productId === "prd-1787212040822") {
+    return false;
+  }
+  return Math.max(0, Math.trunc(Number(batch?.stock) || 0)) > 0;
+}
+
+function resolveSellPriorityAfterExpiryBatchDelete(product, deletedSourceBatch, remainingBatches) {
+  const deletedKey = normalizeSellPriorityBatchKey(deletedSourceBatch);
+  const currentPriority = getSellPrioritySourceBatch(product);
+  const sellableRemaining = (Array.isArray(remainingBatches) ? remainingBatches : [])
+    .filter((batch) =>
+      batch
+      && batch.stock > 0
+      && !batch.isExpired
+      && !isSellPriorityLockedForExpiryDate(batch.expiryDate)
+    )
+    .map((batch) => ({
+      ...batch,
+      sourceBatch: normalizeSellPriorityBatchKey(batch.sourceBatch),
+    }))
+    .filter((batch) => batch.sourceBatch && batch.sourceBatch !== deletedKey);
+
+  if (
+    currentPriority
+    && currentPriority !== deletedKey
+    && sellableRemaining.some((batch) => batch.sourceBatch === currentPriority)
+  ) {
+    return currentPriority;
+  }
+
+  if (sellableRemaining.length <= 1) {
+    return sellableRemaining[0]?.sourceBatch || "";
+  }
+
+  // Prefer "previous" stock: undated first, then earliest expiry date.
+  const sorted = sellableRemaining.slice().sort((left, right) => {
+    const leftUndated = !hasStockExpiryDate(left.expiryDate);
+    const rightUndated = !hasStockExpiryDate(right.expiryDate);
+    if (leftUndated !== rightUndated) {
+      return leftUndated ? -1 : 1;
+    }
+    const leftDay = getLocalDateStartTimestamp(left.expiryDate);
+    const rightDay = getLocalDateStartTimestamp(right.expiryDate);
+    return (Number.isFinite(leftDay) ? leftDay : Number.MAX_SAFE_INTEGER)
+      - (Number.isFinite(rightDay) ? rightDay : Number.MAX_SAFE_INTEGER);
+  });
+  return sorted[0]?.sourceBatch || "";
+}
+
+function openStockExpiryBatchDeleteConfirmationModal(product, batch, actionElement = null) {
+  const modal = ensureStockDeleteConfirmationModal();
+  if (!modal || !canDeleteInventoryExpiryDetailBatch(product, batch)) {
+    return;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  const productName = String(sourceProduct?.name ?? "this product").trim() || "this product";
+  const batchStock = Math.max(0, Math.trunc(Number(batch?.stock) || 0));
+  const remainingStock = Math.max(0, getStock(sourceProduct) - batchStock);
+  const expiryLabel = hasStockExpiryDate(batch?.expiryDate)
+    ? formatExpiryDateDisplay(batch.expiryDate)
+    : "No expiry date";
+  const batchLabel = String(batch?.label ?? "batch").trim() || "batch";
+
+  modal.copy.textContent = remainingStock <= 0
+    ? `Delete the last stock batch of "${productName}" (${expiryLabel})? This removes the listing stock completely.`
+    : `Delete "${batchLabel}" (${formatUnits(batchStock)}, ${expiryLabel}) from "${productName}"? This quickly deducts that batch.`;
+
+  modal.onAction = () => {
+    prepareStockDeleteSuccessAudio();
+    closeStockDeleteConfirmationModal(() => {
+      void deleteInventoryExpiryDetailBatch(product, batch, actionElement);
+    });
+    return true;
+  };
+  modal.onSecondaryAction = () => {
+    closeStockDeleteConfirmationModal();
+    return true;
+  };
+  modal.allowOverlayClose = false;
+  modal.overlay.hidden = false;
+  window.requestAnimationFrame(() => {
+    modal.overlay.classList.add("is-open");
+  });
+  syncStockModalOpenClass();
+
+  window.requestAnimationFrame(() => {
+    if (modal.actionButton instanceof HTMLButtonElement) {
+      modal.actionButton.focus();
+    }
+  });
+}
+
+async function deleteInventoryExpiryDetailBatch(product, batch, actionElement = null) {
+  const sourceProduct = getStockSourceProduct(product);
+  const productId = String(sourceProduct?.id ?? "").trim();
+  const productName = String(sourceProduct?.name ?? "this product").trim() || "this product";
+  const batchStock = Math.max(0, Math.trunc(Number(batch?.stock) || 0));
+  const batchKey = normalizeSellPriorityBatchKey(batch?.sourceBatch);
+  const batchExpiryKey = getInventoryExpiryBatchKey(batch?.expiryDate);
+
+  if (!productId || !canDeleteInventoryExpiryDetailBatch(sourceProduct, batch) || !batchKey) {
+    return false;
+  }
+
+  const liveBatches = getInventoryExpiryBatches(sourceProduct).filter((candidate) => candidate.stock > 0);
+  const targetBatch = liveBatches.find((candidate) =>
+    normalizeSellPriorityBatchKey(candidate.sourceBatch) === batchKey
+    && getInventoryExpiryBatchKey(candidate.expiryDate) === batchExpiryKey
+  ) || liveBatches.find((candidate) =>
+    normalizeSellPriorityBatchKey(candidate.sourceBatch) === batchKey
+  );
+  if (!targetBatch || targetBatch.stock <= 0) {
+    showStockEditorSnackbar(
+      "Delete batch",
+      "This batch is no longer available.",
+      "error",
+    );
+    return false;
+  }
+
+  const removedStock = Math.max(0, Math.trunc(Number(targetBatch.stock) || 0));
+  const remainingStock = Math.max(0, getStock(sourceProduct) - removedStock);
+  const remainingBatches = liveBatches
+    .filter((candidate) => !(
+      normalizeSellPriorityBatchKey(candidate.sourceBatch) === batchKey
+      && getInventoryExpiryBatchKey(candidate.expiryDate) === batchExpiryKey
+    ))
+    .map((candidate) => ({ ...candidate }));
+  const nextPriority = resolveSellPriorityAfterExpiryBatchDelete(
+    sourceProduct,
+    batchKey,
+    remainingBatches,
+  );
+  const reopenExpiryToggle = stockActionDropdownToggle instanceof HTMLElement
+    && stockActionDropdownMode === "expiry"
+      ? stockActionDropdownToggle
+      : null;
+  const reopenDisplayProduct = product;
+
+  try {
+    actionElement?.classList.add("is-saving");
+    if ("disabled" in (actionElement ?? {})) {
+      actionElement.disabled = true;
+    }
+    suppressStockRealtimeRefresh();
+
+    if (remainingStock <= 0) {
+      const response = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+        method: "DELETE",
+        headers: withStockAdminScopeHeaders({
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify(withStockAdminScopePayload({
+          __activityContext: "inventory",
+          __activityActor: getStockActivityActor(),
+        })),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to delete batch stock.");
+      }
+
+      currentStockProducts = currentStockProducts.filter(
+        (candidate) => String(candidate?.id ?? "").trim() !== productId,
+      );
+      if (String(selectedStockProductId ?? "").startsWith(productId)) {
+        selectedStockProductId = "";
+      }
+      editingStockProductId = "";
+      closeStockActionDropdown();
+      renderStockDashboard(currentStockProducts);
+      broadcastStockProductsUpdated();
+      openStockSuccessModal(`Deleted listing stock for "${productName}" successfully.`, {
+        hideAction: true,
+        hideClose: true,
+        allowOverlayClose: false,
+        autoCloseMs: 2000,
+        playDeleteSound: true,
+      });
+      return true;
+    }
+
+    const deductReason = targetBatch.isExpired || isSellPriorityLockedForExpiryDate(targetBatch.expiryDate)
+      ? "expired-disposed"
+      : "damaged-accident";
+    const didSave = await saveStockEditModalChanges(
+      sourceProduct,
+      "0",
+      String(-removedStock),
+      deductReason,
+      "",
+      "",
+      {
+        displayProduct: sourceProduct,
+        selectProductOnSave: false,
+        selectedDeductBatchKey: batchKey,
+        primaryButton: actionElement,
+      },
+    );
+    if (!didSave) {
+      return false;
+    }
+
+    const updatedLiveProduct = currentStockProducts.find((candidate) =>
+      String(candidate?.id ?? "").trim() === productId,
+    ) || sourceProduct;
+    const currentPriorityAfterSave = getSellPrioritySourceBatch(updatedLiveProduct);
+    if (
+      currentPriorityAfterSave === batchKey
+      || (nextPriority && currentPriorityAfterSave !== nextPriority)
+    ) {
+      if (nextPriority) {
+        await saveSellPrioritySourceBatch(updatedLiveProduct, nextPriority);
+      } else if (currentPriorityAfterSave === batchKey) {
+        const cleared = await saveSellPrioritySourceBatch(updatedLiveProduct, "");
+        if (!cleared) {
+          const fallbackPriority = resolveSellPriorityAfterExpiryBatchDelete(
+            updatedLiveProduct,
+            batchKey,
+            getInventoryExpiryBatches(updatedLiveProduct).filter((candidate) => candidate.stock > 0),
+          );
+          if (fallbackPriority) {
+            await saveSellPrioritySourceBatch(updatedLiveProduct, fallbackPriority);
+          }
+        }
+      }
+    }
+
+    closeStockActionDropdown();
+    renderStockDashboard(currentStockProducts);
+    broadcastStockProductsUpdated();
+
+    const refreshedSource = currentStockProducts.find((candidate) =>
+      String(candidate?.id ?? "").trim() === productId,
+    ) || updatedLiveProduct;
+    if (
+      reopenExpiryToggle?.isConnected
+      && getStock(refreshedSource) > 0
+      && hasInventoryExpiryDetails(refreshedSource)
+    ) {
+      const refreshedProduct = getStockDisplayProducts(currentStockProducts).find((candidate) =>
+        getStockProductIdentifier(candidate) === getStockProductIdentifier(reopenDisplayProduct)
+        || String(getStockSourceProduct(candidate)?.id ?? "").trim() === productId
+      ) || refreshedSource;
+      window.requestAnimationFrame(() => {
+        openStockActionDropdown(reopenExpiryToggle, "expiry", refreshedProduct, {
+          skipAnimation: true,
+        });
+      });
+    }
+
+    openStockSuccessModal(
+      `Deleted ${formatUnits(removedStock)} from "${productName}" successfully.`,
+      {
+        hideAction: true,
+        hideClose: true,
+        allowOverlayClose: false,
+        autoCloseMs: 2000,
+        playDeleteSound: true,
+      },
+    );
+    return true;
+  } catch (error) {
+    console.error(error);
+    showStockEditorSnackbar(
+      "Delete batch",
+      error instanceof Error ? error.message : "Unable to delete batch stock.",
+      "error",
+    );
+    return false;
+  } finally {
+    actionElement?.classList.remove("is-saving");
+    if ("disabled" in (actionElement ?? {})) {
+      actionElement.disabled = false;
+    }
+  }
+}
+
 function removeStockEditModalOverlay() {
   clearStockEditModalClockInterval();
   document.querySelector(".stock-edit-modal-overlay")?.remove();
@@ -3405,6 +5689,7 @@ function removeStockEditModalOverlay() {
 
 function closeStockEditModal() {
   removeStockEditModalOverlay();
+  closeStockActionDropdown();
   editingStockProductId = "";
   renderStockDashboard(currentStockProducts);
 }
@@ -3450,10 +5735,54 @@ function getStockState(stock) {
 }
 
 function createEmptyState(message) {
+  if (window.GMS_ADMIN_EMPTY_STATE_LOTTIE?.create) {
+    return window.GMS_ADMIN_EMPTY_STATE_LOTTIE.create({
+      className: "stock-inventory-empty-state",
+      label: message,
+      copy: "Inventory records will appear here once products are available.",
+    });
+  }
   const emptyState = document.createElement("div");
-  emptyState.className = "empty-state";
+  emptyState.className = "stock-inventory-empty-state";
   emptyState.textContent = message;
   return emptyState;
+}
+
+function createStockInventoryEmptyRow(content) {
+  const row = document.createElement("div");
+  row.className = "stock-inventory-empty-row table-row-no-hover";
+  row.setAttribute("role", "row");
+
+  const cell = document.createElement("div");
+  cell.className = "stock-inventory-empty-cell";
+  cell.setAttribute("role", "cell");
+  cell.setAttribute("aria-colspan", "6");
+
+  if (content instanceof Node) {
+    cell.appendChild(content);
+  } else {
+    cell.appendChild(createEmptyState(String(content || "No data yet")));
+  }
+
+  row.appendChild(cell);
+  return row;
+}
+
+function hydrateInventoryEmptyStatePlaceholders() {
+  if (!window.GMS_ADMIN_EMPTY_STATE_LOTTIE?.create) {
+    return;
+  }
+
+  document.querySelectorAll('[data-gms-admin-empty-state-lottie="true"]').forEach((placeholder) => {
+    const label = placeholder.getAttribute("data-empty-state-label") || "No data yet";
+    const copy = placeholder.getAttribute("data-empty-state-copy") || "Inventory records will appear here once products are available.";
+    const replacement = window.GMS_ADMIN_EMPTY_STATE_LOTTIE.create({
+      label,
+      copy,
+      className: placeholder.className,
+    });
+    placeholder.replaceWith(replacement);
+  });
 }
 
 function createInfoRow(label, value) {
@@ -3470,48 +5799,7 @@ function createInfoRow(label, value) {
   return row;
 }
 
-function buildStockRecordRows(product) {
-  const editingProduct = isSplitDisplayProduct ? displayProduct : sourceProduct;
-  const stock = getStock(editingProduct);
-  const currentModifiedDate = getProductModifiedDate(product);
-  const rows = [
-    {
-      stocks: formatUnits(stock),
-      modified: formatOptionalDateTime(currentModifiedDate, "Not recorded yet"),
-      expireDate:
-        stock > 0
-          ? formatExpiryDateDisplay(getProductExpiryDate(product), "—")
-          : "—",
-      label: stock > 0 ? "Current Stock" : "Out of Stock",
-    },
-  ];
-
-  if (stock > 0 && hasProductRestockDetails(product)) {
-    const restockedDate = getProductLastRestockedDate(product) || currentModifiedDate;
-    const newStockCount = getProductNewStockCount(product);
-    const oldStockCount = getProductOldStockCount(product);
-
-    if (newStockCount > 0) {
-      rows.push({
-        stocks: formatUnits(newStockCount),
-        modified: formatOptionalDateTime(restockedDate, "Not recorded yet"),
-        expireDate: formatExpiryDateDisplay(getProductNewStockDate(product), "—"),
-        label: "New Stock",
-      });
-    }
-
-    if (oldStockCount > 0) {
-      rows.push({
-        stocks: formatUnits(oldStockCount),
-        modified: formatOptionalDateTime(restockedDate, "Not recorded yet"),
-        expireDate: formatExpiryDateDisplay(getProductOldStockExpiryDate(product), "—"),
-        label: "Old Stock",
-      });
-    }
-  }
-
-  return rows;
-}
+document.addEventListener("DOMContentLoaded", hydrateInventoryEmptyStatePlaceholders, { once: true });
 
 function createStockRecordTable(records) {
   const tableShell = document.createElement("div");
@@ -3542,7 +5830,8 @@ function createStockRecordTable(records) {
     }
 
     const quantityCell = document.createElement("td");
-    quantityCell.textContent = record?.quantity ?? "—";
+    quantityCell.className = "stock-detail-table__cell stock-detail-table__cell--quantity";
+    quantityCell.appendChild(createStockRecordQuantityValueElement(record));
 
     const modifiedCell = document.createElement("td");
     modifiedCell.textContent = record?.modified ?? "—";
@@ -3664,6 +5953,15 @@ function createStockMetaExpiryDateRow(product, iconMarkup) {
       "Last out of stock",
       formatProductLastOutOfStock(product),
       lastOutOfStockIconMarkup,
+    );
+  }
+
+  const mainGoodBatch = getInventoryMainGoodBatch(product);
+  if (mainGoodBatch && shouldShowNearExpiryBatchDropdown(product)) {
+    return createStockMetaRow(
+      "Expiry date",
+      formatExpiryDateDisplay(mainGoodBatch.expiryDate),
+      iconMarkup,
     );
   }
 
@@ -3816,6 +6114,8 @@ function createStockDetailDeductInputRow(label, value, onInput) {
 }
 
 function createStockDetailDeductReasonRow(label, value, onChange) {
+  const dropdownId = `stock-deduct-reason-${++stockDeductReasonDropdownSerial}`;
+  const placeholderText = "Select deduct reason";
   const row = document.createElement("div");
   row.className = "dashboard-info-row stock-detail-panel__input-row stock-edit-modal__reason-row";
 
@@ -3823,14 +6123,16 @@ function createStockDetailDeductReasonRow(label, value, onChange) {
   labelElement.textContent = label;
 
   const fieldGroup = document.createElement("div");
-  fieldGroup.className = "stock-detail-panel__input-group";
+  fieldGroup.className = "stock-detail-panel__input-group stock-deduct-reason-dropdown";
 
   const select = document.createElement("select");
-  select.className = "stock-detail-panel__select-input";
+  select.className = "stock-detail-panel__select-input stock-deduct-reason-dropdown__native";
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
 
   const placeholderOption = document.createElement("option");
   placeholderOption.value = "";
-  placeholderOption.textContent = "Select deduct reason";
+  placeholderOption.textContent = placeholderText;
   select.appendChild(placeholderOption);
 
   for (const optionConfig of STOCK_DEDUCT_REASON_OPTIONS) {
@@ -3840,18 +6142,433 @@ function createStockDetailDeductReasonRow(label, value, onChange) {
     select.appendChild(option);
   }
 
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "stock-deduct-reason-dropdown__trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-controls", `${dropdownId}-menu`);
+  trigger.setAttribute("aria-label", label);
+
+  const triggerLabel = document.createElement("span");
+  triggerLabel.className = "stock-deduct-reason-dropdown__label";
+
+  const triggerArrow = document.createElement("span");
+  triggerArrow.className = "stock-deduct-reason-dropdown__arrow";
+  triggerArrow.setAttribute("aria-hidden", "true");
+  triggerArrow.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>`;
+  trigger.append(triggerLabel, triggerArrow);
+
+  const menu = document.createElement("div");
+  menu.id = `${dropdownId}-menu`;
+  menu.className = "stock-deduct-reason-dropdown__menu";
+  menu.setAttribute("role", "listbox");
+  menu.setAttribute("aria-label", label);
+  menu.hidden = true;
+
+  const optionButtons = STOCK_DEDUCT_REASON_OPTIONS.map((optionConfig) => {
+    const optionButton = document.createElement("button");
+    optionButton.type = "button";
+    optionButton.className = "stock-deduct-reason-dropdown__option";
+    optionButton.dataset.reasonOption = optionConfig.value;
+    optionButton.setAttribute("role", "option");
+    optionButton.setAttribute("aria-selected", "false");
+    optionButton.textContent = optionConfig.label;
+    optionButton.addEventListener("click", () => {
+      select.value = optionConfig.value;
+      select.classList.remove("is-error");
+      setReasonMenuOpen(false);
+      onChange?.(normalizeStockDeductReason(select.value), select);
+      trigger.focus();
+    });
+    menu.appendChild(optionButton);
+    return optionButton;
+  });
+
+  function isReasonControlDisabled() {
+    return select.disabled || select.classList.contains("is-disabled");
+  }
+
+  function syncReasonDropdownUi() {
+    const currentValue = normalizeStockDeductReason(select.value);
+    const selectedLabel = getStockDeductReasonLabel(currentValue);
+    triggerLabel.textContent = selectedLabel || placeholderText;
+    triggerLabel.classList.toggle("is-placeholder", !currentValue);
+    trigger.classList.toggle("is-placeholder", !currentValue);
+    trigger.classList.toggle("is-error", select.classList.contains("is-error"));
+    trigger.classList.toggle("is-saving", select.classList.contains("is-saving"));
+    trigger.classList.toggle("is-disabled", isReasonControlDisabled());
+    trigger.disabled = isReasonControlDisabled();
+    optionButtons.forEach((optionButton) => {
+      const isSelected = optionButton.dataset.reasonOption === currentValue;
+      optionButton.classList.toggle("is-selected", isSelected);
+      optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
+    });
+    if (isReasonControlDisabled()) {
+      setReasonMenuOpen(false);
+    }
+  }
+
+  function closeThisReasonMenu() {
+    setReasonMenuOpen(false);
+  }
+
+  function positionReasonMenu() {
+    menu.classList.remove("is-above");
+    const triggerRect = trigger.getBoundingClientRect();
+    const estimatedHeight = Math.min(menu.scrollHeight || 220, 220);
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const spaceAbove = triggerRect.top;
+    if (spaceBelow < estimatedHeight + 12 && spaceAbove > spaceBelow) {
+      menu.classList.add("is-above");
+    }
+  }
+
+  function setReasonMenuOpen(isOpen) {
+    const nextOpen = Boolean(isOpen) && !isReasonControlDisabled();
+    fieldGroup.classList.toggle("is-open", nextOpen);
+    trigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    menu.hidden = !nextOpen;
+    if (nextOpen) {
+      if (typeof closeOpenStockDeductReasonMenu === "function" && closeOpenStockDeductReasonMenu !== closeThisReasonMenu) {
+        closeOpenStockDeductReasonMenu();
+      }
+      positionReasonMenu();
+      closeOpenStockDeductReasonMenu = closeThisReasonMenu;
+      const selectedButton = optionButtons.find((optionButton) => optionButton.classList.contains("is-selected"));
+      window.requestAnimationFrame(() => (selectedButton || optionButtons[0])?.focus());
+    } else if (closeOpenStockDeductReasonMenu === closeThisReasonMenu) {
+      closeOpenStockDeductReasonMenu = null;
+    }
+  }
+
+  function handleReasonPointerDown(event) {
+    if (!fieldGroup.isConnected) {
+      document.removeEventListener("pointerdown", handleReasonPointerDown, true);
+      return;
+    }
+    if (!fieldGroup.classList.contains("is-open")) {
+      return;
+    }
+    if (event.target instanceof Node && fieldGroup.contains(event.target)) {
+      return;
+    }
+    setReasonMenuOpen(false);
+  }
+
+  trigger.addEventListener("click", () => {
+    setReasonMenuOpen(!fieldGroup.classList.contains("is-open"));
+  });
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setReasonMenuOpen(true);
+    }
+  });
+  menu.addEventListener("keydown", (event) => {
+    const currentIndex = optionButtons.findIndex((optionButton) => optionButton === document.activeElement);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      optionButtons[Math.min(optionButtons.length - 1, Math.max(0, currentIndex) + 1)]?.focus();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      optionButtons[Math.max(0, currentIndex - 1)]?.focus();
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      optionButtons[0]?.focus();
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      optionButtons[optionButtons.length - 1]?.focus();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setReasonMenuOpen(false);
+      trigger.focus();
+    }
+  });
+
   select.value = normalizeStockDeductReason(value);
   select.addEventListener("change", () => {
     select.classList.remove("is-error");
+    syncReasonDropdownUi();
     onChange?.(normalizeStockDeductReason(select.value), select);
   });
 
-  fieldGroup.append(select);
+  const nativeValueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  if (nativeValueDescriptor?.get && nativeValueDescriptor?.set) {
+    Object.defineProperty(select, "value", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return nativeValueDescriptor.get.call(this);
+      },
+      set(nextValue) {
+        nativeValueDescriptor.set.call(this, nextValue);
+        syncReasonDropdownUi();
+      },
+    });
+  }
+
+  const nativeDisabledDescriptor =
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "disabled") ||
+    Object.getOwnPropertyDescriptor(HTMLElement.prototype, "disabled");
+  if (nativeDisabledDescriptor?.get && nativeDisabledDescriptor?.set) {
+    Object.defineProperty(select, "disabled", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return nativeDisabledDescriptor.get.call(this);
+      },
+      set(nextValue) {
+        nativeDisabledDescriptor.set.call(this, nextValue);
+        syncReasonDropdownUi();
+      },
+    });
+  }
+
+  const classObserver = new MutationObserver(syncReasonDropdownUi);
+  classObserver.observe(select, { attributes: true, attributeFilter: ["class", "disabled"] });
+  document.addEventListener("pointerdown", handleReasonPointerDown, true);
+
+  fieldGroup.append(select, trigger, menu);
   row.append(labelElement, fieldGroup);
+  syncReasonDropdownUi();
   return {
     row,
     select,
+    trigger,
     getValue: () => normalizeStockDeductReason(select.value),
+  };
+}
+
+function formatStockDeductBatchOptionLabel(batch) {
+  const batchLabel = String(batch?.label ?? "Stock batch").trim() || "Stock batch";
+  const stockLabel = formatUnits(Math.max(0, Math.trunc(Number(batch?.stock) || 0)));
+  const expiryLabel = hasStockExpiryDate(batch?.expiryDate)
+    ? formatExpiryDateDisplay(batch.expiryDate)
+    : "No expiry date";
+  return `${batchLabel} · ${stockLabel} · ${expiryLabel}`;
+}
+
+function createStockDetailBatchSelectRow(label, batches, selectedValue, onChange) {
+  const dropdownId = `stock-deduct-batch-${++stockDeductBatchDropdownSerial}`;
+  const placeholderText = "Select batch";
+  const normalizedBatches = (Array.isArray(batches) ? batches : [])
+    .filter((batch) => batch && batch.stock > 0)
+    .map((batch) => ({
+      ...batch,
+      sourceBatch: normalizeSellPriorityBatchKey(batch.sourceBatch) || "old",
+    }));
+
+  const row = document.createElement("div");
+  row.className = "dashboard-info-row stock-detail-panel__input-row stock-edit-modal__batch-row";
+
+  const labelElement = document.createElement("span");
+  labelElement.textContent = label;
+
+  const fieldGroup = document.createElement("div");
+  fieldGroup.className = "stock-detail-panel__input-group stock-deduct-reason-dropdown stock-deduct-batch-dropdown";
+
+  const select = document.createElement("select");
+  select.className = "stock-detail-panel__select-input stock-deduct-reason-dropdown__native";
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
+
+  const placeholderOption = document.createElement("option");
+  placeholderOption.value = "";
+  placeholderOption.textContent = placeholderText;
+  select.appendChild(placeholderOption);
+
+  normalizedBatches.forEach((batch) => {
+    const option = document.createElement("option");
+    option.value = batch.sourceBatch;
+    option.textContent = formatStockDeductBatchOptionLabel(batch);
+    select.appendChild(option);
+  });
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "stock-deduct-reason-dropdown__trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-controls", `${dropdownId}-menu`);
+  trigger.setAttribute("aria-label", label);
+
+  const triggerLabel = document.createElement("span");
+  triggerLabel.className = "stock-deduct-reason-dropdown__label";
+
+  const triggerArrow = document.createElement("span");
+  triggerArrow.className = "stock-deduct-reason-dropdown__arrow";
+  triggerArrow.setAttribute("aria-hidden", "true");
+  triggerArrow.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>`;
+  trigger.append(triggerLabel, triggerArrow);
+
+  const menu = document.createElement("div");
+  menu.id = `${dropdownId}-menu`;
+  menu.className = "stock-deduct-reason-dropdown__menu";
+  menu.setAttribute("role", "listbox");
+  menu.setAttribute("aria-label", label);
+  menu.hidden = true;
+
+  const optionButtons = normalizedBatches.map((batch) => {
+    const optionButton = document.createElement("button");
+    optionButton.type = "button";
+    optionButton.className = "stock-deduct-reason-dropdown__option";
+    optionButton.dataset.batchOption = batch.sourceBatch;
+    optionButton.setAttribute("role", "option");
+    optionButton.setAttribute("aria-selected", "false");
+    optionButton.textContent = formatStockDeductBatchOptionLabel(batch);
+    optionButton.addEventListener("click", () => {
+      select.value = batch.sourceBatch;
+      select.classList.remove("is-error");
+      setBatchMenuOpen(false);
+      onChange?.(normalizeSellPriorityBatchKey(select.value), select, batch);
+      trigger.focus();
+    });
+    menu.appendChild(optionButton);
+    return optionButton;
+  });
+
+  function isBatchControlDisabled() {
+    return select.disabled || select.classList.contains("is-disabled");
+  }
+
+  function syncBatchDropdownUi() {
+    const currentValue = normalizeSellPriorityBatchKey(select.value);
+    const selectedBatch = normalizedBatches.find((batch) => batch.sourceBatch === currentValue);
+    const selectedLabel = selectedBatch
+      ? formatStockDeductBatchOptionLabel(selectedBatch)
+      : "";
+    triggerLabel.textContent = selectedLabel || placeholderText;
+    triggerLabel.classList.toggle("is-placeholder", !currentValue);
+    trigger.classList.toggle("is-placeholder", !currentValue);
+    trigger.classList.toggle("is-error", select.classList.contains("is-error"));
+    trigger.classList.toggle("is-saving", select.classList.contains("is-saving"));
+    trigger.classList.toggle("is-disabled", isBatchControlDisabled());
+    trigger.disabled = isBatchControlDisabled();
+    optionButtons.forEach((optionButton) => {
+      const isSelected = optionButton.dataset.batchOption === currentValue;
+      optionButton.classList.toggle("is-selected", isSelected);
+      optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
+    });
+    if (isBatchControlDisabled()) {
+      setBatchMenuOpen(false);
+    }
+  }
+
+  function closeThisBatchMenu() {
+    setBatchMenuOpen(false);
+  }
+
+  function positionBatchMenu() {
+    menu.classList.remove("is-above");
+    const triggerRect = trigger.getBoundingClientRect();
+    const estimatedHeight = Math.min(menu.scrollHeight || 220, 260);
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const spaceAbove = triggerRect.top;
+    if (spaceBelow < estimatedHeight + 12 && spaceAbove > spaceBelow) {
+      menu.classList.add("is-above");
+    }
+  }
+
+  function setBatchMenuOpen(isOpen) {
+    const nextOpen = Boolean(isOpen) && !isBatchControlDisabled();
+    fieldGroup.classList.toggle("is-open", nextOpen);
+    trigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    menu.hidden = !nextOpen;
+    if (nextOpen) {
+      if (typeof closeOpenStockDeductReasonMenu === "function" && closeOpenStockDeductReasonMenu !== closeThisBatchMenu) {
+        closeOpenStockDeductReasonMenu();
+      }
+      positionBatchMenu();
+      closeOpenStockDeductReasonMenu = closeThisBatchMenu;
+      const selectedButton = optionButtons.find((optionButton) => optionButton.classList.contains("is-selected"));
+      window.requestAnimationFrame(() => (selectedButton || optionButtons[0])?.focus());
+    } else if (closeOpenStockDeductReasonMenu === closeThisBatchMenu) {
+      closeOpenStockDeductReasonMenu = null;
+    }
+  }
+
+  function handleBatchPointerDown(event) {
+    if (!fieldGroup.isConnected) {
+      document.removeEventListener("pointerdown", handleBatchPointerDown, true);
+      return;
+    }
+    if (!fieldGroup.classList.contains("is-open")) {
+      return;
+    }
+    if (event.target instanceof Node && fieldGroup.contains(event.target)) {
+      return;
+    }
+    setBatchMenuOpen(false);
+  }
+
+  trigger.addEventListener("click", () => {
+    setBatchMenuOpen(!fieldGroup.classList.contains("is-open"));
+  });
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setBatchMenuOpen(true);
+    }
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setBatchMenuOpen(false);
+      trigger.focus();
+    }
+  });
+
+  select.value = normalizeSellPriorityBatchKey(selectedValue);
+  select.addEventListener("change", () => {
+    select.classList.remove("is-error");
+    syncBatchDropdownUi();
+    const currentValue = normalizeSellPriorityBatchKey(select.value);
+    const selectedBatch = normalizedBatches.find((batch) => batch.sourceBatch === currentValue);
+    onChange?.(currentValue, select, selectedBatch || null);
+  });
+
+  const nativeValueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  if (nativeValueDescriptor?.get && nativeValueDescriptor?.set) {
+    Object.defineProperty(select, "value", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return nativeValueDescriptor.get.call(this);
+      },
+      set(nextValue) {
+        nativeValueDescriptor.set.call(this, nextValue);
+        syncBatchDropdownUi();
+      },
+    });
+  }
+
+  const classObserver = new MutationObserver(syncBatchDropdownUi);
+  classObserver.observe(select, { attributes: true, attributeFilter: ["class", "disabled"] });
+  document.addEventListener("pointerdown", handleBatchPointerDown, true);
+
+  fieldGroup.append(select, trigger, menu);
+  row.append(labelElement, fieldGroup);
+  syncBatchDropdownUi();
+  return {
+    row,
+    select,
+    trigger,
+    getValue: () => normalizeSellPriorityBatchKey(select.value),
+    getSelectedBatch: () => {
+      const currentValue = normalizeSellPriorityBatchKey(select.value);
+      return normalizedBatches.find((batch) => batch.sourceBatch === currentValue) || null;
+    },
   };
 }
 
@@ -3916,7 +6633,40 @@ function createStockDetailCheckboxRow(label, checked = false, onChange) {
   };
 }
 
-function createStockDetailDateInputRow(label, value, onChange) {
+function createStockDetailRadioRow(label, name, value, checked = false, onChange) {
+  const row = document.createElement("div");
+  row.className = "dashboard-info-row stock-detail-panel__checkbox-row stock-detail-panel__radio-row";
+
+  const field = document.createElement("label");
+  field.className = "checkbox-field stock-edit-modal__checkbox-field stock-edit-modal__radio-field";
+
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = String(name || "stock-expiry-option");
+  input.value = String(value ?? "");
+  input.checked = Boolean(checked);
+  input.className = "stock-edit-modal__same-expiry-checkbox stock-edit-modal__expiry-option-radio";
+  input.setAttribute("aria-label", label);
+
+  const labelText = document.createElement("span");
+  labelText.textContent = label;
+
+  input.addEventListener("change", () => {
+    if (input.checked) {
+      onChange?.(input.value, input);
+    }
+  });
+
+  field.append(input, labelText);
+  row.append(field);
+  return {
+    row,
+    field,
+    input,
+  };
+}
+
+function createStockDetailDateInputRow(label, value, onChange, options = {}) {
   const row = document.createElement("div");
   row.className = "dashboard-info-row stock-detail-panel__date-input-row";
 
@@ -4102,7 +6852,25 @@ function createStockDetailDateInputRow(label, value, onChange) {
         dayButton.classList.add("is-selected");
       }
 
+      const dayValue = formatDateTimeLocalFromDate(dayDate);
+      const isExpiredDay = Boolean(options.rejectExpired) && isExpiryDateValueExpired(dayValue);
+      const isLockWindowDay = Number.isFinite(Number(options.rejectWithinLockDays))
+        && Number(options.rejectWithinLockDays) >= 0
+        && isSellPriorityLockedForExpiryDate(dayValue);
+      if (isExpiredDay || isLockWindowDay) {
+        dayButton.classList.add("is-expired");
+        dayButton.disabled = true;
+        dayButton.title = isExpiredDay
+          ? "Expired dates cannot be selected"
+          : `Dates within ${STOCK_SELL_PRIORITY_LOCK_DAYS} days cannot be selected`;
+      } else if (options.rejectExpired || Number.isFinite(Number(options.rejectWithinLockDays))) {
+        dayButton.classList.add("is-good");
+      }
+
       dayButton.addEventListener("click", () => {
+        if (dayButton.disabled) {
+          return;
+        }
         draftDate.setFullYear(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
         renderCalendarGrid();
       });
@@ -4111,16 +6879,45 @@ function createStockDetailDateInputRow(label, value, onChange) {
     }
   }
 
+  function positionPopover() {
+    if (popover.hidden) {
+      return;
+    }
+
+    const pad = 12;
+    const gap = 12;
+    const triggerRect = triggerButton.getBoundingClientRect();
+    const popHeight = popover.offsetHeight;
+    const overflowBelow = triggerRect.bottom + gap + popHeight > window.innerHeight - pad;
+    const fitsAbove = triggerRect.top - gap - popHeight >= pad;
+    const spaceBelow = window.innerHeight - pad - triggerRect.bottom;
+    const spaceAbove = triggerRect.top - pad;
+    popover.classList.toggle(
+      "is-above",
+      overflowBelow && (fitsAbove || spaceAbove > spaceBelow),
+    );
+  }
+
+  function requestPopoverPosition() {
+    window.requestAnimationFrame(positionPopover);
+  }
+
   function openPopover() {
     resetDraftDate();
     popover.hidden = false;
     row.classList.add("is-open");
     renderCalendarGrid();
+    requestPopoverPosition();
+    window.addEventListener("resize", requestPopoverPosition);
+    window.addEventListener("scroll", requestPopoverPosition, true);
   }
 
   function closePopover() {
     popover.hidden = true;
     row.classList.remove("is-open");
+    popover.classList.remove("is-above");
+    window.removeEventListener("resize", requestPopoverPosition);
+    window.removeEventListener("scroll", requestPopoverPosition, true);
   }
 
   prevYearButton.addEventListener("click", () => {
@@ -4157,7 +6954,20 @@ function createStockDetailDateInputRow(label, value, onChange) {
   });
 
   applyButton.addEventListener("click", () => {
-    committedValue = formatDateTimeLocalFromDate(draftDate);
+    const nextValue = formatDateTimeLocalFromDate(draftDate);
+    if (options.rejectExpired && isExpiryDateValueExpired(nextValue)) {
+      notifyExpiredStockNotAllowed();
+      return;
+    }
+    if (
+      Number.isFinite(Number(options.rejectWithinLockDays))
+      && Number(options.rejectWithinLockDays) >= 0
+      && isSellPriorityLockedForExpiryDate(nextValue)
+    ) {
+      notifyNearExpiryStockAddNotAllowed();
+      return;
+    }
+    committedValue = nextValue;
     syncTriggerLabel();
     closePopover();
     onChange?.(committedValue, triggerButton);
@@ -4200,8 +7010,11 @@ function openStockEditModal(product, options = {}) {
       ? (displayProduct?.stockDisplayLabel || "Fresh Batch")
       : "";
   const notificationFocusTarget = normalizeStockNotificationFocusTarget(options?.notificationFocusTarget);
+  const shouldSelectProduct = options?.selectProduct !== false;
   editingStockProductId = productIdentifier;
-  selectedStockProductId = productIdentifier;
+  if (shouldSelectProduct) {
+    selectedStockProductId = productIdentifier;
+  }
   removeStockEditModalOverlay();
 
   const overlay = document.createElement("div");
@@ -4260,7 +7073,8 @@ function openStockEditModal(product, options = {}) {
   let draftDeductReasonValue = initialDeductReasonValue;
   let draftDeductReasonDetailValue = initialDeductReasonDetailValue;
   let draftExpiryValue = initialExpiryValue;
-  let isSameExpiryDateSelected = hasInitialExpiryValue;
+  let isSameExpiryDateSelected =
+    hasInitialExpiryValue && !isExpiryDateValueExpired(initialExpiryValue);
 
   const stockField = createStockDetailReadOnlyNumberRow(
     isSplitDisplayProduct ? "Batch Stock" : "Stock",
@@ -4306,7 +7120,7 @@ function openStockEditModal(product, options = {}) {
   );
   const sameExpiryDateField = createStockDetailCheckboxRow(
     "Same Expiry Date",
-    hasInitialExpiryValue,
+    isSameExpiryDateSelected,
     (isChecked) => {
       isSameExpiryDateSelected = isChecked && hasInitialExpiryValue;
       sameExpiryDateCheckbox.checked = isSameExpiryDateSelected;
@@ -4507,6 +7321,7 @@ function openStockEditModal(product, options = {}) {
   stockEditModalClockIntervalId = window.setInterval(syncStockedDatePreview, 1000);
   const modalControlRefs = {
     displayProduct,
+    selectProductOnSave: shouldSelectProduct,
     addStockInput: addStockField.input,
     deductInput: deductField.input,
     deductReasonSelect: deductReasonField.select,
@@ -4524,6 +7339,10 @@ function openStockEditModal(product, options = {}) {
   overlay.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (typeof closeOpenStockDeductReasonMenu === "function") {
+        closeOpenStockDeductReasonMenu();
+        return;
+      }
       closeStockEditModal();
     }
   });
@@ -4556,17 +7375,1483 @@ function openStockEditModal(product, options = {}) {
   });
 }
 
+function closeStockActionDropdown() {
+  if (typeof closeOpenStockDeductReasonMenu === "function") {
+    closeOpenStockDeductReasonMenu();
+  }
+  stockActionDropdownCard?.classList.remove("is-action-open");
+  stockActionDropdownToggle?.classList.remove("is-open");
+  stockActionDropdownToggle?.setAttribute("aria-expanded", "false");
+  stockActionDropdown?.remove();
+  stockActionDropdown = null;
+  stockActionDropdownToggle = null;
+  stockActionDropdownCard = null;
+  stockActionDropdownMode = "";
+  window.removeEventListener("resize", positionStockActionDropdown);
+  window.removeEventListener("scroll", positionStockActionDropdown, true);
+  document.removeEventListener("keydown", handleStockActionDropdownKeydown, true);
+  document.removeEventListener("pointerdown", handleStockActionDropdownPointerDown, true);
+}
+
+function handleStockActionDropdownKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (typeof closeOpenStockDeductReasonMenu === "function") {
+      event.stopPropagation();
+      closeOpenStockDeductReasonMenu();
+      return;
+    }
+    closeStockActionDropdown();
+  }
+}
+
+function handleStockActionDropdownPointerDown(event) {
+  const target = event.target;
+  if (!(target instanceof Node)) {
+    return;
+  }
+  if (stockActionDropdown?.contains(target) || stockActionDropdownToggle?.contains(target)) {
+    return;
+  }
+  closeStockActionDropdown();
+}
+
+function positionStockActionDropdown() {
+  const panel = stockActionDropdown;
+  const toggle = stockActionDropdownToggle;
+  if (!(panel instanceof HTMLElement) || !(toggle instanceof HTMLElement)) {
+    return;
+  }
+
+  const rect = toggle.getBoundingClientRect();
+  const gap = 10;
+  const pad = 12;
+  const expiryTable = stockActionDropdownMode === "expiry"
+    ? panel.querySelector(".stock-expiry-dropdown__table")
+    : null;
+  const expiryContentWidth = expiryTable instanceof HTMLElement
+    ? Math.ceil(expiryTable.scrollWidth) + 2
+    : 560;
+  const preferredWidth = stockActionDropdownMode === "expiry"
+    ? Math.min(720, Math.max(420, expiryContentWidth))
+    : 420;
+  const width = Math.min(
+    preferredWidth,
+    Math.max(280, window.innerWidth - pad * 2),
+  );
+  let left = Math.round(rect.right - width);
+  left = Math.min(left, window.innerWidth - width - pad);
+  left = Math.max(pad, left);
+  let top = Math.round(rect.bottom + gap);
+  let arrowLeft = rect.left + rect.width / 2 - left;
+  arrowLeft = Math.min(Math.max(arrowLeft, 18), width - 18);
+
+  panel.style.position = "fixed";
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+  panel.style.width = `${Math.round(width)}px`;
+  panel.style.setProperty("--stock-action-dropdown-arrow-left", `${Math.round(arrowLeft)}px`);
+  panel.classList.remove("is-above");
+
+  const dialog = panel.querySelector(".stock-action-dropdown__dialog");
+  const height = dialog instanceof HTMLElement
+    ? dialog.getBoundingClientRect().height
+    : panel.offsetHeight;
+  if (top + height + pad > window.innerHeight) {
+    const above = Math.round(rect.top - height - gap);
+    if (above >= pad) {
+      panel.style.top = `${above}px`;
+      panel.classList.add("is-above");
+    } else {
+      panel.style.top = `${Math.max(pad, window.innerHeight - height - pad)}px`;
+    }
+  }
+}
+
+function createStockActionButton(action, label, iconMarkup) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `stock-product-card__action-button stock-product-card__action-button--${action}`;
+  button.dataset.stockAction = action;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-expanded", "false");
+  button.title = label;
+  button.innerHTML = iconMarkup;
+  return button;
+}
+
+function applyInventoryExpiryActionTone(button, expiryBatches) {
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const normalizedBatches = Array.isArray(expiryBatches) ? expiryBatches : [];
+  const hasGoodBatch = normalizedBatches.some((batch) => batch?.isGood);
+  const hasWarningBatch = normalizedBatches.some(
+    (batch) => batch?.isNearExpiry || batch?.isExpired || !batch?.isGood,
+  );
+  const tone = hasGoodBatch && hasWarningBatch
+    ? "mixed"
+    : hasGoodBatch
+      ? "good"
+      : "warning";
+  const toneDescription = tone === "mixed"
+    ? "Mixed good and near-expiry batches"
+    : tone === "good"
+      ? "All expiry batches are good"
+      : "All expiry batches need expiry attention";
+
+  button.classList.add(`is-expiry-${tone}`);
+  button.dataset.expiryTone = tone;
+  button.title = `${button.title} - ${toneDescription}`;
+  button.setAttribute("aria-label", `${button.getAttribute("aria-label")} - ${toneDescription}`);
+
+  if (tone !== "mixed") {
+    return;
+  }
+
+  const icon = document.createElement("span");
+  icon.className = "stock-expiry-action-tone-icon";
+  const goodLayer = document.createElement("span");
+  goodLayer.className = "stock-expiry-action-tone-icon__layer is-good";
+  goodLayer.innerHTML = STOCK_EXPIRY_DETAILS_ICON_MARKUP;
+  const warningLayer = document.createElement("span");
+  warningLayer.className = "stock-expiry-action-tone-icon__layer is-warning";
+  warningLayer.innerHTML = STOCK_EXPIRY_DETAILS_ICON_MARKUP;
+  icon.append(goodLayer, warningLayer);
+  button.replaceChildren(icon);
+}
+
+const STOCK_ACTION_DROPDOWN_CLOSE_ICON_MARKUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>`;
+
+function createStockActionDropdownButton(label, variant) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `stock-action-dropdown__button stock-action-dropdown__button--${variant}`;
+  button.textContent = label;
+  return button;
+}
+
+function createStockActionDropdownSplitRow(quantityField, wideField) {
+  const row = document.createElement("div");
+  row.className = "stock-action-dropdown__split-row";
+  quantityField.row.classList.add("stock-action-dropdown__split-field--quantity");
+  wideField.row.classList.add("stock-action-dropdown__split-field--wide");
+  row.append(quantityField.row, wideField.row);
+  return row;
+}
+
+function createStockActionDropdownShell({ title, subtitle, iconMarkup, mode }) {
+  const panel = document.createElement("div");
+  panel.className = `stock-action-dropdown stock-action-dropdown--${mode}`;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-labelledby", "stock-action-dropdown-title");
+
+  const dialog = document.createElement("section");
+  dialog.className = "stock-action-dropdown__dialog";
+
+  const header = document.createElement("header");
+  header.className = "stock-action-dropdown__header";
+
+  const icon = document.createElement("span");
+  icon.className = "stock-action-dropdown__icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = iconMarkup;
+
+  const copy = document.createElement("div");
+  const heading = document.createElement("h3");
+  heading.id = "stock-action-dropdown-title";
+  heading.textContent = title;
+  const description = document.createElement("p");
+  description.textContent = subtitle;
+  copy.append(heading, description);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "stock-action-dropdown__close";
+  closeButton.setAttribute("aria-label", `Close ${title}`);
+  closeButton.title = "Close";
+  closeButton.innerHTML = STOCK_ACTION_DROPDOWN_CLOSE_ICON_MARKUP;
+  closeButton.addEventListener("click", () => closeStockActionDropdown());
+
+  header.append(icon, copy, closeButton);
+
+  const body = document.createElement("div");
+  body.className = "stock-action-dropdown__body";
+
+  const footer = document.createElement("footer");
+  footer.className = "stock-action-dropdown__footer";
+
+  dialog.append(header, body, footer);
+  panel.appendChild(dialog);
+  return { panel, dialog, body, footer };
+}
+
+function openStockMovementModal(product) {
+  if (!product) {
+    return;
+  }
+
+  const productIdentifier = getStockProductIdentifier(product);
+  closeNearExpiryBatchOverlay();
+  closeStockActionDropdown();
+  removeStockEditModalOverlay();
+  editingStockProductId = "";
+
+  if (isStockMovementDrawerMode() && selectedStockProductId === productIdentifier) {
+    selectedStockProductId = "";
+    stockRecordDrawerMode = "records";
+    renderStockDashboard(currentStockProducts);
+    return;
+  }
+
+  stockRecordDrawerMode = "movement";
+  selectedStockProductId = productIdentifier;
+  renderStockDashboard(currentStockProducts);
+}
+
+function openStockActionDropdown(toggle, mode, product, options = {}) {
+  if (!(toggle instanceof HTMLElement) || !product) {
+    return;
+  }
+
+  if (mode === "activity") {
+    openStockMovementModal(product);
+    return;
+  }
+
+  if (
+    stockActionDropdownToggle === toggle &&
+    stockActionDropdownMode === mode &&
+    stockActionDropdown instanceof HTMLElement
+  ) {
+    closeStockActionDropdown();
+    return;
+  }
+
+  closeNearExpiryBatchOverlay();
+  closeStockActionDropdown();
+  removeStockEditModalOverlay();
+  editingStockProductId = "";
+
+  const sourceProduct = getStockSourceProduct(product);
+  const expiryBatches = mode === "expiry" ? getInventoryExpiryBatches(product) : [];
+  const expiryBatchCountLabel = expiryBatches.length === 1
+    ? "1 dated batch"
+    : `${expiryBatches.length} dated batches`;
+  const configs = {
+    add: {
+      title: "Add Stock",
+      subtitle: "Increase available units and set expiry.",
+      iconMarkup: STOCK_ADD_ACTION_ICON_MARKUP,
+    },
+    deduct: {
+      title: "Deduct Stock",
+      subtitle: "Remove units and choose a deduct reason.",
+      iconMarkup: STOCK_DEDUCT_ACTION_ICON_MARKUP,
+    },
+    expiry: {
+      title: "Expiry details",
+      subtitle: expiryBatchCountLabel,
+      iconMarkup: STOCK_EXPIRY_DETAILS_ICON_MARKUP,
+    },
+  };
+  const config = configs[mode];
+  if (!config) {
+    return;
+  }
+
+  const { panel, body, footer } = createStockActionDropdownShell({
+    ...config,
+    mode,
+  });
+  if (options?.skipAnimation === true) {
+    panel.classList.add("is-refresh-restored");
+  }
+  stockActionDropdown = panel;
+  stockActionDropdownToggle = toggle;
+  stockActionDropdownCard = toggle.closest(".stock-product-card");
+  stockActionDropdownMode = mode;
+  stockActionDropdownCard?.classList.add("is-action-open");
+  toggle.classList.add("is-open");
+  toggle.setAttribute("aria-expanded", "true");
+
+  if (mode === "add") {
+    fillStockAddDropdown(body, footer, sourceProduct, product);
+  } else if (mode === "deduct") {
+    fillStockDeductDropdown(body, footer, sourceProduct, product);
+  } else if (mode === "expiry") {
+    fillStockExpiryDropdown(body, footer, sourceProduct, product);
+  }
+
+  document.body.appendChild(panel);
+  window.addEventListener("resize", positionStockActionDropdown);
+  window.addEventListener("scroll", positionStockActionDropdown, true);
+  document.addEventListener("keydown", handleStockActionDropdownKeydown, true);
+  document.addEventListener("pointerdown", handleStockActionDropdownPointerDown, true);
+  positionStockActionDropdown();
+}
+
+function fillStockAddDropdown(body, footer, sourceProduct, displayProduct) {
+  const editingProduct = isSplitStockDisplayEntry(displayProduct) ? displayProduct : sourceProduct;
+  const currentExpiryDate =
+    getAheadStockExpiryDate(sourceProduct)
+    || getProductExpiryDate(editingProduct);
+  const shouldClearExpiredDefault =
+    isExpiredStockDisplayEntry(displayProduct) || isExpiryDateValueExpired(currentExpiryDate);
+  const initialExpiryValue = shouldClearExpiredDefault
+    ? ""
+    : formatDateTimeLocalValue(currentExpiryDate);
+  const hasInitialExpiryValue = Boolean(initialExpiryValue);
+  const canUsePerBatch = hasInventoryExpiryDetails(sourceProduct);
+  const addBatches = canUsePerBatch
+    ? getInventoryExpiryBatches(sourceProduct)
+      .filter((batch) => batch.stock > 0 && !batch.isExpired)
+    : [];
+  let draftAddStockValue = "0";
+  let draftExpiryValue = initialExpiryValue;
+  let draftAddBatchKey = "";
+  let addExpiryMode = hasInitialExpiryValue ? "same" : "none";
+
+  const quantityField = createStockDetailNumberInputRow("Quantity", 0, (nextValue) => {
+    draftAddStockValue = nextValue;
+    syncSaveState();
+  });
+  const expiryField = createStockDetailDateInputRow(
+    "Expiry Date",
+    initialExpiryValue,
+    (nextValue) => {
+      if (isExpiryDateValueExpired(nextValue)) {
+        notifyExpiredStockNotAllowed();
+        return;
+      }
+      if (isSellPriorityLockedForExpiryDate(nextValue)) {
+        notifyNearExpiryStockAddNotAllowed();
+        return;
+      }
+      draftExpiryValue = String(nextValue ?? "").trim();
+      syncSaveState();
+    },
+    {
+      rejectExpired: true,
+      rejectWithinLockDays: STOCK_SELL_PRIORITY_LOCK_DAYS,
+    },
+  );
+  const batchField = canUsePerBatch && addBatches.length
+    ? createStockDetailBatchSelectRow(
+        "Select Batch",
+        addBatches,
+        "",
+        (nextValue, _select, selectedBatch) => {
+          draftAddBatchKey = normalizeSellPriorityBatchKey(nextValue);
+          draftExpiryValue = selectedBatch
+            ? formatDateTimeLocalValue(selectedBatch.expiryDate || "")
+            : "";
+          syncSaveState();
+        },
+      )
+    : null;
+  if (batchField) {
+    batchField.row.hidden = true;
+  }
+  const addWideSlot = {
+    row: document.createElement("div"),
+  };
+  addWideSlot.row.className = "stock-action-dropdown__add-wide-slot";
+  addWideSlot.row.appendChild(expiryField.row);
+  if (batchField) {
+    addWideSlot.row.appendChild(batchField.row);
+  }
+
+  const radioGroupName = `stock-add-expiry-mode-${String(sourceProduct?.id ?? "item").trim() || "item"}`;
+
+  function syncAddExpiryModeRadios() {
+    sameExpiryDateField.input.checked = addExpiryMode === "same";
+    newExpiryDateField.input.checked = addExpiryMode === "new";
+    noExpiryDateField.input.checked = addExpiryMode === "none";
+    if (perBatchField?.input) {
+      perBatchField.input.checked = addExpiryMode === "per-batch";
+    }
+  }
+
+  function applyAddExpiryMode(nextMode) {
+    if (nextMode === "same") {
+      if (isExpiryDateValueExpired(currentExpiryDate)) {
+        notifyExpiredStockNotAllowed();
+        syncAddExpiryModeRadios();
+        return;
+      }
+      if (!hasInitialExpiryValue) {
+        syncAddExpiryModeRadios();
+        return;
+      }
+      addExpiryMode = "same";
+      draftAddBatchKey = "";
+      if (batchField?.select) {
+        batchField.select.value = "";
+      }
+      draftExpiryValue = initialExpiryValue;
+      expiryField.setValue(initialExpiryValue);
+    } else if (nextMode === "new") {
+      addExpiryMode = "new";
+      draftAddBatchKey = "";
+      if (batchField?.select) {
+        batchField.select.value = "";
+      }
+      draftExpiryValue = "";
+      expiryField.setValue("");
+    } else if (nextMode === "none") {
+      addExpiryMode = "none";
+      draftAddBatchKey = "";
+      if (batchField?.select) {
+        batchField.select.value = "";
+      }
+      draftExpiryValue = "";
+      expiryField.setValue("");
+    } else if (nextMode === "per-batch" && batchField) {
+      addExpiryMode = "per-batch";
+      draftAddBatchKey = "";
+      if (batchField.select) {
+        batchField.select.value = "";
+      }
+      draftExpiryValue = "";
+    } else {
+      return;
+    }
+
+    syncAddExpiryModeRadios();
+    syncPerBatchUi();
+    syncExpiryLockState();
+    syncSaveState();
+  }
+
+  const sameExpiryDateField = createStockDetailRadioRow(
+    "Same Expiry Date",
+    radioGroupName,
+    "same",
+    addExpiryMode === "same",
+    () => applyAddExpiryMode("same"),
+  );
+  const newExpiryDateField = createStockDetailRadioRow(
+    "New",
+    radioGroupName,
+    "new",
+    false,
+    () => applyAddExpiryMode("new"),
+  );
+  const noExpiryDateField = createStockDetailRadioRow(
+    "No Expiry Date",
+    radioGroupName,
+    "none",
+    addExpiryMode === "none",
+    () => applyAddExpiryMode("none"),
+  );
+  const perBatchField = batchField
+    ? createStockDetailRadioRow(
+        "Per Batch",
+        radioGroupName,
+        "per-batch",
+        false,
+        () => applyAddExpiryMode("per-batch"),
+      )
+    : null;
+
+  const expiryOptions = document.createElement("div");
+  expiryOptions.className = "stock-action-dropdown__expiry-options";
+  expiryOptions.append(
+    sameExpiryDateField.row,
+    newExpiryDateField.row,
+    noExpiryDateField.row,
+  );
+  if (perBatchField) {
+    expiryOptions.appendChild(perBatchField.row);
+  }
+
+  const splitRow = createStockActionDropdownSplitRow(quantityField, addWideSlot);
+
+  function syncPerBatchUi() {
+    const isPerBatchSelected = addExpiryMode === "per-batch";
+    if (batchField) {
+      expiryField.row.hidden = isPerBatchSelected;
+      batchField.row.hidden = !isPerBatchSelected;
+    } else {
+      expiryField.row.hidden = false;
+    }
+    // Same / New / No Expiry stay visible with Per Batch (radio group).
+    if (stockActionDropdown?.isConnected) {
+      positionStockActionDropdown();
+    }
+  }
+
+  function syncExpiryLockState() {
+    const shouldLockExpiryField =
+      addExpiryMode === "same"
+      || addExpiryMode === "none"
+      || addExpiryMode === "per-batch";
+    expiryField.triggerButton.disabled = shouldLockExpiryField;
+    expiryField.triggerButton.classList.toggle("is-disabled", shouldLockExpiryField);
+  }
+
+  const cancelButton = createStockActionDropdownButton("Cancel", "secondary");
+  const saveButton = createStockActionDropdownButton("Add Stock", "primary");
+  cancelButton.addEventListener("click", () => closeStockActionDropdown());
+
+  function syncSaveState() {
+    const parsedStock = Number(draftAddStockValue);
+    const hasQuantity = Number.isFinite(parsedStock)
+      && parsedStock > 0
+      && Number.isInteger(parsedStock);
+    const isPerBatchSelected = addExpiryMode === "per-batch";
+    const hasBatch = !isPerBatchSelected || Boolean(normalizeSellPriorityBatchKey(draftAddBatchKey));
+    const hasValidNewExpiry = addExpiryMode !== "new"
+      || (
+        Boolean(String(draftExpiryValue ?? "").trim())
+        && !isStockAddExpiryDateBlocked(draftExpiryValue)
+      );
+    saveButton.disabled = !(
+      hasQuantity
+      && hasBatch
+      && hasValidNewExpiry
+      && !isExpiryDateValueExpired(draftExpiryValue)
+      && !(
+        addExpiryMode === "new"
+        && isSellPriorityLockedForExpiryDate(draftExpiryValue)
+      )
+    );
+  }
+
+  saveButton.addEventListener("click", () => {
+    const isPerBatchSelected = addExpiryMode === "per-batch";
+    if (isPerBatchSelected && !normalizeSellPriorityBatchKey(draftAddBatchKey)) {
+      batchField?.select?.classList.add("is-error");
+      window.setTimeout(() => batchField?.select?.classList.remove("is-error"), 1800);
+      batchField?.trigger?.focus();
+      showStockEditorSnackbar(
+        "Select Batch",
+        "Choose which batch to add stock to.",
+        "error",
+      );
+      return;
+    }
+    if (addExpiryMode === "new") {
+      if (!String(draftExpiryValue ?? "").trim()) {
+        showStockEditorSnackbar(
+          "Expiry Date",
+          "Choose a new expiry date before adding stock.",
+          "error",
+        );
+        return;
+      }
+      if (isExpiryDateValueExpired(draftExpiryValue)) {
+        notifyExpiredStockNotAllowed();
+        return;
+      }
+      if (isSellPriorityLockedForExpiryDate(draftExpiryValue)) {
+        notifyNearExpiryStockAddNotAllowed();
+        return;
+      }
+    }
+    if (isExpiryDateValueExpired(draftExpiryValue)) {
+      notifyExpiredStockNotAllowed();
+      return;
+    }
+    const selectedBatch = isPerBatchSelected
+      ? (batchField?.getSelectedBatch?.() || null)
+      : null;
+    if (selectedBatch) {
+      draftExpiryValue = formatDateTimeLocalValue(selectedBatch.expiryDate || "");
+    }
+    void saveStockEditModalChanges(
+      sourceProduct,
+      draftAddStockValue,
+      "",
+      "",
+      "",
+      draftExpiryValue,
+      {
+        displayProduct,
+        selectProductOnSave: false,
+        addStockInput: quantityField.input,
+        primaryButton: saveButton,
+        selectedAddBatchKey: isPerBatchSelected ? draftAddBatchKey : "",
+      },
+    ).then((didSave) => {
+      if (didSave) {
+        closeStockActionDropdown();
+      }
+    });
+  });
+
+  body.append(splitRow, expiryOptions);
+  footer.append(cancelButton, saveButton);
+  quantityField.input.setAttribute("aria-label", "Add quantity");
+  syncPerBatchUi();
+  syncExpiryLockState();
+  syncSaveState();
+  window.requestAnimationFrame(() => quantityField.input.focus());
+}
+
+function fillStockDeductDropdown(body, footer, sourceProduct, displayProduct) {
+  let draftDeductValue = "";
+  let draftDeductReasonValue = "";
+  let draftDeductReasonDetailValue = "";
+  let draftDeductBatchKey = "";
+
+  const deductBatches = hasInventoryExpiryDetails(sourceProduct)
+    ? getInventoryExpiryBatches(sourceProduct).filter((batch) => batch.stock > 0)
+    : [];
+  const requiresBatchSelection = deductBatches.length >= 2;
+
+  const quantityField = createStockDetailDeductInputRow("Quantity", "", (nextValue) => {
+    draftDeductValue = nextValue;
+    syncSaveState();
+  });
+  const reasonField = createStockDetailDeductReasonRow("Reason", "", (nextValue) => {
+    draftDeductReasonValue = nextValue;
+    syncSaveState();
+  });
+  const batchField = requiresBatchSelection
+    ? createStockDetailBatchSelectRow(
+        "Select Batch",
+        deductBatches,
+        "",
+        (nextValue) => {
+          draftDeductBatchKey = normalizeSellPriorityBatchKey(nextValue);
+          syncSaveState();
+        },
+      )
+    : null;
+  const reasonDetailField = createStockDetailTextInputRow(
+    "Other Reason",
+    "",
+    "Type the deduct reason",
+    (nextValue) => {
+      draftDeductReasonDetailValue = nextValue;
+      syncSaveState();
+    },
+  );
+  reasonDetailField.row.hidden = true;
+
+  const cancelButton = createStockActionDropdownButton("Cancel", "secondary");
+  const saveButton = createStockActionDropdownButton("Deduct Stock", "primary");
+  cancelButton.addEventListener("click", () => closeStockActionDropdown());
+
+  function syncSaveState() {
+    const parsedStock = Number(draftDeductValue);
+    const hasQuantity = Number.isFinite(parsedStock) && parsedStock < 0;
+    const reason = normalizeStockDeductReason(draftDeductReasonValue);
+    const needsOther = reason === "other";
+    const hasBatch = !requiresBatchSelection || Boolean(normalizeSellPriorityBatchKey(draftDeductBatchKey));
+    reasonDetailField.row.hidden = !needsOther;
+    saveButton.disabled = !(
+      hasQuantity &&
+      reason &&
+      hasBatch &&
+      (!needsOther || Boolean(normalizeStockDeductReasonDetail(draftDeductReasonDetailValue)))
+    );
+    if (stockActionDropdown?.isConnected) {
+      positionStockActionDropdown();
+    }
+  }
+
+  saveButton.addEventListener("click", () => {
+    if (requiresBatchSelection && !normalizeSellPriorityBatchKey(draftDeductBatchKey)) {
+      batchField?.select?.classList.add("is-error");
+      window.setTimeout(() => batchField?.select?.classList.remove("is-error"), 1800);
+      batchField?.trigger?.focus();
+      return;
+    }
+    const selectedBatch = batchField?.getSelectedBatch?.() || null;
+    if (requiresBatchSelection && selectedBatch) {
+      const parsedStock = Math.abs(Math.trunc(Number(draftDeductValue) || 0));
+      if (parsedStock > selectedBatch.stock) {
+        quantityField.input?.classList.add("is-error");
+        window.setTimeout(() => quantityField.input?.classList.remove("is-error"), 1800);
+        showStockEditorSnackbar(
+          "Select Batch",
+          `This batch only has ${formatUnits(selectedBatch.stock)} available.`,
+          "error",
+        );
+        return;
+      }
+    }
+    void saveStockEditModalChanges(
+      sourceProduct,
+      "0",
+      draftDeductValue,
+      draftDeductReasonValue,
+      draftDeductReasonDetailValue,
+      formatDateTimeLocalValue(
+        selectedBatch?.expiryDate
+          || getProductExpiryDate(
+            isSplitStockDisplayEntry(displayProduct) ? displayProduct : sourceProduct,
+          ),
+      ),
+      {
+        displayProduct,
+        selectProductOnSave: false,
+        deductInput: quantityField.input,
+        deductReasonSelect: reasonField.select,
+        deductReasonDetailInput: reasonDetailField.input,
+        deductBatchSelect: batchField?.select || null,
+        selectedDeductBatchKey: draftDeductBatchKey,
+        primaryButton: saveButton,
+      },
+    ).then((didSave) => {
+      if (didSave) {
+        closeStockActionDropdown();
+      }
+    });
+  });
+
+  body.append(createStockActionDropdownSplitRow(quantityField, reasonField));
+  if (batchField) {
+    body.appendChild(batchField.row);
+  }
+  body.appendChild(reasonDetailField.row);
+  footer.append(cancelButton, saveButton);
+  quantityField.input.setAttribute("aria-label", "Deduct quantity");
+  syncSaveState();
+  window.requestAnimationFrame(() => quantityField.input.focus());
+}
+
+function getInventoryExpiryStatusMeta(batch) {
+  if (!hasStockExpiryDate(batch?.expiryDate)) {
+    return { label: "No expiry date", className: "is-neutral" };
+  }
+  const daysUntilExpiry = Number.isFinite(batch?.daysUntilExpiry)
+    ? batch.daysUntilExpiry
+    : getDaysUntilExpiryValue(batch?.expiryDate);
+  if (!Number.isFinite(daysUntilExpiry)) {
+    return { label: "Date unavailable", className: "is-neutral" };
+  }
+  if (daysUntilExpiry < 0) {
+    const elapsedDays = Math.abs(daysUntilExpiry);
+    return {
+      label: elapsedDays === 1 ? "Expired 1 day ago" : `Expired ${elapsedDays} days ago`,
+      className: "is-expired",
+    };
+  }
+  if (daysUntilExpiry === 0) {
+    return { label: "Expires today", className: "is-warning" };
+  }
+  if (daysUntilExpiry === 1) {
+    return { label: "Near expiry - 1 day left", className: "is-warning" };
+  }
+  if (batch?.isNearExpiry) {
+    return {
+      label: `Near expiry - ${daysUntilExpiry} days left`,
+      className: "is-warning",
+    };
+  }
+  return {
+    label: `Active - ${daysUntilExpiry} days left`,
+    className: "is-active",
+  };
+}
+
+function fillStockExpiryDropdown(body, footer, sourceProduct, displayProduct) {
+  const expiryBatches = getInventoryExpiryBatches(displayProduct);
+  body.classList.add("stock-action-dropdown__body--expiry");
+  footer.remove();
+
+  if (!expiryBatches.length) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "stock-expiry-dropdown__empty";
+    emptyState.textContent = "No stock batches are recorded for this listing.";
+    body.appendChild(emptyState);
+    return;
+  }
+
+  const tableShell = document.createElement("div");
+  tableShell.className = "stock-expiry-dropdown__table-shell";
+
+  const table = document.createElement("table");
+  table.className = "stock-expiry-dropdown__table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["Batch", "Stock", "Expiry date", "Status", "Priority", "Action"].forEach((label) => {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+
+  const tbody = document.createElement("tbody");
+  expiryBatches.forEach((batch) => {
+    const row = document.createElement("tr");
+    row.className = "stock-expiry-dropdown__row";
+
+    const batchCell = document.createElement("td");
+    batchCell.className = "stock-expiry-dropdown__batch";
+    batchCell.textContent = batch.label;
+
+    const stockCell = document.createElement("td");
+    stockCell.className = "stock-expiry-dropdown__stock";
+    stockCell.textContent = formatStockCountDisplay(batch.stock);
+
+    const expiryCell = document.createElement("td");
+    expiryCell.className = "stock-expiry-dropdown__date";
+    expiryCell.textContent = hasStockExpiryDate(batch.expiryDate)
+      ? formatExpiryDateDisplay(batch.expiryDate)
+      : "No expiry date";
+
+    const statusCell = document.createElement("td");
+    const statusMeta = getInventoryExpiryStatusMeta(batch);
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `stock-expiry-dropdown__status ${statusMeta.className}`;
+    statusBadge.textContent = statusMeta.label;
+    statusCell.appendChild(statusBadge);
+
+    const priorityCell = document.createElement("td");
+    priorityCell.className = "stock-expiry-dropdown__priority";
+    const priorityButton = createSellPriorityToggleControl(
+      sourceProduct,
+      resolveExpiryDetailPriorityBatchKey(batch),
+      { labelMode: "on-off", forExpiryDetails: true },
+    );
+    if (priorityButton) {
+      priorityButton.classList.add("stock-expiry-dropdown__priority-button");
+      priorityCell.appendChild(priorityButton);
+    } else {
+      const fallbackButton = document.createElement("button");
+      const sellableBatchCount = expiryBatches.filter((candidate) =>
+        !candidate.isExpired && candidate.stock > 0
+      ).length;
+      const isDefaultOnlyBatch = sellableBatchCount <= 1
+        && !batch.isExpired
+        && batch.stock > 0;
+      const priorityBatchKey = resolveExpiryDetailPriorityBatchKey(batch);
+      const isPriorityOn = getSellPrioritySourceBatch(sourceProduct) === priorityBatchKey;
+      fallbackButton.type = "button";
+      fallbackButton.className = "stock-chip stock-priority-toggle stock-expiry-dropdown__priority-button";
+      fallbackButton.classList.toggle("is-active", isPriorityOn || isDefaultOnlyBatch);
+      fallbackButton.textContent = isDefaultOnlyBatch
+        ? "Default"
+        : (isPriorityOn ? "On" : "Off");
+      fallbackButton.disabled = true;
+      fallbackButton.setAttribute("role", "switch");
+      fallbackButton.setAttribute(
+        "aria-checked",
+        (isPriorityOn || isDefaultOnlyBatch) ? "true" : "false",
+      );
+      fallbackButton.setAttribute(
+        "aria-label",
+        isDefaultOnlyBatch
+          ? "Default sell order; this is the only stock batch"
+          : `Sell priority ${isPriorityOn ? "on" : "off"}; unavailable for this batch`,
+      );
+      fallbackButton.title = batch.isExpired || batch.stock <= 0
+        ? "Priority is unavailable for this batch."
+        : isDefaultOnlyBatch
+          ? "Only one stock batch is available, so the system deducts from this batch by default."
+          : "Priority is not needed when only one sellable batch is available.";
+      priorityCell.appendChild(fallbackButton);
+    }
+
+    const actionCell = document.createElement("td");
+    actionCell.className = "stock-expiry-dropdown__action";
+    if (canDeleteInventoryExpiryDetailBatch(sourceProduct, batch)) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "stock-expiry-dropdown__delete-button";
+      deleteButton.innerHTML = STOCK_DELETE_ACTION_ICON_MARKUP;
+      deleteButton.title = "Delete this batch";
+      deleteButton.setAttribute("aria-label", `Delete ${batch.label || "batch"}`);
+      deleteButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openStockExpiryBatchDeleteConfirmationModal(sourceProduct, batch, deleteButton);
+      });
+      actionCell.appendChild(deleteButton);
+    } else {
+      actionCell.textContent = "—";
+    }
+
+    row.append(batchCell, stockCell, expiryCell, statusCell, priorityCell, actionCell);
+    tbody.appendChild(row);
+  });
+
+  table.append(thead, tbody);
+  tableShell.appendChild(table);
+  body.appendChild(tableShell);
+}
+
+async function saveSellPrioritySourceBatch(product, nextSourceBatch) {
+  const sourceProduct = getStockSourceProduct(product);
+  const productId = String(sourceProduct?.id ?? "").trim();
+  if (!productId) {
+    return false;
+  }
+  const liveProduct = currentStockProducts.find((candidate) =>
+    String(candidate?.id ?? "").trim() === productId,
+  ) || sourceProduct;
+
+  const expiryDropdownToRefresh =
+    stockActionDropdownMode === "expiry" && stockActionDropdown instanceof HTMLElement
+      ? stockActionDropdown
+      : null;
+
+  const normalizedNextSourceBatch = normalizeSellPriorityBatchKey(nextSourceBatch);
+  const resolvedNextSourceBatch = normalizedNextSourceBatch;
+  const currentPriority = getSellPrioritySourceBatch(liveProduct);
+  if (
+    !resolvedNextSourceBatch
+    && currentPriority
+    && hasInventoryExpiryDetails(liveProduct)
+  ) {
+    showStockEditorSnackbar(
+      "Priority required",
+      "At least one batch must stay On in Expiry Details. Turn On another batch instead of turning this Off.",
+      "error",
+    );
+    return false;
+  }
+
+  try {
+    suppressStockRealtimeRefresh();
+    const inventoryStock = getStock(liveProduct);
+    const response = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+      method: "PUT",
+      headers: withStockAdminScopeHeaders({
+        "Content-Type": "application/json",
+      }),
+      // Keep full product fields (normalizeProduct needs name/description/etc.) while
+      // still marking this as an inventory action so approval stays approved.
+      body: JSON.stringify(withStockAdminScopePayload({
+        ...liveProduct,
+        stock: inventoryStock,
+        inventoryStock,
+        lastRestockPreviousStock: getProductOldStockCount(liveProduct),
+        lastRestockPreviousExpiryDate: String(getProductOldStockExpiryDate(liveProduct) ?? "").trim(),
+        lastRestockAddedStock: getProductNewStockCount(liveProduct),
+        lastRestockExpiryDate: String(getProductNewStockDate(liveProduct) ?? "").trim(),
+        lastRestockedAt: String(getProductLastRestockedDate(liveProduct) ?? "").trim(),
+        lastStockAddedQuantity: getProductLastAddedStockQuantity(liveProduct),
+        lastStockDeductedQuantity: getProductLastDeductedStockQuantity(liveProduct),
+        sellPrioritySourceBatch: resolvedNextSourceBatch,
+        __activityContext: "inventory",
+        __activityActor: getStockActivityActor(),
+      })),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || "Unable to save sell priority.");
+    }
+
+    const persistedPriority = normalizeSellPriorityBatchKey(
+      data?.product?.sellPrioritySourceBatch ?? resolvedNextSourceBatch,
+    );
+    const nextPriorityToApply = (
+      resolvedNextSourceBatch && persistedPriority === resolvedNextSourceBatch
+    ) || !resolvedNextSourceBatch
+      ? (persistedPriority || resolvedNextSourceBatch)
+      : resolvedNextSourceBatch;
+
+    const updatedProduct = {
+      ...liveProduct,
+      ...(data?.product ?? {}),
+      sellPrioritySourceBatch: nextPriorityToApply,
+    };
+    currentStockProducts = currentStockProducts.map((candidate) =>
+      String(candidate?.id ?? "").trim() === productId
+        ? updatedProduct
+        : candidate,
+    );
+    suppressStockRealtimeRefresh();
+    syncSellPriorityButtonsInPlace(updatedProduct);
+    if (
+      expiryDropdownToRefresh
+      && stockActionDropdown === expiryDropdownToRefresh
+      && stockActionDropdownMode === "expiry"
+      && expiryDropdownToRefresh.isConnected
+    ) {
+      positionStockActionDropdown();
+    }
+    broadcastStockProductsUpdated();
+    showStockEditorSnackbar(
+      resolvedNextSourceBatch ? "Priority set" : "Priority cleared",
+      resolvedNextSourceBatch
+        ? "This batch will be sold first."
+        : "Sell priority was cleared.",
+      "success",
+    );
+    return true;
+  } catch (error) {
+    console.error(error);
+    showStockEditorSnackbar(
+      "Set Priority",
+      error instanceof Error ? error.message : "Unable to save sell priority.",
+      "error",
+    );
+    return false;
+  }
+}
+
+function applySellPriorityButtonState(priorityButton, sourceProduct, sourceBatch) {
+  if (!(priorityButton instanceof HTMLElement)) {
+    return;
+  }
+  const currentSourceBatch = normalizeSellPriorityBatchKey(sourceBatch);
+  const isSellPriorityBatch = getSellPrioritySourceBatch(sourceProduct) === currentSourceBatch
+    && Boolean(currentSourceBatch);
+  const expiryDetailBatch = getInventoryExpiryBatches(sourceProduct)
+    .find((batch) => resolveExpiryDetailPriorityBatchKey(batch) === currentSourceBatch);
+  const classifiedBatch = getClassifiedInventoryBatches(sourceProduct)
+    .find((batch) => batch.sourceBatch === currentSourceBatch);
+  // No-expiry batches are never priority-locked. Do not fall back to another batch's date.
+  const batchExpiryDate = String(
+    expiryDetailBatch?.expiryDate
+      ?? classifiedBatch?.expiryDate
+      ?? "",
+  ).trim();
+  const isNoExpiryPriorityBatch = currentSourceBatch === "undated"
+    || !hasStockExpiryDate(batchExpiryDate);
+  const isPriorityLocked = !isNoExpiryPriorityBatch
+    && hasStockExpiryDate(batchExpiryDate)
+    && isSellPriorityLockedForExpiryDate(batchExpiryDate);
+  const lockedReason = getSellPriorityLockedReason();
+  const usesOnOffLabels = priorityButton.dataset.stockPriorityLabelMode === "on-off";
+
+  priorityButton.classList.toggle("is-active", isSellPriorityBatch);
+  priorityButton.classList.toggle("is-locked", isPriorityLocked);
+  priorityButton.textContent = usesOnOffLabels
+    ? (isSellPriorityBatch ? "On" : "Off")
+    : (isSellPriorityBatch ? "Priority" : "Set Priority");
+  if (usesOnOffLabels) {
+    priorityButton.setAttribute("role", "switch");
+    priorityButton.setAttribute("aria-checked", isSellPriorityBatch ? "true" : "false");
+    priorityButton.removeAttribute("aria-pressed");
+  } else {
+    priorityButton.removeAttribute("role");
+    priorityButton.removeAttribute("aria-checked");
+    priorityButton.setAttribute("aria-pressed", isSellPriorityBatch ? "true" : "false");
+  }
+  if (isPriorityLocked) {
+    priorityButton.disabled = true;
+    priorityButton.title = lockedReason;
+    priorityButton.setAttribute("aria-label", lockedReason);
+    return;
+  }
+  priorityButton.disabled = false;
+  priorityButton.title = usesOnOffLabels
+    ? `Turn priority ${isSellPriorityBatch ? "off" : "on"}`
+    : isSellPriorityBatch
+      ? "This batch will be sold first. Click to clear priority."
+      : "Sell this batch first";
+  priorityButton.setAttribute(
+    "aria-label",
+    usesOnOffLabels
+      ? `Turn sell priority ${isSellPriorityBatch ? "off" : "on"}`
+      : isSellPriorityBatch ? "Clear sell priority" : "Set sell priority",
+  );
+}
+
+function syncSellPriorityButtonsInPlace(sourceProduct) {
+  const productId = String(sourceProduct?.id ?? "").trim();
+  if (!productId) {
+    return;
+  }
+
+  document.querySelectorAll(".stock-priority-toggle").forEach((button) => {
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    if (String(button.dataset.stockSourceProductId ?? "").trim() !== productId) {
+      return;
+    }
+    applySellPriorityButtonState(
+      button,
+      sourceProduct,
+      button.dataset.stockPriorityBatch,
+    );
+  });
+}
+
+function createSellPriorityToggleControl(product, sourceBatchOverride = "", options = {}) {
+  const sourceProduct = getStockSourceProduct(product);
+  const matchedExpiryBatch = options.forExpiryDetails === true
+    ? getInventoryExpiryBatches(sourceProduct).find((batch) =>
+      resolveExpiryDetailPriorityBatchKey(batch) === normalizeSellPriorityBatchKey(sourceBatchOverride)
+      || normalizeSellPriorityBatchKey(batch.sourceBatch) === normalizeSellPriorityBatchKey(sourceBatchOverride)
+    )
+    : null;
+  const currentSourceBatch = options.forExpiryDetails === true
+    ? resolveExpiryDetailPriorityBatchKey(matchedExpiryBatch, sourceBatchOverride)
+    : normalizeSellPriorityBatchKey(
+      sourceBatchOverride || getStockDisplaySourceBatch(product) || "",
+    );
+  const canShow = options.forExpiryDetails === true
+    ? canShowExpiryDetailSellPriorityControl(product, currentSourceBatch)
+    : canShowSellPriorityControl(product, currentSourceBatch);
+  if (!canShow || !currentSourceBatch) {
+    return null;
+  }
+  const priorityButton = document.createElement("button");
+  priorityButton.type = "button";
+  priorityButton.className = "stock-chip stock-priority-toggle";
+  priorityButton.dataset.stockSourceProductId = String(sourceProduct?.id ?? "").trim();
+  priorityButton.dataset.stockPriorityBatch = currentSourceBatch;
+  if (options.labelMode === "on-off") {
+    priorityButton.dataset.stockPriorityLabelMode = "on-off";
+  }
+  applySellPriorityButtonState(priorityButton, sourceProduct, currentSourceBatch);
+  priorityButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (priorityButton.disabled || priorityButton.classList.contains("is-locked")) {
+      notifySellPriorityLocked();
+      return;
+    }
+    const currentlyActive = getSellPrioritySourceBatch(sourceProduct) === currentSourceBatch;
+    if (currentlyActive && options.forExpiryDetails === true) {
+      showStockEditorSnackbar(
+        "Priority required",
+        "At least one batch must stay On in Expiry Details. Turn On another batch instead of turning this Off.",
+        "error",
+      );
+      return;
+    }
+    void saveSellPrioritySourceBatch(
+      sourceProduct,
+      currentlyActive ? "" : currentSourceBatch,
+    );
+  });
+  return priorityButton;
+}
+
+function closeNearExpiryBatchOverlay() {
+  const overlay = stockNearExpiryOverlay;
+  const toggle = stockNearExpiryOverlayToggle;
+  const panel = toggle?.closest(".stock-product-card__near-expiry-curtain");
+  toggle?.classList.remove("is-open");
+  toggle?.setAttribute("aria-expanded", "false");
+  panel?.classList.remove("is-open");
+  stockNearExpiryOverlayCard?.classList.remove("is-near-expiry-curtain-open");
+  if (overlay instanceof HTMLElement) {
+    overlay.hidden = true;
+    overlay.setAttribute("hidden", "");
+    overlay.classList.remove("is-open", "is-above");
+    overlay.style.cssText = "";
+  }
+  stockNearExpiryOverlay = null;
+  stockNearExpiryOverlayToggle = null;
+  stockNearExpiryOverlayCard = null;
+  document.removeEventListener("keydown", handleNearExpiryBatchOverlayKeydown, true);
+}
+
+function handleNearExpiryBatchOverlayKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeNearExpiryBatchOverlay();
+  }
+}
+
+function openNearExpiryBatchOverlay(toggle, menu, card) {
+  if (!(toggle instanceof HTMLElement) || !(menu instanceof HTMLElement)) {
+    return;
+  }
+
+  if (stockNearExpiryOverlayToggle === toggle && stockNearExpiryOverlay === menu) {
+    closeNearExpiryBatchOverlay();
+    return;
+  }
+
+  closeStockActionDropdown();
+  closeNearExpiryBatchOverlay();
+
+  // Keep the Near Expiry dropdown independent from the Add/Deduct form dropdown.
+  menu.classList.remove("stock-action-dropdown");
+  menu.classList.remove("stock-action-dropdown--add");
+  menu.classList.remove("stock-action-dropdown--deduct");
+  menu.style.removeProperty("--stock-action-dropdown-arrow-left");
+
+  stockNearExpiryOverlay = menu;
+  stockNearExpiryOverlayToggle = toggle;
+  stockNearExpiryOverlayCard = card instanceof HTMLElement
+    ? card
+    : toggle.closest(".stock-product-card");
+
+  menu.classList.add("is-open");
+  menu.hidden = false;
+  menu.removeAttribute("hidden");
+  menu.style.cssText = "";
+  toggle.classList.add("is-open");
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.closest(".stock-product-card__near-expiry-curtain")?.classList.add("is-open");
+  stockNearExpiryOverlayCard?.classList.add("is-near-expiry-curtain-open");
+
+  document.addEventListener("keydown", handleNearExpiryBatchOverlayKeydown, true);
+}
+
+function formatNearExpiryDaysLabel(expiryDate) {
+  const daysUntilExpiry = getDaysUntilExpiryValue(expiryDate);
+  if (daysUntilExpiry === null) {
+    return "";
+  }
+  if (daysUntilExpiry === 0) {
+    return "Expires today";
+  }
+  if (daysUntilExpiry === 1) {
+    return "1 day left";
+  }
+  return `${daysUntilExpiry} days left`;
+}
+
+function createNearExpiryBatchDropdown(product) {
+  const nearExpiryGroups = groupNearExpiryInventoryBatches(product);
+  if (!shouldShowNearExpiryBatchDropdown(product)) {
+    return null;
+  }
+
+  const sourceProduct = getStockSourceProduct(product);
+  const totalNearExpiryUnits = nearExpiryGroups.reduce((sum, group) => sum + group.stock, 0);
+  const dateCountLabel = nearExpiryGroups.length === 1
+    ? "1 date"
+    : `${nearExpiryGroups.length} dates`;
+  const showWarningTone = isInventoryWarningTableView();
+
+  const panel = document.createElement("div");
+  panel.className = `stock-product-card__batch-panel stock-product-card__near-expiry-curtain${showWarningTone ? " is-warning" : ""}`;
+  panel.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = `stock-product-card__batch-toggle stock-product-card__near-expiry-curtain-toggle${showWarningTone ? " is-warning" : ""}`;
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.title = "Show near expiry batches";
+  toggle.setAttribute(
+    "aria-label",
+    `Near expiry, ${formatStockCountDisplay(totalNearExpiryUnits)} units, ${dateCountLabel}`,
+  );
+  toggle.innerHTML = `<span class="stock-product-card__near-expiry-curtain-handle" aria-hidden="true"><span class="stock-product-card__near-expiry-curtain-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span></span>`;
+
+  const menu = document.createElement("div");
+  const menuId = `stock-near-expiry-batches-${++stockNearExpiryDisclosureSerial}`;
+  menu.id = menuId;
+  menu.className = `stock-product-card__batch-menu${showWarningTone ? " is-warning" : ""}`;
+  menu.hidden = true;
+  menu.setAttribute("role", "region");
+  menu.setAttribute("aria-label", "Near expiry batches");
+  toggle.setAttribute("aria-controls", menuId);
+  menu.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  menu.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  const menuDialog = document.createElement("section");
+  menuDialog.className = "stock-product-card__batch-menu-dialog";
+
+  const menuHeader = document.createElement("header");
+  menuHeader.className = "stock-product-card__batch-menu-header";
+
+  const menuIcon = document.createElement("span");
+  menuIcon.className = "stock-product-card__batch-menu-icon";
+  menuIcon.setAttribute("aria-hidden", "true");
+  menuIcon.innerHTML = STOCK_NEAR_EXPIRY_REASON_ICON_MARKUP;
+
+  const menuCopy = document.createElement("div");
+  const menuTitle = document.createElement("h3");
+  menuTitle.textContent = "Near expiry batches";
+  const menuSubtitle = document.createElement("p");
+  menuSubtitle.textContent = `${formatStockCountDisplay(totalNearExpiryUnits)} units · ${dateCountLabel}`;
+  menuCopy.append(menuTitle, menuSubtitle);
+
+  const menuClose = document.createElement("button");
+  menuClose.type = "button";
+  menuClose.className = "stock-product-card__batch-menu-close";
+  menuClose.setAttribute("aria-label", "Close near expiry batches");
+  menuClose.title = "Close";
+  menuClose.innerHTML = STOCK_ACTION_DROPDOWN_CLOSE_ICON_MARKUP;
+  menuClose.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeNearExpiryBatchOverlay();
+  });
+  menuHeader.append(menuIcon, menuCopy, menuClose);
+
+  const menuBody = document.createElement("div");
+  menuBody.className = "stock-product-card__batch-menu-body";
+
+  const tableShell = document.createElement("div");
+  tableShell.className = "stock-product-card__batch-table-shell";
+
+  const table = document.createElement("table");
+  table.className = "stock-product-card__batch-table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["Units", "Expiry date", "Days left", "Priority"].forEach((label) => {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+
+  const tbody = document.createElement("tbody");
+  nearExpiryGroups.forEach((group) => {
+    const row = document.createElement("tr");
+    row.className = "stock-product-card__batch-table-row";
+
+    const unitsCell = document.createElement("td");
+    unitsCell.className = "stock-product-card__batch-table-cell stock-product-card__batch-table-cell--units";
+    unitsCell.textContent = formatStockCountDisplay(group.stock);
+
+    const expiryCell = document.createElement("td");
+    expiryCell.className = "stock-product-card__batch-table-cell stock-product-card__batch-table-cell--expiry";
+    expiryCell.textContent = formatExpiryDateDisplay(group.expiryDate);
+
+    const daysCell = document.createElement("td");
+    daysCell.className = "stock-product-card__batch-table-cell stock-product-card__batch-table-cell--days";
+    daysCell.textContent = formatNearExpiryDaysLabel(group.expiryDate) || "—";
+
+    const priorityCell = document.createElement("td");
+    priorityCell.className = "stock-product-card__batch-table-cell stock-product-card__batch-table-cell--priority";
+    const priorityButton = createSellPriorityToggleControl(sourceProduct, group.sourceBatch);
+    if (priorityButton) {
+      priorityButton.classList.add("stock-product-card__batch-item-priority");
+      priorityCell.appendChild(priorityButton);
+    } else {
+      priorityCell.textContent = "—";
+    }
+
+    row.append(unitsCell, expiryCell, daysCell, priorityCell);
+    tbody.appendChild(row);
+  });
+
+  table.append(thead, tbody);
+  tableShell.appendChild(table);
+  menuBody.appendChild(tableShell);
+  menuDialog.append(menuHeader, menuBody);
+  menu.appendChild(menuDialog);
+
+  function toggleNearExpiryOverlay(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const card = panel.closest(".stock-product-card");
+    openNearExpiryBatchOverlay(toggle, menu, card);
+  }
+
+  toggle.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  }, true);
+  toggle.addEventListener("click", toggleNearExpiryOverlay, true);
+
+  panel.append(toggle, menu);
+  return panel;
+}
+
+function createStockExpiryReasonPanel(product) {
+  if (!isInventoryWarningTableView()) {
+    return null;
+  }
+  const isExpiredRow = isExpiredInventoryRow(product);
+  const isNearExpiryRow = isNearExpiryInventoryRow(product);
+  if (!isExpiredRow && !isNearExpiryRow) {
+    return null;
+  }
+  if (!isExpiredRow && hasInventoryExpiryDetails(product)) {
+    return null;
+  }
+
+  const isPriorityLocked = !isExpiredRow
+    && isSellPriorityLockedForExpiryDate(getProductExpiryDate(product));
+  const panel = document.createElement("div");
+  panel.className = `stock-product-card__table-reason${isExpiredRow ? " is-expired" : " is-near-expiry"}`;
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  const copy = document.createElement("span");
+  copy.className = "stock-product-card__table-reason-copy";
+  copy.innerHTML = isExpiredRow
+    ? STOCK_EXPIRED_REASON_ICON_MARKUP
+    : STOCK_NEAR_EXPIRY_REASON_ICON_MARKUP;
+
+  const copyText = document.createElement("span");
+  const reasonLabel = document.createElement("strong");
+  reasonLabel.textContent = "Reason:";
+  const reasonValue = document.createElement("span");
+  reasonValue.dataset.stockTableReason = "";
+  if (isExpiredRow) {
+    reasonValue.textContent = "Expired";
+  } else if (isPriorityLocked) {
+    reasonValue.textContent = `Near expiry. ${getSellPriorityLockedReason()}`;
+  } else {
+    reasonValue.textContent = "Near expiry";
+  }
+  copyText.append(reasonLabel, " ", reasonValue);
+  copy.appendChild(copyText);
+  panel.appendChild(copy);
+
+  if (isExpiredRow && canDeleteExpiredInventoryRow(product)) {
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "stock-product-card__table-reason-action stock-product-card__table-reason-action--delete";
+    deleteButton.innerHTML = `${STOCK_DELETE_ACTION_ICON_MARKUP}<span>Delete</span>`;
+    deleteButton.title = "Delete expired stock";
+    deleteButton.setAttribute("aria-label", "Delete expired stock");
+    deleteButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openStockExpiredDeleteConfirmationModal(product, deleteButton);
+    });
+    panel.appendChild(deleteButton);
+    return panel;
+  }
+
+  const prioritySourceBatch = getStockDisplaySourceBatch(product)
+    || getClassifiedInventoryBatches(getStockSourceProduct(product))
+      .find((batch) => batch.isNearExpiry)
+      ?.sourceBatch
+    || "";
+  const priorityButton = createSellPriorityToggleControl(product, prioritySourceBatch);
+  if (priorityButton) {
+    priorityButton.classList.add("stock-product-card__table-reason-action");
+    panel.appendChild(priorityButton);
+  }
+
+  return panel;
+}
+
 function createStockCard(product) {
   const article = document.createElement("article");
   article.className = "stock-product-card";
+  if (isInventoryWarningTableView()) {
+    if (isExpiredInventoryRow(product)) {
+      article.classList.add("is-expired");
+    } else if (isNearExpiryInventoryRow(product)) {
+      article.classList.add("is-near-expiry");
+    }
+  }
   const productIdentifier = getStockProductIdentifier(product);
   const isSelected = productIdentifier === selectedStockProductId;
-  const isEditing = productIdentifier === editingStockProductId;
   const isEmployeeWorkspace = isEmployeeStockWorkspace();
   const isEmbeddedLiveChatWorkspace = isEmbeddedLiveChatStockWorkspace();
+  const isMainInventoryWorkspace = isMainInventoryStockWorkspace();
   const sourceProduct = getStockSourceProduct(product);
   const productId = String(sourceProduct?.id ?? "").trim();
-  const isExpiredBatch = isExpiredStockDisplayEntry(product);
+  const expiryBatches = getInventoryExpiryBatches(product);
+  const sourceExpiryBatches = getInventoryExpiryBatches(sourceProduct);
+  const hasSplitExpiryBatchData = isMainInventoryWorkspace
+    && sourceExpiryBatches.length > 0
+    && (
+      isSplitStockDisplayEntry(product)
+      || hasProductRestockDetails(sourceProduct)
+    );
   const isFreshBatch = isFreshStockDisplayEntry(product);
   const variants = isEmbeddedLiveChatWorkspace ? getProductVariants(product) : [];
   const hasVariants = variants.length > 0;
@@ -4584,37 +8869,91 @@ function createStockCard(product) {
   const media = document.createElement("div");
   media.className = "stock-product-card__media";
 
-  let editButton = null;
+  let actionGroup = null;
   if (!isEmployeeWorkspace && !isEmbeddedLiveChatWorkspace) {
-    editButton = document.createElement("button");
-    editButton.type = "button";
-    editButton.className = "edit-button icon-action-button stock-product-card__edit-button";
-    editButton.classList.toggle("is-editing", isEditing);
-    editButton.setAttribute(
-      "aria-label",
-      isEditing ? "Stop editing stock details" : "Edit stock details",
+    actionGroup = document.createElement("div");
+    actionGroup.className = isMainInventoryWorkspace
+      ? "stock-product-card__actions stock-product-card__table-action"
+      : "stock-product-card__actions";
+    const addButton = createStockActionButton("add", "Add stock", STOCK_ADD_ACTION_ICON_MARKUP);
+    const deductButton = createStockActionButton("deduct", "Deduct stock", STOCK_DEDUCT_ACTION_ICON_MARKUP);
+    const activityButton = createStockActionButton(
+      "activity",
+      "Stock movement",
+      STOCK_ACTIVITY_ACTION_ICON_MARKUP,
     );
-    editButton.title = isEditing ? "Stop editing stock details" : "Edit stock details";
-    editButton.innerHTML = `<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>`;
+    actionGroup.append(addButton, deductButton, activityButton);
+    const nearExpiryDeleteButton = isMainInventoryWorkspace
+      && canDeleteNearExpiryInventoryRow(product)
+      ? createStockActionButton(
+          "delete",
+          `Delete stock expiring within ${STOCK_SELL_PRIORITY_LOCK_DAYS} days`,
+          STOCK_DELETE_ACTION_ICON_MARKUP,
+        )
+      : null;
+    if (nearExpiryDeleteButton) {
+      actionGroup.appendChild(nearExpiryDeleteButton);
+    }
+    const visibleExpiryBatches = expiryBatches.filter((batch) => batch.stock > 0);
+    const expiryButton = hasInventoryExpiryDetails(product)
+      ? createStockActionButton(
+          "expiry",
+          visibleExpiryBatches.length === 1
+            ? "View 1 expiry batch"
+            : `View ${visibleExpiryBatches.length} expiry batches`,
+          STOCK_EXPIRY_DETAILS_ICON_MARKUP,
+        )
+      : null;
+    if (expiryButton) {
+      applyInventoryExpiryActionTone(expiryButton, expiryBatches);
+      actionGroup.classList.add("has-expiry-action");
+      actionGroup.appendChild(expiryButton);
+    }
+    actionGroup.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
 
-    if (!productId) {
-      editButton.disabled = true;
-      editButton.setAttribute("aria-disabled", "true");
-    } else {
-      editButton.addEventListener("click", (event) => {
+    const bindActionButton = (button, mode) => {
+      button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (isEditing) {
-          closeStockEditModal();
+        if (mode === "activity") {
+          openStockMovementModal(product);
           return;
         }
-
-        selectedStockProductId = productIdentifier;
-        editingStockProductId = productIdentifier;
-        renderStockDashboard(currentStockProducts);
-        openStockEditModal(sourceProduct, { displayProduct: product });
+        if (isMainInventoryWorkspace) {
+          stockRecordDrawerMode = "records";
+          selectedStockProductId = "";
+          syncStockRecordDrawer(null);
+        }
+        openStockActionDropdown(button, mode, product);
       });
-      editButton.addEventListener("keydown", (event) => {
+      button.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+      });
+    };
+
+    if (!productId) {
+      [addButton, deductButton, activityButton].forEach((button) => {
+        button.disabled = true;
+        button.setAttribute("aria-disabled", "true");
+      });
+    } else {
+      bindActionButton(addButton, "add");
+      bindActionButton(deductButton, "deduct");
+      bindActionButton(activityButton, "activity");
+    }
+    if (expiryButton) {
+      bindActionButton(expiryButton, "expiry");
+    }
+    if (nearExpiryDeleteButton) {
+      nearExpiryDeleteButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openStockNearExpiryDeleteConfirmationModal(product, nearExpiryDeleteButton);
+      });
+      nearExpiryDeleteButton.addEventListener("keydown", (event) => {
         event.stopPropagation();
       });
     }
@@ -4641,6 +8980,10 @@ function createStockCard(product) {
     const image = document.createElement("img");
     image.src = product.imageUrl;
     image.alt = product.name || "Product image";
+    image.loading = "eager";
+    image.decoding = "sync";
+    image.fetchPriority = "high";
+    image.setAttribute("data-no-lazy", "");
     media.appendChild(image);
   } else {
     const placeholder = document.createElement("span");
@@ -4665,19 +9008,25 @@ function createStockCard(product) {
   header.append(media, titleWrap);
 
   const stock = getStock(product);
-  const state = isExpiredBatch
+  const isExpiredRow = isExpiredInventoryRow(product);
+  const state = isExpiredRow
     ? { label: "Expired", className: "is-empty" }
     : getStockState(stock);
 
   const chip = document.createElement("span");
-  chip.className = `stock-chip ${state.className}`;
-  chip.textContent = state.label;
+  chip.className = hasSplitExpiryBatchData
+    ? "stock-chip is-batch-summary"
+    : `stock-chip ${state.className}`;
+  chip.textContent = hasSplitExpiryBatchData ? "Batch" : state.label;
+  if (hasSplitExpiryBatchData) {
+    chip.title = "View exact status in Expiry Details";
+  }
 
   const chipGroup = document.createElement("div");
   chipGroup.className = "stock-chip-group";
   chipGroup.appendChild(chip);
 
-  if (isFreshBatch) {
+  if (!hasSplitExpiryBatchData && isFreshBatch) {
     const freshBatchLabel = String(product?.stockDisplayLabel ?? "").trim();
     if (freshBatchLabel) {
       const freshStockChip = document.createElement("span");
@@ -4685,18 +9034,27 @@ function createStockCard(product) {
       freshStockChip.textContent = freshBatchLabel;
       chipGroup.appendChild(freshStockChip);
     }
-  } else if (isNewStockProduct(product)) {
+  } else if (!hasSplitExpiryBatchData && isNewStockProduct(product)) {
     const newStockChip = document.createElement("span");
     newStockChip.className = "stock-chip is-new";
     newStockChip.textContent = "New Stock";
     chipGroup.appendChild(newStockChip);
   }
 
-  if (isNearExpiryProduct(product)) {
-    const nearExpiryChip = document.createElement("span");
-    nearExpiryChip.className = "stock-chip is-near-expiry";
-    nearExpiryChip.textContent = "Near Expiry";
-    chipGroup.appendChild(nearExpiryChip);
+  const mainGoodBatch = getInventoryMainGoodBatch(product);
+
+  const unlistedExpiryDate = mainGoodBatch?.expiryDate || getProductExpiryDate(product);
+  if (
+    !hasSplitExpiryBatchData
+    && !isExpiredRow
+    && !mainGoodBatch
+    && isSellPriorityLockedForExpiryDate(unlistedExpiryDate)
+  ) {
+    const unlistedChip = document.createElement("span");
+    unlistedChip.className = "stock-chip is-empty";
+    unlistedChip.textContent = "Unlisted";
+    unlistedChip.title = getSellPriorityLockedReason();
+    chipGroup.appendChild(unlistedChip);
   }
 
   const meter = document.createElement("div");
@@ -4711,30 +9069,55 @@ function createStockCard(product) {
   meter.appendChild(meterFill);
 
   const stockedDate = getProductStockedDate(product);
+  const stockedDateRow = hasSplitExpiryBatchData
+    ? createStockMetaRow(
+        "Stocked",
+        "Batch",
+        STOCK_STOCKED_DATE_ICON_MARKUP,
+        "stock-product-card__meta-row--stocked-date",
+      )
+    : createStockMetaRow(
+        getProductStockedDateLabel(product),
+        formatOptionalDate(stockedDate),
+        STOCK_STOCKED_DATE_ICON_MARKUP,
+        "stock-product-card__meta-row--stocked-date",
+        formatOptionalTime(stockedDate),
+      );
+  const expiryDateRow = hasSplitExpiryBatchData
+    ? createStockMetaRow(
+        "Expiry",
+        "Batch",
+        STOCK_EXPIRY_DATE_ICON_MARKUP,
+      )
+    : createStockMetaExpiryDateRow(
+        product,
+        STOCK_EXPIRY_DATE_ICON_MARKUP,
+      );
+  if (hasSplitExpiryBatchData) {
+    stockedDateRow.classList.add("stock-product-card__meta-row--batch-summary");
+    expiryDateRow.classList.add("stock-product-card__meta-row--batch-summary");
+    stockedDateRow.title = "View exact stocked dates in Expiry Details";
+    expiryDateRow.title = "View exact expiry dates in Expiry Details";
+  }
   const meta = document.createElement("div");
   meta.className = "stock-product-card__meta";
   meta.append(
     createStockCountMetaRow(product),
-    createStockMetaRow(
-      getProductStockedDateLabel(product),
-      formatOptionalDate(stockedDate),
-      STOCK_STOCKED_DATE_ICON_MARKUP,
-      "stock-product-card__meta-row--stocked-date",
-      formatOptionalTime(stockedDate),
-    ),
-    createStockMetaExpiryDateRow(
-      product,
-      STOCK_EXPIRY_DATE_ICON_MARKUP,
-    ),
+    stockedDateRow,
+    expiryDateRow,
   );
 
-  if (editButton) {
-    article.append(editButton);
+  if (actionGroup) {
+    article.append(actionGroup);
   }
   if (variantToggleButton) {
     article.append(variantToggleButton);
   }
+  const reasonPanel = createStockExpiryReasonPanel(product);
   article.append(header, chipGroup, meter, meta);
+  if (reasonPanel) {
+    article.appendChild(reasonPanel);
+  }
 
   if (hasVariants) {
     const variantSection = createVariantStockSection(product);
@@ -4768,32 +9151,127 @@ function createStockCard(product) {
 function setSummary(products) {
   const totalProducts = products.length;
   const totalUnits = products.reduce((sum, product) => sum + getStock(product), 0);
+  const newStockItems = products.filter((product) => isNewStockFilterMatch(product)).length;
   const lowStockItems = products.filter((product) => isLowStockProduct(product)).length;
   const outOfStockItems = products.filter((product) => getStock(product) === 0).length;
   const nearExpiryItems = products.filter((product) => isNearExpiryProduct(product)).length;
+  const expiredItems = products.filter((product) => isExpiredProduct(product)).length;
 
   setSummaryValue(stockTotalProducts, totalProducts);
   setSummaryValue(stockTotalUnits, totalUnits);
+  setSummaryValue(stockNewCount, newStockItems);
   setSummaryValue(stockLowCount, lowStockItems);
   setSummaryValue(stockEmptyCount, outOfStockItems);
   setSummaryValue(stockNearExpiryCount, nearExpiryItems);
+  setSummaryValue(stockExpiredCount, expiredItems);
+}
+
+function renderStockInventoryPagination(totalItems) {
+  if (!(stockInventoryPagination instanceof HTMLElement)) {
+    return;
+  }
+
+  stockInventoryPagination.replaceChildren();
+  const total = Math.max(0, Number(totalItems) || 0);
+  if (!isStockInventoryTableWorkspace() || total <= STOCK_INVENTORY_PAGE_SIZE) {
+    stockInventoryPagination.hidden = true;
+    return;
+  }
+
+  stockInventoryPagination.hidden = false;
+  const pageCount = Math.max(1, Math.ceil(total / STOCK_INVENTORY_PAGE_SIZE));
+  stockInventoryPage = Math.min(Math.max(1, stockInventoryPage), pageCount);
+  const firstRecord = total ? ((stockInventoryPage - 1) * STOCK_INVENTORY_PAGE_SIZE) + 1 : 0;
+  const lastRecord = Math.min(total, stockInventoryPage * STOCK_INVENTORY_PAGE_SIZE);
+
+  const info = document.createElement("span");
+  info.className = "stock-inventory-pagination__info";
+  info.textContent = `Showing ${firstRecord} to ${lastRecord} of ${total} items`;
+
+  const controls = document.createElement("div");
+  controls.className = "stock-inventory-pagination__controls";
+
+  function createPageButton(options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `stock-inventory-page-button${options.active ? " is-active" : ""}`;
+    button.disabled = Boolean(options.disabled);
+    button.setAttribute("aria-label", options.ariaLabel || `Page ${options.page}`);
+    if (options.active) {
+      button.setAttribute("aria-current", "page");
+    }
+    if (options.icon) {
+      button.innerHTML = options.icon;
+    } else {
+      button.textContent = String(options.page);
+    }
+    button.addEventListener("click", () => {
+      if (button.disabled || options.page === stockInventoryPage) {
+        return;
+      }
+      stockInventoryPage = options.page;
+      renderStockDashboard(currentStockProducts);
+      stockProductList?.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return button;
+  }
+
+  const previousIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
+  const nextIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>';
+
+  controls.appendChild(createPageButton({
+    page: Math.max(1, stockInventoryPage - 1),
+    icon: previousIcon,
+    ariaLabel: "Previous page",
+    disabled: stockInventoryPage === 1,
+  }));
+
+  const visiblePages = Array.from(
+    { length: pageCount },
+    (_, index) => index + 1,
+  ).slice(Math.max(0, stockInventoryPage - 3), Math.max(5, stockInventoryPage + 2));
+
+  visiblePages.forEach((page) => {
+    controls.appendChild(createPageButton({
+      page,
+      active: page === stockInventoryPage,
+    }));
+  });
+
+  controls.appendChild(createPageButton({
+    page: Math.min(pageCount, stockInventoryPage + 1),
+    icon: nextIcon,
+    ariaLabel: "Next page",
+    disabled: stockInventoryPage === pageCount,
+  }));
+
+  stockInventoryPagination.append(info, controls);
 }
 
 function renderProducts(products) {
   stockProductList.replaceChildren();
 
   if (!products.length) {
+    renderStockInventoryPagination(0);
+    const hasSearch = Boolean(normalizeStockSearchTerm(stockSearchTerm));
+    if (hasSearch && window.GMS_ADMIN_SEARCH_NOT_FOUND) {
+      stockProductList.appendChild(
+        createStockInventoryEmptyRow(window.GMS_ADMIN_SEARCH_NOT_FOUND.create()),
+      );
+      return;
+    }
+
     const activeFilterLabel = getStockPriorityFilterLabel();
-    const hasSearchOrCategoryFilter =
-      Boolean(normalizeStockSearchTerm(stockSearchTerm))
-      || Boolean(normalizeStockCategoryFilter(stockCategoryFilter));
+    const hasCategoryFilter = Boolean(normalizeStockCategoryFilter(stockCategoryFilter));
     stockProductList.appendChild(
-      createEmptyState(
-        hasSearchOrCategoryFilter
-          ? `No ${activeFilterLabel} products match the current search or category filter.`
-          : stockPriorityFilter === "all"
-            ? "No saved products available yet."
-            : `No ${activeFilterLabel} products available right now.`,
+      createStockInventoryEmptyRow(
+        createEmptyState(
+          hasCategoryFilter
+            ? `No ${activeFilterLabel} products match the current category filter.`
+            : stockPriorityFilter === "all"
+              ? "No saved products available yet."
+              : `No ${activeFilterLabel} products available right now.`,
+        ),
       ),
     );
     return;
@@ -4826,7 +9304,17 @@ function renderProducts(products) {
     return leftSortOrder - rightSortOrder;
   });
 
-  for (const product of sortedProducts) {
+  const visibleProducts = isStockInventoryTableWorkspace()
+    ? (() => {
+      const pageCount = Math.max(1, Math.ceil(sortedProducts.length / STOCK_INVENTORY_PAGE_SIZE));
+      stockInventoryPage = Math.min(Math.max(1, stockInventoryPage), pageCount);
+      const startIndex = (stockInventoryPage - 1) * STOCK_INVENTORY_PAGE_SIZE;
+      return sortedProducts.slice(startIndex, startIndex + STOCK_INVENTORY_PAGE_SIZE);
+    })()
+    : sortedProducts;
+
+  renderStockInventoryPagination(sortedProducts.length);
+  for (const product of visibleProducts) {
     stockProductList.appendChild(createStockCard(product));
   }
 }
@@ -4969,7 +9457,7 @@ async function saveProductExpiryDate(product, rawValue, inputElement) {
     renderStockDashboard(currentStockProducts);
     broadcastStockProductsUpdated();
     if (editingStockProductId) {
-      openStockEditModal(updatedProduct);
+      editingStockProductId = "";
     }
   } catch (error) {
     console.error(error);
@@ -5045,10 +9533,9 @@ async function saveProductStock(product, nextStockValue, inputElement, actionEle
     );
     const updatedIdentifier = getStockProductIdentifier(updatedProduct);
     selectedStockProductId = updatedIdentifier;
-    editingStockProductId = updatedIdentifier;
+    editingStockProductId = "";
     renderStockDashboard(currentStockProducts);
     broadcastStockProductsUpdated();
-    openStockEditModal(updatedProduct);
   } catch (error) {
     console.error(error);
     inputElement?.classList.add("is-error");
@@ -5080,10 +9567,14 @@ async function saveStockEditModalChanges(
 
   const {
     displayProduct,
+    selectProductOnSave,
     addStockInput,
     deductInput,
     deductReasonSelect,
     deductReasonDetailInput,
+    deductBatchSelect,
+    selectedDeductBatchKey,
+    selectedAddBatchKey,
     expiryTrigger,
     primaryButton,
     secondaryButton,
@@ -5097,6 +9588,10 @@ async function saveStockEditModalChanges(
   }
 
   const normalizedAddStock = Math.trunc(parsedAddStock);
+  if (normalizedAddStock > 0 && isExpiryDateValueExpired(draftExpiryValue)) {
+    notifyExpiredStockNotAllowed();
+    return false;
+  }
   const normalizedDeductValue = String(draftDeductValue ?? "").trim();
   const parsedDeductStock = normalizedDeductValue ? Number(normalizedDeductValue) : 0;
   if (
@@ -5135,6 +9630,66 @@ async function saveStockEditModalChanges(
   const isSplitBatchEdit =
     isSplitStockDisplayEntry(activeDisplayProduct) && Boolean(displayBatchRole);
 
+  const selectedAddBatchKeyNormalized = normalizeSellPriorityBatchKey(selectedAddBatchKey);
+  let selectedAddBatch = null;
+  if (normalizedAddStock > 0 && selectedAddBatchKeyNormalized) {
+    selectedAddBatch = getInventoryExpiryBatches(sourceProduct).find((batch) =>
+      normalizeSellPriorityBatchKey(batch.sourceBatch) === selectedAddBatchKeyNormalized
+      && batch.stock > 0
+      && !batch.isExpired
+    ) || null;
+    if (!selectedAddBatch) {
+      showStockEditorSnackbar(
+        "Select Batch",
+        "The selected batch is no longer available.",
+        "error",
+      );
+      return false;
+    }
+  }
+
+  const selectedDeductBatchKeyNormalized = normalizeSellPriorityBatchKey(selectedDeductBatchKey);
+  const availableDeductBatches = normalizedDeductStock > 0
+    ? getInventoryExpiryBatches(sourceProduct).filter((batch) => batch.stock > 0)
+    : [];
+  const requiresDeductBatchSelection = availableDeductBatches.length >= 2;
+  let selectedDeductBatch = null;
+  if (normalizedDeductStock > 0 && requiresDeductBatchSelection) {
+    if (!selectedDeductBatchKeyNormalized) {
+      deductBatchSelect?.classList.add("is-error");
+      window.setTimeout(() => deductBatchSelect?.classList.remove("is-error"), 1800);
+      showStockEditorSnackbar(
+        "Select Batch",
+        "Choose which batch to deduct stock from.",
+        "error",
+      );
+      return false;
+    }
+    selectedDeductBatch = availableDeductBatches.find((batch) =>
+      normalizeSellPriorityBatchKey(batch.sourceBatch) === selectedDeductBatchKeyNormalized
+    ) || null;
+    if (!selectedDeductBatch) {
+      deductBatchSelect?.classList.add("is-error");
+      window.setTimeout(() => deductBatchSelect?.classList.remove("is-error"), 1800);
+      showStockEditorSnackbar(
+        "Select Batch",
+        "The selected batch is no longer available.",
+        "error",
+      );
+      return false;
+    }
+    if (normalizedDeductStock > selectedDeductBatch.stock) {
+      deductInput?.classList.add("is-error");
+      window.setTimeout(() => deductInput?.classList.remove("is-error"), 1800);
+      showStockEditorSnackbar(
+        "Select Batch",
+        `This batch only has ${formatUnits(selectedDeductBatch.stock)} available.`,
+        "error",
+      );
+      return false;
+    }
+  }
+
   const currentStock = getStock(sourceProduct);
   const hadRestockDetails = hasProductRestockDetails(sourceProduct);
   const currentBreakdown = getProductStockBreakdown(sourceProduct);
@@ -5146,7 +9701,9 @@ async function saveStockEditModalChanges(
   const currentLastRestockedAt = String(getProductLastRestockedDate(sourceProduct) ?? "").trim();
   const currentStockedDate = String(getProductStockedDate(sourceProduct) ?? "").trim();
   const currentDisplayExpiryDate = normalizeExpiryDateInputValue(getProductExpiryDate(activeDisplayProduct));
-  const normalizedExpiryDate = normalizeExpiryDateInputValue(draftExpiryValue);
+  const normalizedExpiryDate = selectedAddBatch
+    ? normalizeExpiryDateInputValue(selectedAddBatch.expiryDate)
+    : normalizeExpiryDateInputValue(draftExpiryValue);
   const inventoryActivityTargets = [];
   if (normalizedAddStock > 0) {
     inventoryActivityTargets.push("add");
@@ -5173,8 +9730,126 @@ async function saveStockEditModalChanges(
   let stockHistoryExpiryDate = normalizedDeductStock > 0 ? "" : normalizedExpiryDate;
   let stockHistoryLabel = "";
   let stockHistoryBatchRole = "";
+  let stockHistorySourceBatch = "";
+  let targetSourceBatch = displaySourceBatch || "old";
+  if (isSplitBatchEdit && normalizedAddStock > 0 && normalizedDeductStock <= 0 && normalizedExpiryDate) {
+    if (stockHistoryExpiryDatesMatch(normalizedExpiryDate, resolvedNewStockExpiryDate)) {
+      targetSourceBatch = "new";
+    } else if (stockHistoryExpiryDatesMatch(normalizedExpiryDate, resolvedOldStockExpiryDate)) {
+      targetSourceBatch = "old";
+    } else if (
+      isStockExpiryDateAhead(normalizedExpiryDate, resolvedOldStockExpiryDate)
+      && (
+        !resolvedNewStockExpiryDate
+        || isStockExpiryDateAhead(normalizedExpiryDate, resolvedNewStockExpiryDate)
+      )
+    ) {
+      targetSourceBatch = "new";
+    } else if (isStockExpiryDateAhead(resolvedNewStockExpiryDate, normalizedExpiryDate)) {
+      targetSourceBatch = "old";
+    }
+  }
 
-  if (isSplitBatchEdit) {
+  const usingSelectedDeductBatch =
+    Boolean(selectedDeductBatch)
+    && normalizedDeductStock > 0
+    && normalizedAddStock <= 0;
+  const usingSelectedAddBatch =
+    Boolean(selectedAddBatch)
+    && normalizedAddStock > 0
+    && normalizedDeductStock <= 0;
+
+  if (usingSelectedAddBatch) {
+    updatedOldStock = currentOldStock;
+    updatedNewStock = currentNewStock;
+    const mappedBatch = mapSellPriorityBatchKeyToOldNew(
+      selectedAddBatch.sourceBatch,
+      sourceProduct,
+    );
+    if (mappedBatch === "new") {
+      updatedNewStock += normalizedAddStock;
+      targetSourceBatch = "new";
+      stockHistorySourceBatch = selectedAddBatch.sourceBatch === "undated"
+        ? "undated"
+        : "new";
+    } else if (mappedBatch === "old") {
+      updatedOldStock += normalizedAddStock;
+      targetSourceBatch = "old";
+      stockHistorySourceBatch = selectedAddBatch.sourceBatch === "undated"
+        ? "undated"
+        : "old";
+    } else if (
+      hasStockExpiryDate(normalizedExpiryDate)
+      && stockBatchesShareExpiryDate(normalizedExpiryDate, resolvedNewStockExpiryDate)
+      && currentNewStock > 0
+    ) {
+      updatedNewStock += normalizedAddStock;
+      targetSourceBatch = "new";
+      stockHistorySourceBatch = "new";
+    } else if (
+      hasStockExpiryDate(normalizedExpiryDate)
+      && stockBatchesShareExpiryDate(normalizedExpiryDate, resolvedOldStockExpiryDate)
+      && currentOldStock > 0
+    ) {
+      updatedOldStock += normalizedAddStock;
+      targetSourceBatch = "old";
+      stockHistorySourceBatch = "old";
+    } else if (!hasStockExpiryDate(normalizedExpiryDate)) {
+      // Undated / no-expiry batch that is only tracked via history.
+      updatedOldStock += normalizedAddStock;
+      targetSourceBatch = "old";
+      stockHistorySourceBatch = "undated";
+    } else {
+      // Dated history batch that is not currently mapped to old/new fields.
+      // Keep product expiry fields stable; history expiry rebuilds the batch.
+      updatedOldStock += normalizedAddStock;
+      targetSourceBatch = "old";
+      stockHistorySourceBatch = normalizeSellPriorityBatchKey(selectedAddBatch.sourceBatch) || "old";
+    }
+
+    nextOldStockExpiryDate = updatedOldStock > 0 ? resolvedOldStockExpiryDate : "";
+    nextNewStockDate = updatedNewStock > 0 ? resolvedNewStockExpiryDate : "";
+    nextRestockedAt = nextModifiedAt;
+    nextStockedDate = nextModifiedAt;
+    stockHistoryExpiryDate = hasStockExpiryDate(normalizedExpiryDate) ? normalizedExpiryDate : "";
+    stockHistoryLabel = currentStock === 0 ? "New Stock" : "Added Stock";
+    stockHistoryBatchRole = "fresh";
+  } else if (usingSelectedDeductBatch) {
+    const mappedBatch = mapSellPriorityBatchKeyToOldNew(
+      selectedDeductBatch.sourceBatch,
+      sourceProduct,
+    ) || (selectedDeductBatch.sourceBatch === "new" ? "new" : "old");
+
+    updatedOldStock = currentOldStock;
+    updatedNewStock = currentNewStock;
+    let remainingDeductFromBatch = normalizedDeductStock;
+    if (mappedBatch === "new") {
+      const fromNew = Math.min(updatedNewStock, remainingDeductFromBatch);
+      updatedNewStock -= fromNew;
+      remainingDeductFromBatch -= fromNew;
+      if (remainingDeductFromBatch > 0) {
+        updatedOldStock = Math.max(0, updatedOldStock - remainingDeductFromBatch);
+      }
+    } else {
+      const fromOld = Math.min(updatedOldStock, remainingDeductFromBatch);
+      updatedOldStock -= fromOld;
+      remainingDeductFromBatch -= fromOld;
+      if (remainingDeductFromBatch > 0) {
+        updatedNewStock = Math.max(0, updatedNewStock - remainingDeductFromBatch);
+      }
+    }
+
+    nextOldStockExpiryDate = updatedOldStock > 0 ? resolvedOldStockExpiryDate : "";
+    nextNewStockDate = updatedNewStock > 0 ? resolvedNewStockExpiryDate : "";
+    // Keep the selected batch expiry on history so remaining batches rebuild correctly.
+    stockHistoryExpiryDate = String(selectedDeductBatch.expiryDate ?? "").trim();
+    stockHistoryLabel = "Deducted";
+    stockHistorySourceBatch = selectedDeductBatch.sourceBatch === "undated"
+      ? "undated"
+      : mappedBatch;
+    stockHistoryBatchRole = selectedDeductBatch.isExpired ? "expired" : "fresh";
+    targetSourceBatch = mappedBatch;
+  } else if (isSplitBatchEdit) {
     const batchCurrentStock = getStock(activeDisplayProduct);
     if (normalizedDeductStock > batchCurrentStock) {
       deductInput?.classList.add("is-error");
@@ -5182,7 +9857,7 @@ async function saveStockEditModalChanges(
       return false;
     }
 
-    if ((displaySourceBatch || "old") === "old") {
+    if (targetSourceBatch === "old") {
       updatedOldStock = Math.max(0, currentOldStock + normalizedAddStock - normalizedDeductStock);
       nextOldStockExpiryDate = updatedOldStock > 0
         ? (normalizedExpiryDate || resolvedOldStockExpiryDate)
@@ -5213,6 +9888,7 @@ async function saveStockEditModalChanges(
                     : "Saved New Stock"
             );
       stockHistoryBatchRole = displayBatchRole;
+      stockHistorySourceBatch = "old";
     } else {
       updatedNewStock = Math.max(0, currentNewStock + normalizedAddStock - normalizedDeductStock);
       nextOldStockExpiryDate = updatedOldStock > 0 ? resolvedOldStockExpiryDate : "";
@@ -5244,52 +9920,141 @@ async function saveStockEditModalChanges(
                     : "Saved New Stock"
             );
       stockHistoryBatchRole = displayBatchRole;
+      stockHistorySourceBatch = "new";
     }
   } else {
-    const baseOldStock = normalizedAddStock > 0 ? currentStock : currentOldStock;
-    updatedNewStock = normalizedAddStock > 0 ? normalizedAddStock : currentNewStock;
-    let remainingDeductStock = normalizedDeductStock;
-
-    const deductedFromNewStock = Math.min(updatedNewStock, remainingDeductStock);
-    updatedNewStock -= deductedFromNewStock;
-    remainingDeductStock -= deductedFromNewStock;
-
-    updatedOldStock = Math.max(0, baseOldStock - remainingDeductStock);
-    nextRestockedAt = normalizedAddStock > 0 ? nextModifiedAt : currentLastRestockedAt;
-    nextStockedDate = normalizedAddStock > 0 ? nextRestockedAt : currentStockedDate;
-    const baseOldStockExpiryDate = normalizedAddStock > 0
-      ? (
-          currentOldStock > 0
-            ? currentOldStockExpiryDate || currentProductExpiryDate
-            : currentProductExpiryDate
-        )
-      : (
-          currentOldStock > 0
-            ? (
-                currentNewStock > 0
-                  ? currentOldStockExpiryDate || currentProductExpiryDate
-                  : normalizedExpiryDate || currentOldStockExpiryDate || currentProductExpiryDate
-              )
-            : ""
-        );
-    nextOldStockExpiryDate = updatedOldStock > 0 ? baseOldStockExpiryDate : "";
-    const baseNewStockExpiryDate = normalizedAddStock > 0
-      ? normalizedExpiryDate
-      : (
-          currentNewStock > 0
-            ? normalizedExpiryDate || currentNewStockExpiryDate || currentProductExpiryDate
-            : ""
-        );
-    nextNewStockDate = updatedNewStock > 0 ? baseNewStockExpiryDate : "";
-    stockHistoryExpiryDate = normalizedDeductStock > 0 ? "" : normalizedExpiryDate;
-    stockHistoryLabel =
+    const addMatchesNewStockExpiry =
       normalizedAddStock > 0
-        ? (currentStock === 0 ? "New Stock" : "Added Stock")
-        : normalizedDeductStock > 0
-          ? "Deducted"
-          : normalizedExpiryDate !== currentProductExpiryDate
-            ? "Edit Expiry Date"
-            : "Saved Stock";
+      && currentNewStock > 0
+      && stockBatchesShareExpiryDate(normalizedExpiryDate, resolvedNewStockExpiryDate);
+    const addMatchesOldStockExpiry =
+      normalizedAddStock > 0
+      && currentOldStock > 0
+      && stockBatchesShareExpiryDate(normalizedExpiryDate, resolvedOldStockExpiryDate);
+
+    if (addMatchesNewStockExpiry || addMatchesOldStockExpiry) {
+      // "Same Expiry Date" belongs to the existing matching batch. Keeping the
+      // quantity in that batch prevents the latest expiry from being replaced by
+      // a second batch that happens to carry the same date.
+      updatedOldStock = currentOldStock;
+      updatedNewStock = currentNewStock;
+      if (addMatchesNewStockExpiry) {
+        updatedNewStock += normalizedAddStock;
+        targetSourceBatch = "new";
+        stockHistorySourceBatch = "new";
+      } else {
+        updatedOldStock += normalizedAddStock;
+        targetSourceBatch = "old";
+        stockHistorySourceBatch = "old";
+      }
+      nextOldStockExpiryDate = updatedOldStock > 0 ? resolvedOldStockExpiryDate : "";
+      nextNewStockDate = updatedNewStock > 0 ? resolvedNewStockExpiryDate : "";
+      nextRestockedAt = nextModifiedAt;
+      nextStockedDate = nextModifiedAt;
+      stockHistoryExpiryDate = normalizedExpiryDate;
+      stockHistoryLabel = currentStock === 0 ? "New Stock" : "Added Stock";
+    } else {
+      const baseOldStock = normalizedAddStock > 0 ? currentStock : currentOldStock;
+      updatedNewStock = normalizedAddStock > 0 ? normalizedAddStock : currentNewStock;
+      let remainingDeductStock = normalizedDeductStock;
+
+      const deductedFromNewStock = Math.min(updatedNewStock, remainingDeductStock);
+      updatedNewStock -= deductedFromNewStock;
+      remainingDeductStock -= deductedFromNewStock;
+
+      updatedOldStock = Math.max(0, baseOldStock - remainingDeductStock);
+      nextRestockedAt = normalizedAddStock > 0 ? nextModifiedAt : currentLastRestockedAt;
+      nextStockedDate = normalizedAddStock > 0 ? nextRestockedAt : currentStockedDate;
+      const preservedOldStockExpiryDate =
+        currentOldStockExpiryDate ||
+        currentProductExpiryDate ||
+        (
+          currentOldStock > 0 && currentNewStock > 0
+            ? ""
+            : currentNewStockExpiryDate
+        );
+      const baseOldStockExpiryDate = normalizedAddStock > 0
+        ? (
+            currentStock > 0
+              ? preservedOldStockExpiryDate
+              : ""
+          )
+        : (
+            currentOldStock > 0
+              ? (
+                  currentNewStock > 0
+                    ? (currentOldStockExpiryDate || currentProductExpiryDate)
+                    : normalizedExpiryDate || currentOldStockExpiryDate || currentProductExpiryDate
+                )
+              : ""
+          );
+      nextOldStockExpiryDate = updatedOldStock > 0 ? baseOldStockExpiryDate : "";
+      const baseNewStockExpiryDate = normalizedAddStock > 0
+        ? normalizedExpiryDate
+        : (
+            currentNewStock > 0
+              ? normalizedExpiryDate || currentNewStockExpiryDate || currentProductExpiryDate
+              : ""
+          );
+      nextNewStockDate = updatedNewStock > 0 ? baseNewStockExpiryDate : "";
+      stockHistoryExpiryDate = normalizedDeductStock > 0 ? "" : normalizedExpiryDate;
+      stockHistoryLabel =
+        normalizedAddStock > 0
+          ? (currentStock === 0 ? "New Stock" : "Added Stock")
+          : normalizedDeductStock > 0
+            ? "Deducted"
+            : normalizedExpiryDate !== currentProductExpiryDate
+              ? "Edit Expiry Date"
+              : "Saved Stock";
+    }
+  }
+
+  const alignedBatches = alignOldNewBatchesByAheadExpiry(
+    updatedOldStock,
+    updatedNewStock,
+    nextOldStockExpiryDate,
+    nextNewStockDate,
+  );
+  updatedOldStock = alignedBatches.oldStock;
+  updatedNewStock = alignedBatches.newStock;
+  nextOldStockExpiryDate = alignedBatches.oldExpiry;
+  nextNewStockDate = alignedBatches.newExpiry;
+  if (alignedBatches.swapped && stockHistorySourceBatch) {
+    if (stockHistorySourceBatch === "old") {
+      stockHistorySourceBatch = "new";
+    } else if (stockHistorySourceBatch === "new") {
+      stockHistorySourceBatch = "old";
+    }
+  }
+  if (
+    !usingSelectedAddBatch
+    && normalizedAddStock > 0
+    && !hasStockExpiryDate(stockHistoryExpiryDate)
+    && normalizedDeductStock <= 0
+  ) {
+    stockHistorySourceBatch = "new";
+    stockHistoryLabel = currentStock === 0 && !isSplitBatchEdit
+      ? "New Stock"
+      : "Added New Stock";
+    stockHistoryBatchRole = "fresh";
+  } else if (!usingSelectedAddBatch && normalizedAddStock > 0 && stockHistoryExpiryDate) {
+    if (stockBatchesShareExpiryDate(stockHistoryExpiryDate, nextNewStockDate)) {
+      stockHistorySourceBatch = "new";
+      if (!isExpiryDateValueExpired(stockHistoryExpiryDate)) {
+        stockHistoryLabel = currentStock === 0 && !isSplitBatchEdit
+          ? "New Stock"
+          : "Added New Stock";
+        stockHistoryBatchRole = stockHistoryBatchRole === "expired" ? "expired" : "fresh";
+      }
+    } else if (stockHistoryExpiryDatesMatch(stockHistoryExpiryDate, nextOldStockExpiryDate)) {
+      stockHistorySourceBatch = "old";
+      if (
+        !isExpiryDateValueExpired(stockHistoryExpiryDate)
+        && /new stock/i.test(stockHistoryLabel)
+      ) {
+        stockHistoryLabel = "Added Stock";
+      }
+    }
   }
 
   const normalizedStock = updatedOldStock + updatedNewStock;
@@ -5303,40 +10068,103 @@ async function saveStockEditModalChanges(
     updatedOldStock > 0 && isExpiryDateValueExpired(nextOldStockExpiryDate);
   const newBatchIsExpiredAfterSave =
     updatedNewStock > 0 && isExpiryDateValueExpired(nextNewStockDate);
+  const oldExpiryDayAfterSave = getLocalDateStartTimestamp(nextOldStockExpiryDate);
+  const newExpiryDayAfterSave = getLocalDateStartTimestamp(nextNewStockDate);
+  const expiryDatesDifferAfterSave =
+    Boolean(nextOldStockExpiryDate) !== Boolean(nextNewStockDate) ||
+    (
+      Number.isFinite(oldExpiryDayAfterSave) &&
+      Number.isFinite(newExpiryDayAfterSave) &&
+      oldExpiryDayAfterSave !== newExpiryDayAfterSave
+    );
   const shouldSplitAfterSave =
     updatedOldStock > 0 &&
     updatedNewStock > 0 &&
-    oldBatchIsExpiredAfterSave !== newBatchIsExpiredAfterSave;
-  let stockHistoryRecordStock = normalizedStock;
-  if (isSplitBatchEdit) {
-    stockHistoryRecordStock = (displaySourceBatch || "old") === "old"
-      ? updatedOldStock
-      : updatedNewStock;
-  } else if (normalizedAddStock > 0 && shouldSplitAfterSave) {
-    stockHistoryRecordStock = updatedNewStock;
-    stockHistoryBatchRole = newBatchIsExpiredAfterSave ? "expired" : "fresh";
-    stockHistoryLabel = newBatchIsExpiredAfterSave ? "Added Expired Stock" : "Added New Stock";
+    (
+      oldBatchIsExpiredAfterSave !== newBatchIsExpiredAfterSave ||
+      expiryDatesDifferAfterSave
+    );
+  const stockHistoryRecordStock = normalizedStock;
+  if (!usingSelectedAddBatch && normalizedAddStock > 0 && shouldSplitAfterSave) {
+    const addedIsNewBatch = !hasStockExpiryDate(stockHistoryExpiryDate)
+      || stockBatchesShareExpiryDate(stockHistoryExpiryDate, nextNewStockDate);
+    stockHistorySourceBatch = addedIsNewBatch ? "new" : "old";
+    if (isExpiryDateValueExpired(stockHistoryExpiryDate)) {
+      stockHistoryBatchRole = "expired";
+      stockHistoryLabel = "Added Expired Stock";
+    } else {
+      stockHistoryBatchRole = "fresh";
+      stockHistoryLabel = addedIsNewBatch ? "Added New Stock" : "Added Stock";
+    }
   }
 
   const nextProductExpiryDate =
     shouldSplitAfterSave
       ? (
-          oldBatchIsExpiredAfterSave
+          oldBatchIsExpiredAfterSave && !newBatchIsExpiredAfterSave
             ? nextNewStockDate
-            : nextOldStockExpiryDate
+            : newBatchIsExpiredAfterSave && !oldBatchIsExpiredAfterSave
+              ? nextOldStockExpiryDate
+              : (nextNewStockDate || nextOldStockExpiryDate)
         )
       : updatedNewStock > 0
         ? nextNewStockDate
         : updatedOldStock > 0
           ? nextOldStockExpiryDate
           : "";
-  const restockMetadata = normalizedAddStock > 0 || hadRestockDetails
+
+  let nextSellPrioritySourceBatch = getSellPrioritySourceBatch(sourceProduct);
+  if (alignedBatches.swapped) {
+    nextSellPrioritySourceBatch = nextSellPrioritySourceBatch === "old"
+      ? "new"
+      : nextSellPrioritySourceBatch === "new"
+        ? "old"
+        : nextSellPrioritySourceBatch;
+  }
+
+  // Adding stock by a distinct expiry date creates Latest + Previous batches.
+  // Auto-enable priority on Previous stock so sellers don't need to set it manually.
+  // Skip when adding into an existing Per Batch selection.
+  const addedDistinctExpiryBatch =
+    !usingSelectedAddBatch
+    && normalizedAddStock > 0
+    && normalizedDeductStock <= 0
+    && hasStockExpiryDate(stockHistoryExpiryDate)
+    && updatedOldStock > 0
+    && updatedNewStock > 0
+    && (
+      shouldSplitAfterSave
+      || !stockBatchesShareExpiryDate(nextOldStockExpiryDate, nextNewStockDate)
+    )
+    && (
+      !hasStockExpiryDate(nextOldStockExpiryDate)
+      || !stockBatchesShareExpiryDate(stockHistoryExpiryDate, nextOldStockExpiryDate)
+    );
+
+  if (addedDistinctExpiryBatch) {
+    const previousIsExpired = isExpiryDateValueExpired(nextOldStockExpiryDate);
+    const previousIsLocked = hasStockExpiryDate(nextOldStockExpiryDate)
+      && isSellPriorityLockedForExpiryDate(nextOldStockExpiryDate);
+    if (!previousIsExpired && !previousIsLocked) {
+      nextSellPrioritySourceBatch = hasStockExpiryDate(nextOldStockExpiryDate)
+        ? "old"
+        : "undated";
+    }
+  }
+
+  const restockMetadata = normalizedAddStock > 0
+    || hadRestockDetails
+    || shouldSplitAfterSave
+    || usingSelectedDeductBatch
+    || usingSelectedAddBatch
+    || Boolean(nextSellPrioritySourceBatch)
     ? {
         lastRestockPreviousStock: updatedOldStock,
         lastRestockPreviousExpiryDate: nextOldStockExpiryDate,
         lastRestockAddedStock: updatedNewStock,
         lastRestockedAt: nextRestockedAt,
         lastRestockExpiryDate: nextNewStockDate,
+        sellPrioritySourceBatch: nextSellPrioritySourceBatch,
       }
     : {};
   const stockHistoryEntry = {
@@ -5356,6 +10184,7 @@ async function saveStockEditModalChanges(
         : "",
     label: stockHistoryLabel,
     ...(stockHistoryBatchRole ? { batchRole: stockHistoryBatchRole } : {}),
+    ...(stockHistorySourceBatch ? { sourceBatch: stockHistorySourceBatch } : {}),
   };
 
   try {
@@ -5363,6 +10192,7 @@ async function saveStockEditModalChanges(
     deductInput?.classList.add("is-saving");
     deductReasonSelect?.classList.add("is-saving");
     deductReasonDetailInput?.classList.add("is-saving");
+    deductBatchSelect?.classList.add("is-saving");
     expiryTrigger?.classList.add("is-saving");
     primaryButton?.classList.add("is-saving");
     if ("disabled" in (addStockInput ?? {})) {
@@ -5376,6 +10206,9 @@ async function saveStockEditModalChanges(
     }
     if ("disabled" in (deductReasonDetailInput ?? {})) {
       deductReasonDetailInput.disabled = true;
+    }
+    if ("disabled" in (deductBatchSelect ?? {})) {
+      deductBatchSelect.disabled = true;
     }
     if ("disabled" in (expiryTrigger ?? {})) {
       expiryTrigger.disabled = true;
@@ -5429,23 +10262,32 @@ async function saveStockEditModalChanges(
         ? updatedProduct
         : candidate,
     );
-    selectedStockProductId =
+    const updatedDisplayProductIdentifier =
       (isSplitBatchEdit || shouldSplitAfterSave) && shouldSplitProductIntoStockDisplayCards(updatedProduct)
-        ? getStockDisplayIdentifierForRole(
+        ? getStockDisplayIdentifierForSplitBatch(
             updatedProduct,
             isSplitBatchEdit
               ? displayBatchRole
               : (newBatchIsExpiredAfterSave ? "expired" : "fresh"),
+            isSplitBatchEdit
+              ? (displaySourceBatch || "")
+              : "new",
           )
         : getStockProductIdentifier(updatedProduct);
+    selectedStockProductId = selectProductOnSave === false ? "" : updatedDisplayProductIdentifier;
     editingStockProductId = "";
     removeStockEditModalOverlay();
+    closeStockActionDropdown();
     renderStockDashboard(currentStockProducts);
     broadcastStockProductsUpdated();
     openStockSuccessModal(`Saved "${updatedProduct.name || "product"}" stock changes successfully.`);
     return true;
   } catch (error) {
     console.error(error);
+    const errorMessage = error instanceof Error ? error.message : "Unable to save stock changes.";
+    if (/expired/i.test(errorMessage)) {
+      showStockEditorSnackbar("Expired stock", errorMessage, "error");
+    }
     primaryButton?.classList.add("is-error");
     window.setTimeout(() => primaryButton?.classList.remove("is-error"), 1800);
     return false;
@@ -5454,6 +10296,7 @@ async function saveStockEditModalChanges(
     deductInput?.classList.remove("is-saving");
     deductReasonSelect?.classList.remove("is-saving");
     deductReasonDetailInput?.classList.remove("is-saving");
+    deductBatchSelect?.classList.remove("is-saving");
     expiryTrigger?.classList.remove("is-saving");
     primaryButton?.classList.remove("is-saving");
     if ("disabled" in (addStockInput ?? {})) {
@@ -5485,6 +10328,10 @@ async function saveStockEditModalChanges(
         && normalizeStockDeductReason(deductReasonSelect?.value) === "other";
       deductReasonDetailInput.disabled = !shouldEnableDeductReasonDetail;
       deductReasonDetailInput.classList.toggle("is-disabled", !shouldEnableDeductReasonDetail);
+    }
+    if ("disabled" in (deductBatchSelect ?? {})) {
+      deductBatchSelect.disabled = false;
+      deductBatchSelect.classList.remove("is-disabled");
     }
     if ("disabled" in (expiryTrigger ?? {})) {
       const parsedDeductInputValue = Number(deductInput?.value ?? 0);
@@ -5594,7 +10441,7 @@ function createStockRecordTable(records) {
 
     const quantityCell = document.createElement("td");
     quantityCell.className = "stock-detail-table__cell stock-detail-table__cell--quantity";
-    quantityCell.textContent = record?.quantity ?? "-";
+    quantityCell.appendChild(createStockRecordQuantityValueElement(record));
 
     const modifiedCell = document.createElement("td");
     modifiedCell.className = "stock-detail-table__cell stock-detail-table__cell--modified";
@@ -5621,15 +10468,14 @@ function createStockRecordTable(records) {
     labelCell.className = "stock-detail-table__cell stock-detail-table__cell--label";
     const labelContent = document.createElement("div");
     labelContent.className = "stock-detail-table__label-cell";
-    if (recordLabel) {
-      const labelPill = document.createElement("span");
-      const labelClassName = getStockRecordLabelClassName(recordLabel);
-      labelPill.className = labelClassName
-        ? `stock-detail-table__label ${labelClassName}`
-        : "stock-detail-table__label";
-      labelPill.textContent = recordLabel;
-      labelContent.appendChild(labelPill);
-    }
+    const conditionLabel = recordLabel || "Current Stock";
+    const labelPill = document.createElement("span");
+    const labelClassName = getStockRecordLabelClassName(conditionLabel);
+    labelPill.className = labelClassName
+      ? `stock-detail-table__label ${labelClassName}`
+      : "stock-detail-table__label";
+    labelPill.textContent = conditionLabel;
+    labelContent.appendChild(labelPill);
 
     if (record?.canDelete && normalizedRecordId && normalizedProductId) {
       const deleteButton = document.createElement("button");
@@ -5645,7 +10491,7 @@ function createStockRecordTable(records) {
         `Delete ${recordLabel || "stock record"}`,
       );
       deleteButton.title = `Delete ${recordLabel || "stock record"}`;
-      deleteButton.innerHTML = `<i class="fa-solid fa-trash-can" aria-hidden="true"></i>`;
+      deleteButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
       labelContent.appendChild(deleteButton);
     }
 
@@ -5691,6 +10537,37 @@ function formatStockRecordQuantityValue(value) {
   return String(normalizedValue);
 }
 
+function createStockRecordQuantityValueElement(record) {
+  const quantityValueShell = document.createElement("div");
+  quantityValueShell.className = "stock-detail-table__quantity-value";
+
+  const quantityValue = document.createElement("span");
+  quantityValue.className = "stock-detail-table__quantity-number";
+  quantityValue.textContent = record?.quantity ?? "-";
+
+  const normalizedStocksValue = String(record?.stocks ?? "").trim();
+  if (normalizedStocksValue.startsWith("+")) {
+    const directionIcon = document.createElement("span");
+    directionIcon.className = "stock-detail-table__quantity-icon-wrap";
+    directionIcon.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="stock-detail-table__quantity-icon stock-detail-table__quantity-icon--up" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>';
+    quantityValueShell.append(directionIcon, quantityValue);
+    return quantityValueShell;
+  }
+
+  if (normalizedStocksValue.startsWith("-")) {
+    const directionIcon = document.createElement("span");
+    directionIcon.className = "stock-detail-table__quantity-icon-wrap";
+    directionIcon.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-down-icon lucide-arrow-down stock-detail-table__quantity-icon stock-detail-table__quantity-icon--down" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>';
+    quantityValueShell.append(directionIcon, quantityValue);
+    return quantityValueShell;
+  }
+
+  quantityValueShell.appendChild(quantityValue);
+  return quantityValueShell;
+}
+
 function getCurrentExpiredBatchStockCount(product) {
   const { oldStock, newStock } = getProductStockBreakdown(product);
   const oldExpiredStock = isExpiryDateValueExpired(getProductOldStockExpiryDate(product))
@@ -5710,15 +10587,127 @@ function getSplitBatchRoleForSourceBatch(product, sourceBatch = "") {
     return "";
   }
 
-  if (splitDisplayConfig.expired.sourceBatch === sourceBatch) {
-    return "expired";
+  if (splitDisplayConfig.expired?.sourceBatch === sourceBatch) {
+    return splitDisplayConfig.expired.role || "expired";
   }
 
-  if (splitDisplayConfig.fresh.sourceBatch === sourceBatch) {
-    return "fresh";
+  if (splitDisplayConfig.fresh?.sourceBatch === sourceBatch) {
+    return splitDisplayConfig.fresh.role || "fresh";
   }
 
   return "";
+}
+
+function getStockDisplayIdentifierForSplitBatch(product, role = "", sourceBatch = "") {
+  const splitDisplayConfig = getSplitStockDisplayConfig(product);
+  const sourceProduct = getStockSourceProduct(product);
+  const baseIdentifier =
+    sourceProduct && sourceProduct !== product
+      ? getStockProductIdentifier(sourceProduct)
+      : getStockProductIdentifier(product);
+
+  if (!splitDisplayConfig) {
+    return role ? `${baseIdentifier}::${role}` : baseIdentifier;
+  }
+
+  const matchedBatch = [splitDisplayConfig.fresh, splitDisplayConfig.expired].find((batch) => {
+    if (!batch) {
+      return false;
+    }
+    if (sourceBatch && batch.sourceBatch === sourceBatch) {
+      return true;
+    }
+    return !sourceBatch && role && (batch.role || "") === role;
+  });
+
+  if (!matchedBatch) {
+    return role ? `${baseIdentifier}::${role}` : baseIdentifier;
+  }
+
+  const matchedRole = matchedBatch.role || role || "fresh";
+  const otherBatch =
+    matchedBatch === splitDisplayConfig.fresh
+      ? splitDisplayConfig.expired
+      : splitDisplayConfig.fresh;
+  const otherRole = otherBatch?.role || "";
+  const displayKey =
+    matchedRole && otherRole && matchedRole === otherRole
+      ? `${matchedRole}-${matchedBatch.sourceBatch}`
+      : matchedRole;
+
+  return `${baseIdentifier}::${displayKey}`;
+}
+
+function resolveStockHistoryRecordSourceBatch(record, product) {
+  const recordExpiry = record?.expiryDate;
+  const addedQuantity = Number(record?.addedQuantity ?? 0);
+  const hasAddedQuantity = Number.isFinite(addedQuantity) && addedQuantity > 0;
+  if (hasAddedQuantity && !hasStockExpiryDate(recordExpiry)) {
+    return "new";
+  }
+
+  const oldExpiry = getProductOldStockExpiryDate(product);
+  const newExpiry = getProductNewStockDate(product) ?? getProductExpiryDate(product);
+  const matchesOldExpiry = stockBatchesShareExpiryDate(recordExpiry, oldExpiry)
+    && hasStockExpiryDate(recordExpiry);
+  const matchesNewExpiry = stockBatchesShareExpiryDate(recordExpiry, newExpiry)
+    && hasStockExpiryDate(recordExpiry);
+
+  if (matchesNewExpiry && !matchesOldExpiry) {
+    return "new";
+  }
+  if (matchesOldExpiry && !matchesNewExpiry) {
+    return "old";
+  }
+  if (recordExpiry && isStockExpiryDateAhead(recordExpiry, oldExpiry) && !isStockExpiryDateAhead(newExpiry, recordExpiry)) {
+    return "new";
+  }
+  if (recordExpiry && isStockExpiryDateAhead(oldExpiry, recordExpiry)) {
+    return "old";
+  }
+
+  const explicitSourceBatch = normalizeStockHistorySourceBatch(record?.sourceBatch);
+  if (explicitSourceBatch) {
+    return explicitSourceBatch;
+  }
+
+  const lastRestockedTimestamp = getProductLastRestockedTimestamp(product);
+  const recordTimestamp = Date.parse(String(record?.modifiedAt ?? "").trim());
+  const isBeforeLastRestock =
+    Number.isFinite(lastRestockedTimestamp) &&
+    Number.isFinite(recordTimestamp) &&
+    recordTimestamp < lastRestockedTimestamp - 2000;
+  const explicitBatchRole = normalizeStockHistoryBatchRole(record?.batchRole);
+  const splitDisplayConfig = getSplitStockDisplayConfig(product);
+
+  if (explicitBatchRole && splitDisplayConfig) {
+    const expiredRole = splitDisplayConfig.expired?.role || "expired";
+    const freshRole = splitDisplayConfig.fresh?.role || "fresh";
+    if (explicitBatchRole === expiredRole && explicitBatchRole !== freshRole) {
+      return splitDisplayConfig.expired?.sourceBatch || "old";
+    }
+    if (explicitBatchRole === freshRole && explicitBatchRole !== expiredRole) {
+      return splitDisplayConfig.fresh?.sourceBatch || "new";
+    }
+  }
+
+  const normalizedLabel = normalizeStockHistoryLabel(record?.label, "");
+  if (/added expired stock/i.test(normalizedLabel)) {
+    return splitDisplayConfig?.expired?.sourceBatch || "new";
+  }
+  if (/added new stock/i.test(normalizedLabel) || /^new stock$/i.test(normalizedLabel)) {
+    return isStockExpiryDateAhead(oldExpiry, newExpiry) ? "old" : "new";
+  }
+
+  if (
+    !isBeforeLastRestock &&
+    hasAddedQuantity &&
+    (matchesNewExpiry || /added (?:new|expired) stock/i.test(normalizedLabel) || explicitBatchRole)
+  ) {
+    return "new";
+  }
+
+  return isBeforeLastRestock ? "old" : (explicitSourceBatch || "old");
 }
 
 function resolveStockHistoryRecordBatchRole(record, product) {
@@ -5727,116 +10716,170 @@ function resolveStockHistoryRecordBatchRole(record, product) {
     return explicitBatchRole;
   }
 
+  const sourceBatch = resolveStockHistoryRecordSourceBatch(record, product);
+  const splitRoleForSource = getSplitBatchRoleForSourceBatch(product, sourceBatch);
+  if (splitRoleForSource) {
+    return splitRoleForSource;
+  }
+
   const normalizedLabel = normalizeStockHistoryLabel(record?.label, "");
   if (/expired stock/i.test(normalizedLabel)) {
     return "expired";
   }
-
   if (/(?:fresh|new) stock/i.test(normalizedLabel)) {
     return "fresh";
   }
 
-  const splitRoleForOldBatch = getSplitBatchRoleForSourceBatch(product, "old");
-  const splitRoleForNewBatch = getSplitBatchRoleForSourceBatch(product, "new");
-  if (/^old stock$/i.test(normalizedLabel)) {
-    return splitRoleForOldBatch || "expired";
-  }
-
-  if (/^new stock$/i.test(normalizedLabel)) {
-    return splitRoleForNewBatch || "fresh";
-  }
-
-  const normalizedRecordExpiryDate = normalizeExpiryDateInputValue(record?.expiryDate);
-  const normalizedOldStockExpiryDate = normalizeExpiryDateInputValue(getProductOldStockExpiryDate(product));
-  const normalizedNewStockExpiryDate = normalizeExpiryDateInputValue(
-    getProductNewStockDate(product) ?? getProductExpiryDate(product),
-  );
-
-  if (
-    normalizedRecordExpiryDate &&
-    normalizedNewStockExpiryDate &&
-    normalizedRecordExpiryDate === normalizedNewStockExpiryDate
-  ) {
-    return splitRoleForNewBatch;
-  }
-
-  if (
-    normalizedRecordExpiryDate &&
-    normalizedOldStockExpiryDate &&
-    normalizedRecordExpiryDate === normalizedOldStockExpiryDate
-  ) {
-    return splitRoleForOldBatch;
-  }
-
-  const hasAddedQuantity =
-    Number.isFinite(Number(record?.addedQuantity)) && Number(record.addedQuantity) > 0;
-  if (hasAddedQuantity && /^added stock$/i.test(normalizedLabel)) {
-    return splitRoleForNewBatch;
-  }
-
-  return "";
+  return sourceBatch === "new" ? "fresh" : "";
 }
 
-function getStockHistoryRecordDisplayQuantity(record, product, batchRole = "") {
-  const normalizedBatchRole = normalizeStockHistoryBatchRole(batchRole);
-  const resolvedBatchRole = resolveStockHistoryRecordBatchRole(record, product);
-  const explicitBatchRole = normalizeStockHistoryBatchRole(record?.batchRole);
-  const normalizedRecordLabel = normalizeStockHistoryLabel(record?.label, "");
+function createStockHistoryLatestQuantityMap(records, product) {
+  const quantityByRecord = new Map();
+  let latestStockQuantity = getStock(product);
 
-  if (
-    normalizedBatchRole &&
-    resolvedBatchRole === normalizedBatchRole &&
-    !explicitBatchRole &&
-    /^added stock$/i.test(normalizedRecordLabel)
-  ) {
+  for (const record of Array.isArray(records) ? records : []) {
+    quantityByRecord.set(record, latestStockQuantity);
+
     const addedQuantity = Number(record?.addedQuantity ?? 0);
-    return Number.isFinite(addedQuantity) && addedQuantity >= 0
-      ? Math.trunc(addedQuantity)
+    const deductedQuantity = Number(record?.deductedQuantity ?? 0);
+    const normalizedAddedQuantity = Number.isFinite(addedQuantity)
+      ? Math.max(0, Math.trunc(addedQuantity))
       : 0;
+    const normalizedDeductedQuantity = Number.isFinite(deductedQuantity)
+      ? Math.max(0, Math.trunc(deductedQuantity))
+      : 0;
+    latestStockQuantity = Math.max(
+      0,
+      latestStockQuantity - normalizedAddedQuantity + normalizedDeductedQuantity,
+    );
+  }
+
+  return quantityByRecord;
+}
+
+function getStockHistoryRecordDisplayQuantity(record, latestStockQuantity = null) {
+  if (Number.isFinite(Number(latestStockQuantity))) {
+    return Math.max(0, Math.trunc(Number(latestStockQuantity)));
   }
 
   const stock = Number(record?.stock ?? 0);
   return Number.isFinite(stock) && stock >= 0 ? Math.trunc(stock) : 0;
 }
 
+function resolveStockRecordConditionLabel(record, product, sourceBatch = "") {
+  const normalizedLabel = normalizeStockHistoryLabel(record?.label, "");
+  const displayLabel = getStockHistoryDisplayLabel(normalizedLabel, "");
+  const requestedSourceBatch = normalizeStockHistorySourceBatch(sourceBatch);
+  const isSplitView =
+    shouldSplitProductIntoStockDisplayCards(product) || Boolean(requestedSourceBatch);
+  const recordSourceBatch = requestedSourceBatch || (
+    isSplitView ? resolveStockHistoryRecordSourceBatch(record, product) : ""
+  );
+  const hasAddedQuantity =
+    Number.isFinite(Number(record?.addedQuantity)) && Number(record.addedQuantity) > 0;
+  const hasDeductedQuantity =
+    Number.isFinite(Number(record?.deductedQuantity)) && Number(record.deductedQuantity) > 0;
+
+  if (isExpiryEditStockHistoryLabel(normalizedLabel)) {
+    return "Edit Expiry Date";
+  }
+
+  if (hasDeductedQuantity) {
+    if (displayLabel && !/^deducted(?: stock)?$/i.test(displayLabel)) {
+      return displayLabel;
+    }
+    return "Deducted";
+  }
+
+  if (hasAddedQuantity) {
+    if (/expired/i.test(normalizedLabel) || isExpiryDateValueExpired(record?.expiryDate)) {
+      return "Expired Stock";
+    }
+
+    if (!hasStockExpiryDate(record?.expiryDate)) {
+      return "New Stock";
+    }
+
+    const aheadExpiry = getAheadStockExpiryDate(product);
+    const behindExpiry = getBehindStockExpiryDate(product);
+    if (
+      stockHistoryExpiryDatesMatch(record?.expiryDate, aheadExpiry)
+      || isStockExpiryDateAhead(record?.expiryDate, behindExpiry)
+    ) {
+      return "New Stock";
+    }
+    if (
+      isSplitView
+      && stockHistoryExpiryDatesMatch(record?.expiryDate, behindExpiry)
+    ) {
+      return "Old Stock";
+    }
+  }
+
+  if (displayLabel && displayLabel !== "Stock Record") {
+    return displayLabel;
+  }
+
+  if (hasAddedQuantity) {
+    return "Added Stock";
+  }
+
+  return "Current Stock";
+}
+
 function buildStockRecordRows(product, options = {}) {
   const requestedBatchRole = normalizeStockHistoryBatchRole(options?.batchRole);
-  const canDeleteRecords = options?.allowDelete !== false;
-  const shouldShowSplitBatchLabels =
-    Boolean(requestedBatchRole) || shouldSplitProductIntoStockDisplayCards(product);
+  const requestedSourceBatch = normalizeStockHistorySourceBatch(options?.sourceBatch);
+  const canDeleteRecords = options?.allowDelete !== false && options?.movementOnly !== true;
+  const movementOnly = options?.movementOnly === true;
+  const nearExpiryOnly = options?.nearExpiryOnly === true;
   const shouldShowNearExpiryIndicator =
-    !requestedBatchRole && !shouldSplitProductIntoStockDisplayCards(product);
+    !requestedBatchRole &&
+    !requestedSourceBatch &&
+    !shouldSplitProductIntoStockDisplayCards(product);
   const hasCurrentExpiredBatchStock = getCurrentExpiredBatchStockCount(product) > 0;
-  const stockHistoryRecords = getProductStockHistoryRecords(product)
+  const allStockHistoryRecords = getProductStockHistoryRecords(product);
+  const latestQuantityByRecord = createStockHistoryLatestQuantityMap(
+    allStockHistoryRecords,
+    product,
+  );
+  const stockHistoryRecords = allStockHistoryRecords
     .filter((record) => {
+      if (nearExpiryOnly && !isNearExpiryDateValue(record?.expiryDate)) {
+        return false;
+      }
+
+      if (requestedSourceBatch) {
+        return resolveStockHistoryRecordSourceBatch(record, product) === requestedSourceBatch;
+      }
+
+      if (requestedBatchRole) {
+        return resolveStockHistoryRecordBatchRole(record, product) === requestedBatchRole;
+      }
+
       const resolvedBatchRole = resolveStockHistoryRecordBatchRole(record, product);
       if (resolvedBatchRole === "expired" && !hasCurrentExpiredBatchStock) {
         return false;
       }
 
-      if (!requestedBatchRole) {
+      return true;
+    })
+    .filter((record) => {
+      if (!movementOnly) {
         return true;
       }
 
-      return resolvedBatchRole === requestedBatchRole;
+      const addedQuantity = Number(record?.addedQuantity);
+      const deductedQuantity = Number(record?.deductedQuantity);
+      return Number.isFinite(addedQuantity) && addedQuantity > 0
+        && !(Number.isFinite(deductedQuantity) && deductedQuantity > 0);
     });
   const productId = String(product?.id ?? "").trim();
   if (stockHistoryRecords.length) {
-    let hasAssignedNewStockLabel = false;
     return stockHistoryRecords.map((record) => {
       const hasAddedQuantity =
         Number.isFinite(Number(record?.addedQuantity)) && Number(record.addedQuantity) > 0;
-      const normalizedRecordLabel = normalizeStockHistoryLabel(record?.label, "Stock Record");
-      const displayRecordLabel = getStockHistoryDisplayLabel(normalizedRecordLabel, "Stock Record");
-      const isGenericAddedLabel = /^added stock$/i.test(normalizedRecordLabel);
-      const isGenericDeductedLabel = /^deducted(?: stock)?$/i.test(normalizedRecordLabel);
-      const isExpiryEditLabel = isExpiryEditStockHistoryLabel(normalizedRecordLabel);
-
-      let nextLabel = "";
-      if (shouldShowSplitBatchLabels && hasAddedQuantity && isGenericAddedLabel) {
-        nextLabel = hasAssignedNewStockLabel ? "Old Stock" : "New Stock";
-        hasAssignedNewStockLabel = true;
-      }
+      const isExpiryEditLabel = isExpiryEditStockHistoryLabel(record?.label);
 
       return {
         recordId: String(record?.id ?? "").trim(),
@@ -5847,12 +10890,16 @@ function buildStockRecordRows(product, options = {}) {
           zeroAsPositive: isExpiryEditLabel,
         }),
         quantity: formatStockRecordQuantityValue(
-          getStockHistoryRecordDisplayQuantity(record, product, requestedBatchRole),
+          getStockHistoryRecordDisplayQuantity(
+            record,
+            latestQuantityByRecord.get(record),
+          ),
         ),
         modified: formatOptionalDateTime(record.modifiedAt, "Not recorded yet"),
         expireDate: record.expiryDate
           ? formatExpiryDateDisplay(record.expiryDate, "-")
           : "-",
+        expiryBatchKey: getInventoryExpiryBatchKey(record?.expiryDate),
         expiryMeta:
           shouldShowNearExpiryIndicator && isNearExpiryDateValue(record?.expiryDate)
             ? "Nearly Expired"
@@ -5865,18 +10912,12 @@ function buildStockRecordRows(product, options = {}) {
                   ? normalizeStockDeductReasonDetail(record?.deductReason) || "-"
                   : "-"
               ),
-        label:
-          nextLabel
-          || (
-            Number(record?.deductedQuantity) > 0
-              ? (isGenericDeductedLabel ? "Deducted" : displayRecordLabel)
-              : displayRecordLabel
-          ),
+        label: resolveStockRecordConditionLabel(record, product, requestedSourceBatch),
       };
     });
   }
 
-  if (requestedBatchRole) {
+  if (requestedBatchRole || requestedSourceBatch || movementOnly || nearExpiryOnly) {
     return [];
   }
 
@@ -5884,6 +10925,7 @@ function buildStockRecordRows(product, options = {}) {
   const currentModifiedDate = getProductModifiedDate(product);
   const addedQuantity = getProductLastAddedStockQuantity(product);
   const deductedQuantity = getProductLastDeductedStockQuantity(product);
+  const batchExpiryDate = getProductBatchExpiryDate(product);
   return [
     {
       recordId: "",
@@ -5894,15 +10936,18 @@ function buildStockRecordRows(product, options = {}) {
       quantity: formatStockRecordQuantityValue(stock),
       modified: formatOptionalDateTime(currentModifiedDate, "Not recorded yet"),
       expireDate:
-        stock > 0
-          ? formatExpiryDateDisplay(getProductExpiryDate(product), "-")
+        stock > 0 && hasStockExpiryDate(batchExpiryDate)
+          ? formatExpiryDateDisplay(batchExpiryDate, "-")
           : "-",
+      expiryBatchKey: getInventoryExpiryBatchKey(
+        stock > 0 && hasStockExpiryDate(batchExpiryDate) ? batchExpiryDate : "",
+      ),
       expiryMeta:
         shouldShowNearExpiryIndicator && stock > 0 && isNearExpiryProduct(product)
           ? "Nearly Expired"
           : "",
       reason: "-",
-      label: addedQuantity > 0 ? "New Stock" : "",
+      label: addedQuantity > 0 ? "New Stock" : "Current Stock",
     },
   ];
 }
@@ -5911,8 +10956,6 @@ function buildEmployeeStockDetailRows(product) {
   const sourceProduct = getStockSourceProduct(product);
   const stock = getStock(product);
   const isExpiredBatch = isExpiredStockDisplayEntry(product);
-  const isFreshBatch = isFreshStockDisplayEntry(product);
-  const isSplitBatchEntry = isSplitStockDisplayEntry(product);
   const statusLabel = isExpiredBatch || isExpiredProduct(product)
     ? "Expired"
     : isNearExpiryProduct(product)
@@ -5930,13 +10973,6 @@ function buildEmployeeStockDetailRows(product) {
       formatOptionalDateTime(getProductModifiedDate(sourceProduct)),
     ),
   ];
-
-  if (isSplitBatchEntry) {
-    const batchLabel = isExpiredBatch
-      ? "Expired Batch"
-      : (product?.stockDisplayLabel || (isFreshBatch ? "Fresh Batch" : "Available Batch"));
-    rows.splice(2, 0, createInfoRow("Batch", batchLabel));
-  }
 
   const expiryDate = getProductExpiryDate(product);
   if (stock > 0 || String(expiryDate ?? "").trim()) {
@@ -5966,61 +11002,77 @@ function renderStockDetails(product) {
     stockDetailHeader?.setAttribute("hidden", "true");
     stockDetailTitle.textContent = "";
     stockDetailSubtitle.textContent = "";
-    stockDetailList.appendChild(
-      createEmptyState(
-        isEmployeeStockWorkspace()
-          ? "Select a product to view current stock summary."
-          : "Select a product to view stock details.",
-      ),
-    );
+    // Skip empty-state Lottie when the stock-record modal is already closed/closing.
+    const shouldShowEmptyPlaceholder =
+      !isMainInventoryStockWorkspace()
+      || document.body.classList.contains("stock-record-drawer-open");
+    if (shouldShowEmptyPlaceholder) {
+      stockDetailList.appendChild(
+        createEmptyState(
+          isEmployeeStockWorkspace()
+            ? "Select a product to view current stock summary."
+            : "Select a product to view stock details.",
+        ),
+      );
+    }
+    syncStockRecordDrawer(null);
     return;
   }
 
+  const isMovementView = isStockMovementDrawerMode();
   stockDetailHeader?.setAttribute("hidden", "true");
-  const stock = getStock(product);
   const sourceProduct = getStockSourceProduct(product);
-  const isExpiredBatch = isExpiredStockDisplayEntry(product);
-  const isFreshBatch = isFreshStockDisplayEntry(product);
   stockDetailTitle.textContent = product.name || "Unnamed Product";
 
-  if (isEmployeeStockWorkspace()) {
+  if (isEmployeeStockWorkspace() && !isMovementView) {
     stockDetailSubtitle.textContent = `${product.category || "General"} - record view`;
+    syncStockRecordDrawer(product, stockDetailSubtitle.textContent);
     stockDetailList.append(...buildEmployeeStockDetailRows(product));
-    const employeeStockRecordRows = buildStockRecordRows(sourceProduct, {
-      allowDelete: false,
-      batchRole: isSplitStockDisplayEntry(product) ? getStockDisplayBatchRole(product) : "",
-    });
+    const employeeStockRecordRows = filterStockRecordRowsByBatch(
+      buildStockRecordRows(sourceProduct, {
+        allowDelete: false,
+        nearExpiryOnly: stockPriorityFilter === "near-expiry",
+        batchRole: isSplitStockDisplayEntry(product) ? getStockDisplayBatchRole(product) : "",
+        sourceBatch: isSplitStockDisplayEntry(product) ? getStockDisplaySourceBatch(product) : "",
+      }),
+      stockRecordBatchFilterKey,
+      sourceProduct,
+    );
     if (employeeStockRecordRows.length) {
       stockDetailList.appendChild(createStockRecordTable(employeeStockRecordRows));
     }
     return;
   }
 
-  if (isSplitStockDisplayEntry(product)) {
-    const batchLabel = isExpiredBatch
-      ? "Expired Batch"
-      : (product?.stockDisplayLabel || (isFreshBatch ? "Fresh Batch" : "Available Batch"));
-    stockDetailSubtitle.textContent = `${product.category || "General"} - ${batchLabel}`;
-    stockDetailList.append(
-      createInfoRow("Batch", batchLabel),
-    );
+  stockDetailSubtitle.textContent = isMovementView
+    ? `${product.category || "General"} - add stock history`
+    : `${product.category || "General"} - record view`;
+  syncStockRecordDrawer(product, stockDetailSubtitle.textContent);
 
-    const stockRecordRows = buildStockRecordRows(sourceProduct, {
-      batchRole: getStockDisplayBatchRole(product),
-    });
-    if (stockRecordRows.length) {
-      stockDetailList.appendChild(createStockRecordTable(stockRecordRows));
-    } else {
-      stockDetailList.appendChild(createEmptyState("No stock records available for this batch."));
-    }
-    return;
-  }
-
-  stockDetailSubtitle.textContent = `${product.category || "General"} - record view`;
-
-  const stockRecordRows = buildStockRecordRows(product);
+  const stockRecordRows = filterStockRecordRowsByBatch(
+    buildStockRecordRows(sourceProduct, {
+      allowDelete: !isMovementView,
+      movementOnly: isMovementView,
+      nearExpiryOnly: stockPriorityFilter === "near-expiry",
+      batchRole: isSplitStockDisplayEntry(product) ? getStockDisplayBatchRole(product) : "",
+      sourceBatch: isSplitStockDisplayEntry(product) ? getStockDisplaySourceBatch(product) : "",
+    }),
+    stockRecordBatchFilterKey,
+    sourceProduct,
+  );
   if (!stockRecordRows.length) {
-    stockDetailList.appendChild(createEmptyState("No stock records available right now."));
+    stockDetailList.appendChild(
+      createEmptyState(
+        productHasStockRecordBatchFilter(sourceProduct)
+          && stockRecordBatchFilterKey !== "all"
+          ? "No stock records for this batch."
+          : isMovementView
+            ? "No add stock movement yet."
+            : isSplitStockDisplayEntry(product)
+              ? "No stock records available for this batch."
+              : "No stock records available right now.",
+      ),
+    );
     return;
   }
 
@@ -6028,6 +11080,14 @@ function renderStockDetails(product) {
 }
 
 function renderStockDashboard(products = currentStockProducts) {
+  const openExpiryDropdownProductIdentifier =
+    stockActionDropdownMode === "expiry"
+    && stockActionDropdown instanceof HTMLElement
+    && stockActionDropdown.isConnected
+      ? String(stockActionDropdownCard?.dataset?.stockProductId ?? "").trim()
+      : "";
+  closeStockActionDropdown();
+  closeNearExpiryBatchOverlay();
   const displayProducts = getStockDisplayProducts(products);
   const filteredProducts = getFilteredStockProducts(displayProducts);
   if (
@@ -6054,15 +11114,60 @@ function renderStockDashboard(products = currentStockProducts) {
   setSummary(filteredProducts);
   renderProducts(filteredProducts);
   renderStockDetails(selectedProduct);
+
+  if (openExpiryDropdownProductIdentifier) {
+    const refreshedDisplayProduct = filteredProducts.find(
+      (candidate) =>
+        getStockProductIdentifier(candidate) === openExpiryDropdownProductIdentifier,
+    );
+    const refreshedCard = [...stockProductList.querySelectorAll(".stock-product-card")]
+      .find(
+        (candidate) =>
+          String(candidate?.dataset?.stockProductId ?? "").trim()
+            === openExpiryDropdownProductIdentifier,
+      );
+    const refreshedExpiryToggle = refreshedCard?.querySelector(
+      ".stock-product-card__action-button--expiry",
+    );
+    if (refreshedDisplayProduct && refreshedExpiryToggle instanceof HTMLElement) {
+      openStockActionDropdown(
+        refreshedExpiryToggle,
+        "expiry",
+        refreshedDisplayProduct,
+        { skipAnimation: true },
+      );
+    }
+  }
 }
 
-async function loadStockData() {
+function isApprovedInventoryProduct(product) {
+  const approvalStatus = String(product?.approvalStatus ?? "").trim().toLowerCase();
+  return approvalStatus === "approved" || approvalStatus === "accepted";
+}
+
+function getStockProductsRenderSignature(products) {
   try {
-    if (stockRefreshButton) {
+    return JSON.stringify(Array.isArray(products) ? products : []);
+  } catch (error) {
+    return (Array.isArray(products) ? products : [])
+      .map((product) => [
+        String(product?.id ?? "").trim(),
+        String(product?.updatedAt ?? product?.modifiedAt ?? "").trim(),
+        getStock(product),
+        String(product?.imageUrl ?? "").trim(),
+      ].join(":"))
+      .join("|");
+  }
+}
+
+async function loadStockData(options = {}) {
+  const quiet = options?.quiet === true;
+  try {
+    if (!quiet && stockRefreshButton) {
       stockRefreshButton.disabled = true;
       stockRefreshButton.classList.add("is-spinning");
     }
-    const response = await fetch("/api/products", {
+    const response = await fetch("/api/products?approvalStatus=approved", {
       cache: "no-store",
       headers: withStockAdminScopeHeaders({ Accept: "application/json" }),
     });
@@ -6072,33 +11177,100 @@ async function loadStockData() {
       throw new Error(data.message || "Unable to load saved products.");
     }
 
-    currentStockProducts = Array.isArray(data.products) ? data.products : [];
-    renderStockCategoryFilterOptions(currentStockProducts);
+    const nextStockProducts = (Array.isArray(data.products) ? data.products : [])
+      .filter(isApprovedInventoryProduct);
+    const shouldRenderStockData = !hasLoadedStockData
+      || !quiet
+      || getStockProductsRenderSignature(currentStockProducts)
+        !== getStockProductsRenderSignature(nextStockProducts);
+    currentStockProducts = nextStockProducts;
+    hasLoadedStockData = true;
+    if (shouldRenderStockData) {
+      renderStockCategoryFilterOptions(currentStockProducts);
+    }
     preparePendingStockNotificationFocusSelection();
-    renderStockDashboard(currentStockProducts);
+    if (shouldRenderStockData) {
+      renderStockDashboard(currentStockProducts);
+    }
     window.requestAnimationFrame(applyPendingStockNotificationFocus);
+    return true;
   } catch (error) {
     console.error(error);
+    if (quiet) {
+      return false;
+    }
     stockProductList.replaceChildren(createEmptyState("Unable to load stock data right now."));
     stockPriorityList?.replaceChildren(createEmptyState("Unable to load restock data right now."));
     stockCategoryList?.replaceChildren(createEmptyState("Unable to load category data right now."));
     setSummaryValue(stockTotalProducts, 0);
     setSummaryValue(stockTotalUnits, 0);
+    setSummaryValue(stockNewCount, 0);
     setSummaryValue(stockLowCount, 0);
     setSummaryValue(stockEmptyCount, 0);
     setSummaryValue(stockNearExpiryCount, 0);
+    setSummaryValue(stockExpiredCount, 0);
+    return false;
   } finally {
-    if (stockRefreshButton) {
+    if (!quiet && stockRefreshButton) {
       stockRefreshButton.disabled = false;
       stockRefreshButton.classList.remove("is-spinning");
     }
   }
 }
 
+async function refreshStockDataFromRealtime() {
+  if (stockRealtimeRefreshInFlight) {
+    stockRealtimeRefreshQueued = true;
+    return;
+  }
+
+  stockRealtimeRefreshInFlight = true;
+  try {
+    await loadStockData({ quiet: true });
+  } finally {
+    stockRealtimeRefreshInFlight = false;
+    if (stockRealtimeRefreshQueued) {
+      stockRealtimeRefreshQueued = false;
+      scheduleStockRealtimeRefresh();
+    }
+  }
+}
+
+function scheduleStockRealtimeRefresh() {
+  if (Date.now() < stockIgnoreRealtimeRefreshUntil) {
+    return;
+  }
+  window.clearTimeout(stockRealtimeRefreshTimer);
+  stockRealtimeRefreshTimer = window.setTimeout(() => {
+    stockRealtimeRefreshTimer = 0;
+    if (Date.now() < stockIgnoreRealtimeRefreshUntil) {
+      return;
+    }
+    void refreshStockDataFromRealtime();
+  }, 200);
+}
+
+function handleStockRealtimeChange(event) {
+  const detail = event?.detail;
+  const isReconnect = detail?.type === "ready" && detail?.reconnected === true;
+  if (detail?.type !== "data-change" && !isReconnect) {
+    return;
+  }
+
+  const topics = (Array.isArray(detail?.topics) ? detail.topics : [])
+    .map((topic) => String(topic || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (!isReconnect && !topics.some((topic) => stockRealtimeTopics.has(topic))) {
+    return;
+  }
+  scheduleStockRealtimeRefresh();
+}
+
 stockSearchInput?.addEventListener("input", () => {
   window.clearTimeout(stockSearchTimer);
   stockSearchTimer = window.setTimeout(() => {
     stockSearchTerm = normalizeStockSearchTerm(stockSearchInput.value);
+    stockInventoryPage = 1;
     renderStockDashboard(currentStockProducts);
   }, 500);
 });
@@ -6110,6 +11282,7 @@ stockCategoryFilterTrigger?.addEventListener("click", () => {
 stockPriorityFilterButtons.forEach((button) => {
   button.addEventListener("click", () => {
     stockPriorityFilter = normalizeStockPriorityFilter(button?.dataset?.stockPriorityFilter);
+    stockInventoryPage = 1;
     editingStockProductId = "";
     renderStockDashboard(currentStockProducts);
   });
@@ -6157,6 +11330,7 @@ stockProductList?.addEventListener("click", (event) => {
 
   selectedStockProductId = String(card.dataset.stockProductId ?? "").trim();
   editingStockProductId = "";
+  stockRecordDrawerMode = "records";
   removeStockEditModalOverlay();
   renderStockDashboard(currentStockProducts);
 });
@@ -6178,6 +11352,7 @@ stockProductList?.addEventListener("keydown", (event) => {
   event.preventDefault();
   selectedStockProductId = String(card.dataset.stockProductId ?? "").trim();
   editingStockProductId = "";
+  stockRecordDrawerMode = "records";
   removeStockEditModalOverlay();
   renderStockDashboard(currentStockProducts);
 });
@@ -6206,6 +11381,12 @@ stockDetailList?.addEventListener("click", (event) => {
   );
 });
 
+stockRecordDrawerCloseButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    closeStockRecordDrawer();
+  });
+});
+
 stockRefreshButton?.addEventListener("click", loadStockData);
 document.addEventListener("click", (event) => {
   if (
@@ -6217,20 +11398,83 @@ document.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.body.classList.contains("stock-record-drawer-open")) {
+    closeStockRecordDrawer();
+    return;
+  }
+
   if (event.key === "Escape" && stockCategoryFilterMenu && !stockCategoryFilterMenu.hidden) {
     setStockCategoryFilterOpen(false);
     stockCategoryFilterTrigger?.focus();
   }
+});
+window.addEventListener("message", (event) => {
+  if (
+    event.origin !== window.location.origin
+    || event.source !== window.parent
+  ) {
+    return;
+  }
+
+  if (event.data?.type === "gms-main-inventory-auth") {
+    const didRememberAuth = rememberEmbeddedMainInventoryAuth(
+      event.data?.adminId,
+      event.data?.sessionToken,
+    );
+    if (didRememberAuth) {
+      void loadStockData({ quiet: hasLoadedStockData });
+    }
+    return;
+  }
+
+  if (event.data?.type === "gms-main-inventory-stock-record-modal-close") {
+    closeStockRecordDrawer();
+    return;
+  }
+
+  if (event.data?.type === "gms-main-inventory-stock-edit-modal-close") {
+    closeStockEditModal();
+  }
+});
+window.addEventListener("pagehide", () => {
+  notifyMainInventoryStockRecordModalState(false);
+  notifyMainInventoryStockEditModalState(false);
 });
 window.addEventListener("storage", (event) => {
   if (event.key !== STOCK_PRODUCTS_UPDATED_STORAGE_KEY) {
     return;
   }
 
-  loadStockData();
+  loadStockData({ quiet: true });
 });
-window.addEventListener("gms:products-updated", loadStockData);
+window.addEventListener("gms:products-updated", () => loadStockData({ quiet: true }));
+window.addEventListener("gms:realtime-change", handleStockRealtimeChange);
+activateMainInventoryStockMode();
+activateEmployeeInventoryTableMode();
 applyStockWorkspaceRole();
 syncStockCategoryFilterSummary();
 setupStockMonitorControlsScrollAnimation();
-loadStockData();  
+
+function bootstrapStockWorkspaceData() {
+  const shouldWaitForParentAuth = isMainInventoryStockWorkspace()
+    && window.parent !== window
+    && !getActiveStockAdminTenantId();
+
+  if (!shouldWaitForParentAuth) {
+    void loadStockData();
+    return;
+  }
+
+  window.setTimeout(() => {
+    if (getActiveStockAdminTenantId()) {
+      void loadStockData();
+      return;
+    }
+
+    stockProductList?.replaceChildren(
+      createStockInventoryEmptyRow("Unable to identify the logged-in account. Please refresh the workspace."),
+    );
+  }, 2000);
+}
+
+bootstrapStockWorkspaceData();

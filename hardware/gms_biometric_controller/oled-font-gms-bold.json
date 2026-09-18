@@ -1,0 +1,7 @@
+{
+  "preset": "bold",
+  "name": "GMS Bold Display",
+  "font": "bold",
+  "style": "bold",
+  "note": "Switches the OLED text mode to FreeSans Bold — visibly different from the default Medium Sans."
+}

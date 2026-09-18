@@ -14,6 +14,12 @@ abstract class ChatSupportSyncService {
     String adminId = '',
   });
 
+  Future<Map<String, dynamic>> requestHumanAgent({
+    required String threadId,
+    required String customerId,
+    String adminId = '',
+  });
+
   Future<Map<String, dynamic>> syncThread(
     Map<String, dynamic> thread, {
     String adminId = '',

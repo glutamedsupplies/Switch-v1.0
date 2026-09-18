@@ -1,5 +1,5 @@
 name: gms_shopping
-description: "A new Flutter project."
+description: "Switch shopping app."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -44,6 +44,13 @@ dependencies:
   webview_flutter: ^4.13.0
   url_launcher: ^6.1.12
   cached_network_image: ^3.4.1
+  google_sign_in: ^7.2.0
+  flutter_svg: ^2.3.0
+  local_auth: ^3.0.2
+  share_plus: ^13.3.0
+  device_info_plus: ^13.2.0
+  geolocator: ^14.0.3
+  google_maps_flutter: ^2.14.0
 
 dev_dependencies:
   flutter_test:
@@ -55,6 +62,27 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: assets/images/switch-logo-launcher.png
+    background_color: "#FFFFFF"
+    theme_color: "#0A9297"
+  windows:
+    generate: true
+    image_path: assets/images/switch-logo-launcher.png
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: assets/images/switch-logo-launcher.png
+  image_path: assets/images/switch-logo-launcher.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/images/switch-logo-launcher-fg.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -69,10 +97,33 @@ flutter:
 
   assets:
     - assets/animations/
+    - assets/images/switch-logo.png
+    - assets/images/switch-logo.svg
+    - assets/images/switch-logo-loader.png
     - assets/images/gmslogo.png
     - assets/images/chat_support_employee_avatar.jpg
     - assets/images/google_logo.png
     - assets/images/facebook_logo.png
+    - assets/images/invite-reward-art.png
+    - assets/images/recent-search-empty-art.png
+    - assets/images/search-not-found-3d.png
+    - assets/images/sidebar-dark-red-pattern.png
+    - assets/images/new-post-sort-3d.png
+    - assets/images/flash-deals-sort-3d.png
+    - assets/images/top-selling-sort-3d.png
+    - assets/images/top-rating-sort-3d.png
+    - assets/images/favorites-empty-art.png
+    - assets/images/device-monitor-art.png
+    - assets/images/device-android-art.png
+    - assets/images/device-ios-art.png
+    - assets/images/delivery-address-empty-art.png
+    - assets/images/shop-platform-icon.png
+    - assets/images/shop-home-label-art.png
+    - assets/images/food-platform-icon.png
+    - assets/images/location-not-found-art.png
+    - assets/images/top-search-fire-art.png
+    - assets/images/recent-search-heading-art.png
+    - assets/images/verified-seller-3d-badge.png
     - assets/icons/
     - assets/sounds/notif.mp3
 

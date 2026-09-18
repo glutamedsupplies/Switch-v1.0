@@ -1,0 +1,10 @@
+{
+  "name": "Warm Access",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 392, "duration": 100 },
+    { "frequency": 494, "duration": 100 },
+    { "frequency": 587, "duration": 110 },
+    { "frequency": 784, "duration": 230 }
+  ]
+}

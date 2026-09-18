@@ -25,10 +25,92 @@ const SALES_PERIOD_CONFIG = Object.freeze({
 let activeSalesPeriod = "daily";
 let activeSalesPanelView = "dashboard";
 let currentSalesSeries = createEmptySalesSeries();
+let dashboardRealtimeRefreshTimer = 0;
+let dashboardRealtimeRefreshInFlight = false;
+let dashboardRealtimeRefreshQueued = false;
 const salesChartViewportState = new Map();
 const dashboardDayLabelFormatter = new Intl.DateTimeFormat("en-PH", { weekday: "short" });
 const dashboardMonthLabelFormatter = new Intl.DateTimeFormat("en-PH", { month: "short" });
 const dashboardIntegerFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const dashboardRealtimeTopics = new Set([
+  "all",
+  "accounts",
+  "buyers",
+  "employees",
+  "products",
+  "product-requests",
+  "inventory",
+  "orders",
+  "followers",
+]);
+
+// Sync workspace color from superadmin picker
+function syncWorkspaceColorFromSuperAdmin() {
+  let savedColor = "";
+  try {
+    savedColor = String(window.localStorage?.getItem("gms-workspace-color") || "").trim().toLowerCase();
+  } catch (error) {
+    savedColor = "";
+  }
+
+  if (!/^#[0-9a-f]{6}$/i.test(savedColor)) {
+    return;
+  }
+
+  const rgb = savedColor
+    .slice(1)
+    .match(/.{2}/g)
+    ?.map((part) => String(Number.parseInt(part, 16)))
+    .join(", ");
+
+  if (!rgb) {
+    return;
+  }
+
+  const appliedSharedTheme = Boolean(window.WebTheme?.applyWorkspaceColor);
+  if (appliedSharedTheme) {
+    window.WebTheme.applyWorkspaceColor(savedColor, {
+      cache: false,
+      dispatch: false,
+      source: "dashboard-sync",
+    });
+  }
+
+  if (!appliedSharedTheme) {
+    document.documentElement.style.setProperty("--accent", savedColor);
+    document.documentElement.style.setProperty("--accent-text", savedColor);
+    document.documentElement.style.setProperty("--accent-strong", savedColor);
+    document.documentElement.style.setProperty("--accent-button-bg", savedColor);
+    document.documentElement.style.setProperty("--accent-button-hover-bg", savedColor);
+    document.documentElement.style.setProperty("--accent-rgb", rgb);
+  }
+
+  // Update color picker in settings dropdown if exists
+  const colorInput = document.querySelector("[data-theme-color-input]");
+  const hexLabel = document.querySelector("[data-theme-hex]");
+  const rgbLabel = document.querySelector("[data-theme-rgb]");
+
+  if (colorInput instanceof HTMLInputElement) {
+    colorInput.value = savedColor;
+  }
+  if (hexLabel) {
+    hexLabel.textContent = savedColor.toUpperCase();
+  }
+  if (rgbLabel) {
+    rgbLabel.textContent = `RGB ${rgb}`;
+  }
+}
+
+// Initialize on page load
+syncWorkspaceColorFromSuperAdmin();
+
+// Listen for storage changes from superadmin
+window.addEventListener("storage", (event) => {
+  if (event.key === "gms-workspace-color") {
+    syncWorkspaceColorFromSuperAdmin();
+  }
+});
+window.addEventListener("gms:workspace-color-changed", syncWorkspaceColorFromSuperAdmin);
 
 function createEmptySalesSeries() {
   return Object.fromEntries(
@@ -183,6 +265,8 @@ async function loadDashboardData() {
     products: getDashboardCollection(productsPayload, "products"),
     accounts: getDashboardCollection(accountsPayload, "accounts"),
     followersCount: followersPayload?.followerCount ?? 0,
+    loadComplete: [ordersPayload, productsPayload, accountsPayload, followersPayload]
+      .every((payload) => payload !== null),
   };
 }
 
@@ -635,6 +719,57 @@ async function initializeAdminDashboard() {
   renderDashboardStats(dashboardData);
   currentSalesSeries = buildDashboardSalesSeries(dashboardData.orders);
   renderSalesChart();
+}
+
+async function refreshAdminDashboardFromRealtime() {
+  if (dashboardRealtimeRefreshInFlight) {
+    dashboardRealtimeRefreshQueued = true;
+    return;
+  }
+
+  dashboardRealtimeRefreshInFlight = true;
+  try {
+    const dashboardData = await loadDashboardData();
+    if (!dashboardData.loadComplete) {
+      return;
+    }
+    renderDashboardStats(dashboardData);
+    currentSalesSeries = buildDashboardSalesSeries(dashboardData.orders);
+    renderSalesChart();
+  } finally {
+    dashboardRealtimeRefreshInFlight = false;
+    if (dashboardRealtimeRefreshQueued) {
+      dashboardRealtimeRefreshQueued = false;
+      scheduleAdminDashboardRealtimeRefresh();
+    }
+  }
+}
+
+function scheduleAdminDashboardRealtimeRefresh() {
+  window.clearTimeout(dashboardRealtimeRefreshTimer);
+  dashboardRealtimeRefreshTimer = window.setTimeout(() => {
+    dashboardRealtimeRefreshTimer = 0;
+    void refreshAdminDashboardFromRealtime();
+  }, 200);
+}
+
+function handleAdminDashboardRealtimeChange(event) {
+  const detail = event?.detail;
+  const isReconnect = detail?.type === "ready" && detail?.reconnected === true;
+  if (detail?.type !== "data-change" && !isReconnect) {
+    return;
+  }
+
+  const topics = new Set(
+    (Array.isArray(detail?.topics) ? detail.topics : [])
+      .map((topic) => String(topic || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (!isReconnect && !Array.from(topics).some((topic) => dashboardRealtimeTopics.has(topic))) {
+    return;
+  }
+
+  scheduleAdminDashboardRealtimeRefresh();
 }
 
 async function refreshDashboardFollowersStat() {
@@ -1211,3 +1346,4 @@ for (const button of salesPanelViewButtons) {
 updateSalesPanelView();
 initializeAdminDashboard();
 window.setInterval(refreshDashboardFollowersStat, 15000);
+window.addEventListener("gms:realtime-change", handleAdminDashboardRealtimeChange);

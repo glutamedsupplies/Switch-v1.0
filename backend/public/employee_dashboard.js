@@ -9,6 +9,16 @@
     }
   }
 
+  function readStoredAdminSession() {
+    try {
+      const rawAdminSession = window.sessionStorage.getItem("gms-admin-session");
+      return rawAdminSession ? JSON.parse(rawAdminSession) : null;
+    } catch (error) {
+      console.warn("Unable to load admin session.", error);
+      return null;
+    }
+  }
+
   function hasEmployeeWorkspaceSession(session) {
     return Boolean(
       session &&
@@ -18,6 +28,24 @@
         session.employeeId ||
         session.accountCode ||
         session.position
+      ),
+    );
+  }
+
+  function hasAdminWorkspaceSession(session) {
+    return Boolean(
+      session &&
+      typeof session === "object" &&
+      (
+        String(session.role ?? "").trim().toLowerCase() === "admin" ||
+        session.adminId ||
+        session.ownerAdminId ||
+        session.tenantId ||
+        session.workspaceId ||
+        session.storeAdminId ||
+        session.id ||
+        session.accountCode ||
+        session.email
       ),
     );
   }
@@ -33,8 +61,66 @@
     );
   }
 
+  // Sync workspace color from superadmin picker
+  function syncWorkspaceColorFromSuperAdmin() {
+    let savedColor = "";
+    try {
+      savedColor = String(window.localStorage?.getItem("gms-workspace-color") || "").trim().toLowerCase();
+    } catch (error) {
+      savedColor = "";
+    }
+
+    if (!/^#[0-9a-f]{6}$/i.test(savedColor)) {
+      return;
+    }
+
+    const rgb = savedColor
+      .slice(1)
+      .match(/.{2}/g)
+      ?.map((part) => String(Number.parseInt(part, 16)))
+      .join(", ");
+
+    if (!rgb) {
+      return;
+    }
+
+    // Apply color to CSS variables
+    document.documentElement.style.setProperty("--accent", savedColor);
+    document.documentElement.style.setProperty("--accent-text", savedColor);
+    document.documentElement.style.setProperty("--accent-strong", savedColor);
+    document.documentElement.style.setProperty("--accent-button-bg", savedColor);
+    document.documentElement.style.setProperty("--accent-button-hover-bg", savedColor);
+    document.documentElement.style.setProperty("--accent-rgb", rgb);
+
+    // Update color picker in settings dropdown if exists
+    const colorInput = document.querySelector("[data-theme-color-input]");
+    const hexLabel = document.querySelector("[data-theme-hex]");
+    const rgbLabel = document.querySelector("[data-theme-rgb]");
+
+    if (colorInput instanceof HTMLInputElement) {
+      colorInput.value = savedColor;
+    }
+    if (hexLabel) {
+      hexLabel.textContent = savedColor.toUpperCase();
+    }
+    if (rgbLabel) {
+      rgbLabel.textContent = `RGB ${rgb}`;
+    }
+  }
+
+  // Initialize on page load
+  syncWorkspaceColorFromSuperAdmin();
+
+  // Listen for storage changes from superadmin
+  window.addEventListener("storage", (event) => {
+    if (event.key === "gms-workspace-color") {
+      syncWorkspaceColorFromSuperAdmin();
+    }
+  });
+
   const currentPagePath = String(window.location.pathname || "").trim().toLowerCase();
   let storedEmployeeSession = readStoredEmployeeSession();
+  let storedAdminSession = readStoredAdminSession();
   let employeeDashboardAttendanceCalendarMonth = new Date();
   let employeeDashboardAttendanceSelectedDateKey = "";
   const employeeDashboardScheduleLeaveReasons = Object.freeze([
@@ -51,13 +137,21 @@
   let employeeDashboardScheduleLeavePendingDateKey = "";
   const employeeDashboardLeaveRequestsStorageKey = "gms-employee-leave-requests";
   const employeeDashboardLeaveRequestsChangedEventName = "gms-employee-leave-requests-changed";
-  const isLiveChatPage = currentPagePath === "/live_chat.html";
+  const isLiveChatPage =
+    currentPagePath === "/live_chat.html"
+    || Boolean(document.querySelector("[data-main-live-chat-view]"));
   let isAdminLiveChatReadOnly = false;
 
-  function syncLiveChatAccessState(session = readStoredEmployeeSession()) {
-    storedEmployeeSession = session;
+  function syncLiveChatAccessState(
+    employeeSession = readStoredEmployeeSession(),
+    adminSession = readStoredAdminSession(),
+  ) {
+    storedEmployeeSession = employeeSession;
+    storedAdminSession = adminSession;
     isAdminLiveChatReadOnly =
-      isLiveChatPage && !hasEmployeeWorkspaceSession(storedEmployeeSession);
+      isLiveChatPage &&
+      !hasEmployeeWorkspaceSession(storedEmployeeSession) &&
+      !hasAdminWorkspaceSession(storedAdminSession);
   }
 
   syncLiveChatAccessState(storedEmployeeSession);
@@ -125,18 +219,100 @@
     );
   }
 
-  function withEmployeeDashboardAdminHeaders(headers = {}) {
-    const adminId = getEmployeeDashboardSessionAdminScope(
-      storedEmployeeSession || readStoredEmployeeSession(),
-      "",
-    );
-    if (!adminId) {
-      return headers;
+  function normalizeEmployeeDashboardDisplayText(value) {
+    return String(value ?? "").replace(/\s+/g, " ").trim();
+  }
+
+  function getEmployeeDashboardSessionDisplayName(session, fallback = "Employee") {
+    if (!session || typeof session !== "object") {
+      return fallback;
+    }
+
+    const fullName = [
+      session.firstName,
+      session.lastName,
+    ]
+      .map(normalizeEmployeeDashboardDisplayText)
+      .filter(Boolean)
+      .join(" ");
+    return [
+      fullName,
+      session.employeeName,
+      session.displayName,
+      session.fullName,
+      session.name,
+      session.companyName,
+      session.storeName,
+      session.businessName,
+      session.employeeId,
+      session.accountCode,
+      session.email,
+    ]
+      .map(normalizeEmployeeDashboardDisplayText)
+      .find(Boolean) || fallback;
+  }
+
+  function getEmployeeDashboardSessionProfileImageUrl(session) {
+    if (!session || typeof session !== "object") {
+      return "";
+    }
+
+    return [
+      session.employeePhotoUrl,
+      session.employeeProfileImageUrl,
+      session.photoUrl,
+      session.profileImageUrl,
+      session.avatarUrl,
+      session.companyPictureUrl,
+      session.companyProfileImageUrl,
+      session.logoUrl,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "";
+  }
+
+  function getLiveChatSupportSender() {
+    const employeeSession = storedEmployeeSession || readStoredEmployeeSession();
+    if (hasEmployeeWorkspaceSession(employeeSession)) {
+      return {
+        id: getEmployeeDashboardAccountId(employeeSession),
+        role: "employee",
+        displayName: getEmployeeDashboardSessionDisplayName(employeeSession, "Employee"),
+        avatarUrl: getEmployeeDashboardSessionProfileImageUrl(employeeSession),
+      };
+    }
+
+    const adminSession = storedAdminSession || readStoredAdminSession();
+    if (hasAdminWorkspaceSession(adminSession)) {
+      return {
+        id: getEmployeeDashboardAccountId(adminSession),
+        role: "admin",
+        displayName: getEmployeeDashboardSessionDisplayName(adminSession, "Admin"),
+        avatarUrl: getEmployeeDashboardSessionProfileImageUrl(adminSession),
+      };
     }
 
     return {
+      id: "",
+      role: "employee",
+      displayName: "Employee",
+      avatarUrl: "",
+    };
+  }
+
+  function withEmployeeDashboardAdminHeaders(headers = {}) {
+    const employeeSession = storedEmployeeSession || readStoredEmployeeSession();
+    const adminSession = storedAdminSession || readStoredAdminSession();
+    const adminId =
+      getEmployeeDashboardSessionAdminScope(employeeSession, "") ||
+      getEmployeeDashboardSessionAdminScope(adminSession, "");
+    const employeeId = !adminSession && employeeSession
+      ? getEmployeeDashboardAccountId(employeeSession)
+      : "";
+    return {
       ...headers,
-      "X-GMS-Admin-ID": adminId,
+      ...(adminId ? { "X-GMS-Admin-ID": adminId } : {}),
+      ...(employeeId ? { "X-GMS-Employee-ID": employeeId } : {}),
     };
   }
 
@@ -1510,7 +1686,9 @@
   const pinnedProductSlot = board.querySelector("[data-employee-chat-pinned-product]");
   const messageList = board.querySelector("[data-employee-chat-messages]");
   const scrollDownButton = board.querySelector("[data-employee-chat-scroll-down]");
-  const searchInput = board.querySelector("[data-employee-chat-search]");
+  const searchInput =
+    document.querySelector("[data-employee-chat-search]") ||
+    board.querySelector("[data-employee-chat-search]");
   const form = board.querySelector("[data-employee-chat-form]");
   const input = board.querySelector("[data-employee-chat-input]");
   const mediaInput = board.querySelector("[data-employee-chat-media-input]");
@@ -1547,6 +1725,14 @@
   const conversationMenuToggle = board.querySelector("[data-employee-chat-conversation-toggle]");
   const conversationMenuDropdown = board.querySelector("[data-employee-chat-conversation-dropdown]");
   const liveChatHeroTools = document.querySelector(".live-chat-hero-tools");
+  const liveChatMenuToggle = document.querySelector("[data-live-chat-menu-toggle]");
+  const liveChatProfilePanel = document.querySelector("[data-live-chat-profile-panel]");
+  const liveChatSideAvatar = document.querySelector("[data-live-chat-side-avatar]");
+  const liveChatSideName = document.querySelector("[data-live-chat-side-name]");
+  const liveChatSideStatus = document.querySelector("[data-live-chat-side-status]");
+  const liveChatSideAbout = document.querySelector("[data-live-chat-side-about]");
+  const liveChatSideMedia = document.querySelector("[data-live-chat-side-media]");
+  const liveChatSideFiles = document.querySelector("[data-live-chat-side-files]");
   const liveChatStockShell = document.querySelector(".live-chat-stock-shell");
   const liveChatStockSearchInput = document.querySelector("[data-live-chat-stock-search]");
   const liveChatStockList = document.querySelector("[data-live-chat-stock-list]");
@@ -1637,6 +1823,28 @@
 
   function applyAdminReadOnlyChatMode() {
     if (!isAdminLiveChatReadOnly) {
+      document.documentElement.classList.remove("admin-live-chat-readonly");
+      document.body?.classList.remove("admin-live-chat-readonly");
+      board.removeAttribute("data-live-chat-readonly");
+
+      if (form) {
+        form.hidden = false;
+        form.removeAttribute("aria-hidden");
+      }
+
+      [input, mediaInput].forEach((control) => {
+        if (control) {
+          control.disabled = false;
+        }
+      });
+
+      [mediaButton, composePlusButton, heartButton, sendButton].forEach((button) => {
+        if (button) {
+          button.disabled = false;
+          button.setAttribute("aria-disabled", "false");
+        }
+      });
+      updateSendButtonState();
       return;
     }
 
@@ -1667,13 +1875,19 @@
   applyAdminReadOnlyChatMode();
 
   function syncLiveChatAccessFromSession(session = readStoredEmployeeSession()) {
-    syncLiveChatAccessState(session);
+    syncLiveChatAccessState(session, readStoredAdminSession());
     applyLiveChatInventoryPanelState();
     applyAdminReadOnlyChatMode();
   }
 
   window.addEventListener("gms-employee-session-updated", (event) => {
     syncLiveChatAccessFromSession(event?.detail?.session || readStoredEmployeeSession());
+  });
+
+  window.addEventListener("gms-admin-session-updated", (event) => {
+    syncLiveChatAccessState(readStoredEmployeeSession(), event?.detail?.session || readStoredAdminSession());
+    applyLiveChatInventoryPanelState();
+    applyAdminReadOnlyChatMode();
   });
 
   if (window.gmsEmployeeAccessReady && typeof window.gmsEmployeeAccessReady.then === "function") {
@@ -1725,6 +1939,21 @@
     }
     if (liveChatNotificationDropdown) {
       liveChatNotificationDropdown.hidden = true;
+    }
+  }
+
+  function closeLiveChatNavMenu() {
+    document.body?.classList.remove("live-chat-nav-open");
+    if (liveChatMenuToggle) {
+      liveChatMenuToggle.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function toggleLiveChatNavMenu() {
+    const nextIsOpen = !document.body?.classList.contains("live-chat-nav-open");
+    document.body?.classList.toggle("live-chat-nav-open", nextIsOpen);
+    if (liveChatMenuToggle) {
+      liveChatMenuToggle.setAttribute("aria-expanded", nextIsOpen ? "true" : "false");
     }
   }
 
@@ -2624,6 +2853,76 @@
       : `Replying to ${normalizedSenderLabel}`;
   }
 
+  function getInitialsFromText(value, fallback = "S") {
+    const words = String(value || "")
+      .replace(/[^a-zA-Z0-9\s]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const initials = words
+      .slice(0, 2)
+      .map((word) => word.charAt(0).toUpperCase())
+      .join("");
+    return initials || fallback;
+  }
+
+  function getSupportMessageSenderName(message) {
+    if (message?.isFromSupport !== true) {
+      return "";
+    }
+
+    const messageSource = String(message?.source || "").trim().toLowerCase();
+    if (messageSource === "ai") {
+      return "AI Assistant";
+    }
+
+    return [
+      message?.senderName,
+      message?.senderDisplayName,
+      message?.supportSenderName,
+      message?.employeeName,
+      message?.adminName,
+      message?.sender?.displayName,
+      message?.sender?.name,
+      message?.sender?.fullName,
+    ]
+      .map(normalizeEmployeeDashboardDisplayText)
+      .find(Boolean) || "Support";
+  }
+
+  function getSupportMessageSenderAvatarUrl(message) {
+    return [
+      message?.senderAvatarUrl,
+      message?.sender?.avatarUrl,
+      message?.sender?.profileImageUrl,
+      message?.sender?.photoUrl,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "";
+  }
+
+  function buildSupportMessageAvatarMarkup(message) {
+    const senderName = getSupportMessageSenderName(message);
+    const avatarUrl = getSupportMessageSenderAvatarUrl(message);
+    const initials = getInitialsFromText(
+      senderName,
+      String(message?.source || "").trim().toLowerCase() === "ai" ? "AI" : "S",
+    );
+    const content = avatarUrl
+      ? `<img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy" />`
+      : escapeHtml(initials);
+    return `<div class="employee-chat-message__avatar-badge is-support" title="${escapeHtml(senderName)}" aria-label="${escapeHtml(senderName)}">${content}</div>`;
+  }
+
+  function buildSupportMessageSenderLabelMarkup(message) {
+    const senderName = getSupportMessageSenderName(message);
+    if (!senderName) {
+      return "";
+    }
+
+    return `<div class="employee-chat-message__sender-label" title="${escapeHtml(senderName)}">${escapeHtml(senderName)}</div>`;
+  }
+
   function normalizeOrderMatchValue(value) {
     return String(value || "")
       .trim()
@@ -3101,6 +3400,138 @@
     `;
   }
 
+  function renderLiveChatSideAvatar(thread, fallbackInitial) {
+    if (!liveChatSideAvatar) {
+      return;
+    }
+
+    setThreadCustomerAvatarElement(liveChatSideAvatar, thread, "live-chat-profile-card__avatar", {
+      initial: fallbackInitial,
+      fallbackInitial: "U",
+    });
+  }
+
+  function getLiveChatAttachmentLabel(item) {
+    const candidate = String(item?.name || item?.src || "").trim();
+    const extensionMatch = candidate.match(/\.([a-z0-9]{2,5})(?:[?#].*)?$/i);
+    if (extensionMatch) {
+      return extensionMatch[1].toUpperCase();
+    }
+
+    return item?.type === "video" ? "VIDEO" : "IMAGE";
+  }
+
+  function renderLiveChatConversationSidePanel(thread) {
+    if (!liveChatProfilePanel) {
+      return;
+    }
+
+    const hasThread = Boolean(thread);
+    liveChatProfilePanel.classList.toggle("is-empty", !hasThread);
+
+    if (!thread) {
+      renderLiveChatSideAvatar(null, "U");
+      if (liveChatSideName) {
+        liveChatSideName.textContent = "Select a conversation";
+      }
+      if (liveChatSideStatus) {
+        liveChatSideStatus.textContent = "Offline";
+        liveChatSideStatus.classList.remove("is-online");
+        liveChatSideStatus.classList.add("is-offline");
+      }
+      if (liveChatSideAbout) {
+        liveChatSideAbout.textContent =
+          "Select a customer thread to view product and order context.";
+      }
+      if (liveChatSideMedia) {
+        liveChatSideMedia.innerHTML = '<div class="live-chat-side-empty">No media yet</div>';
+      }
+      if (liveChatSideFiles) {
+        liveChatSideFiles.innerHTML = '<div class="live-chat-side-empty">No files yet</div>';
+      }
+      return;
+    }
+
+    const customerName = getThreadCustomerDisplayName(thread);
+    const initial =
+      (customerName || "U")
+        .trim()
+        .charAt(0)
+        .toUpperCase() || "U";
+    const presenceState = getThreadPresenceState(thread);
+    const productName = getThreadProductDisplayName(thread);
+    const latestPreview = getThreadPreview(thread);
+    const mediaItems = getConversationMediaItems(thread);
+    const latestMediaItems = mediaItems
+      .map((item, mediaIndex) => ({ ...item, mediaIndex }))
+      .slice(-3)
+      .reverse();
+
+    renderLiveChatSideAvatar(thread, initial);
+
+    if (liveChatSideName) {
+      liveChatSideName.textContent = customerName;
+    }
+    if (liveChatSideStatus) {
+      liveChatSideStatus.textContent = presenceState.label;
+      liveChatSideStatus.classList.remove("is-online", "is-offline");
+      liveChatSideStatus.classList.add(presenceState.className);
+    }
+    if (liveChatSideAbout) {
+      const aboutParts = [];
+      if (productName && productName !== "Unnamed Product") {
+        aboutParts.push(`Inquiry about ${productName}.`);
+      }
+      if (latestPreview) {
+        aboutParts.push(`Latest message: ${latestPreview}`);
+      }
+      liveChatSideAbout.textContent =
+        aboutParts.join(" ") || "Customer conversation details will appear here.";
+    }
+    if (liveChatSideMedia) {
+      liveChatSideMedia.innerHTML = latestMediaItems.length
+        ? latestMediaItems
+            .map((item) => `
+              <button
+                type="button"
+                class="live-chat-side-media-item"
+                data-live-chat-side-media-index="${item.mediaIndex}"
+                aria-label="Open ${escapeHtml(item.name || "attachment")}"
+              >
+                ${
+                  item.type === "video"
+                    ? `<video src="${escapeHtml(item.src)}" muted playsinline preload="metadata"></video>`
+                    : `<img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.name || "Chat attachment")}" loading="lazy" />`
+                }
+              </button>
+            `)
+            .join("")
+        : '<div class="live-chat-side-empty">No media yet</div>';
+    }
+    if (liveChatSideFiles) {
+      liveChatSideFiles.innerHTML = latestMediaItems.length
+        ? latestMediaItems
+            .map((item) => `
+              <button
+                type="button"
+                class="live-chat-side-file"
+                data-live-chat-side-media-index="${item.mediaIndex}"
+              >
+                <span class="live-chat-side-file__icon is-${escapeHtml(item.type)}">
+                  <i class="fa-solid ${item.type === "video" ? "fa-video" : "fa-image"}" aria-hidden="true"></i>
+                </span>
+                <span class="live-chat-side-file__copy">
+                  <strong>${escapeHtml(item.name || (item.type === "video" ? "Video attachment" : "Photo attachment"))}</strong>
+                  <small>${escapeHtml(getLiveChatAttachmentLabel(item))}</small>
+                </span>
+                <time>${escapeHtml(formatTimestamp(item.timestamp) || "Now")}</time>
+              </button>
+            `)
+            .join("")
+        : '<div class="live-chat-side-empty">No files yet</div>';
+    }
+  }
+
   function getThreadPreview(thread) {
     if (isCustomerTyping(thread)) {
       return `${getThreadCustomerDisplayName(thread)} is typing...`;
@@ -3232,6 +3663,11 @@
     const avatarUrl =
       String(typingEntry.avatarUrl || "").trim() ||
       getThreadCustomerAvatarUrl(thread);
+    const typingAvatarThread = {
+      ...thread,
+      customerName,
+      customerAvatarUrl: avatarUrl,
+    };
     const initial =
       (customerName || fallbackInitial || "U")
         .trim()
@@ -3240,13 +3676,10 @@
 
     return `
       <article class="employee-chat-message is-user is-typing" aria-live="polite" aria-label="${escapeHtml(customerName)} is typing">
-        <div class="employee-chat-message__avatar-badge is-user">
-          ${
-            avatarUrl
-              ? `<img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy" />`
-              : escapeHtml(initial)
-          }
-        </div>
+        ${buildThreadCustomerAvatarMarkup(typingAvatarThread, "employee-chat-message__avatar-badge is-user", {
+          tagName: "div",
+          initial,
+        })}
         <div class="employee-chat-message__stack">
           <div class="employee-chat-message__content-row">
             <div class="employee-chat-message__typing-bubble" title="${escapeHtml(customerName)} is typing">
@@ -4078,6 +4511,68 @@
     renderPendingMediaPreview();
   }
 
+  function appendSelectedMediaFiles(files) {
+    if (isAdminLiveChatReadOnly) {
+      return false;
+    }
+
+    const activeThread = getThreadById(state.activeThreadId);
+    const mediaFiles = Array.from(files || []).filter(Boolean);
+
+    if (getActivePendingEdit()) {
+      window.alert("Finish editing or cancel the edit before adding media.");
+      return false;
+    }
+
+    if (!activeThread || !mediaFiles.length || state.isSending) {
+      return false;
+    }
+
+    appendPendingMedia(mediaFiles);
+    return true;
+  }
+
+  function openMediaPickerFallback() {
+    const fallbackInput = document.createElement("input");
+    fallbackInput.type = "file";
+    fallbackInput.accept = "image/*,video/*";
+    fallbackInput.multiple = true;
+    fallbackInput.dataset.employeeChatDynamicMediaInput = "true";
+    fallbackInput.style.position = "fixed";
+    fallbackInput.style.left = "-9999px";
+    fallbackInput.style.top = "0";
+    fallbackInput.setAttribute("aria-hidden", "true");
+    document.body.append(fallbackInput);
+
+    const cleanup = () => {
+      window.setTimeout(() => {
+        if (fallbackInput.isConnected) {
+          fallbackInput.remove();
+        }
+      }, 0);
+    };
+
+    fallbackInput.addEventListener(
+      "change",
+      () => {
+        appendSelectedMediaFiles(fallbackInput.files);
+        cleanup();
+      },
+      { once: true },
+    );
+
+    try {
+      if (typeof fallbackInput.showPicker === "function") {
+        fallbackInput.showPicker();
+      } else {
+        fallbackInput.click();
+      }
+    } catch (_error) {
+      fallbackInput.click();
+    }
+    window.setTimeout(cleanup, 60000);
+  }
+
   function resizeComposerInput() {
     if (!input) {
       return;
@@ -4110,6 +4605,7 @@
   }
 
   async function postSupportReply(threadId, payload) {
+    const sender = getLiveChatSupportSender();
     const response = await fetch(
       `/api/chat-support/${encodeURIComponent(threadId)}/reply`,
       {
@@ -4118,7 +4614,14 @@
           Accept: "application/json",
           "Content-Type": "application/json",
         }),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          sender,
+          senderName: sender.displayName,
+          senderRole: sender.role,
+          senderId: sender.id,
+          senderAvatarUrl: sender.avatarUrl,
+        }),
       },
     );
     const data = await response.json();
@@ -4177,13 +4680,13 @@
 
   async function uploadMediaFile(file) {
     const fileName = String(file?.name || "").trim() || "chat-media";
-    const response = await fetch("/api/uploads", {
+    const response = await fetch("/api/chat-uploads", {
       method: "POST",
-      headers: {
+      headers: withEmployeeDashboardAdminHeaders({
         Accept: "application/json",
         "Content-Type": String(file?.type || "application/octet-stream"),
         "x-file-name": fileName,
-      },
+      }),
       body: file,
     });
     const data = await response.json();
@@ -4240,6 +4743,7 @@
     }
 
     try {
+      const sender = getLiveChatSupportSender();
       const response = await fetch(
         `/api/chat-support/${encodeURIComponent(normalizedThreadId)}/typing`,
         {
@@ -4251,7 +4755,8 @@
           body: JSON.stringify({
             actor: "employee",
             isTyping: Boolean(isTyping),
-            displayName: "Employee",
+            displayName: sender.displayName,
+            avatarUrl: sender.avatarUrl,
           }),
         },
       );
@@ -4536,34 +5041,108 @@
     const diffMs = Math.max(0, Date.now() - date.getTime());
     const diffMinutes = Math.floor(diffMs / 60000);
     if (diffMinutes < 1) {
-      return "now";
+      return "Just now";
     }
     if (diffMinutes < 60) {
-      return `${diffMinutes}m`;
+      return `${diffMinutes}m ago`;
     }
 
     const diffHours = Math.floor(diffMinutes / 60);
     if (diffHours < 24) {
-      return `${diffHours}h`;
+      return `${diffHours}h ago`;
     }
 
     const diffDays = Math.floor(diffHours / 24);
     if (diffDays < 7) {
-      return `${diffDays}d`;
+      return `${diffDays}d ago`;
     }
 
     const diffWeeks = Math.floor(diffDays / 7);
     if (diffWeeks < 5) {
-      return `${diffWeeks}w`;
+      return `${diffWeeks}w ago`;
     }
 
     const diffMonths = Math.floor(diffDays / 30);
     if (diffMonths < 12) {
-      return `${Math.max(1, diffMonths)}mo`;
+      return `${Math.max(1, diffMonths)}mo ago`;
     }
 
     const diffYears = Math.floor(diffDays / 365);
-    return `${Math.max(1, diffYears)}y`;
+    return `${Math.max(1, diffYears)}y ago`;
+  }
+
+  const employeeChatThreadReceiptCheckIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="employee-chat-thread-item__receipt-icon" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  function getSupportMessageReadStatus(thread, message) {
+    if (message?.isFromSupport !== true) {
+      return null;
+    }
+
+    const messageDate = parseValidDate(message?.timestamp);
+    if (!messageDate) {
+      return "sent";
+    }
+
+    const lastReadAt = parseValidDate(thread?.lastReadAt);
+    if (!lastReadAt) {
+      return "sent";
+    }
+
+    if (messageDate.getTime() <= lastReadAt.getTime()) {
+      return "seen";
+    }
+
+    return "delivered";
+  }
+
+  function buildEmployeeChatThreadReceiptMarkup(status) {
+    if (!status) {
+      return "";
+    }
+
+    const check = `<span class="employee-chat-thread-item__receipt-check" aria-hidden="true">${employeeChatThreadReceiptCheckIcon}</span>`;
+    if (status === "sent") {
+      return `<span class="employee-chat-thread-item__receipt employee-chat-thread-item__receipt--sent" aria-label="Sent">${check}</span>`;
+    }
+
+    const receiptClass = status === "seen"
+      ? "employee-chat-thread-item__receipt--seen"
+      : "employee-chat-thread-item__receipt--delivered";
+    const receiptLabel = status === "seen" ? "Seen" : "Delivered";
+    return `<span class="employee-chat-thread-item__receipt ${receiptClass}" aria-label="${receiptLabel}">${check}<span class="employee-chat-thread-item__receipt-check employee-chat-thread-item__receipt-check--second" aria-hidden="true">${employeeChatThreadReceiptCheckIcon}</span></span>`;
+  }
+
+  function buildEmployeeChatThreadMetaMarkup(thread) {
+    if (hasUnreadCustomerMessage(thread)) {
+      return "";
+    }
+
+    const relativeTime = formatRelativeThreadTime(getLatestThreadMessageTimestamp(thread));
+    if (!relativeTime) {
+      return "";
+    }
+
+    const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+    const latestMessage = messages[messages.length - 1] || null;
+    const receipt = latestMessage?.isFromSupport === true
+      ? buildEmployeeChatThreadReceiptMarkup(getSupportMessageReadStatus(thread, latestMessage))
+      : "";
+
+    return `<span class="employee-chat-thread-item__meta"><span class="employee-chat-thread-item__status">${receipt}<time>${escapeHtml(relativeTime)}</time></span></span>`;
+  }
+
+  function getEmployeeChatThreadReceiptSignature(thread) {
+    if (hasUnreadCustomerMessage(thread)) {
+      return "";
+    }
+
+    const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+    const latestMessage = messages[messages.length - 1] || null;
+    if (latestMessage?.isFromSupport !== true) {
+      return "";
+    }
+
+    return String(getSupportMessageReadStatus(thread, latestMessage) || "");
   }
 
   function formatSentStatusLabel(value) {
@@ -4599,6 +5178,94 @@
     return getThreadPresenceActor(thread, "user")
       ? { label: "Online", className: "is-online" }
       : { label: "Offline", className: "is-offline" };
+  }
+
+  function getCustomerLastActiveAt(thread) {
+    const candidates = [
+      thread?.customerLastActiveAt,
+      thread?.customerLastOnlineAt,
+      thread?.lastOnlineAt,
+      thread?.typing?.user?.updatedAt,
+      getLatestUserMessageTimestamp(thread),
+      thread?.updatedAt,
+    ];
+
+    for (const value of candidates) {
+      const normalizedValue = String(value || "").trim();
+      if (!normalizedValue) {
+        continue;
+      }
+      const date = new Date(normalizedValue);
+      if (!Number.isNaN(date.getTime())) {
+        return normalizedValue;
+      }
+    }
+
+    return "";
+  }
+
+  function formatPresenceBadgeLabel(value) {
+    const date = new Date(value || 0);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    const diffMinutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+    if (diffMinutes < 1) {
+      return "now";
+    }
+    if (diffMinutes < 60) {
+      return `${diffMinutes}m`;
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) {
+      return `${diffHours}h`;
+    }
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) {
+      return `${diffDays}d`;
+    }
+
+    const diffWeeks = Math.floor(diffDays / 7);
+    if (diffWeeks < 5) {
+      return `${diffWeeks}w`;
+    }
+
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) {
+      return `${Math.max(1, diffMonths)}mo`;
+    }
+
+    const diffYears = Math.floor(diffDays / 365);
+    return `${Math.max(1, diffYears)}y`;
+  }
+
+  function buildCustomerPresenceBadgeMarkup(thread) {
+    if (getThreadPresenceActor(thread, "user")) {
+      return '<span class="lcx-avatar__status" aria-label="Online"></span>';
+    }
+
+    const lastActiveLabel = formatPresenceBadgeLabel(getCustomerLastActiveAt(thread));
+    if (!lastActiveLabel) {
+      return '<span class="lcx-avatar__status is-offline" aria-label="Offline"></span>';
+    }
+
+    return `<span class="lcx-avatar__status is-offline" aria-label="Last active ${escapeHtml(lastActiveLabel)}"><span class="lcx-avatar__status-label">${escapeHtml(lastActiveLabel)}</span></span>`;
+  }
+
+  function buildConversationPresenceDotMarkup(thread, presenceState) {
+    if (presenceState.className === "is-online") {
+      return '<span class="employee-chat-conversation-status__dot is-online" aria-hidden="true"></span>';
+    }
+
+    const lastActiveLabel = formatPresenceBadgeLabel(getCustomerLastActiveAt(thread));
+    if (!lastActiveLabel) {
+      return '<span class="employee-chat-conversation-status__dot is-offline" aria-hidden="true"></span>';
+    }
+
+    return `<span class="employee-chat-conversation-status__dot is-offline has-label" aria-hidden="true"><span class="employee-chat-conversation-status__dot-label">${escapeHtml(lastActiveLabel)}</span></span>`;
   }
 
   function hasUnreadCustomerMessage(thread) {
@@ -4647,7 +5314,7 @@
 
     liveChatNavBadges.forEach((badge) => {
       badge.hidden = !hasUnreadChat;
-      badge.textContent = "";
+      badge.textContent = hasUnreadChat ? String(unreadCount) : "0";
       badge.setAttribute("aria-label", unreadLabel);
     });
 
@@ -4912,11 +5579,92 @@
     return "";
   }
 
+  function getThreadCustomerInitials(thread, fallback = "U") {
+    const initials = getThreadCustomerDisplayName(thread)
+      .split(/\s+/)
+      .map((part) => part.charAt(0))
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+    return initials || fallback;
+  }
+
+  function getThreadCustomerToneIndex(thread) {
+    const source = [
+      thread?.customerId,
+      thread?.userId,
+      thread?.threadId,
+      getThreadCustomerDisplayName(thread),
+    ].map((part) => String(part || "").trim()).join("");
+    let hash = 0;
+    for (const char of source || "Buyer") {
+      hash = (hash + char.charCodeAt(0)) % 6;
+    }
+    return hash + 1;
+  }
+
+  function getThreadCustomerAvatarClassName(baseClass, thread) {
+    const avatarUrl = getThreadCustomerAvatarUrl(thread);
+    return [
+      baseClass,
+      "buyer-data-avatar",
+      "buyer-data-list-avatar",
+      "super-admin-company-card__logo",
+      `super-admin-company-card__logo--tone-${getThreadCustomerToneIndex(thread)}`,
+      avatarUrl ? "has-image" : "",
+    ].filter(Boolean).join(" ");
+  }
+
+  function buildThreadCustomerAvatarMarkup(thread, baseClass, options = {}) {
+    const tagName = options.tagName || "span";
+    const avatarUrl = getThreadCustomerAvatarUrl(thread);
+    const initial = options.initial || getThreadCustomerInitials(thread, options.fallbackInitial || "U");
+    const className = getThreadCustomerAvatarClassName(baseClass, thread);
+    const content = avatarUrl
+      ? `<img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy" />`
+      : escapeHtml(initial);
+    const presence = options.showStatus === false
+      ? ""
+      : buildCustomerPresenceBadgeMarkup(thread);
+
+    return `<${tagName} class="${escapeHtml(className)}">${content}${presence}</${tagName}>`;
+  }
+
+  function setThreadCustomerAvatarElement(element, thread, baseClass, options = {}) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const avatarUrl = getThreadCustomerAvatarUrl(thread);
+    const initial = options.initial || getThreadCustomerInitials(thread, options.fallbackInitial || "U");
+    element.className = getThreadCustomerAvatarClassName(baseClass, thread);
+    element.replaceChildren();
+
+    if (avatarUrl) {
+      const image = document.createElement("img");
+      image.src = avatarUrl;
+      image.alt = "";
+      image.loading = "lazy";
+      element.appendChild(image);
+    } else {
+      element.textContent = initial;
+    }
+
+    if (options.showStatus !== false && thread) {
+      element.insertAdjacentHTML("beforeend", buildCustomerPresenceBadgeMarkup(thread));
+    }
+  }
+
   function buildSeenIndicatorMarkup(thread, fallbackInitial, options = {}) {
     const avatarUrl = getThreadCustomerAvatarUrl(thread);
     const animateClass = options.animate ? " is-animated" : "";
+    const className = getThreadCustomerAvatarClassName(
+      `employee-chat-message__seen-indicator${animateClass}`,
+      thread,
+    );
 
-    return `<div class="employee-chat-message__seen-indicator${animateClass}" title="Seen" aria-label="Seen by customer">
+    return `<div class="${escapeHtml(className)}" title="Seen" aria-label="Seen by customer">
       ${
         avatarUrl
           ? `<img src="${escapeHtml(avatarUrl)}" alt="" loading="lazy" />`
@@ -4935,8 +5683,14 @@
         const customer = getThreadCustomerDisplayName(thread);
         const productName = getThreadProductDisplayName(thread);
         const preview = getThreadPreview(thread);
-        const relativeTime = formatRelativeThreadTime(getLatestThreadMessageTimestamp(thread));
+        const relativeTime = hasUnreadCustomerMessage(thread)
+          ? ""
+          : formatRelativeThreadTime(getLatestThreadMessageTimestamp(thread));
+        const receiptStatus = getEmployeeChatThreadReceiptSignature(thread);
         const isUnread = hasUnreadCustomerMessage(thread);
+        const presenceLabel = getThreadPresenceActor(thread, "user")
+          ? "online"
+          : formatPresenceBadgeLabel(getCustomerLastActiveAt(thread));
         const initial =
           (customer || "?")
             .trim()
@@ -4950,6 +5704,8 @@
           customer: String(customer),
           preview: String(preview),
           relativeTime: String(relativeTime),
+          receiptStatus: String(receiptStatus),
+          presenceLabel: String(presenceLabel),
           isUnread,
           initial: String(initial),
         };
@@ -5163,13 +5919,9 @@
         const isActive = thread.threadId === state.activeThreadId;
         const customer = getThreadCustomerDisplayName(thread);
         const preview = getThreadPreview(thread);
-        const relativeTime = formatRelativeThreadTime(getLatestThreadMessageTimestamp(thread));
         const isUnread = hasUnreadCustomerMessage(thread);
-        const initial =
-          (customer || "?")
-            .trim()
-            .charAt(0)
-            .toUpperCase() || "?";
+        const threadMeta = buildEmployeeChatThreadMetaMarkup(thread);
+        const initial = getThreadCustomerInitials(thread, "?");
 
         return `
           <button
@@ -5177,17 +5929,19 @@
             class="employee-chat-thread-item${isActive ? " is-active" : ""}${isUnread ? " is-unread" : ""}"
             data-thread-id="${escapeHtml(thread.threadId)}"
           >
-            <span class="employee-chat-thread-item__avatar">${escapeHtml(initial)}</span>
+            ${buildThreadCustomerAvatarMarkup(thread, "employee-chat-thread-item__avatar", {
+              initial,
+              fallbackInitial: "?",
+            })}
             <span class="employee-chat-thread-item__content">
               <span class="employee-chat-thread-item__title-row">
                 <strong>${escapeHtml(customer)}</strong>
-                ${isUnread ? '<span class="employee-chat-thread-item__unread-dot" aria-hidden="true"></span>' : ""}
+                ${isUnread
+                  ? '<span class="employee-chat-thread-item__unread-dot" aria-hidden="true"></span>'
+                  : threadMeta}
               </span>
               <span class="employee-chat-thread-item__preview-row">
                 <span class="employee-chat-thread-item__preview">${escapeHtml(preview)}</span>
-                ${relativeTime
-                  ? `<span class="employee-chat-thread-item__preview-time">${escapeHtml(relativeTime)}</span>`
-                  : ""}
               </span>
             </span>
           </button>
@@ -5219,6 +5973,7 @@
       renderMediaPanel(null);
       renderProfilePanel(null);
       renderHistoryPanel(null);
+      renderLiveChatConversationSidePanel(null);
       hideScrollDownButton({ immediate: true });
       return;
     }
@@ -5230,6 +5985,8 @@
       conversationShell.hidden = false;
     }
 
+    renderLiveChatConversationSidePanel(activeThread);
+
     const nextConversationSignature = getConversationSignature(activeThread);
     if (state.lastConversationSignature === nextConversationSignature) {
       void markThreadSeenBySupport(activeThread);
@@ -5239,17 +5996,14 @@
     }
     renderPinnedProductSlot(activeThread);
 
-    const initial =
-      (getThreadCustomerDisplayName(activeThread) || "?")
-        .trim()
-        .charAt(0)
-        .toUpperCase() || "?";
+    const initial = getThreadCustomerInitials(activeThread, "?");
     const presenceState = getThreadPresenceState(activeThread);
 
     if (avatar) {
-      avatar.textContent = initial;
-      avatar.style.backgroundImage = "";
-      avatar.classList.remove("has-image");
+      setThreadCustomerAvatarElement(avatar, activeThread, "employee-chat-conversation-avatar", {
+        initial,
+        fallbackInitial: "?",
+      });
     }
 
     if (customerLabel) {
@@ -5262,7 +6016,7 @@
       productMeta.classList.remove("is-online", "is-offline");
       productMeta.classList.add(presenceState.className);
       productMeta.innerHTML = `
-        <span class="employee-chat-conversation-status__dot" aria-hidden="true"></span>
+        ${buildConversationPresenceDotMarkup(activeThread, presenceState)}
         <span>${escapeHtml(presenceState.label)}</span>
       `;
     }
@@ -5273,11 +6027,7 @@
 
     const messages = Array.isArray(activeThread.messages) ? activeThread.messages : [];
     let mediaItemCursor = 0;
-    const customerInitial =
-      (getThreadCustomerDisplayName(activeThread) || "U")
-        .trim()
-        .charAt(0)
-        .toUpperCase() || "U";
+    const customerInitial = getThreadCustomerInitials(activeThread, "U");
     const wasViewingSameThread = state.lastRenderedThreadId === activeThread.threadId;
     const isConversationVisible = state.activeConversationTab === "conversation";
     const previousScrollTop =
@@ -5410,7 +6160,7 @@
                             aria-label="Reply to this message"
                             data-employee-chat-reply-index="${index}"
                           >
-                            <i class="fa-solid fa-reply" aria-hidden="true"></i>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-corner-up-left" aria-hidden="true"><path d="m9 14 6-6"/><path d="m4 10 5-5 5 5"/><path d="M20 20v-7a2 2 0 0 0-2-2H4"/></svg>
                           </button>
                           ${
                             canRemoveMessage
@@ -5507,31 +6257,41 @@
           const shouldShowUserAvatar =
             !isSupport &&
             (!nextIsUser || currentStartsOwnAvatarGroup || nextStartsOwnAvatarGroup);
-          const avatarLabel = isSupport ? "S" : customerInitial;
+          const avatarBadgeMarkup = isSupport
+            ? buildSupportMessageAvatarMarkup(message)
+            : buildThreadCustomerAvatarMarkup(
+                activeThread,
+                `employee-chat-message__avatar-badge is-user${!shouldShowUserAvatar ? " is-hidden" : ""}`,
+                { tagName: "div", initial: customerInitial },
+              );
+          const supportSenderLabelMarkup = isSupport
+            ? buildSupportMessageSenderLabelMarkup(message)
+            : "";
           const deletedBubbleLabel = isSupport
             ? "You deleted a message"
             : "Message deleted";
           const deletedBubbleMarkup = `<div class="employee-chat-message__deleted-content">
-            <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             <span>${escapeHtml(deletedBubbleLabel)}</span>
           </div>`;
           return `
             <article class="employee-chat-message${isSupport ? " is-support" : " is-user"}${isHeartOnly ? " is-heart" : ""}${isEmojiOnly ? " is-emoji" : ""}${shouldShowTimestamp ? " has-meta" : ""}"${messageId ? ` data-chat-message-id="${escapeHtml(messageId)}"` : ""}>
-              <div class="employee-chat-message__avatar-badge${isSupport ? " is-support" : " is-user"}${!isSupport && !shouldShowUserAvatar ? " is-hidden" : ""}">${escapeHtml(avatarLabel)}</div>
-              <div class="employee-chat-message__stack">
-                ${
-                  shouldShowTimestamp
-                    ? `<div class="employee-chat-message__meta">
-                  ${shouldShowTimestamp ? `<span>${escapeHtml(timestampLabel)}</span>` : ""}
+              ${
+                shouldShowTimestamp
+                  ? `<div class="employee-chat-message__meta">
+                  <span>${escapeHtml(timestampLabel)}</span>
                 </div>`
-                    : ""
-                }
+                  : ""
+              }
+              ${avatarBadgeMarkup}
+              <div class="employee-chat-message__stack">
+                ${supportSenderLabelMarkup}
                 <div class="employee-chat-message__content-row">
                   <div class="employee-chat-message__bubble-thread${replyMeta ? " has-reply" : ""}${shouldShowEditedInBubble ? " has-edited-indicator" : ""}${isLongCopyBubble ? " has-long-copy" : ""}${isLongReplyPreview ? " has-long-reply" : ""}${isMediaOnlyBubble ? " has-media-only" : ""}">
                     ${
                       replyMeta
                         ? `<div class="employee-chat-message__reply-line">
-                            <i class="fa-solid fa-reply employee-chat-message__reply-icon" aria-hidden="true"></i>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-corner-up-left employee-chat-message__reply-icon" aria-hidden="true"><path d="m9 14 6-6"/><path d="m4 10 5-5 5 5"/><path d="M20 20v-7a2 2 0 0 0-2-2H4"/></svg>
                             <span class="employee-chat-message__reply-name">${escapeHtml(replyLineLabel)}</span>
                             ${
                               isEdited
@@ -6020,6 +6780,21 @@
     }
   }
 
+  function handleSendButtonClick(event) {
+    event.preventDefault();
+
+    if (state.isSending || isAdminLiveChatReadOnly) {
+      return;
+    }
+
+    if (typeof form?.requestSubmit === "function") {
+      form.requestSubmit();
+      return;
+    }
+
+    void sendReply({ preventDefault() {} });
+  }
+
   function handleMediaSelection(event) {
     if (isAdminLiveChatReadOnly) {
       if (mediaInput) {
@@ -6028,25 +6803,7 @@
       return;
     }
 
-    const activeThread = getThreadById(state.activeThreadId);
-    const mediaFiles = Array.from(event?.target?.files || []).filter(Boolean);
-
-    if (getActivePendingEdit()) {
-      if (mediaInput) {
-        mediaInput.value = "";
-      }
-      window.alert("Finish editing or cancel the edit before adding media.");
-      return;
-    }
-
-    if (!activeThread || !mediaFiles.length || state.isSending) {
-      if (mediaInput) {
-        mediaInput.value = "";
-      }
-      return;
-    }
-
-    appendPendingMedia(mediaFiles);
+    appendSelectedMediaFiles(event?.target?.files);
     if (mediaInput) {
       mediaInput.value = "";
     }
@@ -6081,7 +6838,12 @@
       return;
     }
 
-    if (!state.activeThreadId || state.isSending) {
+    if (state.isSending) {
+      return;
+    }
+
+    if (!state.activeThreadId) {
+      window.alert("Select a conversation before sending a photo or video.");
       return;
     }
 
@@ -6090,7 +6852,7 @@
       return;
     }
 
-    mediaInput?.click();
+    openMediaPickerFallback();
   }
 
   async function handleHeartButtonClick() {
@@ -6421,6 +7183,38 @@
     setActiveChatMediaIndex((state.activeChatMediaIndex >= 0 ? state.activeChatMediaIndex : 0) + offset);
   }
 
+  function handleLiveChatSidePanelClick(event) {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const mediaButton = event.target.closest("[data-live-chat-side-media-index]");
+    if (mediaButton) {
+      openChatMediaModal({
+        startIndex: Number.parseInt(
+          mediaButton.getAttribute("data-live-chat-side-media-index") || "",
+          10,
+        ),
+      });
+      return;
+    }
+
+    const tabButton = event.target.closest("[data-live-chat-side-tab]");
+    if (!tabButton) {
+      return;
+    }
+
+    const targetTab = String(tabButton.getAttribute("data-live-chat-side-tab") || "").trim();
+    if (targetTab === "search") {
+      searchInput?.focus();
+      return;
+    }
+
+    if (["media", "profile", "history"].includes(targetTab)) {
+      setActiveConversationTab(targetTab);
+    }
+  }
+
   form?.addEventListener("submit", sendReply);
   input?.addEventListener("input", handleComposerInput);
   input?.addEventListener("blur", () => {
@@ -6434,6 +7228,7 @@
       renderThreadList();
     }, 500);
   });
+  liveChatProfilePanel?.addEventListener("click", handleLiveChatSidePanelClick);
   liveChatStockSearchInput?.addEventListener("input", (event) => {
     window.clearTimeout(liveChatStockSearchTimer);
     liveChatStockSearchTimer = window.setTimeout(() => {
@@ -6480,6 +7275,7 @@
   mediaButton?.addEventListener("click", handleMediaButtonClick);
   composePlusButton?.addEventListener("click", handleMediaButtonClick);
   mediaInput?.addEventListener("change", handleMediaSelection);
+  sendButton?.addEventListener("click", handleSendButtonClick);
   mediaPreview?.addEventListener("click", handlePendingMediaPreviewClick);
   replyState?.addEventListener("click", handleReplyStateClick);
   pinnedProductSlot?.addEventListener("click", handlePinnedProductSlotClick);
@@ -6519,6 +7315,13 @@
     void confirmDeleteModalAction();
   });
   deleteModalOverlay?.addEventListener("click", handleDeleteModalOverlayClick);
+  liveChatMenuToggle?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeLiveChatNotificationMenu();
+    closeConversationMenu();
+    closeMessageActionMenus();
+    toggleLiveChatNavMenu();
+  });
   liveChatNotificationToggle?.addEventListener("click", (event) => {
     event.stopPropagation();
     closeMessageActionMenus();
@@ -6557,6 +7360,13 @@
     if (!liveChatNotificationMenu?.contains(event.target)) {
       closeLiveChatNotificationMenu();
     }
+    if (
+      document.body?.classList.contains("live-chat-nav-open") &&
+      !event.target.closest(".dashboard-sidebar") &&
+      !event.target.closest("[data-live-chat-menu-toggle]")
+    ) {
+      closeLiveChatNavMenu();
+    }
     if (!conversationMenu?.contains(event.target)) {
       closeConversationMenu();
     }
@@ -6571,6 +7381,9 @@
       }
       if (conversationMenuToggle?.getAttribute("aria-expanded") === "true") {
         closeConversationMenu();
+      }
+      if (document.body?.classList.contains("live-chat-nav-open")) {
+        closeLiveChatNavMenu();
       }
       closeMessageActionMenus();
       if (deleteModalOverlay && !deleteModalOverlay.hidden) {
@@ -6617,10 +7430,12 @@
   setActiveConversationTab(state.activeConversationTab);
   loadThreads();
   loadOrders();
-  loadLiveChatStockProducts();
+  if (liveChatStockList) {
+    loadLiveChatStockProducts();
+    window.setInterval(loadLiveChatStockProducts, STOCK_REFRESH_INTERVAL_MS);
+  }
   window.setInterval(loadThreads, CHAT_REFRESH_INTERVAL_MS);
   window.setInterval(loadOrders, ORDERS_REFRESH_INTERVAL_MS);
-  window.setInterval(loadLiveChatStockProducts, STOCK_REFRESH_INTERVAL_MS);
 })();
 
 (function () {

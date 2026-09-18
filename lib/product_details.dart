@@ -14,27 +14,33 @@ import 'package:gms_shopping/favorite_products_store.dart';
 import 'package:gms_shopping/guest_session.dart';
 import 'package:gms_shopping/login_redirect.dart';
 import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:gms_shopping/utils/own_listing.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/search_bar.dart' as app_search;
+import 'package:gms_shopping/services/for_you_recommendations.dart';
+import 'package:gms_shopping/services/flash_deals_service.dart';
 import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
 import 'package:gms_shopping/utils/session_image_cache.dart';
-import 'package:gms_shopping/widgets/bouncing_dots_loader.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 import 'package:video_player/video_player.dart';
 import 'package:gms_shopping/widgets/product_company_identity.dart';
 import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
+import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
 
 enum ProductDetailsEntrySource { standard, cart }
 
-final Duration _productDetailsHeroTransitionDuration = appMotionFrames(39);
+final Duration _productDetailsPageTransitionDuration = appMotionFrames(20);
 
 Future<void> openProductDetailsPage(
   BuildContext context,
   Product product, {
   ProductDetailsEntrySource source = ProductDetailsEntrySource.standard,
   Object? heroTag,
+  String platformId = '',
 }) {
   if (!isProductVisibleToUsers(product)) {
     AppSnackBar.showError(
@@ -44,11 +50,15 @@ Future<void> openProductDetailsPage(
     return Future<void>.value();
   }
 
+  // Feed "For You" with browse affinity (categories / similar items).
+  unawaited(ForYouRecommendations.instance.recordProductView(product));
+
   return Navigator.of(context).push(
     _ProductDetailsPageRoute(
       product: product,
       source: source,
       heroTag: heroTag,
+      platformId: platformId,
     ),
   );
 }
@@ -58,19 +68,58 @@ class _ProductDetailsPageRoute extends MaterialPageRoute<void> {
     required Product product,
     required ProductDetailsEntrySource source,
     required Object? heroTag,
+    required String platformId,
   }) : super(
-          builder: (_) => ProductDetailsPage(
-            product: product,
-            source: source,
-            sourceHeroTag: heroTag,
-          ),
-        );
+         builder: (_) => ProductDetailsPage(
+           product: product,
+           source: source,
+           sourceHeroTag: heroTag,
+           platformId: platformId,
+         ),
+       );
 
   @override
-  Duration get transitionDuration => _productDetailsHeroTransitionDuration;
+  Duration get transitionDuration => _productDetailsPageTransitionDuration;
 
   @override
-  Duration get reverseTransitionDuration => _productDetailsHeroTransitionDuration;
+  Duration get reverseTransitionDuration =>
+      _productDetailsPageTransitionDuration;
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final primaryAnimation = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
+    );
+    final secondaryRouteAnimation = CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.easeInOutCubic,
+      reverseCurve: Curves.easeInOutCubic,
+    );
+
+    // Cascade slide: push from right / pop to right; previous page shifts left.
+    return ClipRect(
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: Offset.zero,
+          end: const Offset(-1, 0),
+        ).animate(secondaryRouteAnimation),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).animate(primaryAnimation),
+          child: child,
+        ),
+      ),
+    );
+  }
 }
 
 class ProductDetailsPage extends StatefulWidget {
@@ -79,11 +128,13 @@ class ProductDetailsPage extends StatefulWidget {
     required this.product,
     this.source = ProductDetailsEntrySource.standard,
     this.sourceHeroTag,
+    this.platformId = '',
   });
 
   final Product product;
   final ProductDetailsEntrySource source;
   final Object? sourceHeroTag;
+  final String platformId;
 
   @override
   State<ProductDetailsPage> createState() => _ProductDetailsPageState();
@@ -95,7 +146,8 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   static const double _heroExpandedHeight = 340;
   static const String _defaultHeaderTitle = 'Product Details';
   late final ProductRepository _productRepository;
-  late final ValueNotifier<Future<List<Product>>> _relatedProductsFutureNotifier;
+  late final ValueNotifier<Future<List<Product>>>
+  _relatedProductsFutureNotifier;
   late final ValueNotifier<Product> _productNotifier;
   List<Product>? _catalogProducts;
   late List<String> _heroImageUrls;
@@ -112,30 +164,57 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   late final ValueNotifier<int> _currentHeroMediaIndexNotifier;
   final ValueNotifier<int> _visibleRelatedProductsCountNotifier =
       ValueNotifier<int>(_relatedProductsBatchSize);
-  final ValueNotifier<int> _bottomOverscrollSignalNotifier =
-      ValueNotifier<int>(0);
+  final ValueNotifier<int> _bottomOverscrollSignalNotifier = ValueNotifier<int>(
+    0,
+  );
   bool _isCartFlightAnimating = false;
   final ValueNotifier<bool> _showsScrollToTopButtonNotifier =
       ValueNotifier<bool>(false);
+  BuyerFlashDeal? _liveFlashDeal;
 
   bool get _showsHeaderUtilityActions =>
       widget.source != ProductDetailsEntrySource.cart;
 
   bool get _isGuestMode => GuestSession.isGuest && !AuthSession.isLoggedInSync;
+  bool _isOwnListing = false;
+  bool _ownListingResolved = false;
+  bool _listingInsightBusy = false;
+
+  String get _cartPlatformId {
+    final explicit = widget.platformId.trim();
+    if (explicit.isNotEmpty) {
+      return normalizeCartPlatformId(explicit);
+    }
+    return CartStore.instance.activePlatformId;
+  }
 
   @override
   void initState() {
     super.initState();
-    unawaited(CartStore.instance.ensureLoaded());
+    final platformId = widget.platformId.trim();
+    if (platformId.isNotEmpty) {
+      unawaited(CartStore.instance.setActivePlatform(platformId));
+    } else {
+      unawaited(CartStore.instance.ensureLoaded());
+    }
     _productRepository = createProductRepository();
     _productNotifier = ValueNotifier<Product>(widget.product);
+    AuthSession.accountRevision.addListener(_handleAccountRevision);
+    if (_isGuestMode) {
+      _ownListingResolved = true;
+    } else {
+      unawaited(_resolveOwnListing());
+    }
     final relatedProductsFuture = _productRepository.fetchProducts();
-    _relatedProductsFutureNotifier =
-        ValueNotifier<Future<List<Product>>>(relatedProductsFuture);
+    _relatedProductsFutureNotifier = ValueNotifier<Future<List<Product>>>(
+      relatedProductsFuture,
+    );
     unawaited(
-      relatedProductsFuture.then((products) {
-        _catalogProducts = products;
-      }).catchError((_) {}),
+      relatedProductsFuture
+          .then((products) {
+            _catalogProducts = products;
+          })
+          .catchError((_) {}),
     );
     _heroImageUrls = _product.detailsDisplayImageUrls;
     _heroMediaItems = _buildHeroMediaItems();
@@ -168,6 +247,18 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       if (mounted) {
         _precacheHeroImages();
       }
+    });
+    unawaited(_loadLiveFlashDeal());
+  }
+
+  Future<void> _loadLiveFlashDeal() async {
+    final deal = await productLiveFlashDeal(
+      productId: widget.product.id,
+      platformId: _cartPlatformId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _liveFlashDeal = deal;
     });
   }
 
@@ -207,6 +298,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
 
   @override
   void dispose() {
+    AuthSession.accountRevision.removeListener(_handleAccountRevision);
     _showsScrollToTopButtonNotifier.dispose();
     _visibleRelatedProductsCountNotifier.dispose();
     _bottomOverscrollSignalNotifier.dispose();
@@ -225,7 +317,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return;
     }
 
-    unawaited(openCartPage(context));
+    unawaited(openCartPage(context, platformId: _cartPlatformId));
   }
 
   void _syncDisplayProduct(
@@ -311,16 +403,35 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
     }
   }
 
-  bool get _hasSalesPrice =>
-      _salesPrice != null &&
-      _salesPrice! >= 0 &&
-      _salesPrice! < _originalPrice;
+  bool get _hasSalesPrice {
+    final flash = _liveFlashDeal;
+    if (flash != null &&
+        flash.isLive &&
+        flash.flashPrice >= 0 &&
+        flash.flashPrice < _originalPrice) {
+      return true;
+    }
+    return _salesPriceFromProduct != null &&
+        _salesPriceFromProduct! >= 0 &&
+        _salesPriceFromProduct! < _originalPrice;
+  }
 
   double get _displayPrice => _hasSalesPrice ? _salesPrice! : _originalPrice;
 
   double get _originalPrice => _product.originalPrice;
 
-  double? get _salesPrice => _product.salesPrice;
+  double? get _salesPriceFromProduct => _product.salesPrice;
+
+  double? get _salesPrice {
+    final flash = _liveFlashDeal;
+    if (flash != null &&
+        flash.isLive &&
+        flash.flashPrice >= 0 &&
+        flash.flashPrice < _originalPrice) {
+      return flash.flashPrice;
+    }
+    return _salesPriceFromProduct;
+  }
 
   int get _availableStock => _product.stock;
 
@@ -339,14 +450,14 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
     return percent > 0 ? percent : null;
   }
 
-  bool get _showsTopReviewsChip => _product.rating >= 4.5 && _product.rating <= 5;
+  bool get _showsTopReviewsChip =>
+      _product.rating >= 4.5 && _product.rating <= 5;
 
   String get _currentHeroImageUrl {
     if (_heroMediaItems.isNotEmpty) {
-      final normalizedMediaIndex = _currentHeroMediaIndex.clamp(
-        0,
-        _heroMediaItems.length - 1,
-      ).toInt();
+      final normalizedMediaIndex = _currentHeroMediaIndex
+          .clamp(0, _heroMediaItems.length - 1)
+          .toInt();
       final currentMedia = _heroMediaItems[normalizedMediaIndex];
       if (currentMedia.isImage) {
         return currentMedia.url;
@@ -357,10 +468,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return _product.imageUrl;
     }
 
-    final normalizedIndex = _product.resolvedMainImageIndex.clamp(
-      0,
-      _heroImageUrls.length - 1,
-    ).toInt();
+    final normalizedIndex = _product.resolvedMainImageIndex
+        .clamp(0, _heroImageUrls.length - 1)
+        .toInt();
     return _heroImageUrls[normalizedIndex];
   }
 
@@ -438,20 +548,25 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
         .where((category) => category.isNotEmpty)
         .toSet();
 
-    final relatedProducts = products
-        .where((product) => product.id != _product.id)
-        .where(isProductVisibleToUsers)
-        .where((product) {
-          if (normalizedCategories.isEmpty) {
-            return false;
-          }
+    final relatedProducts =
+        products
+            .where((product) => product.id != _product.id)
+            .where(isProductVisibleToUsers)
+            .where((product) {
+              if (normalizedCategories.isEmpty) {
+                return false;
+              }
 
-          return product.categoryList.any(
-            (category) => normalizedCategories.contains(category.trim().toLowerCase()),
+              return product.categoryList.any(
+                (category) => normalizedCategories.contains(
+                  category.trim().toLowerCase(),
+                ),
+              );
+            })
+            .toList()
+          ..sort(
+            (first, second) => second.createdAt.compareTo(first.createdAt),
           );
-        })
-        .toList()
-      ..sort((first, second) => second.createdAt.compareTo(first.createdAt));
 
     return relatedProducts;
   }
@@ -471,8 +586,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
         _ProductDetailsMediaItem(
           type: _ProductDetailsMediaType.video,
           url: trimmedVideoUrl,
-          thumbnailUrl:
-              index < videoThumbnailUrls.length ? videoThumbnailUrls[index] : '',
+          thumbnailUrl: index < videoThumbnailUrls.length
+              ? videoThumbnailUrls[index]
+              : '',
         ),
       );
     }
@@ -507,10 +623,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return 0;
     }
 
-    final resolvedImageIndex = _product.resolvedMainImageIndex.clamp(
-      0,
-      _heroImageUrls.length - 1,
-    ).toInt();
+    final resolvedImageIndex = _product.resolvedMainImageIndex
+        .clamp(0, _heroImageUrls.length - 1)
+        .toInt();
     final targetImageUrl = _heroImageUrls[resolvedImageIndex];
     final mediaIndex = _heroMediaItems.indexWhere(
       (mediaItem) => mediaItem.isImage && mediaItem.url == targetImageUrl,
@@ -530,12 +645,12 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
         reverseTransitionDuration: appMotionFrames(19),
         pageBuilder: (context, animation, secondaryAnimation) =>
             _ProductMediaPreviewPage(
-          mediaItems: _heroMediaItems,
-          initialIndex: _currentHeroMediaIndex,
-          productName: _product.name,
-          model3dUrl: _product.model3dUrl,
-          primaryColor: Theme.of(context).colorScheme.primary,
-        ),
+              mediaItems: _heroMediaItems,
+              initialIndex: _currentHeroMediaIndex,
+              productName: _product.name,
+              model3dUrl: _product.model3dUrl,
+              primaryColor: Theme.of(context).colorScheme.primary,
+            ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(
             opacity: CurvedAnimation(
@@ -592,10 +707,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   }
 
   void _showTopActionMessage(String message) {
-    AppSnackBar.showSuccess(
-      context,
-      message: message,
-    );
+    AppSnackBar.showSuccess(context, message: message);
   }
 
   void _redirectGuestToLogin() {
@@ -711,8 +823,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
               );
               final currentSide =
                   startSide + ((endSide - startSide) * progress);
-              final currentOpacity =
-                  (1 - (progress * 0.14)).clamp(0.0, 1.0).toDouble();
+              final currentOpacity = (1 - (progress * 0.14))
+                  .clamp(0.0, 1.0)
+                  .toDouble();
 
               return Stack(
                 children: [
@@ -813,15 +926,15 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: const Color(0xFFE53935),
-                              borderRadius: const BorderRadius.all(Radius.circular(8)),
+                              borderRadius: const BorderRadius.all(
+                                Radius.circular(8),
+                              ),
                             ),
                             child: Center(
                               child: Text(
                                 badgeLabel,
                                 textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
+                                style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
@@ -843,7 +956,42 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
     );
   }
 
+  void _handleAccountRevision() {
+    clearOwnListingScopeCache();
+    if (!mounted) {
+      return;
+    }
+    if (_isGuestMode) {
+      setState(() {
+        _isOwnListing = false;
+        _ownListingResolved = true;
+      });
+      return;
+    }
+    setState(() {
+      _isOwnListing = false;
+      _ownListingResolved = false;
+    });
+    unawaited(_resolveOwnListing());
+  }
+
+  Future<void> _resolveOwnListing() async {
+    final isOwnListing = await isOwnCompanyListing(_product);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isOwnListing = isOwnListing;
+      _ownListingResolved = true;
+    });
+  }
+
   void _handleChatTap() {
+    if (_isOwnListing) {
+      return;
+    }
+
     if (_isGuestMode) {
       _redirectGuestToLogin();
       return;
@@ -863,6 +1011,10 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   }
 
   void _handleAddToCartTap() {
+    if (_isOwnListing) {
+      return;
+    }
+
     if (_isGuestMode) {
       _redirectGuestToLogin();
       return;
@@ -884,7 +1036,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
             surfaceColor: theme.cardColor,
             productCardSurfaceColor:
                 theme.inputDecorationTheme.fillColor ??
-                    theme.colorScheme.surface,
+                theme.colorScheme.surface,
             titleColor: theme.colorScheme.onSurface,
             secondaryColor:
                 theme.textTheme.bodyMedium?.color ??
@@ -920,15 +1072,29 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return;
     }
 
-    await CartStore.instance.addItem(
-      _product,
-      quantity: addToCartSelection.quantity,
-      selectedVariant: addToCartSelection.selectedVariant,
-      catalogProducts: catalogProducts,
-      showsTopBrand:
-          catalogProducts.isNotEmpty &&
-          _isProductInTopSelling(_product, catalogProducts),
-    );
+    try {
+      await CartStore.instance.addItem(
+        _product,
+        quantity: addToCartSelection.quantity,
+        selectedVariant: addToCartSelection.selectedVariant,
+        catalogProducts: catalogProducts,
+        showsTopBrand:
+            catalogProducts.isNotEmpty &&
+            _isProductInTopSelling(_product, catalogProducts),
+        platformId: _cartPlatformId,
+      );
+    } on FlashDealReserveException catch (error) {
+      if (!mounted) return;
+      AppSnackBar.showError(context, message: error.message);
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.showError(
+        context,
+        message: 'Unable to add this product to your cart.',
+      );
+      return;
+    }
 
     if (!mounted) {
       return;
@@ -946,6 +1112,11 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   }
 
   void _handleBuyNowTap() {
+    if (_isOwnListing) {
+      unawaited(_handleListingInsightTap());
+      return;
+    }
+
     if (_isGuestMode) {
       _redirectGuestToLogin();
       return;
@@ -979,24 +1150,68 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return;
     }
 
+    var bookingItem = BookingLineItem.fromProduct(
+      product: _product,
+      quantity: buySelection.quantity,
+      selectedVariant: buySelection.selectedVariant,
+      availableStock: resolveProductAvailableStock(
+        _product,
+        variant: buySelection.selectedVariant,
+        catalogProducts: catalogProducts,
+      ),
+      showsTopBrand:
+          catalogProducts.isNotEmpty &&
+          _isProductInTopSelling(_product, catalogProducts),
+    );
+
+    final liveDeal = await productLiveFlashDeal(
+      productId: _product.id,
+      platformId: _cartPlatformId,
+      variantId: buySelection.selectedVariant?.id,
+    );
+    if (liveDeal != null &&
+        liveDeal.isLive &&
+        liveDeal.flashPrice >= 0 &&
+        liveDeal.flashPrice < bookingItem.originalUnitPrice) {
+      try {
+        final reservation = await reserveFlashDealStock(
+          dealId: liveDeal.id,
+          quantity: bookingItem.quantity,
+          variantId: bookingItem.variantId,
+        );
+        bookingItem = bookingItem.copyWith(
+          unitPrice: reservation.lockedUnitPrice > 0
+              ? reservation.lockedUnitPrice
+              : liveDeal.flashPrice,
+          quantity: reservation.quantity > 0
+              ? reservation.quantity
+              : bookingItem.quantity,
+          flashDealId: reservation.dealId,
+          flashReservationId: reservation.id,
+          reservationExpiresAt:
+              reservation.expiresAt.toUtc().toIso8601String(),
+        );
+      } on FlashDealReserveException catch (error) {
+        if (!mounted) return;
+        AppSnackBar.showError(context, message: error.message);
+        return;
+      } catch (_) {
+        if (!mounted) return;
+        AppSnackBar.showError(
+          context,
+          message: 'Unable to lock Flash Deal price right now.',
+        );
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
     final bookingAction = await openBookingPage(
       context,
-      items: [
-        BookingLineItem.fromProduct(
-          product: _product,
-          quantity: buySelection.quantity,
-          selectedVariant: buySelection.selectedVariant,
-          availableStock: resolveProductAvailableStock(
-            _product,
-            variant: buySelection.selectedVariant,
-            catalogProducts: catalogProducts,
-          ),
-          showsTopBrand:
-              catalogProducts.isNotEmpty &&
-              _isProductInTopSelling(_product, catalogProducts),
-        ),
-      ],
+      items: [bookingItem],
       source: BookingFlowSource.directBuy,
+      platformId: _cartPlatformId,
     );
 
     if (!mounted || bookingAction != BookingPageAction.orderPlaced) {
@@ -1006,6 +1221,21 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
     _showTopActionMessage(
       'Direct order placed for ${buySelection.quantity} item${buySelection.quantity == 1 ? '' : 's'}.',
     );
+  }
+
+  Future<void> _handleListingInsightTap() async {
+    if (_listingInsightBusy) {
+      return;
+    }
+
+    setState(() => _listingInsightBusy = true);
+    try {
+      await openOwnListingInsight(context, product: _product);
+    } finally {
+      if (mounted) {
+        setState(() => _listingInsightBusy = false);
+      }
+    }
   }
 
   Future<void> _openCustomerReviewsPage() {
@@ -1121,9 +1351,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
 
     final nextVisibleCount =
         _visibleRelatedProductsCount + _relatedProductsBatchSize >
-                relatedProducts.length
-            ? relatedProducts.length
-            : _visibleRelatedProductsCount + _relatedProductsBatchSize;
+            relatedProducts.length
+        ? relatedProducts.length
+        : _visibleRelatedProductsCount + _relatedProductsBatchSize;
     if (nextVisibleCount == _visibleRelatedProductsCount) {
       return false;
     }
@@ -1133,8 +1363,7 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification.depth != 0 ||
-        notification.metrics.axis != Axis.vertical) {
+    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
       return false;
     }
 
@@ -1165,7 +1394,8 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
     final primaryColor = theme.colorScheme.primary;
     final homeHeaderColor =
         theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface;
-    final secondaryColor = theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
+    final secondaryColor =
+        theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
         theme.colorScheme.onSurface.withOpacity(0.72);
     final uniformChipPadding = const EdgeInsets.symmetric(
       horizontal: 10,
@@ -1193,9 +1423,13 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
           targetHeight: collapsedHeaderHeight,
           buyPriceAmount: _displayPrice,
           isGuestMode: _isGuestMode,
+          isOwnListing: _isOwnListing,
+          purchaseActionsEnabled: _isGuestMode || _ownListingResolved,
+          listingInsightBusy: _listingInsightBusy,
           onChatTap: _handleChatTap,
           onAddToCartTap: _handleAddToCartTap,
           onBuyTap: _handleBuyNowTap,
+          onListingInsightTap: () => unawaited(_handleListingInsightTap()),
         ),
       ),
       body: Stack(
@@ -1205,633 +1439,715 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
-              SliverAppBar(
-                backgroundColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                elevation: 0,
-                automaticallyImplyLeading: false,
-                pinned: true,
-                expandedHeight: _heroExpandedHeight,
-                flexibleSpace: FlexibleSpaceBar(
-                  background: AnimatedBuilder(
-                    animation: Listenable.merge([
-                      _productNotifier,
-                      _currentHeroMediaIndexNotifier,
-                    ]),
-                    builder: (context, child) => _ProductDetailsHero(
-                      heroImageKey: _heroImageKey,
-                      sourceHeroTag: widget.sourceHeroTag,
-                      product: _product,
-                      primaryColor: primaryColor,
-                      mediaItems: _heroMediaItems,
-                      pageController: _heroPageController,
-                      currentMediaIndex: _currentHeroMediaIndex,
-                      commentPreviews: _customerReviews,
-                      onImageTap: _openHeroImagePreview,
-                      onCommentsTap: _openCustomerReviewsPage,
-                      onPageChanged: (nextIndex) {
-                        if (_currentHeroMediaIndex == nextIndex) {
-                          return;
-                        }
+                SliverAppBar(
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  elevation: 0,
+                  automaticallyImplyLeading: false,
+                  pinned: true,
+                  expandedHeight: _heroExpandedHeight,
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _productNotifier,
+                        _currentHeroMediaIndexNotifier,
+                      ]),
+                      builder: (context, child) => _ProductDetailsHero(
+                        heroImageKey: _heroImageKey,
+                        sourceHeroTag: widget.sourceHeroTag,
+                        product: _product,
+                        primaryColor: primaryColor,
+                        mediaItems: _heroMediaItems,
+                        pageController: _heroPageController,
+                        currentMediaIndex: _currentHeroMediaIndex,
+                        commentPreviews: _customerReviews,
+                        onImageTap: _openHeroImagePreview,
+                        onCommentsTap: _openCustomerReviewsPage,
+                        onPageChanged: (nextIndex) {
+                          if (_currentHeroMediaIndex == nextIndex) {
+                            return;
+                          }
 
-                        _currentHeroMediaIndex = nextIndex;
-                      },
+                          _currentHeroMediaIndex = nextIndex;
+                        },
+                      ),
                     ),
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: ValueListenableBuilder<Product>(
-                  valueListenable: _productNotifier,
-                  builder: (context, product, child) => Padding(
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final categoryChip = _ProductDetailChipData(
-                            icon: Icons.grid_view_outlined,
-                            label: product.categoryLabel.trim().isEmpty
-                                ? 'Uncategorized'
-                                : product.categoryLabel,
-                            color: primaryColor,
-                            labelColor: primaryColor,
-                            iconColor: primaryColor,
-                            padding: uniformChipPadding,
-                            labelStyle:
-                                uniformChipLabelStyle?.copyWith(height: 1.15),
-                          );
-
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.centerLeft,
-                                    child: _ProductDetailChip.fromData(
-                                      categoryChip,
-                                    ),
-                                  ),
+                SliverToBoxAdapter(
+                  child: ValueListenableBuilder<Product>(
+                    valueListenable: _productNotifier,
+                    builder: (context, product, child) => Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final categoryChip = _ProductDetailChipData(
+                                icon: Icons.grid_view_outlined,
+                                label: product.categoryLabel.trim().isEmpty
+                                    ? 'Uncategorized'
+                                    : product.categoryLabel,
+                                color: primaryColor,
+                                labelColor: primaryColor,
+                                iconColor: primaryColor,
+                                padding: uniformChipPadding,
+                                labelStyle: uniformChipLabelStyle?.copyWith(
+                                  height: 1.15,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              ValueListenableBuilder<List<String>>(
-                                valueListenable: FavoriteProductsStore
-                                    .instance.favoriteProductIdsNotifier,
-                                builder: (
-                                  context,
-                                  favoriteProductIds,
-                                  child,
-                                ) {
-                                  final isFavorite =
-                                      favoriteProductIds.contains(product.id);
+                              );
 
-                                  return SizedBox(
-                                    width: 42,
-                                    height: 42,
-                                    child: IconButton(
-                                      onPressed: _handleFavoriteToggle,
-                                      tooltip: isFavorite
-                                          ? 'Remove from favorites'
-                                          : 'Add to favorites',
-                                      padding: EdgeInsets.zero,
-                                      splashRadius: 22,
-                                      icon: Icon(
-                                        isFavorite
-                                            ? Icons.favorite_rounded
-                                            : Icons.favorite_border_rounded,
-                                        color: isFavorite
-                                            ? const Color(0xFFD32F2F)
-                                            : secondaryColor,
-                                        size: 26,
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: _ProductDetailChip.fromData(
+                                          categoryChip,
+                                        ),
                                       ),
                                     ),
-                                  );
-                                },
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final productTitle = product.name.trim().isEmpty
-                              ? 'Unnamed Product'
-                              : product.name;
-                          final productTitleStyle =
-                              theme.textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            height: 1,
-                          );
-                          final titleMaxWidth = constraints.maxWidth;
-                          final titleLineCount = _measureTextLineCount(
-                            context,
-                            text: productTitle,
-                            style: productTitleStyle,
-                            maxWidth: titleMaxWidth,
-                          );
-                          final titleBottomSpacing =
-                              titleLineCount <= 1 ? 0.0 : 4.0;
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ValueListenableBuilder<List<String>>(
+                                    valueListenable: FavoriteProductsStore
+                                        .instance
+                                        .favoriteProductIdsNotifier,
+                                    builder: (context, favoriteProductIds, child) {
+                                      final isFavorite = favoriteProductIds
+                                          .contains(product.id);
 
-                          return ValueListenableBuilder<Future<List<Product>>>(
-                            valueListenable: _relatedProductsFutureNotifier,
-                            builder: (context, relatedProductsFuture, child) {
-                              return FutureBuilder<List<Product>>(
-                                future: relatedProductsFuture,
-                                builder: (context, snapshot) {
-                                  final showsTopSellingChip =
-                                      snapshot.hasData &&
-                                      _isProductInTopSelling(
-                                        product,
-                                        snapshot.data ?? const <Product>[],
+                                      return SizedBox(
+                                        width: 42,
+                                        height: 42,
+                                        child: IconButton(
+                                          onPressed: _handleFavoriteToggle,
+                                          tooltip: isFavorite
+                                              ? 'Remove from favorites'
+                                              : 'Add to favorites',
+                                          padding: EdgeInsets.zero,
+                                          splashRadius: 22,
+                                          icon: Icon(
+                                            isFavorite
+                                                ? Icons.favorite_rounded
+                                                : Icons.favorite_border_rounded,
+                                            color: isFavorite
+                                                ? const Color(0xFFD32F2F)
+                                                : secondaryColor,
+                                            size: 26,
+                                          ),
+                                        ),
                                       );
-                              final statusChipItems = <_ProductDetailChipData>[
-                                if (_discountPercent != null)
-                                  _ProductDetailChipData(
-                                    icon: Icons.local_offer_outlined,
-                                    label: '-$_discountPercent%',
-                                    color: const Color(0xFFC62828),
-                                    backgroundColor: const Color(0xFFD32F2F),
-                                    labelColor: Colors.white,
-                                    iconColor: Colors.white,
-                                    padding: statusChipPadding,
-                                    iconSize: 14,
-                                    borderRadius:
-                                        const BorderRadius.all(Radius.circular(8)),
-                                    labelStyle: uniformChipLabelStyle?.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      height: 1,
-                                    ),
+                                    },
                                   ),
-                                if (showsTopSellingChip)
-                                  _ProductDetailChipData(
-                                    icon: Icons.workspace_premium_outlined,
-                                    label: 'Top Selling',
-                                    color: const Color.fromARGB(
-                                      255,
-                                      15,
-                                      194,
-                                      176,
-                                    ),
-                                    backgroundColor: const Color.fromARGB(
-                                      255,
-                                      15,
-                                      194,
-                                      176,
-                                    ),
-                                    labelColor: Colors.white,
-                                    iconColor: Colors.white,
-                                    padding: statusChipPadding,
-                                    iconSize: 14,
-                                    borderRadius:
-                                        const BorderRadius.all(Radius.circular(8)),
-                                    labelStyle: uniformChipLabelStyle?.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      height: 1,
-                                    ),
-                                  ),
-                                if (_showsTopReviewsChip)
-                                  _ProductDetailChipData(
-                                    icon: Icons.star_outline_rounded,
-                                    label: 'Top Rating',
-                                    color: const Color(0xFFF9A825),
-                                    backgroundColor: const Color(0xFFF9A825),
-                                    labelColor: Colors.white,
-                                    iconColor: Colors.white,
-                                    padding: statusChipPadding,
-                                    iconSize: 14,
-                                    borderRadius:
-                                        const BorderRadius.all(Radius.circular(8)),
-                                    labelStyle: uniformChipLabelStyle?.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      height: 1,
-                                    ),
-                                  ),
-                                ];
-                                  const statusChipSpacing = 6.0;
-                                  final titleLastLineWidth =
-                                      _measureTextLastLineWidth(
-                                    context,
-                                    text: productTitle,
-                                    style: productTitleStyle,
-                                    maxWidth: titleMaxWidth,
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final productTitle = product.name.trim().isEmpty
+                                  ? 'Unnamed Product'
+                                  : product.name;
+                              final productTitleStyle = theme
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    height: 1,
                                   );
-                                  final inlineStatusAvailableWidth =
-                                      titleLineCount <= 2
+                              final titleMaxWidth = constraints.maxWidth;
+                              final titleLineCount = _measureTextLineCount(
+                                context,
+                                text: productTitle,
+                                style: productTitleStyle,
+                                maxWidth: titleMaxWidth,
+                              );
+                              final titleBottomSpacing = titleLineCount <= 1
+                                  ? 0.0
+                                  : 4.0;
+
+                              return ValueListenableBuilder<
+                                Future<List<Product>>
+                              >(
+                                valueListenable: _relatedProductsFutureNotifier,
+                                builder: (context, relatedProductsFuture, child) {
+                                  return FutureBuilder<List<Product>>(
+                                    future: relatedProductsFuture,
+                                    builder: (context, snapshot) {
+                                      final showsTopSellingChip =
+                                          snapshot.hasData &&
+                                          _isProductInTopSelling(
+                                            product,
+                                            snapshot.data ?? const <Product>[],
+                                          );
+                                      final statusChipItems =
+                                          <_ProductDetailChipData>[
+                                            if (_discountPercent != null)
+                                              _ProductDetailChipData(
+                                                icon:
+                                                    Icons.local_offer_outlined,
+                                                label: '-$_discountPercent%',
+                                                color: const Color(0xFFC62828),
+                                                backgroundColor: const Color(
+                                                  0xFFD32F2F,
+                                                ),
+                                                labelColor: Colors.white,
+                                                iconColor: Colors.white,
+                                                padding: statusChipPadding,
+                                                iconSize: 14,
+                                                borderRadius:
+                                                    const BorderRadius.all(
+                                                      Radius.circular(8),
+                                                    ),
+                                                labelStyle:
+                                                    uniformChipLabelStyle
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontSize: 10,
+                                                          height: 1,
+                                                        ),
+                                              ),
+                                            if (showsTopSellingChip)
+                                              _ProductDetailChipData(
+                                                icon: Icons
+                                                    .workspace_premium_outlined,
+                                                label: 'Top Selling',
+                                                color: const Color.fromARGB(
+                                                  255,
+                                                  15,
+                                                  194,
+                                                  176,
+                                                ),
+                                                backgroundColor:
+                                                    const Color.fromARGB(
+                                                      255,
+                                                      15,
+                                                      194,
+                                                      176,
+                                                    ),
+                                                labelColor: Colors.white,
+                                                iconColor: Colors.white,
+                                                padding: statusChipPadding,
+                                                iconSize: 14,
+                                                borderRadius:
+                                                    const BorderRadius.all(
+                                                      Radius.circular(8),
+                                                    ),
+                                                labelStyle:
+                                                    uniformChipLabelStyle
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontSize: 10,
+                                                          height: 1,
+                                                        ),
+                                              ),
+                                            if (_showsTopReviewsChip)
+                                              _ProductDetailChipData(
+                                                icon:
+                                                    Icons.star_outline_rounded,
+                                                label: 'Top Rating',
+                                                color: const Color(0xFFF9A825),
+                                                backgroundColor: const Color(
+                                                  0xFFF9A825,
+                                                ),
+                                                labelColor: Colors.white,
+                                                iconColor: Colors.white,
+                                                padding: statusChipPadding,
+                                                iconSize: 14,
+                                                borderRadius:
+                                                    const BorderRadius.all(
+                                                      Radius.circular(8),
+                                                    ),
+                                                labelStyle:
+                                                    uniformChipLabelStyle
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontSize: 10,
+                                                          height: 1,
+                                                        ),
+                                              ),
+                                          ];
+                                      const statusChipSpacing = 6.0;
+                                      final titleLastLineWidth =
+                                          _measureTextLastLineWidth(
+                                            context,
+                                            text: productTitle,
+                                            style: productTitleStyle,
+                                            maxWidth: titleMaxWidth,
+                                          );
+                                      final inlineStatusAvailableWidth =
+                                          titleLineCount <= 2
                                           ? titleMaxWidth - titleLastLineWidth
                                           : 0.0;
-                                  var inlineStatusChipCount = 0;
-                                  var inlineStatusWidth = 0.0;
-                                  if (inlineStatusAvailableWidth > 0) {
-                                    for (final chip in statusChipItems) {
-                                      final nextWidth = inlineStatusWidth +
-                                          statusChipSpacing +
-                                          _estimateProductDetailChipWidth(
-                                            context,
-                                            chip,
-                                          );
-                                      if (nextWidth >
-                                          inlineStatusAvailableWidth) {
-                                        break;
+                                      var inlineStatusChipCount = 0;
+                                      var inlineStatusWidth = 0.0;
+                                      if (inlineStatusAvailableWidth > 0) {
+                                        for (final chip in statusChipItems) {
+                                          final nextWidth =
+                                              inlineStatusWidth +
+                                              statusChipSpacing +
+                                              _estimateProductDetailChipWidth(
+                                                context,
+                                                chip,
+                                              );
+                                          if (nextWidth >
+                                              inlineStatusAvailableWidth) {
+                                            break;
+                                          }
+
+                                          inlineStatusChipCount++;
+                                          inlineStatusWidth = nextWidth;
+                                        }
                                       }
+                                      final inlineStatusChipItems =
+                                          statusChipItems
+                                              .take(inlineStatusChipCount)
+                                              .toList(growable: false);
+                                      final belowStatusChipItems =
+                                          statusChipItems
+                                              .skip(inlineStatusChipCount)
+                                              .toList(growable: false);
+                                      final hasInlineStatusChips =
+                                          inlineStatusChipItems.isNotEmpty;
 
-                                      inlineStatusChipCount++;
-                                      inlineStatusWidth = nextWidth;
-                                    }
-                                  }
-                                  final inlineStatusChipItems = statusChipItems
-                                      .take(inlineStatusChipCount)
-                                      .toList(growable: false);
-                                  final belowStatusChipItems = statusChipItems
-                                      .skip(inlineStatusChipCount)
-                                      .toList(growable: false);
-                                  final hasInlineStatusChips =
-                                      inlineStatusChipItems.isNotEmpty;
-
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Row(
+                                      return Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Expanded(
-                                            child: hasInlineStatusChips
-                                                ? Text.rich(
-                                                    TextSpan(
-                                                      style: productTitleStyle,
-                                                      children: [
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: hasInlineStatusChips
+                                                    ? Text.rich(
                                                         TextSpan(
-                                                          text: productTitle,
-                                                        ),
-                                                        for (final chip
-                                                            in inlineStatusChipItems)
-                                                          WidgetSpan(
-                                                            alignment:
-                                                                PlaceholderAlignment
-                                                                    .middle,
-                                                            child: Padding(
-                                                              padding:
-                                                                  const EdgeInsets
-                                                                      .only(
-                                                                left:
-                                                                    statusChipSpacing,
-                                                              ),
-                                                              child:
-                                                                  _ProductDetailChip
-                                                                      .fromData(
-                                                                chip,
-                                                              ),
+                                                          style:
+                                                              productTitleStyle,
+                                                          children: [
+                                                            TextSpan(
+                                                              text:
+                                                                  productTitle,
                                                             ),
-                                                          ),
-                                                      ],
-                                                    ),
-                                                  )
-                                                : Text(
-                                                    productTitle,
-                                                    style: productTitleStyle,
-                                                  ),
+                                                            for (final chip
+                                                                in inlineStatusChipItems)
+                                                              WidgetSpan(
+                                                                alignment:
+                                                                    PlaceholderAlignment
+                                                                        .middle,
+                                                                child: Padding(
+                                                                  padding:
+                                                                      const EdgeInsets.only(
+                                                                        left:
+                                                                            statusChipSpacing,
+                                                                      ),
+                                                                  child:
+                                                                      _ProductDetailChip.fromData(
+                                                                        chip,
+                                                                      ),
+                                                                ),
+                                                              ),
+                                                          ],
+                                                        ),
+                                                      )
+                                                    : Text(
+                                                        productTitle,
+                                                        style:
+                                                            productTitleStyle,
+                                                      ),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
-                                      if (hasInlineStatusChips)
-                                        const SizedBox(height: 4)
-                                      else
-                                        SizedBox(height: titleBottomSpacing),
-                                      if (belowStatusChipItems.isNotEmpty) ...[
-                                        Wrap(
-                                          spacing: 6,
-                                          runSpacing: 4,
-                                          crossAxisAlignment:
-                                              WrapCrossAlignment.center,
-                                          children: [
-                                            for (final chip
-                                                in belowStatusChipItems)
-                                              _ProductDetailChip.fromData(chip),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                      ],
-                                      Wrap(
-                                        spacing: 10,
-                                        runSpacing: 6,
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        children: [
-                                          _ProductDetailPrice(
-                                            amount: _displayPrice,
-                                            color: primaryColor,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 28,
-                                          ),
-                                          if (_hasSalesPrice)
-                                            _ProductDetailPrice(
-                                              amount: _originalPrice,
-                                              color: secondaryColor,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 15,
-                                              decoration:
-                                                  TextDecoration.lineThrough,
+                                          if (hasInlineStatusChips)
+                                            const SizedBox(height: 4)
+                                          else
+                                            SizedBox(
+                                              height: titleBottomSpacing,
                                             ),
+                                          if (belowStatusChipItems
+                                              .isNotEmpty) ...[
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 4,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              children: [
+                                                for (final chip
+                                                    in belowStatusChipItems)
+                                                  _ProductDetailChip.fromData(
+                                                    chip,
+                                                  ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 10),
+                                          ],
+                                          Wrap(
+                                            spacing: 10,
+                                            runSpacing: 6,
+                                            crossAxisAlignment:
+                                                WrapCrossAlignment.center,
+                                            children: [
+                                              _ProductDetailPrice(
+                                                amount: _displayPrice,
+                                                color: primaryColor,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 28,
+                                              ),
+                                              if (_hasSalesPrice)
+                                                _ProductDetailPrice(
+                                                  amount: _originalPrice,
+                                                  color: secondaryColor,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 15,
+                                                  decoration: TextDecoration
+                                                      .lineThrough,
+                                                ),
+                                            ],
+                                          ),
+                                          if (_liveFlashDeal != null &&
+                                              _liveFlashDeal!.isLive) ...[
+                                            const SizedBox(height: 8),
+                                            _ProductDetailsFlashDealChip(
+                                              deal: _liveFlashDeal!,
+                                            ),
+                                          ],
+                                          const SizedBox(height: 8),
+                                          InkWell(
+                                            onTap: () {
+                                              final adminId =
+                                                  product.adminId
+                                                      .trim()
+                                                      .isNotEmpty
+                                                  ? product.adminId.trim()
+                                                  : product.companyName.trim();
+                                              if (adminId.isEmpty) {
+                                                return;
+                                              }
+                                              Navigator.of(context).pushNamed(
+                                                '/seller',
+                                                arguments: {
+                                                  'adminId': adminId,
+                                                  'initialName': product
+                                                      .companyName
+                                                      .trim(),
+                                                },
+                                              );
+                                            },
+                                            child: ProductCompanyIdentity(
+                                              product: product,
+                                              textColor: secondaryColor,
+                                              fallbackColor: primaryColor,
+                                              avatarSize: 28,
+                                              fontSize: 13,
+                                            ),
+                                          ),
                                         ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      InkWell(
-                                        onTap: () {
-                                          final adminId = product.adminId.trim().isNotEmpty
-                                              ? product.adminId.trim()
-                                              : product.companyName.trim();
-                                          if (adminId.isEmpty) {
-                                            return;
-                                          }
-                                          Navigator.of(context).pushNamed(
-                                            '/seller',
-                                            arguments: {'adminId': adminId, 'initialName': product.companyName.trim()},
-                                          );
-                                        },
-                                        child: ProductCompanyIdentity(
-                                          product: product,
-                                          textColor: secondaryColor,
-                                          fallbackColor: primaryColor,
-                                          avatarSize: 28,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
+                                      );
+                                    },
                                   );
                                 },
                               );
                             },
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ProductDetailStatCard(
-                              icon: Icons.star_rounded,
-                              iconColor: const Color(0xFFF9A825),
-                              header: _ProductRatingStars(
-                                rating: _product.rating,
-                                size: 16,
-                                spacing: 2,
-                                emptyColor: secondaryColor.withOpacity(0.22),
-                              ),
-                              label: 'Rating',
-                              value: _product.rating.toStringAsFixed(1),
-                            ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _ProductDetailStatCard(
-                              icon: Icons.calendar_today_outlined,
-                              iconColor: primaryColor,
-                              label: 'Posted',
-                              value: _formattedDate,
-                              valueLines: 2,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      Column(
-                        key: _aboutSectionKey,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'About this product',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            product.description.trim().isEmpty
-                                ? 'No details available about this product yet.'
-                                : product.description,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: secondaryColor,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Column(
-                        key: _customerReviewsSectionKey,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                          const SizedBox(height: 18),
                           Row(
                             children: [
                               Expanded(
-                                child: Text(
-                                  'Customer Reviews',
+                                child: _ProductDetailStatCard(
+                                  icon: Icons.star_rounded,
+                                  iconColor: const Color(0xFFF9A825),
+                                  header: _ProductRatingStars(
+                                    rating: _product.rating,
+                                    size: 16,
+                                    spacing: 2,
+                                    emptyColor: secondaryColor.withOpacity(
+                                      0.22,
+                                    ),
+                                  ),
+                                  label: 'Rating',
+                                  value: _product.rating.toStringAsFixed(1),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _ProductDetailStatCard(
+                                  icon: Icons.calendar_today_outlined,
+                                  iconColor: primaryColor,
+                                  label: 'Posted',
+                                  value: _formattedDate,
+                                  valueLines: 2,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          Column(
+                            key: _aboutSectionKey,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'About this product',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              if (product.description.trim().isNotEmpty)
+                                Text(
+                                  product.description,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: secondaryColor,
+                                    height: 1.2,
+                                  ),
+                                )
+                              else if (product.descriptionImageUrls.isEmpty)
+                                Text(
+                                  'No details available about this product yet.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: secondaryColor,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              if (product.descriptionImageUrls.isNotEmpty) ...[
+                                if (product.description.trim().isNotEmpty)
+                                  const SizedBox(height: 14),
+                                _ProductDescriptionImageList(
+                                  imageUrls: product.descriptionImageUrls,
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Column(
+                            key: _customerReviewsSectionKey,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Customer Reviews',
+                                      style: theme.textTheme.titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                    ),
+                                  ),
+                                  if (_customerReviews.isNotEmpty)
+                                    InkWell(
+                                      onTap: _openCustomerReviewsPage,
+                                      borderRadius: const BorderRadius.all(
+                                        Radius.circular(10),
+                                      ),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                          vertical: 4,
+                                        ),
+                                        child: Text(
+                                          'View all',
+                                          style: theme.textTheme.labelLarge
+                                              ?.copyWith(
+                                                color: primaryColor,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              if (_customerReviews.isEmpty)
+                                Text(
+                                  'No customer reviews available yet for this product.',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: secondaryColor,
+                                    height: 1.2,
+                                  ),
+                                )
+                              else
+                                _CustomerReviewCarousel(
+                                  reviews: _customerReviews,
+                                  titleColor: theme.colorScheme.onSurface,
+                                  secondaryColor: secondaryColor,
+                                  sellerCompanyName: _product.companyName,
+                                ),
+                            ],
+                          ),
+                          SizedBox(
+                            height: _customerReviewsToRelatedProductsSpacing(
+                              _customerReviews,
+                            ),
+                          ),
+                          KeyedSubtree(
+                            key: _relatedProductsSectionKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Related Products',
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                              ),
-                              if (_customerReviews.isNotEmpty)
-                                InkWell(
-                                  onTap: _openCustomerReviewsPage,
-                                  borderRadius:
-                                      const BorderRadius.all(Radius.circular(10)),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 4,
-                                    ),
-                                    child: Text(
-                                      'View all',
-                                      style: theme.textTheme.labelLarge?.copyWith(
-                                        color: primaryColor,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          if (_customerReviews.isEmpty)
-                            Text(
-                              'No customer reviews available yet for this product.',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: secondaryColor,
-                                height: 1.2,
-                              ),
-                            )
-                          else
-                            _CustomerReviewCarousel(
-                              reviews: _customerReviews,
-                              titleColor: theme.colorScheme.onSurface,
-                              secondaryColor: secondaryColor,
-                              sellerCompanyName: _product.companyName,
-                            ),
-                        ],
-                      ),
-                      SizedBox(
-                        height: _customerReviewsToRelatedProductsSpacing(
-                          _customerReviews,
-                        ),
-                      ),
-                      KeyedSubtree(
-                        key: _relatedProductsSectionKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Related Products',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ValueListenableBuilder<Future<List<Product>>>(
-                              valueListenable: _relatedProductsFutureNotifier,
-                              builder: (context, relatedProductsFuture, child) {
-                                return FutureBuilder<List<Product>>(
-                                  future: relatedProductsFuture,
-                                  builder: (context, snapshot) {
-                                    if (snapshot.connectionState ==
-                                            ConnectionState.waiting &&
-                                        !snapshot.hasData) {
-                                  return Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 18,
-                                      ),
-                                      child: BouncingDotsLoader(
-                                        activeColor: primaryColor,
-                                        inactiveColor:
-                                            secondaryColor.withOpacity(0.28),
-                                      ),
-                                    ),
-                                  );
-                                }
+                                const SizedBox(height: 12),
+                                ValueListenableBuilder<Future<List<Product>>>(
+                                  valueListenable:
+                                      _relatedProductsFutureNotifier,
+                                  builder: (context, relatedProductsFuture, child) {
+                                    return FutureBuilder<List<Product>>(
+                                      future: relatedProductsFuture,
+                                      builder: (context, snapshot) {
+                                        if (snapshot.connectionState ==
+                                                ConnectionState.waiting &&
+                                            !snapshot.hasData) {
+                                          return const Padding(
+                                            padding: EdgeInsets.symmetric(
+                                              vertical: 8,
+                                            ),
+                                            child: SkeletonProductGrid(
+                                              count: 4,
+                                              crossAxisCount: 2,
+                                            ),
+                                          );
+                                        }
 
-                                    if (snapshot.hasError) {
-                                  return Text(
-                                    'Unable to load related products right now.',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: secondaryColor,
-                                      height: 1.55,
-                                    ),
-                                  );
-                                }
+                                        if (snapshot.hasError) {
+                                          return Text(
+                                            'Unable to load related products right now.',
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: secondaryColor,
+                                                  height: 1.55,
+                                                ),
+                                          );
+                                        }
 
-                                    final relatedProducts = _buildRelatedProducts(
-                                      snapshot.data ?? const <Product>[],
-                                    );
-                                    final topSellerIds = {
-                                      for (final product in _buildTopSellingProducts(
-                                        snapshot.data ?? const <Product>[],
-                                      ))
-                                        product.id,
-                                    };
+                                        final relatedProducts =
+                                            _buildRelatedProducts(
+                                              snapshot.data ??
+                                                  const <Product>[],
+                                            );
+                                        final topSellerIds = {
+                                          for (final product
+                                              in _buildTopSellingProducts(
+                                                snapshot.data ??
+                                                    const <Product>[],
+                                              ))
+                                            product.id,
+                                        };
 
-                                    if (relatedProducts.isEmpty) {
-                                  return Text(
-                                    'No related products available in this category yet.',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: secondaryColor,
-                                      height: 1.55,
-                                    ),
-                                    );
-                                }
+                                        if (relatedProducts.isEmpty) {
+                                          return Text(
+                                            'No related products available in this category yet.',
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: secondaryColor,
+                                                  height: 1.55,
+                                                ),
+                                          );
+                                        }
 
-                                    return ValueListenableBuilder<int>(
-                                      valueListenable:
-                                          _visibleRelatedProductsCountNotifier,
-                                      builder: (context, visibleCount, child) {
-                                        final visibleRelatedProductsCount =
-                                            visibleCount.clamp(
-                                              0,
-                                              relatedProducts.length,
-                                            ).toInt();
+                                        return ValueListenableBuilder<int>(
+                                          valueListenable:
+                                              _visibleRelatedProductsCountNotifier,
+                                          builder: (context, visibleCount, child) {
+                                            final visibleRelatedProductsCount =
+                                                visibleCount
+                                                    .clamp(
+                                                      0,
+                                                      relatedProducts.length,
+                                                    )
+                                                    .toInt();
 
-                                        return ListView.builder(
-                                          shrinkWrap: true,
-                                          primary: false,
-                                          physics:
-                                              const NeverScrollableScrollPhysics(),
-                                          itemCount: visibleRelatedProductsCount,
-                                          itemBuilder: (context, index) {
-                                            final relatedProduct =
-                                                relatedProducts[index];
+                                            return ListView.builder(
+                                              shrinkWrap: true,
+                                              primary: false,
+                                              physics:
+                                                  const NeverScrollableScrollPhysics(),
+                                              itemCount:
+                                                  visibleRelatedProductsCount,
+                                              itemBuilder: (context, index) {
+                                                final relatedProduct =
+                                                    relatedProducts[index];
 
-                                            return Padding(
-                                              padding: EdgeInsets.only(
-                                                bottom:
-                                                    index ==
+                                                return Padding(
+                                                  padding: EdgeInsets.only(
+                                                    bottom:
+                                                        index ==
                                                             visibleRelatedProductsCount -
                                                                 1
                                                         ? 0
                                                         : 12,
-                                              ),
-                                              child: _RelatedProductCard(
-                                                product: relatedProduct,
-                                                showTopSellerBadge: topSellerIds
-                                                    .contains(relatedProduct.id),
-                                              ),
+                                                  ),
+                                                  child: _RelatedProductCard(
+                                                    product: relatedProduct,
+                                                    showTopSellerBadge:
+                                                        topSellerIds.contains(
+                                                          relatedProduct.id,
+                                                        ),
+                                                    platformId: _cartPlatformId,
+                                                  ),
+                                                );
+                                              },
                                             );
                                           },
                                         );
                                       },
                                     );
                                   },
-                                );
-                              },
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 18),
+                          ValueListenableBuilder<int>(
+                            valueListenable: _bottomOverscrollSignalNotifier,
+                            builder: (context, overscrollSignal, child) =>
+                                _ProductDetailsScrollEndIndicator(
+                                  scrollController: _scrollController,
+                                  overscrollSignal: overscrollSignal,
+                                  primaryColor: primaryColor,
+                                  secondaryColor: secondaryColor,
+                                ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 18),
-                      ValueListenableBuilder<int>(
-                        valueListenable: _bottomOverscrollSignalNotifier,
-                        builder: (context, overscrollSignal, child) =>
-                            _ProductDetailsScrollEndIndicator(
-                          scrollController: _scrollController,
-                          overscrollSignal: overscrollSignal,
-                          primaryColor: primaryColor,
-                          secondaryColor: secondaryColor,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                  ),
-              ),
               ],
             ),
           ),
           AnimatedBuilder(
             animation: _scrollController,
             builder: (context, child) {
-              final scrollOffset =
-                  _scrollController.hasClients ? _scrollController.offset : 0.0;
-              final collapseRange = (_heroExpandedHeight - collapsedHeaderHeight) <= 0
+              final scrollOffset = _scrollController.hasClients
+                  ? _scrollController.offset
+                  : 0.0;
+              final collapseRange =
+                  (_heroExpandedHeight - collapsedHeaderHeight) <= 0
                   ? 1.0
                   : (_heroExpandedHeight - collapsedHeaderHeight);
-              final collapseProgress =
-                  (scrollOffset / collapseRange).clamp(0.0, 1.0);
+              final collapseProgress = (scrollOffset / collapseRange).clamp(
+                0.0,
+                1.0,
+              );
               final headerRevealProgress =
                   (((collapseProgress - 0.34) / 0.66).clamp(0.0, 1.0) as num)
                       .toDouble();
-              final headerOpacity =
-                  Curves.easeOutCubic.transform(headerRevealProgress);
+              final headerOpacity = Curves.easeOutCubic.transform(
+                headerRevealProgress,
+              );
               final headerIconColor =
                   theme.iconTheme.color ?? theme.colorScheme.onSurface;
               final headerActionIconColor = headerIconColor.withOpacity(0.76);
@@ -1868,7 +2184,8 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
                               width: 48,
                               height: 48,
                               child: IconButton(
-                                onPressed: () => Navigator.of(context).maybePop(),
+                                onPressed: () =>
+                                    Navigator.of(context).maybePop(),
                                 tooltip: 'Back',
                                 icon: Icon(
                                   Icons.arrow_back_ios_new_rounded,
@@ -1881,8 +2198,9 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
                               child: IgnorePointer(
                                 child: AnimatedOpacity(
                                   duration: appMotionFrames(11),
-                                  opacity:
-                                      headerTitle.isEmpty ? 0 : headerOpacity,
+                                  opacity: headerTitle.isEmpty
+                                      ? 0
+                                      : headerOpacity,
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: Text(
@@ -1890,10 +2208,11 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
                                       textAlign: TextAlign.left,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        color: headerIconColor,
-                                        fontWeight: FontWeight.w800,
-                                      ),
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            color: headerIconColor,
+                                            fontWeight: FontWeight.w800,
+                                          ),
                                     ),
                                   ),
                                 ),
@@ -1937,42 +2256,44 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
               valueListenable: _showsScrollToTopButtonNotifier,
               builder: (context, showsScrollToTopButton, child) =>
                   RepaintBoundary(
-                child: AnimatedSwitcher(
-                  duration: appMotionFrames(13),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    final offsetAnimation = Tween<Offset>(
-                      begin: const Offset(0, 0.2),
-                      end: Offset.zero,
-                    ).animate(animation);
+                    child: AnimatedSwitcher(
+                      duration: appMotionFrames(13),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        final offsetAnimation = Tween<Offset>(
+                          begin: const Offset(0, 0.2),
+                          end: Offset.zero,
+                        ).animate(animation);
 
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: offsetAnimation,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: showsScrollToTopButton
-                      ? FloatingActionButton.small(
-                          key: const ValueKey(
-                            'product-details-scroll-to-top-button',
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: offsetAnimation,
+                            child: child,
                           ),
-                          heroTag: 'product-details-scroll-to-top-button',
-                          backgroundColor: primaryColor,
-                          foregroundColor: theme.cardColor,
-                          onPressed: _scrollToTop,
-                          child: const Icon(Icons.keyboard_arrow_up_rounded),
-                        )
-                      : const SizedBox.shrink(
-                          key: ValueKey(
-                            'product-details-scroll-to-top-button-hidden',
-                          ),
-                        ),
-                ),
-              ),
+                        );
+                      },
+                      child: showsScrollToTopButton
+                          ? FloatingActionButton.small(
+                              key: const ValueKey(
+                                'product-details-scroll-to-top-button',
+                              ),
+                              heroTag: 'product-details-scroll-to-top-button',
+                              backgroundColor: primaryColor,
+                              foregroundColor: theme.cardColor,
+                              onPressed: _scrollToTop,
+                              child: const Icon(
+                                Icons.keyboard_arrow_up_rounded,
+                              ),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey(
+                                'product-details-scroll-to-top-button-hidden',
+                              ),
+                            ),
+                    ),
+                  ),
             ),
           ),
         ],
@@ -2048,11 +2369,8 @@ class _ProductDetailsHero extends StatelessWidget {
                         primaryColor: primaryColor,
                         initial: _initial,
                       ),
-                      loadingFallback: Center(
-                        child: BouncingDotsLoader(
-                          activeColor: primaryColor,
-                          inactiveColor: primaryColor.withOpacity(0.24),
-                        ),
+                      loadingFallback: const SkeletonShimmer(
+                        baseColor: kSkeletonBaseColor,
                       ),
                     ),
                   );
@@ -2077,27 +2395,29 @@ class _ProductDetailsHero extends StatelessWidget {
                   createRectTween: (begin, end) {
                     return RectTween(begin: begin, end: end);
                   },
-                  flightShuttleBuilder: (
-                    flightContext,
-                    animation,
-                    flightDirection,
-                    fromHeroContext,
-                    toHeroContext,
-                  ) {
-                    if (flightDirection == HeroFlightDirection.push) {
-                      final toHero = toHeroContext.widget as Hero;
-                      return toHero.child;
-                    }
+                  flightShuttleBuilder:
+                      (
+                        flightContext,
+                        animation,
+                        flightDirection,
+                        fromHeroContext,
+                        toHeroContext,
+                      ) {
+                        if (flightDirection == HeroFlightDirection.push) {
+                          final toHero = toHeroContext.widget as Hero;
+                          return toHero.child;
+                        }
 
-                    return _ProductDetailsHeroFlightSnapshot(
-                      product: product,
-                      primaryColor: primaryColor,
-                      mediaItem: currentMediaIndex >= 0 &&
-                              currentMediaIndex < mediaItems.length
-                          ? mediaItems[currentMediaIndex]
-                          : null,
-                    );
-                  },
+                        return _ProductDetailsHeroFlightSnapshot(
+                          product: product,
+                          primaryColor: primaryColor,
+                          mediaItem:
+                              currentMediaIndex >= 0 &&
+                                  currentMediaIndex < mediaItems.length
+                              ? mediaItems[currentMediaIndex]
+                              : null,
+                        );
+                      },
                   child: heroMedia,
                 ),
         ),
@@ -2129,8 +2449,9 @@ class _ProductDetailsHero extends StatelessWidget {
                             color: isActive
                                 ? Colors.white
                                 : Colors.white.withOpacity(0.36),
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(999)),
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(999),
+                            ),
                           ),
                         );
                       }),
@@ -2203,10 +2524,7 @@ class _ProductDetailsHeroFlightSnapshot extends StatelessWidget {
 }
 
 class _HeroBuyerCommentPopup extends StatefulWidget {
-  const _HeroBuyerCommentPopup({
-    required this.reviews,
-    required this.onTap,
-  });
+  const _HeroBuyerCommentPopup({required this.reviews, required this.onTap});
 
   final List<_ProductCustomerReview> reviews;
   final VoidCallback onTap;
@@ -2257,8 +2575,7 @@ class _HeroBuyerCommentPopupState extends State<_HeroBuyerCommentPopup> {
       }
 
       setState(() {
-        _currentReviewIndex =
-            (_currentReviewIndex + 1) % widget.reviews.length;
+        _currentReviewIndex = (_currentReviewIndex + 1) % widget.reviews.length;
       });
     });
   }
@@ -2281,11 +2598,13 @@ class _HeroBuyerCommentPopupState extends State<_HeroBuyerCommentPopup> {
       theme.brightness == Brightness.dark ? 0.26 : 0.12,
     );
     final avatarTextColor = theme.colorScheme.primary;
-    final bodyColor = theme.textTheme.bodySmall?.color?.withOpacity(0.9) ??
+    final bodyColor =
+        theme.textTheme.bodySmall?.color?.withOpacity(0.9) ??
         theme.colorScheme.onSurface.withOpacity(0.9);
     final review = _currentReview;
-    final reviewerInitial =
-        review.reviewer.trim().isEmpty ? '?' : review.reviewer.trim()[0];
+    final reviewerInitial = review.reviewer.trim().isEmpty
+        ? '?'
+        : review.reviewer.trim()[0];
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 198),
@@ -2308,7 +2627,9 @@ class _HeroBuyerCommentPopupState extends State<_HeroBuyerCommentPopup> {
                       height: 12,
                       decoration: BoxDecoration(
                         color: bubbleColor,
-                        borderRadius: const BorderRadius.all(Radius.circular(3)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(3),
+                        ),
                       ),
                     ),
                   ),
@@ -2347,22 +2668,22 @@ class _HeroBuyerCommentPopupState extends State<_HeroBuyerCommentPopup> {
                       child: Text(
                         reviewerInitial.toUpperCase(),
                         style: theme.textTheme.labelMedium?.copyWith(
-                              color: avatarTextColor,
-                              fontWeight: FontWeight.w800,
-                            ),
+                          color: avatarTextColor,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
                     Flexible(
                       child: LayoutBuilder(
                         builder: (context, constraints) {
-                          final reviewMessageStyle =
-                              theme.textTheme.bodySmall?.copyWith(
-                            color: bodyColor,
-                            fontSize: 5,
-                            height: 1.05,
-                            fontWeight: FontWeight.w100,
-                          );
+                          final reviewMessageStyle = theme.textTheme.bodySmall
+                              ?.copyWith(
+                                color: bodyColor,
+                                fontSize: 5,
+                                height: 1.05,
+                                fontWeight: FontWeight.w100,
+                              );
                           final reviewMessageLayout = _resolveProductTextFit(
                             context,
                             text: review.message,
@@ -2383,10 +2704,11 @@ class _HeroBuyerCommentPopupState extends State<_HeroBuyerCommentPopup> {
                                 duration: popupTransitionDuration,
                                 switchInCurve: Curves.easeOutCubic,
                                 switchOutCurve: Curves.easeInCubic,
-                                layoutBuilder: (currentChild, previousChildren) {
-                                  return currentChild ??
-                                      const SizedBox.shrink();
-                                },
+                                layoutBuilder:
+                                    (currentChild, previousChildren) {
+                                      return currentChild ??
+                                          const SizedBox.shrink();
+                                    },
                                 transitionBuilder: (child, animation) {
                                   final offsetAnimation = Tween<Offset>(
                                     begin: const Offset(0, 0.28),
@@ -2549,9 +2871,8 @@ class _ProductMediaPreviewPageState extends State<_ProductMediaPreviewPage> {
                           primaryColor: widget.primaryColor,
                           initial: title[0].toUpperCase(),
                         ),
-                        loadingFallback: BouncingDotsLoader(
-                          activeColor: widget.primaryColor,
-                          inactiveColor: widget.primaryColor.withOpacity(0.24),
+                        loadingFallback: const SkeletonShimmer(
+                          baseColor: kSkeletonBaseColor,
                         ),
                       ),
                     );
@@ -2569,7 +2890,8 @@ class _ProductMediaPreviewPageState extends State<_ProductMediaPreviewPage> {
                     child: Row(
                       children: [
                         IconButton(
-                          onPressed: () => Navigator.of(context).pop(_currentIndex),
+                          onPressed: () =>
+                              Navigator.of(context).pop(_currentIndex),
                           tooltip: 'Close preview',
                           icon: const Icon(
                             Icons.arrow_back_ios_new_rounded,
@@ -2582,7 +2904,8 @@ class _ProductMediaPreviewPageState extends State<_ProductMediaPreviewPage> {
                             title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -2619,7 +2942,9 @@ class _ProductMediaPreviewPageState extends State<_ProductMediaPreviewPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(widget.mediaItems.length, (index) {
+                          children: List.generate(widget.mediaItems.length, (
+                            index,
+                          ) {
                             final isActive = index == _currentIndex;
 
                             return AnimatedContainer(
@@ -2631,8 +2956,9 @@ class _ProductMediaPreviewPageState extends State<_ProductMediaPreviewPage> {
                                 color: isActive
                                     ? Colors.white
                                     : Colors.white.withOpacity(0.36),
-                                borderRadius:
-                                    const BorderRadius.all(Radius.circular(999)),
+                                borderRadius: const BorderRadius.all(
+                                  Radius.circular(999),
+                                ),
                               ),
                             );
                           }),
@@ -2699,7 +3025,8 @@ class _ProductModelPreviewPage extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               color: Colors.black87,
                               fontWeight: FontWeight.w700,
                             ),
@@ -2780,11 +3107,7 @@ class _ProductDetailsModelFallback extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.view_in_ar_rounded,
-              color: primaryColor,
-              size: 42,
-            ),
+            Icon(Icons.view_in_ar_rounded, color: primaryColor, size: 42),
             const SizedBox(height: 14),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -2792,9 +3115,9 @@ class _ProductDetailsModelFallback extends StatelessWidget {
                 message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -2805,6 +3128,52 @@ class _ProductDetailsModelFallback extends StatelessWidget {
 }
 
 enum _ProductDetailsMediaType { image, video }
+
+class _ProductDescriptionImageList extends StatelessWidget {
+  const _ProductDescriptionImageList({required this.imageUrls});
+
+  final List<String> imageUrls;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final placeholderColor = theme.colorScheme.onSurface.withValues(
+      alpha: 0.05,
+    );
+    final fallbackColor = theme.colorScheme.onSurface.withValues(alpha: 0.42);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < imageUrls.length; index += 1)
+          Padding(
+            padding: EdgeInsets.only(top: index == 0 ? 0 : 12),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: ColoredBox(
+                  color: placeholderColor,
+                  child: _ProductDetailsNetworkImage(
+                    imageUrl: imageUrls[index],
+                    fit: BoxFit.cover,
+                    loadingFallback: ColoredBox(color: placeholderColor),
+                    errorFallback: Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: fallbackColor,
+                        size: 34,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 class _ProductDetailsMediaItem {
   const _ProductDetailsMediaItem({
@@ -2846,7 +3215,8 @@ class _ProductDetailsNetworkImageState
   bool _usesOriginalUrlFallback = false;
 
   String get _originalImageUrl => widget.imageUrl.trim();
-  String get _preferredImageUrl => _preferUploadedWebpImageUrl(_originalImageUrl);
+  String get _preferredImageUrl =>
+      _preferUploadedWebpImageUrl(_originalImageUrl);
   bool get _canFallbackToOriginal =>
       _preferredImageUrl.isNotEmpty && _preferredImageUrl != _originalImageUrl;
 
@@ -2864,8 +3234,9 @@ class _ProductDetailsNetworkImageState
 
   @override
   Widget build(BuildContext context) {
-    final activeImageUrl =
-        _usesOriginalUrlFallback ? _originalImageUrl : _preferredImageUrl;
+    final activeImageUrl = _usesOriginalUrlFallback
+        ? _originalImageUrl
+        : _preferredImageUrl;
     if (activeImageUrl.isEmpty) {
       return widget.errorFallback ?? const SizedBox.shrink();
     }
@@ -2902,10 +3273,10 @@ class _ProductDetailsNetworkImageState
         }
 
         return widget.loadingFallback ?? child;
-        },
-      );
+      },
+    );
 
-    return image;
+    return ColoredBox(color: Colors.white, child: image);
   }
 }
 
@@ -3024,10 +3395,7 @@ class _ProductDetailsHeroVideoState extends State<_ProductDetailsHeroVideo> {
         onTap: widget.onTap,
         child: Stack(
           fit: StackFit.expand,
-          children: [
-            _buildThumbnailLayer(),
-            _buildPlayOverlay(),
-          ],
+          children: [_buildThumbnailLayer(), _buildPlayOverlay()],
         ),
       );
     }
@@ -3040,21 +3408,11 @@ class _ProductDetailsHeroVideoState extends State<_ProductDetailsHeroVideo> {
           fit: StackFit.expand,
           children: [
             _buildThumbnailLayer(),
-            Center(
-              child: BouncingDotsLoader(
-                activeColor: widget.primaryColor,
-                inactiveColor: widget.primaryColor.withOpacity(0.24),
-              ),
-            ),
+            const SkeletonShimmer(baseColor: kSkeletonBaseColor),
           ],
         ),
       );
     }
-
-  
-
-
-    
 
     final controller = _controller;
     if (_hasError || controller == null || !controller.value.isInitialized) {
@@ -3091,9 +3449,7 @@ class _ProductDetailsHeroVideoState extends State<_ProductDetailsHeroVideo> {
               child: SizedBox(
                 width: controller.value.size.width,
                 height: controller.value.size.height,
-                child: RepaintBoundary(
-                  child: VideoPlayer(controller),
-                ),
+                child: RepaintBoundary(child: VideoPlayer(controller)),
               ),
             ),
           ),
@@ -3129,8 +3485,14 @@ class _ProductDetailsFullscreenVideoPlayerState
   String _formatVideoDuration(Duration duration) {
     if (duration.inHours > 0) {
       final hours = duration.inHours;
-      final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-      final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+      final minutes = duration.inMinutes
+          .remainder(60)
+          .toString()
+          .padLeft(2, '0');
+      final seconds = duration.inSeconds
+          .remainder(60)
+          .toString()
+          .padLeft(2, '0');
       return '$hours:$minutes:$seconds';
     }
 
@@ -3213,10 +3575,7 @@ class _ProductDetailsFullscreenVideoPlayerState
     );
 
     if (borderRadius != null) {
-      thumbnail = ClipRRect(
-        borderRadius: borderRadius,
-        child: thumbnail,
-      );
+      thumbnail = ClipRRect(borderRadius: borderRadius, child: thumbnail);
     }
 
     return thumbnail;
@@ -3241,9 +3600,7 @@ class _ProductDetailsFullscreenVideoPlayerState
                   color: Colors.black,
                   child: _buildThumbnail(fit: BoxFit.cover),
                 ),
-                const Center(
-                  child: CircularProgressIndicator(),
-                ),
+                const SkeletonShimmer(baseColor: kSkeletonBaseColor),
               ],
             ),
           ),
@@ -3278,7 +3635,10 @@ class _ProductDetailsFullscreenVideoPlayerState
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 24,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -3292,9 +3652,9 @@ class _ProductDetailsFullscreenVideoPlayerState
                         _errorText ?? 'Unable to play this product video.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -3330,9 +3690,7 @@ class _ProductDetailsFullscreenVideoPlayerState
                       child: SizedBox(
                         width: controller.value.size.width,
                         height: controller.value.size.height,
-                        child: RepaintBoundary(
-                          child: VideoPlayer(controller),
-                        ),
+                        child: RepaintBoundary(child: VideoPlayer(controller)),
                       ),
                     ),
                   ],
@@ -3355,7 +3713,9 @@ class _ProductDetailsFullscreenVideoPlayerState
                       padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.52),
-                        borderRadius: const BorderRadius.all(Radius.circular(20)),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(20),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -3373,8 +3733,9 @@ class _ProductDetailsFullscreenVideoPlayerState
                           const SizedBox(width: 6),
                           Expanded(
                             child: ClipRRect(
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(999)),
+                              borderRadius: const BorderRadius.all(
+                                Radius.circular(999),
+                              ),
                               child: SizedBox(
                                 height: 6,
                                 child: VideoProgressIndicator(
@@ -3383,8 +3744,12 @@ class _ProductDetailsFullscreenVideoPlayerState
                                   padding: EdgeInsets.zero,
                                   colors: VideoProgressColors(
                                     playedColor: widget.primaryColor,
-                                    bufferedColor: Colors.white.withOpacity(0.3),
-                                    backgroundColor: Colors.white.withOpacity(0.18),
+                                    bufferedColor: Colors.white.withOpacity(
+                                      0.3,
+                                    ),
+                                    backgroundColor: Colors.white.withOpacity(
+                                      0.18,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -3393,7 +3758,8 @@ class _ProductDetailsFullscreenVideoPlayerState
                           const SizedBox(width: 10),
                           Text(
                             '$positionLabel / $durationLabel',
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -3404,7 +3770,7 @@ class _ProductDetailsFullscreenVideoPlayerState
                   },
                 ),
               ),
-            ]
+            ],
           ),
         ),
       ),
@@ -3420,9 +3786,13 @@ class _ProductDetailsFooterBar extends StatelessWidget {
     required this.targetHeight,
     required this.buyPriceAmount,
     required this.isGuestMode,
+    required this.isOwnListing,
+    required this.purchaseActionsEnabled,
+    required this.listingInsightBusy,
     required this.onChatTap,
     required this.onAddToCartTap,
     required this.onBuyTap,
+    required this.onListingInsightTap,
   });
 
   final Color surfaceColor;
@@ -3431,32 +3801,44 @@ class _ProductDetailsFooterBar extends StatelessWidget {
   final double targetHeight;
   final double buyPriceAmount;
   final bool isGuestMode;
+  final bool isOwnListing;
+  final bool purchaseActionsEnabled;
+  final bool listingInsightBusy;
   final VoidCallback onChatTap;
   final VoidCallback onAddToCartTap;
   final VoidCallback onBuyTap;
+  final VoidCallback onListingInsightTap;
 
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final minimumHeight = bottomPadding + 64.0;
-    final resolvedHeight =
-        targetHeight > minimumHeight ? targetHeight : minimumHeight;
+    final resolvedHeight = targetHeight > minimumHeight
+        ? targetHeight
+        : minimumHeight;
     final contentHeight = resolvedHeight - bottomPadding;
     final controlHeight = contentHeight <= 52
         ? 52.0
         : contentHeight >= 56
-            ? 56.0
-            : contentHeight;
+        ? 56.0
+        : contentHeight;
     final buyButtonHeight = controlHeight - 8;
     final theme = Theme.of(context);
     final buyForegroundColor = theme.brightness == Brightness.dark
         ? theme.cardColor
         : theme.colorScheme.onPrimary;
     final disabledActionColor = secondaryColor.withOpacity(0.42);
-    final resolvedBuyBackgroundColor =
-        isGuestMode ? secondaryColor.withOpacity(0.16) : primaryColor;
-    final resolvedBuyForegroundColor =
-        isGuestMode ? secondaryColor.withOpacity(0.82) : buyForegroundColor;
+    final resolvedBuyBackgroundColor = isOwnListing
+        ? primaryColor
+        : isGuestMode
+        ? secondaryColor.withOpacity(0.16)
+        : primaryColor;
+    final resolvedBuyForegroundColor = isOwnListing
+        ? buyForegroundColor
+        : isGuestMode
+        ? secondaryColor.withOpacity(0.82)
+        : buyForegroundColor;
+    final purchaseEnabled = purchaseActionsEnabled && !listingInsightBusy;
     final buyPriceFontSize = theme.textTheme.titleMedium?.fontSize ?? 16;
 
     return SizedBox(
@@ -3480,66 +3862,108 @@ class _ProductDetailsFooterBar extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _ProductFooterIconAction(
-                    height: controlHeight,
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: 'Chat',
-                    iconColor: isGuestMode ? disabledActionColor : secondaryColor,
-                    onTap: onChatTap,
-                  ),
-                  const SizedBox(width: 10),
-                  _ProductFooterIconAction(
-                    height: controlHeight,
-                    icon: Icons.add_shopping_cart_outlined,
-                    label: 'Add to Cart',
-                    iconColor: isGuestMode ? disabledActionColor : primaryColor,
-                    onTap: onAddToCartTap,
-                  ),
-                  const SizedBox(width: 12),
+                  if (!isOwnListing) ...[
+                    _ProductFooterIconAction(
+                      height: controlHeight,
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: 'Chat',
+                      iconColor: !purchaseEnabled || isGuestMode
+                          ? disabledActionColor
+                          : secondaryColor,
+                      onTap: purchaseEnabled ? onChatTap : () {},
+                    ),
+                    const SizedBox(width: 10),
+                    _ProductFooterIconAction(
+                      height: controlHeight,
+                      icon: Icons.add_shopping_cart_outlined,
+                      label: 'Add to Cart',
+                      iconColor: !purchaseEnabled || isGuestMode
+                          ? disabledActionColor
+                          : primaryColor,
+                      onTap: purchaseEnabled ? onAddToCartTap : () {},
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: Center(
                       child: SizedBox(
                         height: buyButtonHeight,
                         width: double.infinity,
                         child: FilledButton(
-                          onPressed: onBuyTap,
+                          onPressed: !purchaseEnabled
+                              ? null
+                              : isOwnListing
+                              ? onListingInsightTap
+                              : onBuyTap,
                           style: FilledButton.styleFrom(
                             backgroundColor: resolvedBuyBackgroundColor,
                             foregroundColor: resolvedBuyForegroundColor,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.all(Radius.circular(8)),
+                            disabledBackgroundColor: secondaryColor.withOpacity(
+                              0.16,
                             ),
-                            textStyle:
-                                Theme.of(context).textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                            disabledForegroundColor: secondaryColor.withOpacity(
+                              0.72,
+                            ),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(8),
+                              ),
+                            ),
+                            textStyle: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w800),
                           ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Buy',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleSmall
-                                      ?.copyWith(
-                                          color: resolvedBuyForegroundColor,
-                                          fontWeight: FontWeight.w800,
+                          child: listingInsightBusy
+                              ? const SkeletonCircle(size: 18)
+                              : FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: isOwnListing
+                                      ? Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.insights_rounded,
+                                              size: 18,
+                                              color: resolvedBuyForegroundColor,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Listing Insight',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        resolvedBuyForegroundColor,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                            ),
+                                          ],
+                                        )
+                                      : Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Buy',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        resolvedBuyForegroundColor,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            _ProductDetailPrice(
+                                              amount: buyPriceAmount,
+                                              color: resolvedBuyForegroundColor
+                                                  .withOpacity(0.86),
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: buyPriceFontSize,
+                                            ),
+                                          ],
                                         ),
                                 ),
-                                const SizedBox(height: 1),
-                                _ProductDetailPrice(
-                                  amount: buyPriceAmount,
-                                  color:
-                                      resolvedBuyForegroundColor.withOpacity(0.86),
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: buyPriceFontSize,
-                                ),
-                              ],
-                            ),
-                          ),
                         ),
                       ),
                     ),
@@ -3562,7 +3986,7 @@ class _ProductFooterIconAction extends StatelessWidget {
     required this.iconColor,
     required this.onTap,
   });
-  
+
   final double height;
   final IconData icon;
   final String label;
@@ -3677,8 +4101,8 @@ class _ProductDetailsScrollEndIndicatorState
         }
 
         final position = widget.scrollController.position;
-        final remainingDistance =
-            (position.maxScrollExtent - position.pixels).clamp(0.0, double.infinity);
+        final remainingDistance = (position.maxScrollExtent - position.pixels)
+            .clamp(0.0, double.infinity);
         final isNearBottom = remainingDistance <= 20;
 
         if (!isNearBottom) {
@@ -3711,7 +4135,8 @@ class _ProductDetailsScrollEndIndicatorState
                           Text(
                             'No more products',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
                                   color: widget.secondaryColor,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -3726,9 +4151,7 @@ class _ProductDetailsScrollEndIndicatorState
                         ],
                       ),
                     )
-                  : const SizedBox.shrink(
-                      key: ValueKey('no-bottom-status'),
-                    ),
+                  : const SizedBox.shrink(key: ValueKey('no-bottom-status')),
             ),
           ),
         );
@@ -3763,9 +4186,9 @@ class _ProductDetailsHeroFallback extends StatelessWidget {
         child: Text(
           initial,
           style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                color: primaryColor,
-                fontWeight: FontWeight.w800,
-              ),
+            color: primaryColor,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -3888,7 +4311,8 @@ class _ProductDetailChip extends StatelessWidget {
 
     return Container(
       width: fillWidth ? double.infinity : null,
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: resolvedBackgroundColor,
         borderRadius:
@@ -3952,9 +4376,9 @@ class _ProductDetailStatCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.textTheme.bodySmall?.color?.withOpacity(0.68),
-                  fontWeight: FontWeight.w600,
-                ),
+              color: theme.textTheme.bodySmall?.color?.withOpacity(0.68),
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -3962,9 +4386,9 @@ class _ProductDetailStatCard extends StatelessWidget {
             maxLines: valueLines,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  height: 1.25,
-                ),
+              fontWeight: FontWeight.w800,
+              height: 1.25,
+            ),
           ),
         ],
       ),
@@ -3992,11 +4416,7 @@ double _estimateProductDetailChipWidth(
 
   return resolvedPadding.left +
       resolvedPadding.right +
-      _measureTextWidth(
-        context,
-        text: chip.label,
-        style: resolvedLabelStyle,
-      ) +
+      _measureTextWidth(context, text: chip.label, style: resolvedLabelStyle) +
       (chip.icon == null ? 0 : (chip.iconSize ?? 16) + 6);
 }
 
@@ -4048,8 +4468,10 @@ double _measureTextLastLineWidth(
 class _ProductRatingStars extends StatelessWidget {
   const _ProductRatingStars({
     required this.rating,
-    this.size = 14,
-    this.spacing = 2,
+    this.starCount = 5,
+    this.size = 14.0,
+    this.spacing = 2.0,
+    this.filledColor = const Color(0xFFF9A825),
     this.emptyColor = const Color(0xFFE0E0E0),
   });
 
@@ -4067,8 +4489,9 @@ class _ProductRatingStars extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List<Widget>.generate(starCount, (index) {
-        final fillFraction =
-            (normalizedRating - index).clamp(0.0, 1.0).toDouble();
+        final fillFraction = (normalizedRating - index)
+            .clamp(0.0, 1.0)
+            .toDouble();
 
         return Padding(
           padding: EdgeInsets.only(right: index == starCount - 1 ? 0 : spacing),
@@ -4100,19 +4523,11 @@ class _ProductRatingStar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (fillFraction <= 0) {
-      return Icon(
-        Icons.star_rounded,
-        size: size,
-        color: emptyColor,
-      );
+      return Icon(Icons.star_rounded, size: size, color: emptyColor);
     }
 
     if (fillFraction >= 1) {
-      return Icon(
-        Icons.star_rounded,
-        size: size,
-        color: filledColor,
-      );
+      return Icon(Icons.star_rounded, size: size, color: filledColor);
     }
 
     return SizedBox(
@@ -4120,20 +4535,12 @@ class _ProductRatingStar extends StatelessWidget {
       height: size,
       child: Stack(
         children: [
-          Icon(
-            Icons.star_rounded,
-            size: size,
-            color: emptyColor,
-          ),
+          Icon(Icons.star_rounded, size: size, color: emptyColor),
           ClipRect(
             child: Align(
               alignment: Alignment.centerLeft,
               widthFactor: fillFraction,
-              child: Icon(
-                Icons.star_rounded,
-                size: size,
-                color: filledColor,
-              ),
+              child: Icon(Icons.star_rounded, size: size, color: filledColor),
             ),
           ),
         ],
@@ -4180,10 +4587,7 @@ double _customerReviewsToRelatedProductsSpacing(
 }
 
 class _ProductDetailSection extends StatelessWidget {
-  const _ProductDetailSection({
-    required this.title,
-    required this.child,
-  });
+  const _ProductDetailSection({required this.title, required this.child});
 
   final String title;
   final Widget child;
@@ -4212,8 +4616,8 @@ class _ProductDetailSection extends StatelessWidget {
           Text(
             title,
             style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 12),
           child,
@@ -4237,7 +4641,8 @@ class _CustomerReviewCarousel extends StatefulWidget {
   final String sellerCompanyName;
 
   @override
-  State<_CustomerReviewCarousel> createState() => _CustomerReviewCarouselState();
+  State<_CustomerReviewCarousel> createState() =>
+      _CustomerReviewCarouselState();
 }
 
 class _CustomerReviewCarouselState extends State<_CustomerReviewCarousel> {
@@ -4321,22 +4726,24 @@ class _CustomerReviewCarouselState extends State<_CustomerReviewCarousel> {
           height: hasReviewMedia
               ? (hasSellerReply ? 314 : 248)
               : (hasSellerReply ? 218 : 132),
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: reviews.length,
-            onPageChanged: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            itemBuilder: (context, index) {
-              return _CustomerReviewCard(
-                review: reviews[index],
-                titleColor: widget.titleColor,
-                secondaryColor: widget.secondaryColor,
-                sellerCompanyName: widget.sellerCompanyName,
-              );
-            },
+          child: HorizontalEndFade(
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: reviews.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                return _CustomerReviewCard(
+                  review: reviews[index],
+                  titleColor: widget.titleColor,
+                  secondaryColor: widget.secondaryColor,
+                  sellerCompanyName: widget.sellerCompanyName,
+                );
+              },
+            ),
           ),
         ),
         if (reviews.length > 1) ...[
@@ -4401,9 +4808,9 @@ class _CustomerReviewCard extends StatelessWidget {
               child: Text(
                 reviewerInitial,
                 style: theme.textTheme.titleSmall?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  color: titleColor,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -4416,9 +4823,9 @@ class _CustomerReviewCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                          color: titleColor,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   _ProductRatingStars(
@@ -4439,17 +4846,14 @@ class _CustomerReviewCard extends StatelessWidget {
             maxLines: 4,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(
-                  color: secondaryColor,
-                  height: 1.15,
-                ),
+              color: secondaryColor,
+              height: 1.15,
+            ),
           ),
         ],
         if (review.media.isNotEmpty) ...[
           const SizedBox(height: 10),
-          CustomerReviewMediaStrip(
-            media: review.media,
-            tileSize: 76,
-          ),
+          CustomerReviewMediaStrip(media: review.media, tileSize: 76),
         ],
         if (review.sellerReply != null) ...[
           const SizedBox(height: 12),
@@ -4467,10 +4871,12 @@ class _RelatedProductCard extends StatelessWidget {
   const _RelatedProductCard({
     required this.product,
     this.showTopSellerBadge = false,
+    this.platformId = '',
   });
 
   final Product product;
   final bool showTopSellerBadge;
+  final String platformId;
 
   bool get _hasSalesPrice =>
       product.salesPrice != null && product.salesPrice! >= 0;
@@ -4505,14 +4911,12 @@ class _RelatedProductCard extends StatelessWidget {
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 0,
           height: 1,
         ) ??
         const TextStyle(
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 0,
           height: 1,
         );
   }
@@ -4522,30 +4926,19 @@ class _RelatedProductCard extends StatelessWidget {
     required String label,
     required Color color,
   }) {
-    final compactStyle = _inlineBadgeTextStyle(
-      context,
-    ).copyWith(fontSize: 9.4);
+    final compactStyle = _inlineBadgeTextStyle(context).copyWith(fontSize: 9.4);
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 2.3,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2.3),
       decoration: BoxDecoration(
         color: color,
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
-      child: Text(
-        label,
-        style: compactStyle,
-      ),
+      child: Text(label, style: compactStyle),
     );
   }
 
-  Widget _buildImage({
-    required Color primaryColor,
-    required bool hasImage,
-  }) {
+  Widget _buildImage({required Color primaryColor, required bool hasImage}) {
     final fallback = _ProductDetailsHeroFallback(
       primaryColor: primaryColor,
       initial: product.name.trim().isEmpty
@@ -4590,7 +4983,6 @@ class _RelatedProductCard extends StatelessWidget {
           fontSize: 16,
           color: theme.colorScheme.onSurface,
           fontWeight: FontWeight.w500,
-          letterSpacing: 0,
           height: 1,
         );
         final nameLayout = _resolveProductTextFit(
@@ -4608,7 +5000,6 @@ class _RelatedProductCard extends StatelessWidget {
         final statsTextStyle = theme.textTheme.bodySmall?.copyWith(
           color: secondaryColor,
           fontWeight: FontWeight.w200,
-          letterSpacing: 0,
           height: 1,
         );
 
@@ -4623,20 +5014,17 @@ class _RelatedProductCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
-                    color: primaryColor,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                    height: 1.15,
-                  ),
+                color: primaryColor,
+                fontWeight: FontWeight.w700,
+                height: 1.15,
+              ),
             ),
             const SizedBox(height: 0),
             Text(
               productTitle,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: nameStyle?.copyWith(
-                fontSize: nameLayout.fontSize,
-              ),
+              style: nameStyle?.copyWith(fontSize: nameLayout.fontSize),
             ),
             if (showsCompactBadgeRow) ...[
               const SizedBox(height: 2),
@@ -4697,10 +5085,7 @@ class _RelatedProductCard extends StatelessWidget {
                   color: Color(0xFFF9A825),
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  product.rating.toStringAsFixed(1),
-                  style: statsTextStyle,
-                ),
+                Text(product.rating.toStringAsFixed(1), style: statsTextStyle),
                 const SizedBox(width: 10),
                 Icon(
                   Icons.mode_comment_outlined,
@@ -4730,12 +5115,16 @@ class _RelatedProductCard extends StatelessWidget {
     final primaryColor = theme.colorScheme.primary;
     final secondaryColor =
         theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
-            theme.colorScheme.onSurface.withOpacity(0.72);
+        theme.colorScheme.onSurface.withOpacity(0.72);
     final hasImage = product.cardDisplayImageUrl.isNotEmpty;
 
     return ProductCardTapLift(
-      onTapWithHero: (heroTag) =>
-          openProductDetailsPage(context, product, heroTag: heroTag),
+      onTapWithHero: (heroTag) => openProductDetailsPage(
+        context,
+        product,
+        heroTag: heroTag,
+        platformId: platformId,
+      ),
       builder: (context, liftValue, handleTap, heroTag) {
         return Material(
           color: _homeProductCardSurfaceColor(theme),
@@ -4804,35 +5193,12 @@ class _ProductDetailPrice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final symbolFontSize = fontSize * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: TextStyle(
-              color: color,
-              fontWeight: fontWeight,
-              fontSize: symbolFontSize,
-              decoration: decoration,
-              letterSpacing: 0,
-              height: 1,
-            ),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: TextStyle(
-              color: color,
-              fontWeight: fontWeight,
-              fontSize: fontSize,
-              decoration: decoration,
-              letterSpacing: 0,
-              height: 1,
-            ),
-          ),
-        ],
-      ),
+    return AppPriceText(
+      amount: amount,
+      color: color,
+      fontWeight: fontWeight,
+      fontSize: fontSize,
+      decoration: decoration,
     );
   }
 }
@@ -4860,10 +5226,7 @@ int _measureTextLineCount(
 
   final mergedStyle = DefaultTextStyle.of(context).style.merge(style);
   final painter = TextPainter(
-    text: TextSpan(
-      text: text,
-      style: mergedStyle,
-    ),
+    text: TextSpan(text: text, style: mergedStyle),
     textDirection: Directionality.of(context),
     textScaler: MediaQuery.textScalerOf(context),
     maxLines: maxLines,
@@ -4917,8 +5280,9 @@ _ProductTextFitResult _resolveProductTextFit(
     }
   }
 
-  final finalFontSize =
-      resolvedFontSize < minFontSize ? minFontSize : resolvedFontSize;
+  final finalFontSize = resolvedFontSize < minFontSize
+      ? minFontSize
+      : resolvedFontSize;
   final lineCount = _measureTextLineCount(
     context,
     text: text,
@@ -4927,10 +5291,7 @@ _ProductTextFitResult _resolveProductTextFit(
     maxLines: maxLines,
   );
 
-  return _ProductTextFitResult(
-    fontSize: finalFontSize,
-    lineCount: lineCount,
-  );
+  return _ProductTextFitResult(fontSize: finalFontSize, lineCount: lineCount);
 }
 
 String _preferUploadedWebpImageUrl(String imageUrl) {
@@ -5021,21 +5382,142 @@ List<Product> _buildTopSellingProducts(
   List<Product> products, {
   int limit = 10,
 }) {
-  final rankedProducts = [
-    ...filterVisibleProducts(products).where((product) => product.sold > 0),
-  ]..sort((first, second) {
-    final soldCompare = second.sold.compareTo(first.sold);
-    if (soldCompare != 0) {
-      return soldCompare;
-    }
+  final rankedProducts =
+      [...filterVisibleProducts(products).where((product) => product.sold > 0)]
+        ..sort((first, second) {
+          final soldCompare = second.sold.compareTo(first.sold);
+          if (soldCompare != 0) {
+            return soldCompare;
+          }
 
-    final ratingCompare = second.rating.compareTo(first.rating);
-    if (ratingCompare != 0) {
-      return ratingCompare;
-    }
+          final ratingCompare = second.rating.compareTo(first.rating);
+          if (ratingCompare != 0) {
+            return ratingCompare;
+          }
 
-    return first.name.compareTo(second.name);
-  });
+          return first.name.compareTo(second.name);
+        });
 
   return rankedProducts.take(limit).toList();
 }
+
+class _ProductDetailsFlashDealChip extends StatelessWidget {
+  const _ProductDetailsFlashDealChip({required this.deal});
+
+  final BuyerFlashDeal deal;
+
+  @override
+  Widget build(BuildContext context) {
+    final showCountdown = deal.endsAt.isAfter(DateTime.now());
+    return Row(
+      children: [
+        Container(
+          height: 18,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF59E0B),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bolt_rounded, size: 14, color: Colors.white),
+              const SizedBox(width: 4),
+              Text(
+                showCountdown ? 'Flash Deal' : 'Flash Deal',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+              ),
+              if (showCountdown) ...[
+                const SizedBox(width: 6),
+                _ProductDetailsFlashCountdown(expiresAt: deal.endsAt),
+              ],
+            ],
+          ),
+        ),
+        if (deal.isAlmostGone) ...[
+          const SizedBox(width: 8),
+          const Text(
+            'Almost gone',
+            style: TextStyle(
+              color: Color(0xFFB45309),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ProductDetailsFlashCountdown extends StatefulWidget {
+  const _ProductDetailsFlashCountdown({required this.expiresAt});
+
+  final DateTime expiresAt;
+
+  @override
+  State<_ProductDetailsFlashCountdown> createState() =>
+      _ProductDetailsFlashCountdownState();
+}
+
+class _ProductDetailsFlashCountdownState
+    extends State<_ProductDetailsFlashCountdown> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _tick() {
+    final next = widget.expiresAt.difference(DateTime.now());
+    if (!mounted) return;
+    setState(() {
+      _remaining = next.isNegative ? Duration.zero : next;
+    });
+  }
+
+  String _format(Duration value) {
+    final totalSeconds = value.inSeconds;
+    if (totalSeconds <= 0) return '00:00:00';
+    final days = value.inDays;
+    final hours = value.inHours.remainder(24);
+    final minutes = value.inMinutes.remainder(60);
+    final seconds = value.inSeconds.remainder(60);
+    if (days >= 1) {
+      return '${days}d ${hours}h ${minutes}m';
+    }
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(hours)}:${two(minutes)}:${two(seconds)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _format(_remaining),
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        fontFeatures: [FontFeature.tabularFigures()],
+        height: 1,
+      ),
+    );
+  }
+}
+

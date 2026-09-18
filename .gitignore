@@ -34,6 +34,8 @@ migrate_working_dir/
 /coverage/
 .env
 backend/.env
+ios/Flutter/MapsSecrets.xcconfig
+web/maps_api_key.js
 backend/data/*.json
 backend/node_modules/
 backend/public/.chrome-check-profile*/

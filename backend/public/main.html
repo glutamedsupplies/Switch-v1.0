@@ -1,0 +1,2609 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f2f2f2" />
+    <title>Switch Main</title>
+    <style>
+      html,
+      body,
+      body.main-shell-host .main-shell,
+      body.main-shell-host .main-page,
+      body.main-shell-host .main-content {
+        background-color: #f2f2f2;
+      }
+
+      body.main-initial-loading {
+        overflow: hidden;
+      }
+
+      body.main-initial-loading > .main-shell {
+        visibility: hidden;
+      }
+
+      .main-refresh-loading {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: grid;
+        place-items: center;
+        background: #f2f2f2;
+        opacity: 1;
+        visibility: visible;
+      }
+
+      body:not(.main-initial-loading) > .main-refresh-loading {
+        display: none;
+      }
+
+      .main-refresh-loading[hidden] {
+        display: none !important;
+      }
+
+      .main-refresh-loading__wheel {
+        width: 34px;
+        height: 34px;
+        box-sizing: border-box;
+        border: 3px solid rgba(var(--accent-rgb, 11, 152, 151), 0.18);
+        border-top-color: var(--accent, #0b9897);
+        border-radius: 50%;
+        animation: main-refresh-loading-spin 700ms linear infinite;
+      }
+
+      @keyframes main-refresh-loading-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .main-refresh-loading__wheel {
+          animation-duration: 1400ms;
+        }
+      }
+    </style>
+    <script>
+      (function() {
+        try {
+          var savedColor = String(localStorage.getItem("gms-workspace-color") || "").trim().toLowerCase();
+          if (/^#[0-9a-f]{6}$/i.test(savedColor)) {
+            var rgb = savedColor.slice(1).match(/.{2}/g).map(function(part) { return parseInt(part, 16); });
+            var rgbStr = rgb.join(", ");
+            document.documentElement.style.setProperty("--accent", savedColor);
+            document.documentElement.style.setProperty("--accent-rgb", rgbStr)
+            document.documentElement.style.setProperty("--accent-strong", savedColor);
+            document.documentElement.style.setProperty("--accent-text", savedColor);
+          }
+        } catch(e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="/admin-fonts.css?v=admin-seller-super-admin-font-2" />
+    <link rel="stylesheet" href="/main.css?v=flash-deal-app-ribbon-1" />
+    <link rel="stylesheet" href="/waybill-print.css?v=waybill-size-4x6-1" />
+    <link rel="stylesheet" href="/viber-live-chat.css?v=participant-avatar-white-1" />
+    <link rel="stylesheet" href="/admin_account_settings.css?v=seller-account-deletion-1" />
+    <link rel="stylesheet" href="/standalone-svg-icon-sizes.css?v=clipboard-pen-size-1" />
+    <link rel="stylesheet" href="/seller_feedback_modal.css?v=seller-feedback-v14" />
+    <link rel="stylesheet" href="/seller_vouchers.css?v=seller-vouchers-8" />
+    <link rel="stylesheet" href="/seller_flash_deals.css?v=flash-deal-app-ribbon-1" />
+  </head>
+  <body class="main-shell-host main-initial-loading">
+    <div class="main-refresh-loading" data-main-refresh-loading role="status" aria-label="Loading workspace">
+      <span class="main-refresh-loading__wheel" aria-hidden="true"></span>
+    </div>
+    <div class="main-shell">
+      <aside class="main-sidebar" id="main-sidebar" data-main-sidebar>
+        <a class="main-brand" href="/main.html" aria-label="Main workspace">
+          <span class="main-brand__mark" aria-hidden="true">
+            <img class="main-brand__image" alt="" hidden data-main-logo />
+            <span class="main-brand__fallback" data-main-fallback>SW</span>
+          </span>
+          <span class="main-brand__copy">
+            <strong data-main-name>
+              <span class="main-brand__marquee-text" data-main-name-text>Switch</span>
+            </strong>
+            <span data-main-subtitle>Workspace</span>
+          </span>
+        </a>
+
+        <nav class="main-nav" aria-label="Main navigation" data-main-nav></nav>
+        <footer class="main-sidebar__footer" data-main-sidebar-footer></footer>
+      </aside>
+
+      <div class="main-backdrop" data-main-backdrop></div>
+
+      <div class="main-page">
+        <div class="main-header-container">
+          <header class="main-header">
+          <div class="main-header__controls">
+            <button
+              type="button"
+              class="main-icon-button main-header__toggle"
+              data-main-sidebar-toggle
+              aria-label="Open navigation"
+              aria-expanded="false"
+              aria-controls="main-sidebar"
+              title="Open navigation"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 6h16" />
+                <path d="M4 12h16" />
+                <path d="M4 18h16" />
+              </svg>
+            </button>
+
+            <div class="main-search admin-seller-global-search" role="search" aria-label="Search workspace">
+              <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search-icon lucide-search" aria-hidden="true">
+                <path d="m21 21-4.34-4.34" />
+                <circle cx="11" cy="11" r="8" />
+              </svg>
+              </span>
+              <input type="search" placeholder="Search Workspace" aria-label="Search workspace" data-main-search />
+              <button type="button" class="admin-search-clear-button" data-main-search-clear aria-label="Clear search" title="Clear search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="main-orders-header-filter" data-main-orders-header-filter hidden>
+              <button
+                type="button"
+                class="main-filter-button main-orders-header-filter__trigger"
+                data-main-orders-header-filter-toggle
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-funnel-icon lucide-funnel" aria-hidden="true">
+                  <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />
+                </svg>
+                <span>Filter by</span>
+                <span data-main-orders-header-filter-summary>All Orders</span>
+              </button>
+              <div class="main-orders-header-filter__panel" data-main-orders-header-filter-panel hidden>
+                <div class="main-orders-header-filter__body">
+                <div class="main-orders-header-filter__column">
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-status-title">
+                    <h4 id="main-orders-header-filter-status-title">Status</h4>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="all" data-main-orders-header-status-filter checked />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>All Orders</span>
+                  </label>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="new" data-main-orders-header-status-filter />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>New Orders</span>
+                  </label>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="processing" data-main-orders-header-status-filter />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>Processing</span>
+                  </label>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="shipped" data-main-orders-header-status-filter />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>Shipped</span>
+                  </label>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="completed" data-main-orders-header-status-filter />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>Completed</span>
+                  </label>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="cancelled" data-main-orders-header-status-filter />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>Cancelled</span>
+                  </label>
+                  <label class="main-orders-header-filter__radio">
+                    <input type="radio" name="main-orders-header-status-filter" value="returned" data-main-orders-header-status-filter />
+                    <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                    <span>Returned</span>
+                  </label>
+                  </section>
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-action-title">
+                    <h4 id="main-orders-header-filter-action-title">Action Required</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-action-filter" value="all" data-main-orders-header-advanced-filter="action" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>All actions</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-action-filter" value="payment-required" data-main-orders-header-advanced-filter="action" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Payment required</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-action-filter" value="waybill-required" data-main-orders-header-advanced-filter="action" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Print waybill</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-action-filter" value="ready-to-pack" data-main-orders-header-advanced-filter="action" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Ready for packing</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-action-filter" value="cancel-request" data-main-orders-header-advanced-filter="action" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Cancellation request</span>
+                    </label>
+                  </section>
+                </div>
+
+                <div class="main-orders-header-filter__column">
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-courier-title">
+                    <h4 id="main-orders-header-filter-courier-title">Courier</h4>
+                    <div class="main-orders-header-filter__dynamic-options" data-main-orders-header-courier-options>
+                      <label class="main-orders-header-filter__radio">
+                        <input type="radio" name="main-orders-header-courier-filter" value="all" data-main-orders-header-advanced-filter="courier" checked />
+                        <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                        <span>All couriers</span>
+                      </label>
+                    </div>
+                  </section>
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-payment-title">
+                    <h4 id="main-orders-header-filter-payment-title">Payment State</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-payment-filter" value="all" data-main-orders-header-advanced-filter="payment" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>All payments</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-payment-filter" value="paid" data-main-orders-header-advanced-filter="payment" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Paid in full</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-payment-filter" value="balance-due" data-main-orders-header-advanced-filter="payment" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Balance due</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-payment-filter" value="cod" data-main-orders-header-advanced-filter="payment" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Cash on delivery</span>
+                    </label>
+                  </section>
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-partner-title">
+                    <h4 id="main-orders-header-filter-partner-title">Payment Partner</h4>
+                    <div class="main-orders-header-filter__dynamic-options" data-main-orders-header-payment-partner-options>
+                      <label class="main-orders-header-filter__radio">
+                        <input type="radio" name="main-orders-header-payment-partner-filter" value="all" data-main-orders-header-advanced-filter="paymentPartner" checked />
+                        <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                        <span>All partners</span>
+                      </label>
+                    </div>
+                  </section>
+                </div>
+
+                <div class="main-orders-header-filter__column">
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-waybill-title">
+                    <h4 id="main-orders-header-filter-waybill-title">Waybill</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-waybill-filter" value="all" data-main-orders-header-advanced-filter="waybill" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>All waybills</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-waybill-filter" value="not-printed" data-main-orders-header-advanced-filter="waybill" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Not printed</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-waybill-filter" value="printed" data-main-orders-header-advanced-filter="waybill" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Printed</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-waybill-filter" value="not-required" data-main-orders-header-advanced-filter="waybill" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Not required</span>
+                    </label>
+                  </section>
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-date-title">
+                    <h4 id="main-orders-header-filter-date-title">Date Placed</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-date-filter" value="all" data-main-orders-header-advanced-filter="date" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>All dates</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-date-filter" value="today" data-main-orders-header-advanced-filter="date" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Today</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-date-filter" value="7-days" data-main-orders-header-advanced-filter="date" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Last 7 days</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-date-filter" value="30-days" data-main-orders-header-advanced-filter="date" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Last 30 days</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-date-filter" value="custom" data-main-orders-header-advanced-filter="date" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Custom range</span>
+                    </label>
+                    <div class="main-orders-header-filter__date-range" data-main-orders-header-date-range hidden>
+                      <label>
+                        <span>From</span>
+                        <input type="date" data-main-orders-header-custom-date="customStart" />
+                      </label>
+                      <label>
+                        <span>To</span>
+                        <input type="date" data-main-orders-header-custom-date="customEnd" />
+                      </label>
+                    </div>
+                  </section>
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-orders-header-filter-sort-title">
+                    <h4 id="main-orders-header-filter-sort-title">Sort</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-sort-filter" value="newest" data-main-orders-header-advanced-filter="sort" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Newest</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-sort-filter" value="oldest" data-main-orders-header-advanced-filter="sort" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Oldest</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-sort-filter" value="amount-high" data-main-orders-header-advanced-filter="sort" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Highest amount</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-sort-filter" value="amount-low" data-main-orders-header-advanced-filter="sort" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Lowest amount</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-sort-filter" value="quantity-high" data-main-orders-header-advanced-filter="sort" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Highest quantity</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-orders-header-sort-filter" value="quantity-low" data-main-orders-header-advanced-filter="sort" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Lowest quantity</span>
+                    </label>
+                  </section>
+                </div>
+                </div>
+                <footer class="main-orders-header-filter__footer">
+                  <button type="button" data-main-orders-header-filter-reset>Reset default</button>
+                </footer>
+              </div>
+            </div>
+
+            <div
+              class="main-orders-header-filter main-listing-insight-header-filter"
+              data-main-listing-insight-header-filter
+              hidden
+            >
+              <button
+                type="button"
+                class="main-filter-button main-orders-header-filter__trigger"
+                data-main-listing-insight-header-filter-toggle
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-funnel-icon lucide-funnel" aria-hidden="true">
+                  <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />
+                </svg>
+                <span>Filter by</span>
+                <span data-main-listing-insight-header-filter-summary>All Listings, Sold, Overall</span>
+              </button>
+
+              <div
+                class="main-orders-header-filter__panel main-listing-insight-header-filter__panel"
+                data-main-listing-insight-header-filter-panel
+                hidden
+              >
+                <div class="main-orders-header-filter__body">
+                <div class="main-orders-header-filter__column">
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-listing-insight-filter-category-title">
+                    <h4 id="main-listing-insight-filter-category-title">Category</h4>
+                    <div class="main-orders-header-filter__dynamic-options" data-main-listing-insight-header-category-options>
+                      <label class="main-orders-header-filter__radio">
+                        <input type="radio" name="main-listing-insight-category-filter" value="all" data-main-listing-insight-header-filter-control="category" checked />
+                        <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                        <span>All categories</span>
+                      </label>
+                    </div>
+                  </section>
+                </div>
+
+                <div class="main-orders-header-filter__column">
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-listing-insight-filter-ranking-title">
+                    <h4 id="main-listing-insight-filter-ranking-title">Rank by</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-ranking-filter" value="sold" data-main-listing-insight-ranking-filter checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Sold</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-ranking-filter" value="income" data-main-listing-insight-ranking-filter />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Income</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-ranking-filter" value="trend" data-main-listing-insight-ranking-filter />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Trend</span>
+                    </label>
+                  </section>
+
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-listing-insight-filter-status-title">
+                    <h4 id="main-listing-insight-filter-status-title">Listing Status</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-availability-filter" value="all" data-main-listing-insight-header-filter-control="availability" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>All listings</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-availability-filter" value="active" data-main-listing-insight-header-filter-control="availability" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Active</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-availability-filter" value="out-of-stock" data-main-listing-insight-header-filter-control="availability" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Out of Stock</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-availability-filter" value="inactive" data-main-listing-insight-header-filter-control="availability" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Inactive</span>
+                    </label>
+                  </section>
+                </div>
+
+                <div class="main-orders-header-filter__column">
+                  <section class="main-orders-header-filter__section" aria-labelledby="main-listing-insight-filter-period-title">
+                    <h4 id="main-listing-insight-filter-period-title">Sales Period</h4>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-period-filter" value="all" data-main-listing-insight-header-filter-control="period" checked />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Overall</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-period-filter" value="daily" data-main-listing-insight-header-filter-control="period" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>Today</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-period-filter" value="weekly" data-main-listing-insight-header-filter-control="period" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>This Week</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-period-filter" value="monthly" data-main-listing-insight-header-filter-control="period" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>This Month</span>
+                    </label>
+                    <label class="main-orders-header-filter__radio">
+                      <input type="radio" name="main-listing-insight-period-filter" value="yearly" data-main-listing-insight-header-filter-control="period" />
+                      <span class="main-orders-header-filter__radio-mark" aria-hidden="true"></span>
+                      <span>This Year</span>
+                    </label>
+                  </section>
+                </div>
+                </div>
+
+                <footer class="main-orders-header-filter__footer">
+                  <button type="button" data-main-listing-insight-header-filter-reset>Reset default</button>
+                </footer>
+              </div>
+            </div>
+
+            <button type="button" class="main-filter-button" data-main-filter>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3.5 5h17l-6.7 7.7v4.9l-3.6 1.7v-6.6L3.5 5Z" />
+              </svg>
+              <span data-main-filter-label>All, Newest</span>
+            </button>
+          </div>
+
+          <div class="main-header__actions">
+            <div class="main-notification-menu">
+              <button
+                type="button"
+                class="main-icon-button main-notification-btn"
+                id="main-notification-btn"
+                aria-label="Workspace notifications"
+                aria-expanded="false"
+                aria-controls="main-notification-panel"
+                title="Workspace notifications"
+                data-main-notification-toggle
+              >
+                <span class="main-notification-icon main-notification-icon--outline" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+                    <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+                  </svg>
+                </span>
+                <span class="main-notification-icon main-notification-icon--filled" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.268 21a2 2 0 0 0 3.464 0" fill="none" />
+                    <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="main-notification-badge" data-main-notification-badge hidden>0</span>
+              </button>
+              <div
+                class="main-notification-panel"
+                id="main-notification-panel"
+                hidden
+                data-main-notification-panel
+              >
+                <button
+                  type="button"
+                  class="main-notification-panel__close"
+                  aria-label="Close notification"
+                  title="Close notification"
+                  data-main-notification-close
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m18 6-12 12" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+                <div class="main-notification-panel__header">
+                  <h2 class="main-notification-panel__title">Notification</h2>
+                  <div class="main-notification-filter" role="tablist" aria-label="Notification filter">
+                    <button type="button" class="main-notification-filter__button is-active" data-main-notification-filter="all" role="tab" aria-selected="true">All</button>
+                    <button type="button" class="main-notification-filter__button" data-main-notification-filter="unread" role="tab" aria-selected="false">Unread</button>
+                  </div>
+                </div>
+                <div class="main-notification-list" data-main-notification-list aria-live="polite">
+                  <div class="main-notification-empty">No notification yet.</div>
+                </div>
+                <div class="main-notification-panel__footer" data-main-notification-footer hidden>
+                  <button type="button" class="main-notification-show-all" data-main-notification-show-all aria-expanded="false">
+                    Show all notifications
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="main-header-profile-menu" data-main-header-profile-menu hidden>
+              <button
+                type="button"
+                class="main-header-profile"
+                aria-label="Open profile menu"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="main-header-profile-dropdown"
+                data-main-header-profile-toggle
+              >
+                <span class="main-header-profile__avatar" aria-hidden="true">
+                  <img alt="" hidden data-main-header-profile-image />
+                  <span data-main-header-profile-fallback>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M10 12h4" />
+                      <path d="M10 8h4" />
+                      <path d="M14 21v-3a2 2 0 0 0-4 0v3" />
+                      <path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" />
+                      <path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" />
+                    </svg>
+                  </span>
+                </span>
+                <svg class="main-header-profile__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+
+              <div
+                class="main-header-profile-dropdown"
+                id="main-header-profile-dropdown"
+                role="menu"
+                hidden
+                data-main-header-profile-dropdown
+              >
+                <div class="main-header-profile-dropdown__identity">
+                  <strong data-main-header-profile-dropdown-name>Admin Seller</strong>
+                  <span data-main-header-profile-email>Seller account</span>
+                </div>
+                <div class="main-header-profile-dropdown__divider" aria-hidden="true"></div>
+                <button type="button" role="menuitem" data-main-header-profile-action="account-settings">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 21a8 8 0 0 0-16 0" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>Account Settings</span>
+                </button>
+                <button class="main-header-profile-dropdown__sign-out" type="button" role="menuitem" data-main-header-profile-action="sign-out">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M10 17l5-5-5-5" />
+                    <path d="M15 12H3" />
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                  </svg>
+                  <span>Sign out</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          </header>
+        </div>
+
+        <main class="main-content" data-main-content>
+          <div class="main-dashboard-view" data-main-dashboard-view hidden>
+            <section class="main-title">
+              <div>
+                <p class="main-breadcrumb" data-main-breadcrumb>Dashboard / Main</p>
+                <h1 data-main-title>Main Workspace</h1>
+                <p data-main-description>Monitor your workspace status and open assigned tools.</p>
+              </div>
+              <a class="main-primary-link" href="#" data-main-open-dashboard>Open Dashboard</a>
+            </section>
+
+            <section class="super-admin-stats main-summary" aria-label="Workspace summary" data-main-summary></section>
+            <section class="main-links" aria-label="Workspace tools" data-main-links></section>
+          </div>
+
+          <section
+            class="main-live-chat-view live-chat-shell"
+            aria-label="Live Chat"
+            data-main-live-chat-view
+            hidden
+          >
+            <input
+              type="search"
+              class="main-live-chat-search-bridge"
+              aria-label="Live Chat search bridge"
+              data-employee-chat-search
+              tabindex="-1"
+              hidden
+            />
+            <div class="main-live-chat-mount" data-main-live-chat-mount>
+              <div class="main-live-chat-loading" role="status">
+                <span class="main-live-chat-loading__spinner" aria-hidden="true"></span>
+                <strong>Loading conversations...</strong>
+              </div>
+            </div>
+          </section>
+
+          <section
+            class="main-orders-view main-section-view"
+            aria-labelledby="main-orders-title"
+            data-main-orders-view
+            hidden
+          >
+            <header class="main-section-heading" aria-label="Live Orders header">
+              <div class="main-section-heading__copy">
+                <nav class="main-section-heading__breadcrumb" aria-label="Breadcrumb">
+                  <span>Dashboard</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <span>Live Order</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong data-main-orders-breadcrumb-filter>All Orders</strong>
+                </nav>
+                <h1 id="main-orders-title">Live Orders <span data-main-section-count="orders">(0)</span></h1>
+                <p>Monitor incoming customer orders and fulfillment status in real time.</p>
+              </div>
+              <button
+                type="button"
+                class="product-panel-add-button main-section-heading__action main-orders-waybill-print-button"
+                data-main-orders-waybill-print
+                disabled
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <path d="M6 9V2h12v7"/>
+                  <rect x="6" y="14" width="12" height="8"/>
+                </svg>
+                <span>Print Waybill</span>
+                <span class="main-orders-waybill-print-count" data-main-orders-waybill-print-count hidden>(0)</span>
+              </button>
+            </header>
+            <div class="main-orders-frame-shell">
+              <div class="main-orders-loading" role="status" data-main-orders-loading>
+                <span class="main-orders-loading__spinner" aria-hidden="true"></span>
+                <strong>Loading live orders...</strong>
+              </div>
+              <div class="main-orders-error" role="alert" hidden data-main-orders-error>
+                <strong>Unable to load orders</strong>
+                <p>Please refresh or try again.</p>
+                <button type="button" data-main-orders-retry>Try again</button>
+              </div>
+              <iframe
+                class="main-orders-frame"
+                title="Live orders workspace"
+                loading="eager"
+                data-no-lazy
+                data-main-orders-frame
+              ></iframe>
+            </div>
+          </section>
+
+          <section
+            class="main-listing-insight-view main-section-view"
+            aria-labelledby="main-listing-insight-title"
+            data-main-listing-insight-view
+            hidden
+          >
+            <header class="main-section-heading" aria-label="Listing Insight header">
+              <div class="main-section-heading__copy">
+                <nav class="main-section-heading__breadcrumb" aria-label="Breadcrumb">
+                  <span>Dashboard</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong>Listing Insight</strong>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong data-main-listing-insight-breadcrumb-filter>Sold</strong>
+                </nav>
+                <h1 id="main-listing-insight-title">Listing Insight <span data-main-section-count="listing-insight">(0)</span></h1>
+                <p>Review product performance, sold units, revenue, and sales movement.</p>
+              </div>
+            </header>
+            <div class="main-listing-insight-frame-shell">
+              <div class="main-listing-insight-loading" role="status" data-main-listing-insight-loading>
+                <span class="main-listing-insight-loading__spinner" aria-hidden="true"></span>
+                <strong>Loading listing insight...</strong>
+              </div>
+              <div class="main-listing-insight-error" role="alert" hidden data-main-listing-insight-error>
+                <strong>Unable to load listing insight</strong>
+                <p>Please refresh or try again.</p>
+                <button type="button" data-main-listing-insight-retry>Try again</button>
+              </div>
+              <iframe
+                class="main-listing-insight-frame"
+                title="Listing insight workspace"
+                loading="eager"
+                data-no-lazy
+                data-main-listing-insight-frame
+              ></iframe>
+            </div>
+          </section>
+
+          <section
+            class="main-listing-view main-section-view product-status-shell"
+            aria-labelledby="main-listing-title"
+            data-main-listing-view
+            hidden
+          >
+            <header class="main-section-heading main-listing-page-heading" aria-label="Listing header">
+              <div class="main-section-heading__copy">
+                <nav class="main-section-heading__breadcrumb main-listing-page-heading__breadcrumb" aria-label="Breadcrumb">
+                  <span>Dashboard</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <span>Catalog</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong>Listing</strong>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong data-main-listing-breadcrumb-filter>Total Listing</strong>
+                </nav>
+                <h1 id="main-listing-title">Listing <span data-main-section-count="listing">(0)</span></h1>
+                <p>Manage product records, listing status, item visibility, and seller catalog activity.</p>
+              </div>
+              <button
+                type="button"
+                class="product-panel-add-button main-section-heading__action"
+                id="open-product-composer-button"
+                aria-controls="product-composer-modal"
+                aria-expanded="false"
+              >
+              <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                <span>Add Listing</span>
+              </button>
+            </header>
+                        <div class="product-panel-grid product-panel-grid--products-only">
+                        <div
+                          class="product-composer-modal-overlay"
+                          id="product-composer-modal"
+                          aria-hidden="true"
+                          hidden
+                        >
+                          <section
+                            class="product-composer-modal product-composer-modal--workspace"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="form-title"
+                            tabindex="-1"
+                          >
+                            <header class="product-composer-modal__topbar">
+                              <div class="product-composer-modal__identity">
+                                <span class="product-composer-modal__brand-icon" aria-hidden="true">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                                </span>
+                                <div>
+                                  <p class="section-label" id="form-section-label">Create Listing</p>
+                                  <h2 id="form-title">Add Listing</h2>
+                                  <p class="product-composer-modal__subtitle">
+                                    Create a new listing and manage all the essential information.
+                                  </p>
+                                </div>
+                              </div>
+                              <div class="product-composer-modal__header-actions">
+                                <button
+                                  type="button"
+                                  class="product-composer-modal__close"
+                                  id="close-product-composer-button"
+                                  aria-label="Close Add Listing"
+                                  title="Close"
+                                >
+                                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                                </button>
+                              </div>
+                            </header>
+
+                            <form id="product-form" class="product-form product-composer-form">
+                              <div class="product-composer-modal__workspace">
+                                <div
+                                  id="product-editor-section-media"
+                                  class="product-composer-canvas product-form-section-anchor"
+                                >
+                                  <section
+                                    id="product-editor-section-photo"
+                                    class="product-composer-section product-composer-section--photo product-image-upload-group product-form-section-anchor"
+                                  >
+                                    <div class="product-composer-section__heading product-photo-section__heading">
+                                      <span class="product-photo-section__icon" aria-hidden="true">
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          width="256"
+                                          height="256"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          stroke-width="2"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          class="lucide lucide-image-icon lucide-image"
+                                        >
+                                          <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                                          <circle cx="9" cy="9" r="2" />
+                                          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                                        </svg>
+                                      </span>
+                                      <div>
+                                        <h3>Photo</h3>
+                                        <p>Upload high-quality images of your product.</p>
+                                      </div>
+                                    </div>
+                                    <div class="product-photo-uploader">
+                                      <div class="product-photo-uploader__loading" id="product-photo-uploader-loading" hidden>
+                                        <div class="loading-spinner"></div>
+                                        <p>Uploading images...</p>
+                                      </div>
+                                      <section
+                                        class="product-description-media product-composer-media product-composer-media--photo"
+                                        id="product-photo-media"
+                                        aria-label="Product photos"
+                                      >
+                                        <div
+                                          class="product-description-media__carousel product-photo-carousel"
+                                          id="product-photo-carousel"
+                                        >
+                                          <button
+                                            type="button"
+                                            class="product-description-media__nav product-description-media__nav--previous product-photo-carousel__nav"
+                                            data-product-photo-scroll="previous"
+                                            aria-label="Scroll product images left"
+                                            disabled
+                                          >
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                              <path d="m15 18-6-6 6-6" />
+                                            </svg>
+                                          </button>
+                                          <div
+                                            id="product-image-input-list"
+                                            class="product-description-media__list product-photo-thumbnail-list"
+                                            aria-label="Selected product images"
+                                            aria-live="polite"
+                                            tabindex="0"
+                                          ></div>
+                                          <button
+                                            type="button"
+                                            class="product-description-media__nav product-description-media__nav--next product-photo-carousel__nav"
+                                            data-product-photo-scroll="next"
+                                            aria-label="Scroll product images right"
+                                            disabled
+                                          >
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                              <path d="m9 18 6-6-6-6" />
+                                            </svg>
+                                          </button>
+                                          <span class="visually-hidden" data-product-photo-count>0 / 10</span>
+                                        </div>
+                                        <input
+                                          type="file"
+                                          id="product-photo-file-input"
+                                          accept="image/jpeg,image/png,image/webp"
+                                          multiple
+                                          hidden
+                                          aria-label="Browse product images"
+                                          aria-describedby="product-photo-upload-note"
+                                        />
+                                      </section>
+                                      <p class="product-photo-upload-note" id="product-photo-upload-note">
+                                        JPG, PNG, WEBP (Max 10MB each)
+                                      </p>
+                                    </div>
+                                  </section>
+
+                                  <section
+                                    id="product-editor-section-video"
+                                    class="product-composer-section product-composer-section--video product-video-upload-group product-form-section-anchor"
+                                  >
+                                    <div class="product-composer-section__heading product-video-section__heading">
+                                      <span class="product-video-section__icon" aria-hidden="true">
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          width="256"
+                                          height="256"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          stroke-width="2"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          class="lucide lucide-video-icon lucide-video"
+                                        >
+                                          <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
+                                          <rect x="2" y="6" width="14" height="12" rx="2" />
+                                        </svg>
+                                      </span>
+                                      <div>
+                                        <h3>Video</h3>
+                                        <p>
+                                          Upload a product video, then set a
+                                          <strong>cover</strong> (4:5). The app
+                                          listing shows this cover—not your main
+                                          photo.
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div class="product-video-uploader">
+                                      <section
+                                        class="product-description-media product-composer-media product-composer-media--video"
+                                        id="product-video-media"
+                                        aria-label="Product video"
+                                      >
+                                        <div
+                                          class="product-description-media__carousel product-photo-carousel product-video-carousel"
+                                          id="product-video-carousel"
+                                        >
+                                          <div
+                                            id="product-video-input-list"
+                                            class="product-description-media__list product-video-input-list product-video-file-list"
+                                            aria-label="Selected product videos"
+                                            aria-live="polite"
+                                            tabindex="0"
+                                          ></div>
+                                          <span class="visually-hidden" data-product-video-count>0 / 1</span>
+                                        </div>
+                                        <input
+                                          type="file"
+                                          id="product-video-file-input"
+                                          accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm"
+                                          aria-label="Browse product video"
+                                          aria-describedby="product-video-upload-note"
+                                          hidden
+                                        />
+                                      </section>
+                                      <p class="product-video-upload-note" id="product-video-upload-note">
+                                        MP4, MOV, WebM (Max 100MB). Cover: crop a
+                                        frame from the video, or upload a photo,
+                                        then crop to 4:5.
+                                      </p>
+                                    </div>
+                                  </section>
+
+                                  <section
+                                    id="product-editor-section-details"
+                                    class="product-composer-section product-composer-section--details product-form-section-panel product-form-section-anchor"
+                                  >
+                                    <div class="product-composer-section__heading product-details-section__heading">
+                                      <span class="product-details-section__icon" aria-hidden="true">
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          width="256"
+                                          height="256"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          stroke-width="2"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          class="lucide lucide-clipboard-list-icon lucide-clipboard-list"
+                                        >
+                                          <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+                                          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                                          <path d="M12 11h4" />
+                                          <path d="M12 16h4" />
+                                          <path d="M8 11h.01" />
+                                          <path d="M8 16h.01" />
+                                        </svg>
+                                      </span>
+                                      <div>
+                                        <h3>Product Details</h3>
+                                        <p>Fill in the basic information about the product.</p>
+                                      </div>
+                                      <div class="product-details-header-actions">
+                                        <button
+                                          type="button"
+                                          class="product-details-delivery-toggle"
+                                          id="product-details-delivery-toggle"
+                                          aria-label="Open delivery partners"
+                                          aria-controls="product-details-delivery-modal"
+                                          aria-expanded="false"
+                                          title="Delivery Partners"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                                            <path d="M15 18H9" />
+                                            <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
+                                            <circle cx="17" cy="18" r="2" />
+                                            <circle cx="7" cy="18" r="2" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="product-details-payment-toggle"
+                                          id="product-details-payment-toggle"
+                                          aria-label="Open payment partners"
+                                          aria-controls="product-details-payment-modal"
+                                          aria-expanded="false"
+                                          title="Payment Partners"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <rect width="20" height="14" x="2" y="5" rx="2" />
+                                            <line x1="2" x2="22" y1="10" y2="10" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="product-details-variants-toggle"
+                                          id="product-details-variants-toggle"
+                                          aria-label="Open variants"
+                                          aria-controls="product-details-variants-modal"
+                                          aria-expanded="false"
+                                          title="Variants"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+                                            <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
+                                            <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="product-details-barcode-toggle"
+                                          id="product-details-barcode-toggle"
+                                          aria-label="Open barcode scanner"
+                                          aria-controls="product-details-barcode-modal"
+                                          aria-expanded="false"
+                                          title="Barcode"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <path d="M3 5v14" />
+                                            <path d="M8 5v14" />
+                                            <path d="M12 5v14" />
+                                            <path d="M17 5v14" />
+                                            <path d="M21 5v14" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="product-details-model-toggle"
+                                          id="product-details-model-toggle"
+                                          aria-label="Open 3D model"
+                                          aria-controls="product-details-model-modal"
+                                          aria-expanded="false"
+                                          title="3D Model"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                                            <path d="m3.3 7 8.7 5 8.7-5" />
+                                            <path d="M12 22V12" />
+                                          </svg>
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div class="product-form-details-stack">
+                                      <input type="hidden" name="category" id="category-select" required />
+                                      <div
+                                        class="product-existing-category-status"
+                                        id="selected-category-carousel"
+                                        aria-label="Categories available for this seller Business Type"
+                                        hidden
+                                      >
+                                        <button
+                                          type="button"
+                                          class="product-category-carousel__control product-category-carousel__control--previous"
+                                          data-product-category-scroll="previous"
+                                          aria-label="Show previous selected categories"
+                                          title="Previous categories"
+                                          hidden
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <path d="m15 18-6-6 6-6"></path>
+                                          </svg>
+                                        </button>
+                                        <div
+                                          class="product-category-selected-chips"
+                                          id="selected-category-chips"
+                                          aria-live="polite"
+                                          tabindex="0"
+                                        ></div>
+                                        <button
+                                          type="button"
+                                          class="product-category-carousel__control product-category-carousel__control--next"
+                                          data-product-category-scroll="next"
+                                          aria-label="Show next selected categories"
+                                          title="Next categories"
+                                          hidden
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                            <path d="m9 18 6-6-6-6"></path>
+                                          </svg>
+                                        </button>
+                                      </div>
+                                      <div class="form-grid product-details-name-category-grid product-details-name-only-grid">
+                                        <label>
+                                          Listing Name
+                                          <input
+                                            type="text"
+                                            name="name"
+                                            maxlength="150"
+                                            placeholder="Enter listing name"
+                                            aria-describedby="listing-name-character-limit"
+                                            required
+                                          />
+                                          <small
+                                            class="product-field-limit"
+                                            id="listing-name-character-limit"
+                                            data-product-name-character-count
+                                          >0 / 150 characters</small>
+                                        </label>
+                                      </div>
+                                      <div class="form-grid form-grid--quad product-details-metrics-grid">
+                                        <label>
+                                          Original Price
+                                          <input
+                                            type="number"
+                                            name="originalPrice"
+                                            min="0"
+                                            max="500000"
+                                            step="0.01"
+                                            placeholder="0.00"
+                                            aria-describedby="listing-original-price-limit"
+                                            required
+                                          />
+                                          <small class="product-field-limit" id="listing-original-price-limit">Maximum ₱500,000</small>
+                                        </label>
+                                        <label>
+                                          Sales Price
+                                          <input
+                                            type="number"
+                                            name="salesPrice"
+                                            min="0"
+                                            max="500000"
+                                            step="0.01"
+                                            placeholder="0.00"
+                                            aria-describedby="listing-sales-price-limit"
+                                          />
+                                          <small class="product-field-limit" id="listing-sales-price-limit">Maximum ₱500,000</small>
+                                        </label>
+                                        <label>
+                                          Stock Quantity
+                                          <input type="number" name="stock" min="0" step="1" placeholder="0" required />
+                                        </label>
+                                        <label class="product-expiry-date-field">
+                                          <span>Expiry Date</span>
+                                          <span class="product-expiry-date-picker" id="product-expiry-date-picker">
+                                            <input
+                                              type="date"
+                                              name="expiryDate"
+                                              id="product-expiry-date-input"
+                                              class="product-expiry-date-picker__native"
+                                              tabindex="-1"
+                                              aria-hidden="true"
+                                            />
+                                            <button
+                                              type="button"
+                                              class="product-expiry-date-picker__trigger"
+                                              id="product-expiry-date-trigger"
+                                              aria-haspopup="dialog"
+                                              aria-expanded="false"
+                                              aria-controls="product-expiry-date-calendar"
+                                            >
+                                              <svg class="product-expiry-date-picker__calendar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M8 2v4"></path>
+                                                <path d="M16 2v4"></path>
+                                                <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                                                <path d="M3 10h18"></path>
+                                                <path d="M8 14h.01"></path>
+                                                <path d="M12 14h.01"></path>
+                                                <path d="M16 14h.01"></path>
+                                                <path d="M8 18h.01"></path>
+                                                <path d="M12 18h.01"></path>
+                                              </svg>
+                                              <span class="product-expiry-date-picker__value" data-product-expiry-date-value>mm/dd/yyyy</span>
+                                              <svg class="product-expiry-date-picker__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="m6 9 6 6 6-6"></path>
+                                              </svg>
+                                            </button>
+                                          </span>
+                                        </label>
+                                      </div>
+                                      <div class="product-description-editor" data-product-description-editor data-description-mode="text">
+                                        <div class="product-description-editor__toolbar">
+                                          <span class="product-description-editor__title" id="product-description-label">Description</span>
+                                          <div class="product-description-mode" role="group" aria-labelledby="product-description-label">
+                                            <button
+                                              type="button"
+                                              class="product-description-mode__option is-active"
+                                              data-product-description-mode="text"
+                                              aria-pressed="true"
+                                            >
+                                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="M4 6h16" />
+                                                <path d="M4 12h16" />
+                                                <path d="M4 18h10" />
+                                              </svg>
+                                              <span>Text</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              class="product-description-mode__option"
+                                              data-product-description-mode="image"
+                                              aria-pressed="false"
+                                            >
+                                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <rect width="18" height="18" x="3" y="3" rx="2" />
+                                                <circle cx="9" cy="9" r="2" />
+                                                <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+                                              </svg>
+                                              <span>Photos</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <label class="product-description-editor__text" data-product-description-panel="text">
+                                          <span class="visually-hidden">Description text</span>
+                                          <textarea
+                                            name="description"
+                                            rows="5"
+                                            maxlength="500"
+                                            placeholder="Write about this product"
+                                            aria-describedby="listing-description-character-limit"
+                                            required
+                                          ></textarea>
+                                          <small
+                                            class="product-field-limit"
+                                            id="listing-description-character-limit"
+                                            data-product-description-character-count
+                                          >0 / 500 characters</small>
+                                        </label>
+                                        <section
+                                          class="product-description-media"
+                                          data-product-description-panel="image"
+                                          aria-label="Description photos"
+                                          aria-describedby="product-description-upload-note"
+                                          hidden
+                                        >
+                                          <div
+                                            class="product-description-media__carousel"
+                                            id="product-description-image-carousel"
+                                          >
+                                            <button
+                                              type="button"
+                                              class="product-description-media__nav product-description-media__nav--previous"
+                                              data-description-image-scroll="previous"
+                                              aria-label="Scroll description photos left"
+                                              disabled
+                                            >
+                                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="m15 18-6-6 6-6" />
+                                              </svg>
+                                            </button>
+                                            <div
+                                              class="product-description-media__list"
+                                              id="product-description-image-list"
+                                              aria-label="Selected description photos"
+                                              aria-live="polite"
+                                              tabindex="0"
+                                            ></div>
+                                            <button
+                                              type="button"
+                                              class="product-description-media__nav product-description-media__nav--next"
+                                              data-description-image-scroll="next"
+                                              aria-label="Scroll description photos right"
+                                              disabled
+                                            >
+                                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                <path d="m9 18 6-6-6-6" />
+                                              </svg>
+                                            </button>
+                                            <span class="visually-hidden" data-description-image-count>0 / 8</span>
+                                          </div>
+                                          <input
+                                            type="file"
+                                            id="product-description-image-input"
+                                            accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+                                            multiple
+                                            hidden
+                                          />
+                                        </section>
+                                        <p
+                                          class="product-description-upload-note"
+                                          id="product-description-upload-note"
+                                          hidden
+                                        >
+                                          Square PNG, JPG, or JPEG, at least 600 x 600
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </section>
+
+                                  <div id="android-preview-stage" class="product-composer-compatibility-preview" hidden></div>
+                                </div>
+                              </div>
+
+                              <div
+                                class="product-barcode-modal product-details-header-dropdown"
+                                id="product-details-barcode-modal"
+                                aria-hidden="true"
+                                hidden
+                              >
+                                <section
+                                  class="product-barcode-modal__dialog"
+                                  role="dialog"
+                                  aria-modal="true"
+                                  aria-labelledby="product-barcode-modal-title"
+                                  aria-describedby="barcode-scan-prompt"
+                                >
+                                  <header class="product-barcode-modal__header">
+                                    <span class="product-barcode-modal__icon" aria-hidden="true">
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 5v14" />
+                                        <path d="M8 5v14" />
+                                        <path d="M12 5v14" />
+                                        <path d="M17 5v14" />
+                                        <path d="M21 5v14" />
+                                      </svg>
+                                    </span>
+                                    <div>
+                                      <h3 id="product-barcode-modal-title">Scan Barcode</h3>
+                                      <p>Barcode scanner</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__close"
+                                      data-product-barcode-modal-dismiss
+                                      aria-label="Close barcode scanner"
+                                      title="Close"
+                                    >
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M18 6 6 18" />
+                                        <path d="m6 6 12 12" />
+                                      </svg>
+                                    </button>
+                                  </header>
+                                  <div class="product-barcode-modal__body">
+                                    <label class="visually-hidden" for="product-barcode-input">Product Barcode</label>
+                                    <input
+                                      type="text"
+                                      name="barcode"
+                                      id="product-barcode-input"
+                                      class="barcode-hidden-input"
+                                      autocomplete="off"
+                                      form="product-form"
+                                    />
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__scan-target"
+                                      id="product-barcode-scan-focus"
+                                      aria-label="Activate barcode scanner"
+                                    >
+                                      <span class="product-barcode-modal__scan-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                          <path d="M3 5v14" />
+                                          <path d="M8 5v14" />
+                                          <path d="M12 5v14" />
+                                          <path d="M17 5v14" />
+                                          <path d="M21 5v14" />
+                                        </svg>
+                                      </span>
+                                    </button>
+                                    <p id="barcode-scan-prompt" class="barcode-scan-prompt">
+                                      Click first to scan
+                                    </p>
+                                    <div id="barcode-preview-container" class="barcode-preview-container" hidden></div>
+                                    <label class="barcode-packing-checkbox" hidden>
+                                      <input type="checkbox" name="moveBarcodeToPackingDashboard" form="product-form" />
+                                      <span>Move to packing dashboard</span>
+                                    </label>
+                                  </div>
+                                  <footer class="product-barcode-modal__footer">
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__button product-barcode-modal__button--secondary"
+                                      id="product-barcode-modal-reset"
+                                    >
+                                      Reset Barcode
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__button product-barcode-modal__button--primary"
+                                      id="product-barcode-modal-save"
+                                      disabled
+                                    >
+                                      Save Barcode
+                                    </button>
+                                  </footer>
+                                </section>
+                              </div>
+
+                              <div
+                                class="product-barcode-modal product-model-modal product-details-header-dropdown"
+                                id="product-details-model-modal"
+                                data-product-editor-section="product-editor-section-3d-model"
+                                aria-hidden="true"
+                                hidden
+                              >
+                                <section
+                                  class="product-barcode-modal__dialog product-model-modal__dialog"
+                                  role="dialog"
+                                  aria-modal="true"
+                                  aria-labelledby="product-model-modal-title"
+                                >
+                                  <header class="product-barcode-modal__header">
+                                    <span class="product-barcode-modal__icon" aria-hidden="true">
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                                        <path d="m3.3 7 8.7 5 8.7-5" />
+                                        <path d="M12 22V12" />
+                                      </svg>
+                                    </span>
+                                    <div>
+                                      <h3 id="product-model-modal-title">3D Model</h3>
+                                      <p>Upload a GLB model for an interactive product view.</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__close"
+                                      data-product-model-modal-dismiss
+                                      aria-label="Close 3D model"
+                                      title="Close"
+                                    >
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M18 6 6 18" />
+                                        <path d="m6 6 12 12" />
+                                      </svg>
+                                    </button>
+                                  </header>
+                                  <div class="product-barcode-modal__body product-model-modal__body">
+                                    <div class="product-model-registration product-model-registration--modal">
+                                      <div
+                                        id="product-model-viewer"
+                                        class="product-model-registration__viewer"
+                                        role="img"
+                                        aria-label="3D model preview"
+                                        tabindex="0"
+                                      >
+                                        <div id="product-model-cube" class="product-model-registration__cube" aria-hidden="true">
+                                          <span class="product-model-registration__cube-face product-model-registration__cube-face--front"></span>
+                                          <span class="product-model-registration__cube-face product-model-registration__cube-face--back"></span>
+                                          <span class="product-model-registration__cube-face product-model-registration__cube-face--right"></span>
+                                          <span class="product-model-registration__cube-face product-model-registration__cube-face--left"></span>
+                                          <span class="product-model-registration__cube-face product-model-registration__cube-face--top"></span>
+                                          <span class="product-model-registration__cube-face product-model-registration__cube-face--bottom"></span>
+                                        </div>
+                                        <div class="product-model-registration__scan-ring" aria-hidden="true"></div>
+                                      </div>
+                                      <div class="product-model-registration__content">
+                                        <div class="product-model-registration__carousel" id="product-model-carousel">
+                                          <p class="product-model-registration__title">Upload a ready 3D product file.</p>
+                                          <p class="product-model-registration__copy" id="product-model-status">
+                                            Choose a .glb file, then save the product to register it.
+                                          </p>
+                                        </div>
+                                        <div class="product-model-registration__actions">
+                                          <button
+                                            type="button"
+                                            class="product-model-registration__action product-model-registration__action--primary"
+                                            id="product-model-upload-button"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                              <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+                                              <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+                                              <path d="M12 12v6" />
+                                              <path d="m15 15-3-3-3 3" />
+                                            </svg>
+                                            <span>Upload GLB</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            class="product-model-registration__action product-model-registration__action--danger"
+                                            id="product-model-remove-button"
+                                            hidden
+                                          >
+                                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                                            <span>Remove</span>
+                                          </button>
+                                          <input
+                                            id="product-model-file-input"
+                                            type="file"
+                                            accept=".glb,model/gltf-binary,application/octet-stream"
+                                            hidden
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <footer class="product-barcode-modal__footer">
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__button product-barcode-modal__button--primary"
+                                      data-product-model-modal-dismiss
+                                    >
+                                      Done
+                                    </button>
+                                  </footer>
+                                </section>
+                              </div>
+
+                              <div
+                                id="product-editor-section-services"
+                                class="product-partner-modals-host product-form-section-anchor"
+                                data-product-partner-selection
+                              >
+                                <div
+                                  class="product-barcode-modal product-partner-modal product-details-header-dropdown"
+                                  id="product-details-delivery-modal"
+                                  aria-hidden="true"
+                                  hidden
+                                >
+                                  <section
+                                    class="product-barcode-modal__dialog product-partner-modal__dialog"
+                                    role="dialog"
+                                    aria-modal="true"
+                                    aria-labelledby="product-delivery-modal-title"
+                                    data-product-partner-group="delivery"
+                                  >
+                                    <header class="product-barcode-modal__header">
+                                      <span class="product-barcode-modal__icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                          <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2" />
+                                          <path d="M15 18H9" />
+                                          <path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14" />
+                                          <circle cx="17" cy="18" r="2" />
+                                          <circle cx="7" cy="18" r="2" />
+                                        </svg>
+                                      </span>
+                                      <div>
+                                        <h3 id="product-delivery-modal-title">Delivery Partners</h3>
+                                        <p>Select one or more delivery partners.</p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        class="product-barcode-modal__close"
+                                        data-product-delivery-modal-dismiss
+                                        aria-label="Close delivery partners"
+                                        title="Close"
+                                      >
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                          <path d="M18 6 6 18" />
+                                          <path d="m6 6 12 12" />
+                                        </svg>
+                                      </button>
+                                    </header>
+                                    <div class="product-barcode-modal__body product-partner-modal__body">
+                                      <div class="product-partner-selection__body" id="product-partner-body-delivery" data-product-partner-dropdown="delivery">
+                                        <div class="product-partner-selection__carousel">
+                                          <button type="button" class="product-partner-selection__scroll-button product-partner-selection__scroll-button--previous" data-product-partner-scroll="previous" data-product-partner-type="delivery" aria-label="Previous delivery partners">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                                          </button>
+                                          <div class="product-partner-selection__list" id="product-partner-list-delivery" data-product-partner-list="delivery" role="listbox" aria-multiselectable="true"></div>
+                                          <button type="button" class="product-partner-selection__scroll-button product-partner-selection__scroll-button--next" data-product-partner-scroll="next" data-product-partner-type="delivery" aria-label="Next delivery partners">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+                                          </button>
+                                        </div>
+                                        <div class="product-partner-selection__footer">
+                                          <div class="product-partner-selection__dots" data-product-partner-dots="delivery" aria-label="Delivery partner pages"></div>
+                                          <p class="product-partner-selection__status" data-product-partner-status="delivery"></p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <footer class="product-barcode-modal__footer product-partner-modal__footer">
+                                      <button type="button" class="product-barcode-modal__button product-barcode-modal__button--primary" data-product-delivery-modal-dismiss>
+                                        Save Partners
+                                      </button>
+                                    </footer>
+                                  </section>
+                                </div>
+
+                                <div
+                                  class="product-barcode-modal product-partner-modal product-details-header-dropdown"
+                                  id="product-details-payment-modal"
+                                  aria-hidden="true"
+                                  hidden
+                                >
+                                  <section
+                                    class="product-barcode-modal__dialog product-partner-modal__dialog"
+                                    role="dialog"
+                                    aria-modal="true"
+                                    aria-labelledby="product-payment-modal-title"
+                                    data-product-partner-group="payment"
+                                  >
+                                    <header class="product-barcode-modal__header">
+                                      <span class="product-barcode-modal__icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                          <rect width="20" height="14" x="2" y="5" rx="2" />
+                                          <line x1="2" x2="22" y1="10" y2="10" />
+                                        </svg>
+                                      </span>
+                                      <div>
+                                        <h3 id="product-payment-modal-title">Payment Partners</h3>
+                                        <p>Select one or more payment partners.</p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        class="product-barcode-modal__close"
+                                        data-product-payment-modal-dismiss
+                                        aria-label="Close payment partners"
+                                        title="Close"
+                                      >
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                          <path d="M18 6 6 18" />
+                                          <path d="m6 6 12 12" />
+                                        </svg>
+                                      </button>
+                                    </header>
+                                    <div class="product-barcode-modal__body product-partner-modal__body">
+                                      <div class="product-partner-selection__body" id="product-partner-body-payment" data-product-partner-dropdown="payment">
+                                        <div class="product-partner-selection__carousel">
+                                          <button type="button" class="product-partner-selection__scroll-button product-partner-selection__scroll-button--previous" data-product-partner-scroll="previous" data-product-partner-type="payment" aria-label="Previous payment partners">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                                          </button>
+                                          <div class="product-partner-selection__list" id="product-partner-list-payment" data-product-partner-list="payment" role="listbox" aria-multiselectable="true"></div>
+                                          <button type="button" class="product-partner-selection__scroll-button product-partner-selection__scroll-button--next" data-product-partner-scroll="next" data-product-partner-type="payment" aria-label="Next payment partners">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+                                          </button>
+                                        </div>
+                                        <div class="product-partner-selection__footer">
+                                          <div class="product-partner-selection__dots" data-product-partner-dots="payment" aria-label="Payment partner pages"></div>
+                                          <p class="product-partner-selection__status" data-product-partner-status="payment"></p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <footer class="product-barcode-modal__footer product-partner-modal__footer">
+                                      <button type="button" class="product-barcode-modal__button product-barcode-modal__button--primary" data-product-payment-modal-dismiss>
+                                        Save Partners
+                                      </button>
+                                    </footer>
+                                  </section>
+                                </div>
+                              </div>
+
+                              <div
+                                class="product-barcode-modal product-variants-modal product-details-header-dropdown"
+                                id="product-details-variants-modal"
+                                aria-hidden="true"
+                                hidden
+                              >
+                                <section
+                                  class="product-barcode-modal__dialog product-variants-modal__dialog"
+                                  role="dialog"
+                                  aria-modal="true"
+                                  aria-labelledby="product-variants-modal-title"
+                                >
+                                  <header class="product-barcode-modal__header">
+                                    <span class="product-barcode-modal__icon" aria-hidden="true">
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+                                        <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
+                                        <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />
+                                      </svg>
+                                    </span>
+                                    <div>
+                                      <h3 id="product-variants-modal-title">Variants</h3>
+                                      <p>Add available sizes, colors, materials, and stock options.</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      class="product-barcode-modal__close"
+                                      data-product-variants-modal-dismiss
+                                      aria-label="Close variants"
+                                      title="Close"
+                                    >
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M18 6 6 18" />
+                                        <path d="m6 6 12 12" />
+                                      </svg>
+                                    </button>
+                                  </header>
+                                  <div class="product-barcode-modal__body product-variants-modal__body">
+                                    <div
+                                      id="product-editor-section-variants"
+                                      class="product-form-section-anchor product-variants-modal__section"
+                                    >
+                                      <div class="product-variant-group">
+                                        <div id="product-variant-list" class="product-variant-list"></div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <footer class="product-barcode-modal__footer product-variants-modal__footer">
+                                    <button
+                                      type="button"
+                                      class="product-image-upload-group__add-button product-image-upload-group__add-button--filled"
+                                      id="add-variant-button"
+                                      aria-label="Add variant"
+                                      title="Add variant"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                        <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 .83.18 2 2 0 0 0 .83-.18l8.58-3.9a1 1 0 0 0 0-1.831z" />
+                                        <path d="M16 17h6" />
+                                        <path d="M19 14v6" />
+                                        <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 .825.178" />
+                                        <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l2.116-.962" />
+                                      </svg>
+                                      <span>Add Variant</span>
+                                    </button>
+                                  </footer>
+                                </section>
+                              </div>
+
+                              <div
+                                class="product-description-upload-snackbar is-error"
+                                role="status"
+                                aria-live="assertive"
+                                aria-atomic="true"
+                                data-description-upload-snackbar
+                                hidden
+                              >
+                                <span class="product-description-upload-snackbar__icon" aria-hidden="true">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M12 8v4" />
+                                    <path d="M12 16h.01" />
+                                  </svg>
+                                </span>
+                                <span class="product-description-upload-snackbar__copy">
+                                  <strong>Description photo not uploaded</strong>
+                                  <span data-description-upload-snackbar-message></span>
+                                </span>
+                                <button
+                                  type="button"
+                                  class="product-description-upload-snackbar__close"
+                                  data-description-upload-snackbar-close
+                                  aria-label="Dismiss upload message"
+                                  title="Dismiss"
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M18 6 6 18" />
+                                    <path d="m6 6 12 12" />
+                                  </svg>
+                                </button>
+                                <span class="product-description-upload-snackbar__timer" aria-hidden="true">
+                                  <span
+                                    class="product-description-upload-snackbar__timer-bar"
+                                    data-description-upload-snackbar-timer-bar
+                                  ></span>
+                                </span>
+                              </div>
+
+                              <footer class="form-actions product-composer-modal__footer">
+                                <p class="helper-text" id="helper-text" aria-live="polite"></p>
+                                <div class="product-composer-modal__footer-actions">
+                                  <button type="button" class="ghost-button" id="dismiss-product-composer-button">
+                                    Cancel
+                                  </button>
+                                  <button type="button" class="ghost-button" id="refresh-button" hidden>
+                                    Refresh List
+                                  </button>
+                                  <button type="submit" id="submit-button">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus">
+                                      <path d="M5 12h14"/>
+                                      <path d="M12 5v14"/>
+                                    </svg>
+                                    <span data-product-submit-label>Publish Listing</span>
+                                  </button>
+                                </div>
+                              </footer>
+                            </form>
+                          </section>
+                        </div>
+
+                        <section class="panel product-panel-grid__inventory">
+                          <section class="super-admin-stats product-listing-summary" aria-label="Product listing summary" aria-live="polite">
+                            <article class="super-admin-stat" data-product-listing-filter="all" data-admin-summary-stat="total" data-admin-summary-tone="total">
+                              <span class="super-admin-stat__label">Total Listing</span>
+                              <span class="super-admin-stat__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list-icon lucide-list"><path d="M3 5h.01"/><path d="M3 12h.01"/><path d="M3 19h.01"/><path d="M8 5h13"/><path d="M8 12h13"/><path d="M8 19h13"/></svg>
+                              </span>
+                              <strong data-product-listing-total>0</strong>
+                              <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">All</span><span class="super-admin-stat__trend-period">product records</span></span>
+                            </article>
+                            <article class="super-admin-stat" data-product-listing-filter="active" data-admin-summary-stat="active" data-admin-summary-tone="active">
+                              <span class="super-admin-stat__label">Active</span>
+                              <span class="super-admin-stat__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-check-icon lucide-clipboard-check"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+                              </span>
+                              <strong data-product-listing-active>0</strong>
+                              <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Live</span><span class="super-admin-stat__trend-period">in customer app</span></span>
+                            </article>
+                            <article class="super-admin-stat" data-product-listing-filter="inactive" data-admin-summary-stat="inactive" data-admin-summary-tone="inactive">
+                              <span class="super-admin-stat__label">Inactive</span>
+                              <span class="super-admin-stat__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-clipboard-off"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M5.575 5.597a2 2 0 0 0 -.575 1.403v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2m0 -4v-8a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 1 1 0 4h-2" /><path d="M3 3l18 18" /></svg>
+                              </span>
+                              <strong data-product-listing-inactive>0</strong>
+                              <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Not</span><span class="super-admin-stat__trend-period">currently live</span></span>
+                            </article>
+                            <article class="super-admin-stat" data-product-listing-filter="review" data-admin-summary-stat="review" data-admin-summary-tone="review">
+                              <span class="super-admin-stat__label">In Review</span>
+                              <span class="super-admin-stat__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-clock-icon lucide-clipboard-clock"><path d="M16 14v2.2l1.6 1"/><path d="M16 4h2a2 2 0 0 1 2 2v.832"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2"/><circle cx="16" cy="16" r="6"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                              </span>
+                              <strong data-product-listing-review>0</strong>
+                              <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Awaiting</span><span class="super-admin-stat__trend-period">approval</span></span>
+                            </article>
+                            <article class="super-admin-stat" data-product-listing-filter="revision" data-admin-summary-stat="revision" data-admin-summary-tone="revision">
+                              <span class="super-admin-stat__label">In Revision</span>
+                              <span class="super-admin-stat__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-pen-icon lucide-clipboard-pen"><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M21.34 15.664a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><path d="M8 22H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                              </span>
+                              <strong data-product-listing-revision>0</strong>
+                              <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Needs</span><span class="super-admin-stat__trend-period">seller edit</span></span>
+                            </article>
+                            <article class="super-admin-stat" data-product-listing-filter="restricted" data-admin-summary-stat="restricted" data-admin-summary-tone="restricted">
+                              <span class="super-admin-stat__label">Restricted</span>
+                              <span class="super-admin-stat__icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-x-icon lucide-clipboard-x"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m15 11 -6 6"/><path d="m9 11 6 6"/></svg>
+                              </span>
+                              <strong data-product-listing-restricted>0</strong>
+                              <span class="super-admin-stat__trend is-neutral"><span class="super-admin-stat__trend-value">Super Admin</span><span class="super-admin-stat__trend-period">restriction</span></span>
+                            </article>
+                          </section>
+                          <div class="product-panel-grid__inventory-tools">
+                           
+                          </div>
+
+                          <div id="product-list" class="product-list"></div>
+                          <footer class="seller-product-listing-footer" data-product-listing-footer hidden>
+                            <span class="seller-product-listing-footer__meta" data-product-listing-page-meta>
+                              Showing 0 to 0 of 0 results
+                            </span>
+                            <nav
+                              class="seller-product-listing-pagination"
+                              data-product-listing-pagination
+                              aria-label="Listing pages"
+                            ></nav>
+                            <span class="seller-product-listing-page-size" aria-label="Products per page">
+                              10 per page
+                            </span>
+                          </footer>
+                        </section>
+                      </div>
+          </section>
+
+          <section
+            class="main-inventory-view main-section-view"
+            aria-labelledby="main-inventory-title"
+            data-main-inventory-view
+            hidden
+          >
+            <header class="main-section-heading" aria-label="Inventory header">
+              <div class="main-section-heading__copy">
+                <nav class="main-section-heading__breadcrumb" aria-label="Breadcrumb">
+                  <span>Dashboard</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <span>Inventory</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong data-main-inventory-breadcrumb-filter>All</strong>
+                </nav>
+                <h1 id="main-inventory-title">Inventory <span data-main-section-count="inventory">(0)</span></h1>
+                <p>Track stock levels, expiry status, availability, and inventory records.</p>
+              </div>
+            </header>
+            <div class="main-inventory-frame-shell">
+              <div class="main-inventory-loading" role="status" data-main-inventory-loading>
+                <span class="main-inventory-loading__spinner" aria-hidden="true"></span>
+                <strong>Loading inventory...</strong>
+              </div>
+              <div class="main-inventory-error" role="alert" hidden data-main-inventory-error>
+                <strong>Unable to load inventory</strong>
+                <p>Please refresh or try again.</p>
+                <button type="button" data-main-inventory-retry>Try again</button>
+              </div>
+              <iframe
+                class="main-inventory-frame"
+                title="Inventory workspace"
+                loading="eager"
+                data-no-lazy
+                data-main-inventory-frame
+              ></iframe>
+            </div>
+          </section>
+
+          <section
+            class="main-employees-view main-section-view"
+            aria-labelledby="main-employees-title"
+            data-main-employees-view
+            hidden
+          >
+            <header class="main-section-heading" aria-label="Employees header">
+              <div class="main-section-heading__copy">
+                <nav class="main-section-heading__breadcrumb" aria-label="Breadcrumb">
+                  <span>Dashboard</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <span>User Data</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong>Employees</strong>
+                </nav>
+                <h1 id="main-employees-title">Employees <span data-main-section-count="employees">(0)</span></h1>
+                <p>Manage employee accounts, access, departments, and work information.</p>
+              </div>
+              <button type="button" class="main-section-heading__action" data-main-employees-add disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus">
+                  <path d="M5 12h14"/>
+                  <path d="M12 5v14"/>
+                </svg>
+                <span>Add Employee</span>
+              </button>
+            </header>
+            <div class="main-employees-frame-shell">
+              <div class="main-employees-loading" role="status" data-main-employees-loading>
+                <span class="main-employees-loading__spinner" aria-hidden="true"></span>
+                <strong>Loading employees...</strong>
+              </div>
+              <div class="main-employees-error" role="alert" hidden data-main-employees-error>
+                <strong>Unable to load employees</strong>
+                <p>Please refresh or try again.</p>
+                <button type="button" data-main-employees-retry>Try again</button>
+              </div>
+              <iframe
+                class="main-employees-frame"
+                title="Employee management workspace"
+                loading="eager"
+                data-no-lazy
+                data-main-employees-frame
+              ></iframe>
+            </div>
+          </section>
+
+          <section
+            class="main-vouchers-view main-section-view"
+            aria-labelledby="main-vouchers-title"
+            data-main-vouchers-view
+            hidden
+          >
+            <div class="super-admin-panel-container main-vouchers-panel-container">
+              <section class="super-admin-grid main-vouchers-grid">
+                <section class="panel super-admin-panel super-admin-list-panel super-admin-vouchers-panel">
+              <div class="super-admin-companies-heading super-admin-store-types-heading sa-vouchers-heading">
+                <div>
+                  <nav class="super-admin-company-heading__breadcrumb" aria-label="Breadcrumb">
+                    <span>Dashboard</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                    <strong>Store Vouchers</strong>
+                  </nav>
+                  <h2 id="main-vouchers-title">
+                    Store Vouchers
+                    <span data-seller-admin-vouchers-total>(0)</span>
+                  </h2>
+                  <p class="super-admin-store-types-heading__description">
+                    Create promo vouchers for buyers checking out from your store.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="partner-data-add-button"
+                  data-seller-admin-voucher-add
+                  aria-label="Create store voucher"
+                  aria-controls="seller-voucher-modal-overlay"
+                  aria-expanded="false"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14" />
+                    <path d="M12 5v14" />
+                  </svg>
+                  <span>Create Voucher</span>
+                </button>
+              </div>
+
+              <div class="super-admin-store-type-content sa-vouchers-content">
+                <div class="sa-vouchers-list" data-seller-admin-vouchers-list>
+                  <div class="empty-state">No store vouchers yet.</div>
+                </div>
+              </div>
+                </section>
+              </section>
+            </div>
+          </section>
+
+          <section
+            class="main-packing-view main-section-view"
+            aria-labelledby="main-packing-title"
+            data-main-packing-view
+            hidden
+          >
+            <header class="main-section-heading" aria-label="Dispatching header">
+              <div class="main-section-heading__copy">
+                <nav class="main-section-heading__breadcrumb" aria-label="Breadcrumb">
+                  <span>Dashboard</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <span>Dispatching</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <strong data-main-packing-breadcrumb-filter>Packing Station</strong>
+                </nav>
+                <h1 id="main-packing-title">Dispatching <span data-main-section-count="packing">(0)</span></h1>
+                <p>Scan, pack, and prepare customer orders for secure courier handoff.</p>
+              </div>
+            </header>
+            <div class="main-packing-frame-shell">
+              <div class="main-packing-loading" role="status" data-main-packing-loading>
+                <span class="main-packing-loading__spinner" aria-hidden="true"></span>
+                <strong>Loading packing operations...</strong>
+              </div>
+              <div class="main-packing-error" role="alert" hidden data-main-packing-error>
+                <strong>Unable to load packing operations</strong>
+                <p>Please refresh or try again.</p>
+                <button type="button" data-main-packing-retry>Try again</button>
+              </div>
+              <iframe
+                class="main-packing-frame"
+                title="Packing operations workspace"
+                loading="eager"
+                data-no-lazy
+                data-main-packing-frame
+              ></iframe>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div class="main-employees-drawer-portal" data-main-employees-drawer-portal hidden>
+      <button
+        type="button"
+        class="main-employees-drawer-portal__backdrop"
+        data-main-employees-drawer-portal-close
+        aria-label="Close employee details"
+      ></button>
+      <iframe
+        class="main-employees-drawer-portal__frame"
+        title="Employee details"
+        data-no-lazy
+        data-main-employees-drawer-portal-frame
+      ></iframe>
+    </div>
+
+    <div
+      class="product-editor-snackbar main-orders-waybill-snackbar"
+      data-main-orders-waybill-snackbar
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      <span class="product-editor-snackbar__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 8v4"></path>
+          <path d="M12 16h.01"></path>
+        </svg>
+      </span>
+      <span class="product-editor-snackbar__copy">
+        <strong data-main-orders-waybill-snackbar-title>Print Waybill</strong>
+        <span data-main-orders-waybill-snackbar-message></span>
+      </span>
+      <button type="button" class="product-editor-snackbar__close" data-main-orders-waybill-snackbar-close aria-label="Dismiss notification">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+        </svg>
+      </button>
+      <div class="product-editor-snackbar__timer" aria-hidden="true">
+        <span class="product-editor-snackbar__timer-bar" data-main-orders-waybill-snackbar-timer></span>
+      </div>
+    </div>
+
+    <div class="live-chat-delete-modal-overlay" data-live-chat-delete-modal aria-hidden="true" hidden>
+      <section
+        class="live-chat-delete-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="live-chat-delete-modal-title"
+        aria-describedby="live-chat-delete-modal-copy"
+        tabindex="-1"
+      >
+        <button
+          type="button"
+          class="live-chat-delete-modal__close"
+          data-live-chat-delete-modal-close
+          aria-label="Close delete chat modal"
+          title="Close"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+
+        <span class="live-chat-delete-modal__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 11v6"></path>
+            <path d="M14 11v6"></path>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </span>
+
+        <div class="live-chat-delete-modal__header">
+          <h2 id="live-chat-delete-modal-title">Delete this chat?</h2>
+          <p id="live-chat-delete-modal-copy" data-live-chat-delete-modal-copy>
+            This action cannot be undone and will be permanent.
+          </p>
+        </div>
+
+        <div class="live-chat-delete-modal__content" aria-hidden="true"></div>
+
+        <div class="live-chat-delete-modal__actions">
+          <button type="button" class="live-chat-delete-modal__cancel" data-live-chat-delete-modal-cancel>
+            Cancel
+          </button>
+          <button type="button" class="live-chat-delete-modal__confirm" data-live-chat-delete-modal-confirm>
+            Delete
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div
+      class="validation-modal-overlay super-admin-store-type-modal-overlay"
+      id="seller-voucher-modal-overlay"
+      aria-hidden="true"
+      hidden
+    >
+      <section
+        class="validation-modal super-admin-store-type-modal sa-voucher-modal"
+        id="seller-voucher-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="seller-voucher-modal-title"
+        tabindex="-1"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="seller-voucher-modal-close-button"
+          aria-label="Close voucher modal"
+          title="Close"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+
+        <form class="super-admin-store-type-modal__body" id="seller-voucher-modal-form" novalidate>
+          <div class="super-admin-store-type-modal__header sa-voucher-modal__topbar">
+            <div class="sa-voucher-modal__identity">
+              <span class="super-admin-store-type-modal__header-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+                  <path d="M13 5v2M13 11v2M13 17v2" />
+                </svg>
+              </span>
+              <div>
+                <h2 class="validation-modal__title" id="seller-voucher-modal-title">Create Voucher</h2>
+                <p class="super-admin-store-type-modal__subtitle">Set the offer and preview it before publishing. Buyers can use this at checkout on your listings only.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="super-admin-store-type-modal__content sa-voucher-modal__content">
+            <section class="super-admin-store-type-modal__section sa-voucher-modal__fields">
+              <div class="sa-voucher-modal__section-heading">
+                <span class="sa-voucher-modal__section-number" aria-hidden="true">1</span>
+                <div>
+                  <h3>Voucher details</h3>
+                  <p>Set the title, code, and discount against the total purchase for your store.</p>
+                </div>
+              </div>
+              <div class="sa-voucher-modal__field-grid">
+              <label class="category-add-field">
+                <span>Code</span>
+                <input type="text" id="seller-voucher-code-input" placeholder="FASHION20" maxlength="32" autocomplete="off" required />
+              </label>
+              <label class="category-add-field sa-voucher-modal__title-field">
+                <span>Title</span>
+                <input type="text" id="seller-voucher-title-input" placeholder="20% OFF" maxlength="48" autocomplete="off" required />
+              </label>
+              <div class="category-add-field sa-voucher-modal__discount-type-field">
+                <span>Discount type</span>
+                <input type="hidden" id="seller-voucher-discount-type-input" value="percent" />
+                <div class="super-admin-store-type-modal__status-options" role="group" aria-label="Discount type">
+                  <button
+                    type="button"
+                    id="seller-voucher-discount-type-toggle"
+                    aria-pressed="true"
+                    aria-controls="seller-voucher-discount-value-helper"
+                  >
+                    <span class="super-admin-store-type-modal__status-toggle" aria-hidden="true"></span>
+                    <span id="seller-voucher-discount-type-toggle-label">Percent</span>
+                  </button>
+                </div>
+                <small class="super-admin-store-type-modal__helper" id="seller-voucher-discount-type-helper">
+                  On = percent of total purchase. Off = fixed price off total purchase.
+                </small>
+              </div>
+              <label class="category-add-field sa-voucher-modal__discount-value-field">
+                <span id="seller-voucher-discount-value-label">Percent of total purchase (%)</span>
+                <input
+                  type="number"
+                  id="seller-voucher-discount-value-input"
+                  placeholder="20"
+                  min="1"
+                  max="100"
+                  step="1"
+                  inputmode="numeric"
+                  required
+                />
+                <small class="super-admin-store-type-modal__helper" id="seller-voucher-discount-value-helper">
+                  How many percent off the buyer's total purchase.
+                </small>
+              </label>
+              <div class="category-add-field sa-voucher-modal__free-shipping-field">
+                <span>Free shipping</span>
+                <input type="checkbox" id="seller-voucher-free-shipping-input" hidden />
+                <div class="super-admin-store-type-modal__status-options" role="group" aria-label="Free shipping">
+                  <button
+                    type="button"
+                    id="seller-voucher-free-shipping-toggle"
+                    aria-pressed="false"
+                    aria-controls="seller-voucher-free-shipping-helper"
+                  >
+                    <span class="super-admin-store-type-modal__status-toggle" aria-hidden="true"></span>
+                    <span id="seller-voucher-free-shipping-toggle-label">Off</span>
+                  </button>
+                </div>
+                <small class="super-admin-store-type-modal__helper" id="seller-voucher-free-shipping-helper">
+                  When on, this voucher waives shipping on the order (can be used with or without a purchase discount).
+                </small>
+              </div>
+              <label class="category-add-field">
+                <span>Min. spend (₱)</span>
+                <input type="number" id="seller-voucher-min-spend-input" placeholder="500" min="0" step="1" inputmode="numeric" />
+              </label>
+              <div class="category-add-field sa-voucher-modal__passive-field">
+                <span>Passive voucher</span>
+                <input type="checkbox" id="seller-voucher-passive-input" hidden />
+                <div class="super-admin-store-type-modal__status-options" role="group" aria-label="Passive voucher">
+                  <button
+                    type="button"
+                    id="seller-voucher-passive-toggle"
+                    aria-pressed="false"
+                    aria-controls="seller-voucher-passive-helper"
+                  >
+                    <span class="super-admin-store-type-modal__status-toggle" aria-hidden="true"></span>
+                    <span id="seller-voucher-passive-toggle-label">Off</span>
+                  </button>
+                </div>
+                <small class="super-admin-store-type-modal__helper" id="seller-voucher-passive-helper">
+                  When on, this voucher becomes available automatically at Place Order once the buyer reaches the minimum spend.
+                </small>
+              </div>
+              <label class="category-add-field sa-voucher-modal__expires-field">
+                <span>Expires</span>
+                <span class="product-expiry-date-picker sa-voucher-date-picker" id="seller-voucher-date-picker">
+                  <input
+                    type="date"
+                    id="seller-voucher-date-input"
+                    class="product-expiry-date-picker__native"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    required
+                  />
+                  <button
+                    type="button"
+                    class="product-expiry-date-picker__trigger"
+                    id="seller-voucher-date-trigger"
+                    aria-haspopup="dialog"
+                    aria-expanded="false"
+                    aria-controls="seller-voucher-date-calendar"
+                  >
+                    <svg class="product-expiry-date-picker__calendar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M8 2v4"></path>
+                      <path d="M16 2v4"></path>
+                      <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                      <path d="M3 10h18"></path>
+                      <path d="M8 14h.01"></path>
+                      <path d="M12 14h.01"></path>
+                      <path d="M16 14h.01"></path>
+                      <path d="M8 18h.01"></path>
+                      <path d="M12 18h.01"></path>
+                    </svg>
+                    <span class="product-expiry-date-picker__value" data-seller-voucher-date-value>mm/dd/yyyy</span>
+                    <svg class="product-expiry-date-picker__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="m6 9 6 6 6-6"></path>
+                    </svg>
+                  </button>
+                </span>
+              </label>
+              <p class="sa-voucher-modal__feedback" data-seller-voucher-modal-feedback aria-live="polite" hidden></p>
+              </div>
+            </section>
+
+            <aside class="sa-voucher-modal__preview-panel" aria-label="Voucher preview and inventory">
+              <div class="sa-voucher-modal__section-heading">
+                <span class="sa-voucher-modal__section-number" aria-hidden="true">2</span>
+                <div>
+                  <h3>Live preview</h3>
+                  <p>Buyer card preview. All vouchers and the total count stay in the Vouchers list.</p>
+                </div>
+              </div>
+              <div class="sa-voucher-modal__preview" data-seller-voucher-modal-preview></div>
+              <div class="sa-voucher-modal__inventory" data-seller-voucher-modal-inventory aria-live="polite">
+                <div class="sa-voucher-modal__inventory-head">
+                  <strong>Your vouchers</strong>
+                  <span data-seller-voucher-modal-inventory-total>(0)</span>
+                </div>
+                <p class="sa-voucher-modal__inventory-copy">Store vouchers for buyers checking out from your listings.</p>
+                <div class="sa-voucher-modal__inventory-list" data-seller-voucher-modal-inventory-list>
+                  <div class="empty-state">No vouchers yet.</div>
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          <footer class="super-admin-store-type-modal__actions sa-voucher-modal__footer">
+            <p class="sa-voucher-modal__footer-note">All changes are shown instantly in the preview.</p>
+            <div class="sa-voucher-modal__footer-actions">
+              <button type="button" class="ghost-button" id="seller-voucher-modal-cancel-button">Cancel</button>
+              <button type="submit" class="category-add-button" id="seller-voucher-modal-submit-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h14"></path>
+                  <path d="M12 5v14"></path>
+                </svg>
+                <span>Create Voucher</span>
+              </button>
+            </div>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <div
+      class="validation-modal-overlay super-admin-store-type-modal-overlay"
+      id="seller-flash-deal-modal-overlay"
+      aria-hidden="true"
+      hidden
+    >
+      <section
+        class="validation-modal super-admin-store-type-modal sa-voucher-modal seller-flash-deal-modal"
+        id="seller-flash-deal-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="seller-flash-deal-modal-title"
+        tabindex="-1"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="seller-flash-deal-modal-close-button"
+          aria-label="Close Flash Deal modal"
+          title="Close"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M18 6 6 18"></path>
+            <path d="m6 6 12 12"></path>
+          </svg>
+        </button>
+
+        <form class="super-admin-store-type-modal__body" id="seller-flash-deal-modal-form" novalidate>
+          <div class="super-admin-store-type-modal__header sa-voucher-modal__topbar">
+            <div class="sa-voucher-modal__identity">
+              <span class="super-admin-store-type-modal__header-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>
+                </svg>
+              </span>
+              <div>
+                <h2 class="validation-modal__title" id="seller-flash-deal-modal-title">Flash Deal</h2>
+                <p class="super-admin-store-type-modal__subtitle" data-seller-flash-deal-subtitle>
+                  Set a timed flash price and deal stock for this listing. Submitted deals await Super Admin review.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="super-admin-store-type-modal__content seller-flash-deal-modal__content">
+            <section class="super-admin-store-type-modal__section">
+              <div class="seller-flash-deal-modal__product" data-seller-flash-deal-product>
+                <span class="seller-flash-deal-modal__product-thumb" data-seller-flash-deal-product-thumb aria-hidden="true"></span>
+                <div class="seller-flash-deal-modal__product-copy">
+                  <strong data-seller-flash-deal-product-name>Listing</strong>
+                  <span data-seller-flash-deal-product-meta>Original · Stock</span>
+                </div>
+                <span class="seller-flash-deal-modal__status-pill" data-seller-flash-deal-status hidden></span>
+              </div>
+
+              <input type="hidden" id="seller-flash-deal-product-id" value="" />
+              <input type="hidden" id="seller-flash-deal-id" value="" />
+
+              <div class="seller-flash-deal-modal__compose" data-seller-flash-deal-compose>
+                <div class="sa-voucher-modal__field-grid seller-flash-deal-modal__fields">
+                  <label class="category-add-field">
+                    <span>Flash price (₱)</span>
+                    <input
+                      type="number"
+                      id="seller-flash-deal-price-input"
+                      min="0"
+                      step="0.01"
+                      inputmode="decimal"
+                      placeholder="0.00"
+                      required
+                    />
+                  </label>
+                  <label class="category-add-field">
+                    <span>Deal stock limit</span>
+                    <input
+                      type="number"
+                      id="seller-flash-deal-stock-input"
+                      min="1"
+                      step="1"
+                      inputmode="numeric"
+                      placeholder="1"
+                      required
+                    />
+                    <small class="super-admin-store-type-modal__helper" data-seller-flash-deal-stock-helper>
+                      Max equals current sellable stock.
+                    </small>
+                  </label>
+                  <label class="category-add-field">
+                    <span>Start</span>
+                    <input type="datetime-local" id="seller-flash-deal-start-input" required />
+                  </label>
+                  <label class="category-add-field">
+                    <span>End</span>
+                    <input type="datetime-local" id="seller-flash-deal-end-input" required />
+                    <small class="super-admin-store-type-modal__helper">Max duration 72 hours.</small>
+                  </label>
+                  <label class="category-add-field">
+                    <span>Per-buyer limit</span>
+                    <input
+                      type="number"
+                      id="seller-flash-deal-buyer-limit-input"
+                      min="1"
+                      step="1"
+                      value="1"
+                      inputmode="numeric"
+                    />
+                  </label>
+                  <label class="category-add-field seller-flash-deal-modal__notes-field">
+                    <span>Notes (optional)</span>
+                    <textarea
+                      id="seller-flash-deal-notes-input"
+                      rows="3"
+                      maxlength="500"
+                      placeholder="Optional note for Super Admin review"
+                    ></textarea>
+                  </label>
+                </div>
+              </div>
+
+              <div class="seller-flash-deal-modal__submitted" data-seller-flash-deal-submitted hidden>
+                <p class="seller-flash-deal-modal__submitted-banner" data-seller-flash-deal-submitted-banner>
+                  Submitted for Super Admin review.
+                </p>
+                <dl class="seller-flash-deal-modal__summary">
+                  <div>
+                    <dt>Flash price</dt>
+                    <dd data-seller-flash-deal-summary-price>—</dd>
+                  </div>
+                  <div>
+                    <dt>Deal stock</dt>
+                    <dd data-seller-flash-deal-summary-stock>—</dd>
+                  </div>
+                  <div>
+                    <dt>Schedule</dt>
+                    <dd data-seller-flash-deal-summary-schedule>—</dd>
+                  </div>
+                  <div>
+                    <dt>Per-buyer limit</dt>
+                    <dd data-seller-flash-deal-summary-buyer-limit>—</dd>
+                  </div>
+                  <div class="seller-flash-deal-modal__summary-notes">
+                    <dt>Notes</dt>
+                    <dd data-seller-flash-deal-summary-notes>—</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <p
+                class="sa-voucher-modal__feedback"
+                data-seller-flash-deal-modal-feedback
+                hidden
+              ></p>
+            </section>
+          </div>
+
+          <footer class="super-admin-store-type-modal__actions sa-voucher-modal__footer">
+            <p class="sa-voucher-modal__footer-note" data-seller-flash-deal-footer-note>
+              Pending deals need Super Admin approval. Approved deals go Live automatically at start time.
+            </p>
+            <div class="sa-voucher-modal__footer-actions">
+              <button type="button" class="ghost-button" id="seller-flash-deal-modal-cancel-button">Close</button>
+              <button
+                type="button"
+                class="ghost-button seller-flash-deal-modal__end-button"
+                id="seller-flash-deal-modal-end-button"
+                hidden
+              >
+                Cancel deal
+              </button>
+              <button
+                type="button"
+                class="ghost-button seller-flash-deal-modal__edit-button"
+                id="seller-flash-deal-modal-edit-button"
+                hidden
+              >
+                Edit
+              </button>
+              <button type="submit" class="category-add-button" id="seller-flash-deal-modal-submit-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>
+                </svg>
+                <span data-seller-flash-deal-submit-label>Submit Flash Deal</span>
+              </button>
+            </div>
+          </footer>
+        </form>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="/lazy-loading.js?v=global-lazy-1"></script>
+    <script src="/theme.js?v=platform-workspace-settings-1"></script>
+    <script src="/admin-search-not-found.js?v=admin-search-not-found-2"></script>
+    <script src="/admin-empty-state-lottie.js?v=admin-seller-empty-data-1"></script>
+    <script src="/admin_account_settings.js?v=seller-account-deletion-1"></script>
+    <script src="/seller_feedback_modal.js?v=seller-feedback-v14"></script>
+    <script src="/admin-summary-cards.js?v=admin-seller-summary-shadow-1"></script>
+    <script src="/seller_admin_vouchers.js?v=seller-vouchers-3"></script>
+    <script src="/seller_admin_flash_deals.js?v=flash-deal-pending-ux-1"></script>
+    <script src="/main.js?v=flash-deal-app-ribbon-1"></script>
+    <script src="/app.js?v=flash-deal-app-ribbon-1"></script>
+    <script src="/realtime_sync.js?v=platform-realtime-toggle-1"></script>
+  </body>
+</html>

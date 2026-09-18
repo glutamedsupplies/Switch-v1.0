@@ -4,7 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Register</title>
-    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+    <link rel="stylesheet" href="/styles.css?v=seller-logo-transparency-4" />
+    <link rel="stylesheet" href="/standalone-svg-icon-sizes.css?v=clipboard-pen-size-1" />
+  <script src="/lazy-loading.js?v=global-lazy-1"></script>
   </head>
   <body class="register-page">
     <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral">
@@ -12,7 +14,7 @@
         <aside class="panel dashboard-sidebar">
           <a
             class="dashboard-sidebar__logo"
-            href="/admin_dashboard.html"
+            href="/main.html#dashboard"
             aria-label="Admin dashboard home"
             title="Admin dashboard"
             data-login-logo
@@ -33,7 +35,7 @@
           <nav class="dashboard-nav" aria-label="Admin navigation">
             <a
               class="dashboard-nav__item"
-              href="/admin_dashboard.html"
+              href="/main.html#dashboard"
               aria-label="Store Overview"
               title="Store Overview"
             >
@@ -61,7 +63,7 @@
 
             <a
               class="dashboard-nav__item"
-              href="/product_insight.html"
+              href="/listing_insight.html"
               aria-label="Product Insight"
               title="Product Insight"
             >
@@ -89,7 +91,7 @@
 
             <a
               class="dashboard-nav__item"
-              href="/stock.html"
+              href="/main.html#inventory"
               aria-label="Inventory"
               title="Inventory"
             >
@@ -163,7 +165,7 @@
                     class="product-panel-toolbar__avatar"
                     aria-hidden="true"
                     data-login-logo
-                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                    data-default-logo-src="/switch-logo.png"
                   >
                     <img
                       class="product-panel-toolbar__avatar-image"
@@ -672,7 +674,7 @@
                       title="Remove selected document"
                       disabled
                     >
-                      <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
                   </div>
                 </div>
@@ -784,9 +786,9 @@
       </section>
     </div>
 
-      <script src="/admin_navigation.js?v=admin-profile-refresh-1"></script>
-      <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
-      <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+<script src="/admin_navigation.js?v=seller-remembered-accounts-1"></script>
+      <script src="/theme.js?v=platform-workspace-settings-1"></script>
+    <script src="/settings-menu.js?v=company-building2-default-logo-2"></script>
       <script src="/password-toggle.js"></script>
       <script>
       const employeeRegisterForm = document.getElementById("employee-register-form");
@@ -3214,7 +3216,7 @@
 
         const icon = document.createElement("span");
         icon.className = "product-image-input-row__preview-icon register-document-upload__icon";
-        icon.innerHTML = '<i class="fa-regular fa-file-lines" aria-hidden="true"></i>';
+        icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-pen-icon lucide-clipboard-pen" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M21.34 15.664a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><path d="M8 22H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>';
 
         const copy = document.createElement("span");
         copy.className = "product-image-input-row__file-summary-copy";

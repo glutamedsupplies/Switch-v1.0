@@ -3,6 +3,100 @@ const os = require("os");
 const path = require("path");
 const fs = require("fs");
 const fsPromises = require("fs/promises");
+const crypto = require("crypto");
+const { createPlatformFeedbackApi } = require("./services/platformFeedbackApi");
+const { createTrendingSearchesApi } = require("./services/trendingSearchesApi");
+const { createMapsPlacesApi } = require("./services/mapsPlacesApi");
+const { createVouchersApi } = require("./services/vouchersApi");
+const { createFlashDealsApi } = require("./services/flashDealsApi");
+const { createAccountDevicesApi } = require("./services/accountDevicesApi");
+const {
+  createBuyerDeliveryAddressesApi,
+} = require("./services/buyerDeliveryAddressesApi");
+let accountDevicesApi = null;
+const { createRestoreMissingSaApis } = require("./services/restoreMissingSaApis");
+const {
+  createOrdersWaybillApi,
+  buildDeliveryPartnersByBranchMap,
+  resolveOrderNeedsWaybill,
+  applyWaybillStageGate,
+} = require("./services/ordersWaybillApi");
+const {
+  isCustomerPostgresReady,
+  createCustomerAccount,
+  loginCustomer,
+  loginCustomerWithGoogle,
+  findCustomerByEmail,
+  findCustomerById,
+  updateAccountProfileImage,
+  updateCustomerPreferredLanguage,
+  normalizePreferredLanguage,
+  changeCustomerPassword,
+  stripInternalFields,
+} = require("./services/postgresCustomerAccounts");
+const {
+  sendVerificationCode,
+  verifyVerificationCode,
+  consumeVerificationToken,
+  verifyGoogleIdToken,
+  verifyGoogleCredential,
+  getGoogleClientIds,
+} = require("./services/postgresAuth");
+const {
+  isSellerPostgresReady,
+  createSellerAccount,
+  loginSeller,
+  loginSellerWithGoogle,
+  findSellerByEmail,
+  findSellerByAdminId,
+  updateSellerPresence,
+  updateSellerPasswordByEmail,
+  checkSellerAvailability,
+  deleteSellerAuthIdentities,
+  stripInternalFields: stripSellerInternalFields,
+} = require("./services/postgresSellerAccounts");
+const {
+  isSellerOnboardingReady,
+  startSellerOnboarding,
+  createSellerCheckoutIntent,
+  updateSellerCheckoutIntentGatewayState,
+  findSellerCheckoutIntentByPaymentReference,
+  confirmSellerOnboarding,
+  markAccountVerifiedForSellerOnboarding,
+  getSellerSwitchPinStatus,
+  setSellerSwitchPin,
+  verifySellerSwitchPin,
+  checkSellerSwitchPinUnlock,
+} = require("./services/postgresSellerOnboarding");
+const {
+  getHostedGatewayConfig,
+  createHostedCheckoutSession,
+  verifyPaymongoWebhook,
+} = require("./services/sellerCheckoutGateway");
+const { verifyPassword } = require("./db/password");
+const {
+  isEmployeePostgresReady,
+  createEmployeeAccount,
+  loginEmployee,
+  findEmployeeLoginCandidate,
+  stripInternalFields: stripEmployeeInternalFields,
+} = require("./services/postgresEmployeeAccounts");
+const {
+  isAccountsPostgresReady,
+  listAllAccountsFromPostgres,
+  isUnifiedAccountsReady,
+  listUnifiedAccounts,
+  resolveUnifiedSession,
+  syncAccountsToPostgres,
+  deleteAccountById,
+} = require("./services/postgresAccountsStore");
+const { isPostgresConfigured } = require("./db/pool");
+let biometricFirmwareCompile = null;
+try {
+  biometricFirmwareCompile = require("./services/biometricFirmwareCompile");
+} catch (_) {
+  biometricFirmwareCompile = null;
+}
 let sharp = null;
 
 try {
@@ -56,18 +150,87 @@ loadEnvFile(path.join(path.dirname(__dirname), ".env"));
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
+const BUILT_IN_PLATFORM_ART = Object.freeze({
+  shop: Object.freeze({
+    url: "/assets/platform-shop-art.png",
+  }),
+  food: Object.freeze({
+    url: "/assets/platform-food-art.png",
+  }),
+});
+const ADMIN_SPA_SHELL_PATH = "/admin_app.html";
+const ADMIN_SPA_FRAME_QUERY_KEY = "__gms_admin_spa_frame";
+const ADMIN_SPA_DOCUMENT_PATHS = new Set([
+  "/admin_dashboard.html",
+  "/concern.html",
+  "/insight.html",
+  "/listing_insight.html",
+  "/product_panel.html",
+  "/add_products.html",
+  "/edit_products.html",
+  "/stock.html",
+  "/payment_partners.html",
+  "/delivery_partners.html",
+  "/employee_data.html",
+  "/register.html",
+  "/face_verfication.html",
+  "/packing_dashboard.html",
+  "/traking.html",
+]);
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads");
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
+const APPROVED_PRODUCT_TRAINING_FILE = path.join(DATA_DIR, "approved_product_training.json");
 const ACTIVITY_FILE = path.join(DATA_DIR, "activity_log.json");
 const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
-const CATEGORIES_FILE = path.join(DATA_DIR, "categories.json");
+const SUPER_ADMIN_NOTIFICATIONS_FILE = path.join(DATA_DIR, "super_admin_notifications.json");
 const STORE_TYPES_FILE = path.join(DATA_DIR, "store_types.json");
+const PLATFORMS_FILE = path.join(DATA_DIR, "platforms.json");
 const CHAT_THREADS_FILE = path.join(DATA_DIR, "chat_threads.json");
+const DEFAULT_BUYER_PLATFORMS = [
+  {
+    id: "shop",
+    name: "Shop",
+    status: "active",
+    sortOrder: 1,
+    iconName: "store",
+    comingSoon: false,
+    heroImageUrl: "",
+    iconImageUrl: BUILT_IN_PLATFORM_ART.shop.url,
+    primaryColor: "#2563eb",
+    secondaryColor: "",
+  },
+  {
+    id: "food",
+    name: "Food",
+    status: "active",
+    sortOrder: 2,
+    iconName: "utensils",
+    comingSoon: false,
+    heroImageUrl: "",
+    iconImageUrl: BUILT_IN_PLATFORM_ART.food.url,
+    primaryColor: "#ea580c",
+    secondaryColor: "",
+  },
+  {
+    id: "hotels",
+    name: "Hotels",
+    status: "active",
+    sortOrder: 3,
+    iconName: "hotel",
+    comingSoon: false,
+    heroImageUrl: "",
+    iconImageUrl: "",
+    primaryColor: "#7c3aed",
+    secondaryColor: "",
+  },
+];
 const DELIVERY_PARTNERS_FILE = path.join(DATA_DIR, "delivery_partners.json");
 const PAYMENT_PARTNERS_FILE = path.join(DATA_DIR, "payment_partners.json");
+const PARTNER_AUDIT_FILE = path.join(DATA_DIR, "partner_audit_log.json");
 const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 const FOLLOWERS_FILE = path.join(DATA_DIR, "followers.json");
+const WORKSPACE_SETTINGS_FILE = path.join(DATA_DIR, "workspace_settings.json");
 const FACE_ATTENDANCE_EMPLOYEES_FILE = String(
   process.env.FACE_ATTENDANCE_EMPLOYEES_FILE || "",
 ).trim() || path.join(
@@ -85,9 +248,22 @@ const FACE_ATTENDANCE_ATTENDANCE_FILE = String(
 const MAX_JSON_BODY_BYTES = 1_000_000;
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const MAX_UPLOAD_SIZE_LABEL = `${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB`;
+const MAX_PRODUCT_DESCRIPTION_IMAGE_URLS = 8;
+const MAX_PRODUCT_DESCRIPTION_IMAGE_URL_LENGTH = 2048;
 const MAX_REVIEW_VIDEO_BYTES = 50 * 1024 * 1024;
 const MAX_REVIEW_VIDEO_SIZE_LABEL = `${Math.round(MAX_REVIEW_VIDEO_BYTES / (1024 * 1024))} MB`;
 const MAX_ACTIVITY_ENTRIES = 50;
+const MAX_SUPER_ADMIN_NOTIFICATIONS = 5_000;
+const SELLER_ACCOUNT_DELETION_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+const SELLER_ACCOUNT_DELETION_SWEEP_MS = 60 * 60 * 1000;
+const MAX_PARTNER_AUDIT_ENTRIES = 5_000;
+const MAX_PARTNER_NAME_LENGTH = 120;
+const MAX_PARTNER_DESCRIPTION_LENGTH = 500;
+const MAX_PARTNER_IMAGE_URL_LENGTH = 2_048;
+const MAX_PARTNER_API_KEY_LENGTH = 1_024;
+const MAX_PARTNER_BULK_IDS = 100;
+const MAX_PARTNER_PAGE_SIZE = 100;
+const ADMIN_PRESENCE_STALE_MS = 45 * 1000;
 const CHAT_AI_API_KEY = String(
   process.env.CHAT_AI_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
 ).trim();
@@ -97,7 +273,7 @@ const CHAT_AI_MODEL = String(
 const CHAT_AI_API_URL = String(
   process.env.CHAT_AI_API_URL ?? "https://api.openai.com/v1/chat/completions",
 ).trim();
-const CHAT_AI_TIMEOUT_MS = 20_000;
+const CHAT_AI_TIMEOUT_MS = 60_000;
 const CHAT_TYPING_ACTIVE_WINDOW_MS = 5_000;
 const CHAT_ONLINE_ACTIVE_WINDOW_MS = 45_000;
 const UPLOAD_IMAGE_WEBP_QUALITY = 82;
@@ -113,6 +289,38 @@ const PRODUCT_MODEL_FRAME_ORDER = Object.freeze([
 const PRODUCT_MODEL_TEXTURE_MAX_SIZE = 1400;
 const VISUAL_SEARCH_VECTOR_SIZE = 32;
 const VISUAL_SEARCH_MIN_SCORE = 0.82;
+const REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE = Math.max(
+  VISUAL_SEARCH_MIN_SCORE,
+  Math.min(
+    0.98,
+    Math.max(0.5, Number(process.env.REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE) || 0.88),
+  ),
+);
+const APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE = Math.max(
+  VISUAL_SEARCH_MIN_SCORE,
+  Math.min(
+    0.99,
+    Math.max(0.55, Number(process.env.APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE) || 0.9),
+  ),
+);
+const APPROVED_PRODUCT_FULLY_TRAINED_MATCH_MIN_SCORE = Math.max(
+  APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+  Math.min(
+    1,
+    Math.max(0.95, Number(process.env.APPROVED_PRODUCT_FULLY_TRAINED_MATCH_MIN_SCORE) || 0.99),
+  ),
+);
+const SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE = normalizeConfidenceThreshold(
+  process.env.SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE,
+  0.8,
+);
+const SELLER_PRODUCT_ILLEGAL_MANUAL_REVIEW_SCORE = Math.min(
+  SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE,
+  normalizeConfidenceThreshold(
+    process.env.SELLER_PRODUCT_ILLEGAL_MANUAL_REVIEW_SCORE,
+    0.2,
+  ),
+);
 const VISUAL_SEARCH_MAX_RESULTS = 1;
 const VISUAL_SEARCH_FINGERPRINT_VERSION = `sharp-rgb-${VISUAL_SEARCH_VECTOR_SIZE}-v2`;
 const VISUAL_SEARCH_FINGERPRINT_LENGTH =
@@ -144,8 +352,35 @@ const CHAT_AI_ENV_HINT =
   "Chat AI is disabled because no OPENAI_API_KEY or CHAT_AI_API_KEY was found. " +
   "Add it to backend/.env or your shell environment.";
 const DEFAULT_ADMIN_ID = "admin";
+const ADMIN_RESTRICTION_LIMIT_LABELS = new Map([
+  ["post_products", "Post new products"],
+  ["edit_products", "Edit product listings"],
+  ["manage_inventory", "Manage stock"],
+  ["process_orders", "Process orders"],
+  ["create_promos", "Create promos"],
+  ["update_store_profile", "Update store profile"],
+  ["manage_employees", "Manage employees"],
+  ["access_payouts", "Access payouts"],
+]);
 const PRODUCT_APPROVAL_APPROVED = "approved";
 const PRODUCT_APPROVAL_PENDING = "pending";
+const PRODUCT_APPROVAL_REJECTED = "rejected";
+const YOLO_INSPECTION_ENDPOINT = String(
+  process.env.YOLO_INSPECTION_ENDPOINT || "",
+).trim();
+const YOLO_INSPECTION_TOKEN = String(
+  process.env.YOLO_INSPECTION_TOKEN || "",
+).trim();
+const YOLO_INSPECTION_MODEL = String(
+  process.env.YOLO_INSPECTION_MODEL || "yolo-product-inspection",
+).trim() || "yolo-product-inspection";
+const YOLO_INSPECTION_PUBLIC_BASE_URL = String(
+  process.env.YOLO_INSPECTION_PUBLIC_BASE_URL || "",
+).trim().replace(/\/$/, "");
+const YOLO_INSPECTION_TIMEOUT_MS = Math.max(
+  1_000,
+  Number(process.env.YOLO_INSPECTION_TIMEOUT_MS) || 20_000,
+);
 const SUPER_ADMIN_USERNAME = String(
   process.env.SUPER_ADMIN_USERNAME || "root",
 ).trim() || "root";
@@ -257,14 +492,488 @@ function sendProductAdminScopeRequired(response) {
   });
 }
 
+function normalizeAdminRestrictionLimit(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return ADMIN_RESTRICTION_LIMIT_LABELS.has(normalized) ? normalized : "";
+}
+
+function normalizeAdminRestrictionLimits(values) {
+  const rawValues = Array.isArray(values)
+    ? values
+    : String(values ?? "")
+      .split(",");
+  const seen = new Set();
+  const normalizedLimits = [];
+
+  for (const value of rawValues) {
+    const normalizedLimit = normalizeAdminRestrictionLimit(value);
+    if (!normalizedLimit || seen.has(normalizedLimit)) {
+      continue;
+    }
+
+    seen.add(normalizedLimit);
+    normalizedLimits.push(normalizedLimit);
+  }
+
+  return normalizedLimits;
+}
+
+function getAdminRestrictionLimits(account) {
+  if (!account || typeof account !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(account.restrictionLimits)) {
+    return normalizeAdminRestrictionLimits(account.restrictionLimits);
+  }
+
+  if (Array.isArray(account.restrictLimits)) {
+    return normalizeAdminRestrictionLimits(account.restrictLimits);
+  }
+
+  return normalizeAdminRestrictionLimits(
+    account.restrictionLimits ?? account.restrictLimits ?? "",
+  );
+}
+
+function normalizeAdminRestrictionLimitLabel(value, maxLength = 120) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeAdminRestrictionLimitLabelList(values, maxLength = 120) {
+  const rawValues = Array.isArray(values)
+    ? values
+    : String(values ?? "")
+      .split(",");
+
+  return rawValues
+    .map((value) => normalizeAdminRestrictionLimitLabel(value, maxLength))
+    .filter(Boolean);
+}
+
+function getAdminRestrictionStoredLimitLabels(account) {
+  if (!account || typeof account !== "object") {
+    return [];
+  }
+
+  const primaryLabels = normalizeAdminRestrictionLimitLabelList(account.restrictionLimitLabels);
+  return primaryLabels.length
+    ? primaryLabels
+    : normalizeAdminRestrictionLimitLabelList(account.restrictLimitLabels);
+}
+
+function getAdminRestrictionLimitLabel(account, limit) {
+  const normalizedLimit = normalizeAdminRestrictionLimit(limit);
+  if (!normalizedLimit) {
+    return "";
+  }
+
+  const restrictionLimits = getAdminRestrictionLimits(account);
+  const storedLabels = getAdminRestrictionStoredLimitLabels(account);
+  const storedLabel = storedLabels[restrictionLimits.indexOf(normalizedLimit)];
+  return storedLabel || ADMIN_RESTRICTION_LIMIT_LABELS.get(normalizedLimit) || normalizedLimit;
+}
+
+function getAdminRestrictionLimitLabels(account) {
+  return getAdminRestrictionLimits(account).map((limit) =>
+    getAdminRestrictionLimitLabel(account, limit),
+  );
+}
+
+function getAdminRestrictionReason(account) {
+  return String(account?.restrictionReason ?? account?.restrictReason ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getAdminRestrictionDescription(account) {
+  return String(account?.restrictionDescription ?? account?.restrictDescription ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getAdminRestrictionExpiresAt(account) {
+  const rawExpiresAt =
+    account?.restrictExpiresAt ??
+    account?.restrictionExpiresAt ??
+    account?.restrict_expires_at ??
+    "";
+  const expiresAt = new Date(rawExpiresAt);
+  return Number.isFinite(expiresAt.getTime()) ? expiresAt.toISOString() : "";
+}
+
+function isAdminAccountMarkedRestricted(account) {
+  const status = String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
+    .trim()
+    .toLowerCase();
+  return status === "restricted" ||
+    account?.isRestricted === true ||
+    account?.restricted === true;
+}
+
+function isAdminAccountRestrictionActive(account) {
+  return isAdminAccountMarkedRestricted(account) && !isAdminTemporaryRestrictionExpired(account);
+}
+
+function findAdminAccountByScopeId(accounts, adminId) {
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    return null;
+  }
+
+  return (Array.isArray(accounts) ? accounts : []).find((account) => {
+    if (!isAdminAccount(account)) {
+      return false;
+    }
+
+    const matchValues = [
+      getRecordAdminId(account, account?.adminId || account?.id),
+      normalizeAdminTenantId(account?.id, ""),
+      normalizeAdminTenantId(account?.accountCode, ""),
+    ];
+    return matchValues.includes(normalizedAdminId);
+  }) || null;
+}
+
+function sendAdminRestrictionDenied(response, account, limit) {
+  const normalizedLimit = normalizeAdminRestrictionLimit(limit);
+  const restrictionLimits = getAdminRestrictionLimits(account);
+  const restrictionLimitLabel =
+    getAdminRestrictionLimitLabel(account, normalizedLimit) || "This action";
+
+  sendJson(response, 403, {
+    message: `${restrictionLimitLabel} is currently restricted by Super Admin.`,
+    accountStatus: "restricted",
+    isRestricted: true,
+    restrictionLimit: normalizedLimit,
+    restrictionLimitLabel,
+    restrictionLimits,
+    restrictionLimitLabels: getAdminRestrictionLimitLabels(account),
+    restrictionReason: getAdminRestrictionReason(account),
+    restrictionDescription: getAdminRestrictionDescription(account),
+    restrictExpiresAt: getAdminRestrictionExpiresAt(account),
+  });
+}
+
+async function requireAdminRestrictionAllowed(
+  request,
+  response,
+  requestUrl,
+  limit,
+  adminId = null,
+) {
+  const normalizedLimit = normalizeAdminRestrictionLimit(limit);
+  if (!normalizedLimit || isSuperAdminAuthorized(request)) {
+    return true;
+  }
+
+  const normalizedAdminId = normalizeAdminTenantId(
+    adminId ?? getRequestAdminId(request, requestUrl, ""),
+    "",
+  );
+  if (!normalizedAdminId) {
+    return true;
+  }
+
+  const accounts = await readAccounts();
+  const account = findAdminAccountByScopeId(accounts, normalizedAdminId);
+  if (!account || !isAdminAccountRestrictionActive(account)) {
+    return true;
+  }
+
+  const restrictionLimits = getAdminRestrictionLimits(account);
+  if (!restrictionLimits.includes(normalizedLimit)) {
+    return true;
+  }
+
+  sendAdminRestrictionDenied(response, account, normalizedLimit);
+  return false;
+}
+
+function isProductInventoryActionPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const activityContext = String(payload.__activityContext ?? payload.activityContext ?? "")
+    .trim()
+    .toLowerCase();
+  if (activityContext === "inventory" || activityContext === "stock") {
+    return true;
+  }
+
+  const visibleKeys = Object.keys(payload).filter((key) =>
+    !key.startsWith("__") &&
+    ![
+      "adminId",
+      "tenantId",
+      "workspaceId",
+      "ownerAdminId",
+      "storeAdminId",
+      "id",
+    ].includes(key),
+  );
+  if (!visibleKeys.length) {
+    return false;
+  }
+
+  const inventoryKeys = new Set([
+    "stock",
+    "inventoryStock",
+    "stocks",
+    "stockHistory",
+    "stockRecords",
+    "stockHistoryEntries",
+    "stockHistoryEntry",
+    "replaceStockHistory",
+    "expiryDate",
+    "expirationDate",
+    "expireDate",
+    "stockedDate",
+    "stockDate",
+    "dateStocked",
+    "lastRestockedAt",
+    "restockedAt",
+    "lastRestockPreviousStock",
+    "lastRestockPreviousExpiryDate",
+    "lastRestockAddedStock",
+    "lastRestockExpiryDate",
+    "lastStockAddedQuantity",
+    "lastStockDeductedQuantity",
+  ]);
+  return visibleKeys.every((key) => inventoryKeys.has(key));
+}
+
+function getProductInventoryExpiryDate(product) {
+  return normalizeOptionalProductDateTime(
+    product?.expiryDate ??
+      product?.expirationDate ??
+      product?.expiredDate ??
+      product?.expireDate ??
+      product?.bestBeforeDate ??
+      product?.bestBefore,
+  );
+}
+
+function getProductVariantStockSignature(product) {
+  return (Array.isArray(product?.variants) ? product.variants : [])
+    .map((variant, index) => {
+      const key = String(variant?.id ?? variant?.sku ?? variant?.name ?? index)
+        .trim()
+        .toLowerCase();
+      return `${key}:${normalizeOptionalWholeNumber(variant?.stock, 0)}`;
+    })
+    .join("|");
+}
+
+function doesProductPayloadChangeInventory(payload, existingProduct = null) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  if (
+    isProductInventoryActionPayload(payload) ||
+    Object.prototype.hasOwnProperty.call(payload, "stockHistoryEntry") ||
+    Object.prototype.hasOwnProperty.call(payload, "replaceStockHistory")
+  ) {
+    return true;
+  }
+
+  if (!existingProduct || typeof existingProduct !== "object") {
+    return [
+      "stock",
+      "inventoryStock",
+      "stockHistory",
+      "stockRecords",
+      "stockHistoryEntries",
+      "expiryDate",
+      "expirationDate",
+      "expireDate",
+      "variants",
+    ].some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(payload, "stock") ||
+    Object.prototype.hasOwnProperty.call(payload, "inventoryStock")
+  ) {
+    const nextStock = getNormalizedProductInventoryStock(payload, 0);
+    const currentStock = getNormalizedProductInventoryStock(existingProduct, 0);
+    if (nextStock !== currentStock) {
+      return true;
+    }
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(payload, "expiryDate") ||
+    Object.prototype.hasOwnProperty.call(payload, "expirationDate") ||
+    Object.prototype.hasOwnProperty.call(payload, "expireDate")
+  ) {
+    const nextExpiryDate = getProductInventoryExpiryDate(payload);
+    const currentExpiryDate = getProductInventoryExpiryDate(existingProduct);
+    if (nextExpiryDate !== currentExpiryDate) {
+      return true;
+    }
+  }
+
+  if (Array.isArray(payload.variants)) {
+    const nextVariantStockSignature = getProductVariantStockSignature(payload);
+    const currentVariantStockSignature = getProductVariantStockSignature(existingProduct);
+    if (nextVariantStockSignature !== currentVariantStockSignature) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeRestrictionPriceValue(value) {
+  const normalizedText = String(value ?? "").replace(/[^\d.-]+/g, "").trim();
+  if (!normalizedText) {
+    return null;
+  }
+
+  const parsedValue = Number(normalizedText);
+  return Number.isFinite(parsedValue) && parsedValue >= 0 ? parsedValue : null;
+}
+
+function getProductPromotionSignature(product) {
+  if (!product || typeof product !== "object") {
+    return "";
+  }
+
+  const originalPrice = normalizeRestrictionPriceValue(
+    product.originalPrice ?? product.price,
+  );
+  const salesPrice = normalizeRestrictionPriceValue(
+    product.salesPrice ?? product.salePrice ?? product.discountedPrice,
+  );
+  const discountPercent = normalizeRestrictionPriceValue(
+    product.discountPercent ?? product.promoDiscountPercent,
+  );
+
+  if (
+    originalPrice !== null &&
+    salesPrice !== null &&
+    salesPrice > 0 &&
+    originalPrice > salesPrice
+  ) {
+    return `price:${originalPrice}:${salesPrice}`;
+  }
+
+  if (discountPercent !== null && discountPercent > 0) {
+    return `percent:${discountPercent}`;
+  }
+
+  return "";
+}
+
+function doesProductPayloadChangePromotion(payload, existingProduct = null) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  const hasPromotionPayload = [
+    "salesPrice",
+    "salePrice",
+    "discountedPrice",
+    "discountPercent",
+    "promoDiscountPercent",
+    "promotion",
+    "promo",
+    "campaign",
+  ].some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+
+  if (!hasPromotionPayload) {
+    return false;
+  }
+
+  const nextPromotionSignature = getProductPromotionSignature({
+    ...(existingProduct && typeof existingProduct === "object" ? existingProduct : {}),
+    ...payload,
+  });
+  if (!existingProduct || typeof existingProduct !== "object") {
+    return Boolean(nextPromotionSignature);
+  }
+
+  return nextPromotionSignature !== getProductPromotionSignature(existingProduct);
+}
+
 function isRecordInAdminScope(record, adminId) {
-  return getRecordAdminId(record) === normalizeAdminTenantId(adminId, DEFAULT_ADMIN_ID);
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    return false;
+  }
+
+  const explicitRecordAdminId = normalizeAdminTenantId(
+    record?.adminId ??
+      record?.tenantId ??
+      record?.ownerAdminId ??
+      record?.workspaceId ??
+      record?.storeAdminId ??
+      record?.sellerId ??
+      record?.seller_id ??
+      record?.shopId ??
+      record?.shop_id,
+    "",
+  );
+  if (explicitRecordAdminId) {
+    return explicitRecordAdminId === normalizedAdminId;
+  }
+
+  // Admin accounts may only carry id/accountCode until adminId is mirrored.
+  if (isAdminAccount(record)) {
+    return (
+      normalizeAdminTenantId(record?.id, "") === normalizedAdminId ||
+      normalizeAdminTenantId(record?.accountCode, "") === normalizedAdminId
+    );
+  }
+
+  return false;
 }
 
 function filterRecordsByAdminId(records, adminId) {
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    return [];
+  }
   return (Array.isArray(records) ? records : []).filter((record) =>
-    isRecordInAdminScope(record, adminId),
+    isRecordInAdminScope(record, normalizedAdminId),
   );
+}
+
+function isProductPartnerOptionsRequest(requestUrl) {
+  const rawValue = String(
+    requestUrl?.searchParams?.get("productOptions") ??
+      requestUrl?.searchParams?.get("forProduct") ??
+      requestUrl?.searchParams?.get("scope") ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+  return ["1", "true", "yes", "product", "product-options", "available"].includes(rawValue);
+}
+
+function getActiveProductPartnerOptionRecords(records) {
+  const seenIds = new Set();
+  const options = [];
+  for (const record of Array.isArray(records) ? records : []) {
+    const id = String(record?.id ?? "").trim();
+    const key = id.toLowerCase();
+    if (!id || seenIds.has(key) || !normalizePartnerEnabledState(record)) {
+      continue;
+    }
+    seenIds.add(key);
+    options.push(record);
+  }
+  return options;
 }
 
 function applyAdminId(record, adminId) {
@@ -327,6 +1036,42 @@ function getServerUrls() {
   return [...urls];
 }
 
+/** Wi-Fi + Ethernet (and other NIC) URLs for the Flutter app LAN fallback list. */
+function getLanServerUrls() {
+  return getServerUrls().filter(
+    (url) => !url.includes("127.0.0.1") && !url.includes("localhost"),
+  );
+}
+
+function writeFlutterLocalApiLanUrls() {
+  const lanUrls = getLanServerUrls();
+  const targetPath = path.join(
+    path.dirname(__dirname),
+    "lib",
+    "services",
+    "generated_local_api_lan_urls.dart",
+  );
+  const body = [
+    "// GENERATED by backend/server.js on startup — do not edit by hand.",
+    "// Contains every non-internal IPv4 on the PC (Wi-Fi + Ethernet/LAN).",
+    "const generatedLocalApiLanBaseUrls = <String>[",
+    ...lanUrls.map((url) => `  '${url}',`),
+    "];",
+    "",
+  ].join("\n");
+
+  try {
+    fs.writeFileSync(targetPath, body, "utf8");
+    console.log(
+      lanUrls.length
+        ? `Flutter LAN/Wi-Fi API URLs updated (${lanUrls.length}): ${lanUrls.join(", ")}`
+        : "Flutter LAN/Wi-Fi API URLs updated (none detected — use adb reverse or loopback)",
+    );
+  } catch (error) {
+    console.warn("Unable to write Flutter local API LAN URLs:", error?.message || error);
+  }
+}
+
 async function ensureStoragePaths() {
   await fsPromises.mkdir(DATA_DIR, { recursive: true });
   await fsPromises.mkdir(UPLOADS_DIR, { recursive: true });
@@ -335,6 +1080,12 @@ async function ensureStoragePaths() {
     await fsPromises.access(PRODUCTS_FILE);
   } catch (error) {
     await fsPromises.writeFile(PRODUCTS_FILE, "[]\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(APPROVED_PRODUCT_TRAINING_FILE);
+  } catch (error) {
+    await fsPromises.writeFile(APPROVED_PRODUCT_TRAINING_FILE, "[]\n", "utf8");
   }
 
   try {
@@ -350,15 +1101,19 @@ async function ensureStoragePaths() {
   }
 
   try {
-    await fsPromises.access(CATEGORIES_FILE);
-  } catch (error) {
-    await fsPromises.writeFile(CATEGORIES_FILE, "[]\n", "utf8");
-  }
-
-  try {
     await fsPromises.access(STORE_TYPES_FILE);
   } catch (error) {
     await fsPromises.writeFile(STORE_TYPES_FILE, "[]\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(PLATFORMS_FILE);
+  } catch (error) {
+    await fsPromises.writeFile(
+      PLATFORMS_FILE,
+      `${JSON.stringify(DEFAULT_BUYER_PLATFORMS, null, 2)}\n`,
+      "utf8",
+    );
   }
 
   try {
@@ -380,6 +1135,12 @@ async function ensureStoragePaths() {
   }
 
   try {
+    await fsPromises.access(PARTNER_AUDIT_FILE);
+  } catch (error) {
+    await fsPromises.writeFile(PARTNER_AUDIT_FILE, "[]\n", "utf8");
+  }
+
+  try {
     await fsPromises.access(ORDERS_FILE);
   } catch (error) {
     await fsPromises.writeFile(ORDERS_FILE, "[]\n", "utf8");
@@ -389,6 +1150,40 @@ async function ensureStoragePaths() {
     await fsPromises.access(FOLLOWERS_FILE);
   } catch (error) {
     await fsPromises.writeFile(FOLLOWERS_FILE, "{}\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(WORKSPACE_SETTINGS_FILE);
+  } catch (error) {
+    await fsPromises.writeFile(WORKSPACE_SETTINGS_FILE, "{}\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "chat_wallpapers.json"));
+  } catch (error) {
+    await fsPromises.writeFile(path.join(DATA_DIR, "chat_wallpapers.json"), "[]\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "biometric_settings.json"));
+  } catch (error) {
+    await fsPromises.writeFile(path.join(DATA_DIR, "biometric_settings.json"), "{}\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "super_admin_notifications.json"));
+  } catch (error) {
+    await fsPromises.writeFile(
+      path.join(DATA_DIR, "super_admin_notifications.json"),
+      "[]\n",
+      "utf8",
+    );
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "flash_deals.json"));
+  } catch (error) {
+    await fsPromises.writeFile(path.join(DATA_DIR, "flash_deals.json"), "[]\n", "utf8");
   }
 }
 
@@ -408,6 +1203,27 @@ async function writeProducts(products) {
   await fsPromises.writeFile(
     PRODUCTS_FILE,
     `${JSON.stringify(products, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function readApprovedProductTrainingRecords() {
+  await ensureStoragePaths();
+  const raw = await fsPromises.readFile(APPROVED_PRODUCT_TRAINING_FILE, "utf8");
+
+  try {
+    const decoded = JSON.parse(raw);
+    return Array.isArray(decoded) ? decoded : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+async function writeApprovedProductTrainingRecords(records) {
+  await ensureStoragePaths();
+  await fsPromises.writeFile(
+    APPROVED_PRODUCT_TRAINING_FILE,
+    `${JSON.stringify(Array.isArray(records) ? records : [], null, 2)}\n`,
     "utf8",
   );
 }
@@ -433,6 +1249,10 @@ async function writeActivityLog(entries) {
 }
 
 async function readAccounts() {
+  if (await isAccountsPostgresReady()) {
+    return listAllAccountsFromPostgres();
+  }
+
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(ACCOUNTS_FILE, "utf8");
 
@@ -445,11 +1265,95 @@ async function readAccounts() {
 }
 
 async function writeAccounts(accounts) {
+  if (await isAccountsPostgresReady()) {
+    await syncAccountsToPostgres(accounts);
+    return;
+  }
+
   await fsPromises.writeFile(
     ACCOUNTS_FILE,
     `${JSON.stringify(accounts, null, 2)}\n`,
     "utf8",
   );
+}
+
+function normalizeWorkspaceColor(value) {
+  const normalizedColor = String(value ?? "").trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalizedColor) ? normalizedColor : "";
+}
+
+const DEFAULT_PLATFORM_PRIMARY_COLORS = Object.freeze({
+  shop: "#2563eb",
+  food: "#ea580c",
+  hotels: "#7c3aed",
+  resort: "#0891b2",
+});
+
+function defaultPlatformPrimaryColor(platformId) {
+  const key = normalizePlatformId(platformId);
+  return DEFAULT_PLATFORM_PRIMARY_COLORS[key] || "#2563eb";
+}
+
+function normalizePlatformPrimaryColor(value, platformId = "") {
+  const normalized = normalizeWorkspaceColor(value);
+  if (normalized) {
+    return normalized;
+  }
+  return defaultPlatformPrimaryColor(platformId);
+}
+
+function normalizePaymentPartnerWorkspaceApiKey(value, existingValue = "") {
+  const apiKey = String(value ?? existingValue ?? "").trim();
+  if (apiKey.length > MAX_PARTNER_API_KEY_LENGTH) {
+    throw new Error(`Payment partner API key must be ${MAX_PARTNER_API_KEY_LENGTH} characters or fewer.`);
+  }
+  return apiKey;
+}
+
+function normalizeWorkspaceSettings(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const normalized = {
+    workspaceColor: normalizeWorkspaceColor(source.workspaceColor ?? source.color),
+    paymentPartnerApiKey: normalizePaymentPartnerWorkspaceApiKey(source.paymentPartnerApiKey),
+    updatedAt: String(source.updatedAt ?? "").trim(),
+  };
+  if (source.platformSettings && typeof source.platformSettings === "object") {
+    normalized.platformSettings = source.platformSettings;
+  }
+  if (Array.isArray(source.aiIntegrations)) {
+    normalized.aiIntegrations = source.aiIntegrations;
+  }
+  if (source.aiIntegration && typeof source.aiIntegration === "object") {
+    normalized.aiIntegration = source.aiIntegration;
+  }
+  return normalized;
+}
+
+async function readWorkspaceSettingsRaw() {
+  await ensureStoragePaths();
+  try {
+    const raw = await fsPromises.readFile(WORKSPACE_SETTINGS_FILE, "utf8");
+    const decoded = JSON.parse(raw);
+    return decoded && typeof decoded === "object" ? decoded : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+async function readWorkspaceSettings() {
+  return normalizeWorkspaceSettings(await readWorkspaceSettingsRaw());
+}
+
+async function writeWorkspaceSettings(settings) {
+  await ensureStoragePaths();
+  const existing = await readWorkspaceSettingsRaw();
+  const merged = {
+    ...existing,
+    ...(settings && typeof settings === "object" ? settings : {}),
+  };
+  const normalizedSettings = normalizeWorkspaceSettings(merged);
+  await writeJsonFileAtomically(WORKSPACE_SETTINGS_FILE, normalizedSettings);
+  return normalizedSettings;
 }
 
 function normalizeFollowerAccountId(value) {
@@ -798,26 +1702,6 @@ async function removeFaceAttendanceProfileForAccount(account) {
   return { removed: true, removedEmployeeIds: [...new Set(removedEmployeeIds)] };
 }
 
-async function readCategories() {
-  await ensureStoragePaths();
-  const raw = await fsPromises.readFile(CATEGORIES_FILE, "utf8");
-
-  try {
-    const decoded = JSON.parse(raw);
-    return Array.isArray(decoded) ? decoded : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-async function writeCategories(categories) {
-  await fsPromises.writeFile(
-    CATEGORIES_FILE,
-    `${JSON.stringify(categories, null, 2)}\n`,
-    "utf8",
-  );
-}
-
 async function readStoreTypes() {
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(STORE_TYPES_FILE, "utf8");
@@ -835,6 +1719,180 @@ async function writeStoreTypes(storeTypes) {
     STORE_TYPES_FILE,
     `${JSON.stringify(storeTypes, null, 2)}\n`,
     "utf8",
+  );
+}
+
+async function readPlatforms() {
+  await ensureStoragePaths();
+  try {
+    const raw = await fsPromises.readFile(PLATFORMS_FILE, "utf8");
+    const decoded = JSON.parse(raw);
+    const platforms = Array.isArray(decoded) ? decoded : [];
+    if (!platforms.length) {
+      return DEFAULT_BUYER_PLATFORMS.map((platform) => ({ ...platform }));
+    }
+    return platforms;
+  } catch (error) {
+    return DEFAULT_BUYER_PLATFORMS.map((platform) => ({ ...platform }));
+  }
+}
+
+async function writePlatforms(platforms) {
+  await fsPromises.writeFile(
+    PLATFORMS_FILE,
+    `${JSON.stringify(platforms, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function normalizeBuyerPlatformKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizePlatformId(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function slugifyPlatformId(name, fallbackPrefix = "platform") {
+  const fromName = normalizePlatformId(name);
+  if (fromName) {
+    return fromName;
+  }
+  return `${fallbackPrefix}-${Date.now().toString(36)}`;
+}
+
+function normalizePlatformName(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function inferPlatformIdFromStoreTypeName(name) {
+  const key = normalizeBuyerPlatformKey(name);
+  if (!key) {
+    return "shop";
+  }
+  if (
+    key.includes("hotel")
+    || key.includes("hote ")
+    || (/\bhotes?\b/.test(key) && key.includes("restaurant"))
+  ) {
+    return "hotels";
+  }
+  if (
+    key === "food"
+    || key === "foods"
+    || key.includes("restaurant")
+    || key.includes("dining")
+    || key.includes("cafe")
+  ) {
+    return "food";
+  }
+  return "shop";
+}
+
+function normalizePlatformRecord(value, options = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const name = normalizePlatformName(source.name ?? source.label ?? source.title ?? value);
+  const explicitId = normalizePlatformId(source.id ?? source.platformId ?? source.slug);
+  const id = explicitId || (name ? slugifyPlatformId(name) : "");
+  if (!id || !name) {
+    return null;
+  }
+
+  const statusValue = String(source.status ?? "active").trim().toLowerCase();
+  const sortOrderRaw = Number(source.sortOrder ?? source.order ?? options.fallbackSortOrder ?? 0);
+  const comingSoonRaw = source.comingSoon ?? source.isComingSoon ?? source.soon;
+
+  return {
+    id,
+    name,
+    status: statusValue === "inactive" ? "inactive" : "active",
+    sortOrder: Number.isFinite(sortOrderRaw) ? Math.trunc(sortOrderRaw) : 0,
+    iconName: normalizeStoreTypeIconName(source.iconName ?? source.lucideIconName),
+    comingSoon: comingSoonRaw === true || String(comingSoonRaw).trim().toLowerCase() === "true",
+    heroImageUrl: normalizeStoreTypeAssetUrl(
+      source.heroImageUrl ?? source.imageUrl ?? source.coverImageUrl,
+    ),
+    iconImageUrl: normalizeStoreTypeAssetUrl(
+      source.iconImageUrl ?? source.iconUrl,
+    ) || BUILT_IN_PLATFORM_ART[id]?.url || "",
+    primaryColor: normalizePlatformPrimaryColor(
+      source.primaryColor ?? source.color ?? source.accentColor,
+      id,
+    ),
+    secondaryColor: normalizeWorkspaceColor(
+      source.secondaryColor ?? source.secondaryAccent,
+    ),
+  };
+}
+
+function getPlatformUsageSummary(platformId, storeTypes = []) {
+  const platformKey = normalizePlatformId(platformId);
+  let businessTypeCount = 0;
+  for (const value of Array.isArray(storeTypes) ? storeTypes : []) {
+    const storeType = normalizeStoreTypeRecord(value);
+    if (!storeType) {
+      continue;
+    }
+    if (normalizePlatformId(storeType.platformId) === platformKey) {
+      businessTypeCount += 1;
+    }
+  }
+  return { businessTypeCount };
+}
+
+function getPlatformDetails(storedPlatforms, storedStoreTypes = []) {
+  const seen = new Map();
+  const source = Array.isArray(storedPlatforms) && storedPlatforms.length
+    ? storedPlatforms
+    : DEFAULT_BUYER_PLATFORMS;
+
+  source.forEach((value, index) => {
+    const platform = normalizePlatformRecord(value, { fallbackSortOrder: index + 1 });
+    if (!platform) {
+      return;
+    }
+    if (!seen.has(platform.id)) {
+      seen.set(platform.id, platform);
+    }
+  });
+
+  return [...seen.values()]
+    .map((platform) => {
+      const usage = getPlatformUsageSummary(platform.id, storedStoreTypes);
+      return {
+        ...platform,
+        ...usage,
+        comingSoon: usage.businessTypeCount === 0 ? true : platform.comingSoon,
+      };
+    })
+    .sort((left, right) => {
+      if (left.sortOrder !== right.sortOrder) {
+        return left.sortOrder - right.sortOrder;
+      }
+      return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+    });
+}
+
+function resolveStoreTypePlatformId(source = {}) {
+  const explicit = normalizePlatformId(source.platformId ?? source.platform ?? source.buyerPlatform);
+  if (explicit) {
+    return explicit;
+  }
+  return inferPlatformIdFromStoreTypeName(
+    source.name ?? source.storeType ?? source.businessType ?? "",
   );
 }
 
@@ -858,44 +1916,101 @@ async function writeChatThreads(threads) {
   );
 }
 
-async function readDeliveryPartners() {
-  await ensureStoragePaths();
-  const raw = await fsPromises.readFile(DELIVERY_PARTNERS_FILE, "utf8");
+const serializedMutationQueues = new Map();
 
+function enqueueSerializedMutation(queueKey, task) {
+  const previousOperation = serializedMutationQueues.get(queueKey) || Promise.resolve();
+  const operation = previousOperation
+    .catch(() => undefined)
+    .then(task);
+  serializedMutationQueues.set(queueKey, operation);
+  operation
+    .finally(() => {
+      if (serializedMutationQueues.get(queueKey) === operation) {
+        serializedMutationQueues.delete(queueKey);
+      }
+    })
+    .catch(() => undefined);
+  return operation;
+}
+
+async function readStrictJsonArray(filePath, label) {
+  await ensureStoragePaths();
+  const raw = await fsPromises.readFile(filePath, "utf8");
+  let decoded;
   try {
-    const decoded = JSON.parse(raw);
-    return Array.isArray(decoded) ? decoded : [];
+    decoded = JSON.parse(raw);
   } catch (error) {
-    return [];
+    const storageError = new Error(`${label} storage contains invalid JSON.`);
+    storageError.code = "INVALID_STORAGE_DATA";
+    throw storageError;
+  }
+
+  if (!Array.isArray(decoded)) {
+    const storageError = new Error(`${label} storage must contain a JSON array.`);
+    storageError.code = "INVALID_STORAGE_DATA";
+    throw storageError;
+  }
+  return decoded;
+}
+
+async function writeJsonFileAtomically(filePath, value) {
+  await ensureStoragePaths();
+  const temporaryPath = `${filePath}.${process.pid}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}.tmp`;
+  try {
+    await fsPromises.writeFile(
+      temporaryPath,
+      `${JSON.stringify(value, null, 2)}\n`,
+      "utf8",
+    );
+    await fsPromises.rename(temporaryPath, filePath);
+  } finally {
+    await fsPromises.unlink(temporaryPath).catch((error) => {
+      if (error?.code !== "ENOENT") {
+        console.error(`Unable to remove temporary data file: ${temporaryPath}`, error);
+      }
+    });
   }
 }
 
+async function readDeliveryPartners() {
+  return readStrictJsonArray(DELIVERY_PARTNERS_FILE, "Delivery partner");
+}
+
 async function writeDeliveryPartners(partners) {
-  await fsPromises.writeFile(
+  await writeJsonFileAtomically(
     DELIVERY_PARTNERS_FILE,
-    `${JSON.stringify(partners, null, 2)}\n`,
-    "utf8",
+    Array.isArray(partners) ? partners : [],
   );
 }
 
 async function readPaymentPartners() {
-  await ensureStoragePaths();
-  const raw = await fsPromises.readFile(PAYMENT_PARTNERS_FILE, "utf8");
-
-  try {
-    const decoded = JSON.parse(raw);
-    return Array.isArray(decoded) ? decoded : [];
-  } catch (error) {
-    return [];
-  }
+  return readStrictJsonArray(PAYMENT_PARTNERS_FILE, "Payment partner");
 }
 
 async function writePaymentPartners(partners) {
-  await fsPromises.writeFile(
+  await writeJsonFileAtomically(
     PAYMENT_PARTNERS_FILE,
-    `${JSON.stringify(partners, null, 2)}\n`,
-    "utf8",
+    Array.isArray(partners) ? partners : [],
   );
+}
+
+async function readPartnerAuditLog() {
+  return readStrictJsonArray(PARTNER_AUDIT_FILE, "Partner audit");
+}
+
+async function writePartnerAuditLog(entries) {
+  await writeJsonFileAtomically(
+    PARTNER_AUDIT_FILE,
+    Array.isArray(entries) ? entries : [],
+  );
+}
+
+function runPartnerMutation(partnerType, task) {
+  const normalizedType = partnerType === "delivery" ? "delivery" : "payment";
+  return enqueueSerializedMutation(`partner:${normalizedType}`, task);
 }
 
 async function readOrders() {
@@ -957,19 +2072,73 @@ function normalizeStoreTypeName(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
-function normalizeCategoryRecord(value, adminId = DEFAULT_ADMIN_ID) {
-  const name = normalizeCategoryName(value);
-  if (!name) {
-    return null;
+function normalizeStoreTypeAssetUrl(value) {
+  const assetUrl = String(value ?? "").trim();
+  if (
+    assetUrl.startsWith("/uploads/") ||
+    assetUrl.startsWith("/assets/") ||
+    /^https?:\/\//i.test(assetUrl)
+  ) {
+    return assetUrl;
+  }
+  return "";
+}
+
+function normalizeStoreTypeIconName(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeStoreTypeCategoryStatus(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  return ["inactive", "deactivated", "disabled", "off"].includes(normalizedValue)
+    ? "inactive"
+    : "active";
+}
+
+function normalizeStoreTypeCategoryDetails(value) {
+  const sourceValues = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.entries(value).map(([name, details]) => ({
+          name,
+          ...(details && typeof details === "object" ? details : {}),
+        }))
+      : [];
+  const seen = new Map();
+
+  for (const source of sourceValues) {
+    const name = normalizeCategoryName(source?.name ?? source?.category ?? source?.label);
+    if (!name) {
+      continue;
+    }
+    const productCount = Number(source?.productCount ?? source?.count ?? 0);
+    const key = name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.set(key, {
+        name,
+        productCount: Number.isFinite(productCount) && productCount >= 0 ? Math.trunc(productCount) : 0,
+        imageUrl: normalizeStoreTypeAssetUrl(
+          source?.imageUrl ?? source?.mainImageUrl ?? source?.thumbnailUrl,
+        ),
+        iconImageUrl: normalizeStoreTypeAssetUrl(
+          source?.iconImageUrl ?? source?.iconUrl ?? source?.categoryIconUrl,
+        ),
+        iconName: normalizeStoreTypeIconName(
+          source?.iconName ?? source?.lucideIconName ?? source?.categoryIconName,
+        ),
+        status: normalizeStoreTypeCategoryStatus(
+          source?.status ?? source?.categoryStatus ?? source?.state,
+        ),
+      });
+    }
   }
 
-  return {
-    name,
-    adminId: getRecordAdminId(
-      value && typeof value === "object" ? value : null,
-      adminId,
-    ),
-  };
+  return [...seen.values()];
 }
 
 function normalizeStoreTypeRecord(value) {
@@ -978,29 +2147,54 @@ function normalizeStoreTypeRecord(value) {
     return null;
   }
 
-  return { name };
-}
+  const source = value && typeof value === "object" ? value : {};
+  const statusValue = String(source.status ?? source.businessTypeStatus ?? "active")
+    .trim()
+    .toLowerCase();
+  const commissionRate = Number(source.commissionRate ?? source.commission ?? 0);
+  const serviceFee = Number(source.serviceFee ?? source.serviceFeeAmount ?? 0);
+  const categories = normalizeProductCategoryValues(source.categories ?? source.category);
+  const detailByKey = new Map(
+    normalizeStoreTypeCategoryDetails(
+      source.categoryDetails ?? source.categoryStats,
+    ).map((detail) => [detail.name.toLowerCase(), detail]),
+  );
+  // Keep one detail row per category name so Super Admin photos survive category list edits.
+  const categoryDetails = categories.map((categoryName) => {
+    const existing = detailByKey.get(categoryName.toLowerCase());
+    if (existing) {
+      return { ...existing, name: categoryName };
+    }
+    return {
+      name: categoryName,
+      productCount: 0,
+      imageUrl: "",
+      iconImageUrl: "",
+      iconName: "",
+      status: "active",
+    };
+  });
 
-function getCategoryRecordName(value) {
-  return normalizeCategoryName(value);
+  return {
+    name,
+    platformId: resolveStoreTypePlatformId({ ...source, name }),
+    categories,
+    status: statusValue === "inactive" ? "inactive" : "active",
+    commissionRate: Number.isFinite(commissionRate) && commissionRate >= 0 ? commissionRate : 0,
+    serviceFee: Number.isFinite(serviceFee) && serviceFee >= 0 ? serviceFee : 0,
+    heroImageUrl: normalizeStoreTypeAssetUrl(
+      source.heroImageUrl ?? source.imageUrl ?? source.coverImageUrl,
+    ),
+    iconImageUrl: normalizeStoreTypeAssetUrl(
+      source.iconImageUrl ?? source.iconUrl ?? source.businessTypeIconUrl,
+    ),
+    iconName: normalizeStoreTypeIconName(source.iconName ?? source.lucideIconName),
+    categoryDetails,
+  };
 }
 
 function getStoreTypeRecordName(value) {
   return normalizeStoreTypeName(value);
-}
-
-function isCategoryRecordInAdminScope(value, adminId) {
-  if (value && typeof value === "object") {
-    return isRecordInAdminScope(value, adminId);
-  }
-
-  return normalizeAdminTenantId(adminId, DEFAULT_ADMIN_ID) === DEFAULT_ADMIN_ID;
-}
-
-function getStoredCategoryNames(categories) {
-  return (Array.isArray(categories) ? categories : [])
-    .map(getCategoryRecordName)
-    .filter(Boolean);
 }
 
 function getStoredStoreTypeNames(storeTypes) {
@@ -1009,28 +2203,142 @@ function getStoredStoreTypeNames(storeTypes) {
     .filter(Boolean);
 }
 
-function getProductCategoryGroups(products) {
-  return (Array.isArray(products) ? products : []).map((product) =>
-    getProductCategoryList(product)
-  );
-}
-
-function getGlobalCategoryList(storedCategories, products = []) {
-  return getUniqueCategoryList([
-    ...getStoredCategoryNames(storedCategories),
-    ...getProductCategoryGroups(products),
-  ]);
-}
-
 function getGlobalStoreTypeList(storedStoreTypes) {
   return getUniqueStoreTypeList(getStoredStoreTypeNames(storedStoreTypes));
 }
 
-function getAdminCategoryList(storedCategories, products = [], adminId = DEFAULT_ADMIN_ID) {
-  return getUniqueCategoryList([
-    ...getStoredCategoryNames(storedCategories),
-    ...getProductCategoryGroups(filterRecordsByAdminId(products, adminId)),
+function getActiveGlobalStoreTypeList(storedStoreTypes) {
+  return getUniqueStoreTypeList(
+    (Array.isArray(storedStoreTypes) ? storedStoreTypes : [])
+      .map(normalizeStoreTypeRecord)
+      .filter((storeType) => storeType && storeType.status !== "inactive")
+      .map((storeType) => storeType.name),
+  );
+}
+
+function getStoreTypeUsageSummary(storeTypeName, accounts = [], products = []) {
+  const storeTypeKey = normalizeStoreTypeName(storeTypeName).toLowerCase();
+  const matchingAdminIds = new Set();
+
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    if (!isAdminAccount(account)) {
+      continue;
+    }
+
+    const currentStoreType = normalizeStoreTypeName(
+      account?.storeType ?? account?.storeTypeName ?? account?.businessType,
+    );
+    if (currentStoreType.toLowerCase() !== storeTypeKey) {
+      continue;
+    }
+
+    matchingAdminIds.add(normalizeAdminTenantId(getRecordAdminId(account, account?.adminId), ""));
+  }
+
+  let productCount = 0;
+  for (const product of Array.isArray(products) ? products : []) {
+    const adminId = normalizeAdminTenantId(getRecordAdminId(product, product?.adminId), "");
+    if (matchingAdminIds.has(adminId)) {
+      productCount += 1;
+    }
+  }
+
+  return {
+    companiesUsing: matchingAdminIds.size,
+    productCount,
+  };
+}
+
+function getGlobalStoreTypeDetails(storedStoreTypes, accounts = [], products = []) {
+  const seen = new Map();
+
+  for (const value of Array.isArray(storedStoreTypes) ? storedStoreTypes : []) {
+    const storeType = normalizeStoreTypeRecord(value);
+    if (!storeType) {
+      continue;
+    }
+
+    const key = storeType.name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.set(key, storeType);
+    }
+  }
+
+  return [...seen.values()]
+    .map((storeType) => ({
+      ...storeType,
+      ...getStoreTypeUsageSummary(storeType.name, accounts, products),
+    }))
+    .sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+    );
+}
+
+function getAdminBusinessTypeCategoryScope(accounts = [], storedStoreTypes = [], adminId = "") {
+  const account = findAdminAccountByScopeId(accounts, adminId);
+  const businessType = getAccountStoreTypeName(account);
+  if (!account || !businessType) {
+    return { businessType: "", categories: [] };
+  }
+
+  const businessTypeKey = businessType.toLowerCase();
+  const storeTypeRecord = (Array.isArray(storedStoreTypes) ? storedStoreTypes : [])
+    .map(normalizeStoreTypeRecord)
+    .find(
+      (storeType) =>
+        storeType &&
+        storeType.status !== "inactive" &&
+        storeType.name.toLowerCase() === businessTypeKey,
+    );
+  const visibleStoreType = hideInactiveStoreTypeCategoriesFromStoreType(storeTypeRecord);
+
+  return {
+    businessType,
+    categories: visibleStoreType
+      ? getUniqueCategoryList([visibleStoreType.categories])
+      : [],
+  };
+}
+
+async function applyAdminBusinessTypeCategoryScope(product, adminId) {
+  const [accounts, storedStoreTypes] = await Promise.all([
+    readAccounts(),
+    readStoreTypes(),
   ]);
+  const scope = getAdminBusinessTypeCategoryScope(accounts, storedStoreTypes, adminId);
+  if (!scope.businessType) {
+    throw new Error(
+      "Your seller account does not have a Business Type. Select one before adding products.",
+    );
+  }
+  if (!scope.categories.length) {
+    throw new Error(`No active categories are configured for ${scope.businessType}.`);
+  }
+
+  const allowedCategoriesByKey = new Map(
+    scope.categories.map((category) => [category.toLowerCase(), category]),
+  );
+  const requestedCategories = getProductCategoryList(product);
+  const invalidCategories = requestedCategories.filter(
+    (category) => !allowedCategoriesByKey.has(category.toLowerCase()),
+  );
+  if (invalidCategories.length) {
+    throw new Error(
+      `Selected categories are not available for ${scope.businessType}: ${invalidCategories.join(", ")}.`,
+    );
+  }
+
+  const categories = requestedCategories.map(
+    (category) => allowedCategoriesByKey.get(category.toLowerCase()),
+  );
+  return {
+    ...product,
+    category: categories[0],
+    categories,
+    storeType: scope.businessType,
+    storeTypeName: scope.businessType,
+    businessType: scope.businessType,
+  };
 }
 
 function normalizeProductCategoryValues(values, fallbackValue = "") {
@@ -1078,6 +2386,163 @@ function getPrimaryProductCategory(product, fallbackCategory = "") {
     getProductCategoryList(product)[0] ||
     normalizeCategoryName(fallbackCategory)
   );
+}
+
+function getStoreTypeInactiveCategoryKeys(storeTypeRecord) {
+  const normalizedStoreType = normalizeStoreTypeRecord(storeTypeRecord);
+  const inactiveKeys = new Set();
+  if (!normalizedStoreType) {
+    return inactiveKeys;
+  }
+
+  for (const detail of normalizedStoreType.categoryDetails) {
+    if (normalizeStoreTypeCategoryStatus(detail?.status) === "inactive") {
+      const categoryKey = normalizeCategoryName(detail?.name).toLowerCase();
+      if (categoryKey) {
+        inactiveKeys.add(categoryKey);
+      }
+    }
+  }
+
+  return inactiveKeys;
+}
+
+function getAccountStoreTypeName(account) {
+  return normalizeStoreTypeName(
+    account?.storeType ?? account?.storeTypeName ?? account?.businessType,
+  );
+}
+
+function getProductStoreTypeName(product) {
+  return normalizeStoreTypeName(
+    product?.storeType ?? product?.storeTypeName ?? product?.businessType,
+  );
+}
+
+function buildInactiveStoreTypeCategoryIndexes(accounts = [], storedStoreTypes = []) {
+  const inactiveKeysByStoreType = new Map();
+  const inactiveKeysByAdminId = new Map();
+
+  for (const value of Array.isArray(storedStoreTypes) ? storedStoreTypes : []) {
+    const storeType = normalizeStoreTypeRecord(value);
+    if (!storeType) {
+      continue;
+    }
+
+    const inactiveKeys = getStoreTypeInactiveCategoryKeys(storeType);
+    if (inactiveKeys.size) {
+      inactiveKeysByStoreType.set(storeType.name.toLowerCase(), inactiveKeys);
+    }
+  }
+
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    if (!isAdminAccount(account)) {
+      continue;
+    }
+
+    const adminId = normalizeAdminTenantId(getRecordAdminId(account, account?.adminId ?? account?.id), "");
+    const storeTypeKey = getAccountStoreTypeName(account).toLowerCase();
+    const inactiveKeys = inactiveKeysByStoreType.get(storeTypeKey);
+    if (adminId && inactiveKeys?.size) {
+      inactiveKeysByAdminId.set(adminId, inactiveKeys);
+    }
+  }
+
+  return {
+    inactiveKeysByAdminId,
+    inactiveKeysByStoreType,
+  };
+}
+
+function getInactiveStoreTypeCategoryKeysForProduct(product, indexes) {
+  const adminId = normalizeAdminTenantId(getRecordAdminId(product, product?.adminId), "");
+  const inactiveKeysByAdminId = indexes?.inactiveKeysByAdminId instanceof Map
+    ? indexes.inactiveKeysByAdminId
+    : new Map();
+  const inactiveKeysByStoreType = indexes?.inactiveKeysByStoreType instanceof Map
+    ? indexes.inactiveKeysByStoreType
+    : new Map();
+  return (
+    inactiveKeysByAdminId.get(adminId) ||
+    inactiveKeysByStoreType.get(getProductStoreTypeName(product).toLowerCase()) ||
+    new Set()
+  );
+}
+
+function getInactiveStoreTypeCategoryKeysForAdminId(indexes, adminId) {
+  if (!(indexes?.inactiveKeysByAdminId instanceof Map)) {
+    return new Set();
+  }
+
+  return indexes.inactiveKeysByAdminId.get(normalizeAdminTenantId(adminId, "")) || new Set();
+}
+
+function hideInactiveStoreTypeCategoriesFromProduct(product, indexes) {
+  const inactiveCategoryKeys = getInactiveStoreTypeCategoryKeysForProduct(product, indexes);
+  if (!inactiveCategoryKeys.size) {
+    return product;
+  }
+
+  const categories = getProductCategoryList(product);
+  if (!categories.length) {
+    return product;
+  }
+
+  const activeCategories = categories.filter(
+    (categoryName) => !inactiveCategoryKeys.has(categoryName.toLowerCase()),
+  );
+  if (activeCategories.length === categories.length) {
+    return product;
+  }
+  if (!activeCategories.length) {
+    return null;
+  }
+
+  return {
+    ...product,
+    categories: activeCategories,
+    category: activeCategories[0],
+  };
+}
+
+function hideInactiveStoreTypeCategoriesFromProducts(products = [], accounts = [], storedStoreTypes = []) {
+  const indexes = buildInactiveStoreTypeCategoryIndexes(accounts, storedStoreTypes);
+  return (Array.isArray(products) ? products : [])
+    .map((product) => hideInactiveStoreTypeCategoriesFromProduct(product, indexes))
+    .filter(Boolean);
+}
+
+function hideInactiveStoreTypeCategoriesFromCategoryList(categories = [], inactiveCategoryKeys = new Set()) {
+  if (!(inactiveCategoryKeys instanceof Set) || !inactiveCategoryKeys.size) {
+    return getUniqueCategoryList([categories]);
+  }
+
+  return getUniqueCategoryList([categories]).filter(
+    (categoryName) => !inactiveCategoryKeys.has(normalizeCategoryName(categoryName).toLowerCase()),
+  );
+}
+
+function hideInactiveStoreTypeCategoriesFromStoreType(storeTypeRecord) {
+  const storeType = normalizeStoreTypeRecord(storeTypeRecord);
+  if (!storeType) {
+    return null;
+  }
+
+  const inactiveCategoryKeys = getStoreTypeInactiveCategoryKeys(storeType);
+  if (!inactiveCategoryKeys.size) {
+    return storeType;
+  }
+
+  const categories = storeType.categories.filter(
+    (categoryName) => !inactiveCategoryKeys.has(categoryName.toLowerCase()),
+  );
+  return {
+    ...storeType,
+    categories,
+    categoryDetails: storeType.categoryDetails.filter(
+      (detail) => !inactiveCategoryKeys.has(normalizeCategoryName(detail?.name).toLowerCase()),
+    ),
+  };
 }
 
 function getUniqueCategoryList(categories) {
@@ -1309,6 +2774,19 @@ function createEmployeeRequestActivityActor(payload, account) {
   return actor.role === "employee" ? actor : null;
 }
 
+function createAdminAccountActivityActor(account) {
+  return normalizeActivityActor({
+    role: "admin",
+    accountId: account?.adminId ?? account?.accountCode ?? account?.id ?? account?.email ?? "",
+    displayName:
+      getActivityAccountDisplayName(account) ||
+      String(account?.companyName ?? account?.storeName ?? account?.businessName ?? "").trim() ||
+      "Admin",
+    profileImageUrl: getActivityAccountProfileImageUrl(account),
+    adminId: getRecordAdminId(account, account?.adminId ?? account?.id ?? ""),
+  });
+}
+
 function createActivityLogId() {
   return `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1322,6 +2800,7 @@ function shouldNotifyForViewerActivity(activity, viewer) {
   const notificationAudience = String(
     activity?.notificationAudience ?? activity?.audience ?? "",
   ).trim().toLowerCase();
+  const activitySource = String(activity?.source ?? "").trim().toLowerCase();
   const targetPermission = getActivityTargetPermission(activity);
   const isInventoryActivity = isInventoryAccessPermission(targetPermission);
   if (isInventoryActivity) {
@@ -1333,7 +2812,11 @@ function shouldNotifyForViewerActivity(activity, viewer) {
   }
 
   if (notificationAudience === "admin") {
-    return viewer.role === "admin" && actor.role === "employee";
+    return viewer.role === "admin" && (
+      actor.role === "employee" ||
+      activitySource === "super_admin" ||
+      activitySource === "seller_onboarding"
+    );
   }
   if (notificationAudience === "employees") {
     return viewer.role === "employee" && actor.role === "admin";
@@ -1461,11 +2944,17 @@ function normalizePartnerEnabledState(partner) {
   return true;
 }
 
-function getActivePartnerIdMap(partners) {
+function getActivePartnerIdMap(partners, adminId = "") {
   const activeIds = new Map();
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
   for (const partner of Array.isArray(partners) ? partners : []) {
     const id = String(partner?.id ?? "").trim();
-    if (!id || !normalizePartnerEnabledState(partner)) {
+    if (
+      !id
+      || !normalizePartnerEnabledState(partner)
+      || isPartnerArchived(partner)
+      || (normalizedAdminId && !isPartnerAvailableToAdmin(partner, normalizedAdminId))
+    ) {
       continue;
     }
     activeIds.set(id.toLowerCase(), id);
@@ -1485,13 +2974,23 @@ function resolveActiveProductPartnerIds(selectedIds, activePartnerIds) {
   return normalizePartnerIdList(resolvedIds);
 }
 
-async function validateProductPartnerSelections(product) {
+async function validateProductPartnerSelections(product, adminId = "") {
   const [deliveryPartners, paymentPartners] = await Promise.all([
     readDeliveryPartners(),
     readPaymentPartners(),
   ]);
-  const activeDeliveryPartnerIds = getActivePartnerIdMap(deliveryPartners);
-  const activePaymentPartnerIds = getActivePartnerIdMap(paymentPartners);
+  const normalizedAdminId = normalizeAdminTenantId(
+    adminId || getRecordAdminId(product, ""),
+    "",
+  );
+  const activeDeliveryPartnerIds = getActivePartnerIdMap(
+    deliveryPartners,
+    normalizedAdminId,
+  );
+  const activePaymentPartnerIds = getActivePartnerIdMap(
+    paymentPartners,
+    normalizedAdminId,
+  );
   const deliveryPartnerIds = resolveActiveProductPartnerIds(
     product?.deliveryPartnerIds,
     activeDeliveryPartnerIds,
@@ -1808,6 +3307,16 @@ function getProductActivityChanges(previousProduct, product) {
 
   pushProductActivityFieldChange(
     changes,
+    normalizeProductActivityList(previousStoredProduct.descriptionImageUrls),
+    normalizeProductActivityList(nextStoredProduct.descriptionImageUrls),
+    {
+      type: "description-media",
+      label: "description images",
+    },
+  );
+
+  pushProductActivityFieldChange(
+    changes,
     normalizeProductActivityNumber(previousStoredProduct.originalPrice),
     normalizeProductActivityNumber(nextStoredProduct.originalPrice),
     {
@@ -1945,6 +3454,10 @@ function formatProductActivityFieldChange(actorLabel, productName, change) {
     return `${actorLabel} was update the ${change.label || "photo"} of ${productName}.`;
   }
 
+  if (change.type === "description-media") {
+    return `${actorLabel} was update the description images of ${productName}.`;
+  }
+
   if (change.type === "image-search") {
     return `${actorLabel} was update the image search photos of ${productName}.`;
   }
@@ -1998,6 +3511,9 @@ function getProductActivityChangeFocusTarget(change) {
 
   if (changeType === "name") {
     return "name";
+  }
+  if (changeType === "description-media") {
+    return "description";
   }
   if (changeType === "category") {
     return "category";
@@ -2275,6 +3791,39 @@ function getProductInventoryStockActivityDescription(actor, product, previousPro
   return `${actorLabel} was ${action} ${adjustmentAmount} stock of ${productName} total of ${nextStock}.`;
 }
 
+function serializeProductActivityChangeForLog(change) {
+  if (!change || typeof change !== "object") {
+    return null;
+  }
+
+  const normalizedChange = {
+    type: String(change.type ?? "").trim(),
+    label: String(change.label ?? "").trim(),
+    valueType: String(change.valueType ?? "").trim(),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(change, "previousValue")) {
+    normalizedChange.previousValue = change.previousValue;
+  }
+  if (Object.prototype.hasOwnProperty.call(change, "nextValue")) {
+    normalizedChange.nextValue = change.nextValue;
+  }
+  if (Object.prototype.hasOwnProperty.call(change, "previousName")) {
+    normalizedChange.previousName = String(change.previousName ?? "").trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(change, "nextName")) {
+    normalizedChange.nextName = String(change.nextName ?? "").trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(change, "variantId")) {
+    normalizedChange.variantId = String(change.variantId ?? "").trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(change, "variantName")) {
+    normalizedChange.variantName = String(change.variantName ?? "").trim();
+  }
+
+  return normalizedChange;
+}
+
 function createProductActivityEntry(action, product, actorInput = null, previousProduct = null, activityInput = null) {
   const category = getProductCategoryList(product).join(", ") || "General";
   const name = String(product.name ?? "").trim() || "Unnamed product";
@@ -2334,6 +3883,7 @@ function createProductActivityEntry(action, product, actorInput = null, previous
       changeTarget: primaryChange ? getProductActivityChangeFocusTarget(primaryChange) : "",
       changeVariantId: String(primaryChange?.variantId ?? "").trim(),
       changeVariantName: String(primaryChange?.variantName ?? "").trim(),
+      changes: changes.map(serializeProductActivityChangeForLog).filter(Boolean),
       targetUrl,
       ...(notificationAudience
         ? { notificationAudience }
@@ -2575,6 +4125,588 @@ function formatActivityForViewer(activity, viewer) {
   };
 }
 
+function getCompanyActivityTimestamp(record, fields = ["createdAt"]) {
+  for (const field of fields) {
+    const value = record?.[field];
+    const normalizedTimestamp = normalizeIsoTimestamp(value, "");
+    if (normalizedTimestamp) {
+      return normalizedTimestamp;
+    }
+  }
+
+  for (const field of ["createdAtEpochMs", "updatedAtEpochMs", "timestampMs", "dateEpochMs"]) {
+    const epochMs = Number(record?.[field]);
+    if (Number.isFinite(epochMs) && epochMs > 0) {
+      return new Date(epochMs).toISOString();
+    }
+  }
+
+  return "";
+}
+
+function getCompanyActivityTimeMs(value) {
+  const timestamp = new Date(value ?? "").getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isCompanyActivityLaterThan(laterValue, earlierValue) {
+  const laterTime = getCompanyActivityTimeMs(laterValue);
+  if (!laterTime) {
+    return false;
+  }
+
+  const earlierTime = getCompanyActivityTimeMs(earlierValue);
+  return !earlierTime || laterTime > earlierTime + 1000;
+}
+
+function formatCompanyActivityNumber(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "";
+  }
+
+  return Number.isInteger(numericValue)
+    ? String(numericValue)
+    : numericValue.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function isLiveChatActivity(activity) {
+  const haystack = [
+    activity?.type,
+    activity?.title,
+    activity?.description,
+    activity?.action,
+    activity?.targetPermission,
+    activity?.targetUrl,
+    activity?.source,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+
+  return /\b(?:live[-\s]?chat|chat-support|chat)\b/.test(haystack);
+}
+
+function getCompanyActivityRatingDelta(activity) {
+  const explicitPrevious = Number(
+    activity?.previousRating ??
+      activity?.previousValue ??
+      activity?.oldRating,
+  );
+  const explicitNext = Number(
+    activity?.nextRating ??
+      activity?.nextValue ??
+      activity?.newRating,
+  );
+  if (Number.isFinite(explicitPrevious) && Number.isFinite(explicitNext)) {
+    return explicitNext - explicitPrevious;
+  }
+
+  const changes = Array.isArray(activity?.changes) ? activity.changes : [];
+  for (const change of changes) {
+    const changeType = String(change?.type ?? "").trim().toLowerCase();
+    const changeLabel = String(change?.label ?? "").trim().toLowerCase();
+    const changeTarget = String(change?.target ?? "").trim().toLowerCase();
+    if (changeType !== "rating" && changeLabel !== "rating" && changeTarget !== "rating") {
+      continue;
+    }
+
+    const previousValue = Number(change?.previousValue ?? change?.previousRating);
+    const nextValue = Number(change?.nextValue ?? change?.nextRating);
+    if (Number.isFinite(previousValue) && Number.isFinite(nextValue)) {
+      return nextValue - previousValue;
+    }
+  }
+
+  return 0;
+}
+
+function getCompanyActivityKind(activity) {
+  const type = String(activity?.type ?? "").trim().toLowerCase();
+  const action = String(activity?.action ?? "").trim().toLowerCase();
+  const title = String(activity?.title ?? "").trim().toLowerCase();
+  const description = String(activity?.description ?? "").trim().toLowerCase();
+  const targetPermission = String(activity?.targetPermission ?? "").trim().toLowerCase();
+
+  if (
+    type === "seller-notification" ||
+    type === "seller-restriction" ||
+    type === "listing-restriction" ||
+    type === "product-revision" ||
+    title.includes("warning") ||
+    title.includes("notice") ||
+    title.includes("restricted") ||
+    title.includes("report")
+  ) {
+    return "reports";
+  }
+
+  if (type === "admin-account" || title.includes("seller profile") || title.includes("business type")) {
+    if (action.includes("password") || title.includes("password")) {
+      return "change-password";
+    }
+    if (action.includes("business-type") || title.includes("business type")) {
+      return "change-business-type";
+    }
+    if (action.includes("profile") || title.includes("profile")) {
+      return "change-profile";
+    }
+  }
+
+  const isEmployeeActivity =
+    type.includes("employee") ||
+    targetPermission === "employee-data" ||
+    title.includes("employee") ||
+    description.includes("employee account");
+  if (isEmployeeActivity) {
+    if (action.includes("created") || title.includes("created") || title.includes("registered")) {
+      return "add-employee";
+    }
+    if (action.includes("deleted") || title.includes("deleted")) {
+      return "delete-employee";
+    }
+    return "edit-employee";
+  }
+
+  const isProductActivity =
+    type === "product" ||
+    targetPermission === "products" ||
+    title.includes("product") ||
+    Boolean(activity?.productId);
+  if (isProductActivity) {
+    const ratingDelta = getCompanyActivityRatingDelta(activity);
+    if (ratingDelta > 0) {
+      return "rating-increase";
+    }
+    if (ratingDelta < 0) {
+      return "rating-decrease";
+    }
+    if (action === "created" || action === "add" || action === "added") {
+      return "add-product";
+    }
+    if (action === "deleted" || action === "delete") {
+      return "delete-product";
+    }
+    return "edit-product";
+  }
+
+  if (action.includes("password")) {
+    return "change-password";
+  }
+  if (action.includes("profile")) {
+    return "change-profile";
+  }
+
+  return "seller-activity";
+}
+
+function getCompanyActivityLabel(kind, activity = null) {
+  const ratingDelta = Math.abs(getCompanyActivityRatingDelta(activity));
+  const ratingDeltaLabel = formatCompanyActivityNumber(ratingDelta || 1);
+  const labels = {
+    "add-employee": "Add Employee",
+    "edit-employee": "Edit Employee",
+    "delete-employee": "Delete Employee",
+    "add-product": "Add Product",
+    "edit-product": "Edit Product",
+    "delete-product": "Delete Product",
+    reports: "Reports",
+    "change-password": "Change Password",
+    "change-profile": "Change Profile",
+    "change-business-type": "Change Business Type",
+    "rating-increase": `Rating increase by ${ratingDeltaLabel}`,
+    "rating-decrease": `Rating decrease by ${ratingDeltaLabel}`,
+  };
+
+  return labels[kind] || String(activity?.title ?? "Seller Activity").trim() || "Seller Activity";
+}
+
+function getCompanyActivityActorSummary(activity, accounts, adminAccount) {
+  const actor = normalizeActivityActor(activity?.actor);
+  const actorAccount = findActivityActorAccount(accounts, actor);
+  const adminDisplayName =
+    getActivityAccountDisplayName(adminAccount) ||
+    String(adminAccount?.companyName ?? adminAccount?.storeName ?? adminAccount?.businessName ?? "").trim() ||
+    "Seller";
+
+  if (String(actor.accountId ?? "").trim().toLowerCase() === "super-admin") {
+    return {
+      name: SUPER_ADMIN_USERNAME,
+      email: "",
+    };
+  }
+
+  if (actor.role === "admin") {
+    return {
+      name: actor.displayName && actor.displayName !== "Admin" ? actor.displayName : adminDisplayName,
+      email: String(adminAccount?.email ?? actor.accountId ?? "").trim(),
+    };
+  }
+
+  if (actorAccount) {
+    return {
+      name: getActivityAccountDisplayName(actorAccount) || actor.displayName || "Employee",
+      email: String(actorAccount.email ?? actor.accountId ?? "").trim(),
+    };
+  }
+
+  return {
+    name: actor.displayName || "Employee",
+    email: String(actor.accountId ?? "").trim(),
+  };
+}
+
+function getCompanyActivityDetails(kind, activity) {
+  const description = String(activity?.description ?? "").replace(/\s+/g, " ").trim();
+  if (description) {
+    return description;
+  }
+
+  const productName = String(activity?.productName ?? activity?.name ?? "").trim();
+  if (kind === "add-product" && productName) {
+    return `Added new product "${productName}".`;
+  }
+  if (kind === "edit-product" && productName) {
+    return `Edited product "${productName}".`;
+  }
+  if (kind === "delete-product" && productName) {
+    return `Deleted product "${productName}".`;
+  }
+  if ((kind === "rating-increase" || kind === "rating-decrease") && productName) {
+    return `${getCompanyActivityLabel(kind, activity)} for "${productName}".`;
+  }
+
+  return String(activity?.title ?? "Seller activity recorded.").trim() || "Seller activity recorded.";
+}
+
+function serializeSuperAdminCompanyActivity(activity, accounts, adminAccount) {
+  if (!activity || typeof activity !== "object" || isLiveChatActivity(activity)) {
+    return null;
+  }
+
+  const kind = getCompanyActivityKind(activity);
+  const createdAt = getCompanyActivityTimestamp(activity, [
+    "createdAt",
+    "updatedAt",
+    "date",
+    "timestamp",
+  ]);
+  const actorSummary = getCompanyActivityActorSummary(activity, accounts, adminAccount);
+  const targetId = String(
+    activity.productId ??
+      activity.employeeId ??
+      activity.accountId ??
+      activity.targetId ??
+      "",
+  ).trim();
+
+  return {
+    id: String(activity.id ?? `company-activity-${kind}-${createdAt}-${targetId}`).trim(),
+    kind,
+    activity: getCompanyActivityLabel(kind, activity),
+    userName: actorSummary.name,
+    userEmail: actorSummary.email,
+    details: getCompanyActivityDetails(kind, activity),
+    ipAddress: String(activity.ipAddress ?? activity.ip ?? activity.remoteAddress ?? "").trim(),
+    createdAt,
+    productId: String(activity.productId ?? "").trim(),
+    employeeId: String(activity.employeeId ?? activity.accountId ?? "").trim(),
+    targetId,
+    source: String(activity.source ?? "activity-log").trim() || "activity-log",
+  };
+}
+
+function createDerivedCompanyActivityEntries(adminAccount, accounts, products, rawRows) {
+  const adminId = getRecordAdminId(adminAccount, adminAccount?.adminId ?? "");
+  const adminActor = createAdminAccountActivityActor(adminAccount);
+  const rows = [];
+  const rawKindTargets = new Set(
+    (Array.isArray(rawRows) ? rawRows : []).map((row) => `${row.kind}:${row.targetId || row.productId || ""}`),
+  );
+  const rawKinds = new Set((Array.isArray(rawRows) ? rawRows : []).map((row) => row.kind));
+
+  const pushDerivedActivity = (activity) => {
+    const row = serializeSuperAdminCompanyActivity(
+      { ...activity, source: "derived" },
+      accounts,
+      adminAccount,
+    );
+    if (row) {
+      rows.push(row);
+    }
+  };
+
+  for (const product of filterRecordsByAdminId(products, adminId)) {
+    const productId = String(product?.id ?? "").trim();
+    const productName = String(product?.name ?? product?.productName ?? "Product").trim() || "Product";
+    const createdAt = getCompanyActivityTimestamp(product, [
+      "createdAt",
+      "submittedAt",
+      "approvalSubmittedAt",
+      "dateCreated",
+    ]);
+    const updatedAt = getCompanyActivityTimestamp(product, [
+      "updatedAt",
+      "modifiedAt",
+      "lastUpdatedAt",
+      "approvalUpdatedAt",
+    ]);
+
+    if (createdAt && !rawKindTargets.has(`add-product:${productId}`)) {
+      pushDerivedActivity({
+        id: `derived-product-created-${productId || createdAt}`,
+        type: "product",
+        action: "created",
+        adminId,
+        productId,
+        productName,
+        actor: adminActor,
+        title: "Product added",
+        description: `Added new product "${productName}".`,
+        createdAt,
+      });
+    }
+    if (
+      updatedAt &&
+      isCompanyActivityLaterThan(updatedAt, createdAt) &&
+      !rawKindTargets.has(`edit-product:${productId}`) &&
+      !rawKindTargets.has(`rating-increase:${productId}`) &&
+      !rawKindTargets.has(`rating-decrease:${productId}`)
+    ) {
+      pushDerivedActivity({
+        id: `derived-product-updated-${productId || updatedAt}`,
+        type: "product",
+        action: "updated",
+        adminId,
+        productId,
+        productName,
+        actor: adminActor,
+        title: "Product edited",
+        description: `Edited product "${productName}".`,
+        createdAt: updatedAt,
+      });
+    }
+  }
+
+  for (const account of filterRecordsByAdminId(accounts, adminId)) {
+    if (isAdminAccount(account) || String(account?.source ?? "").trim().toLowerCase() !== "web") {
+      continue;
+    }
+
+    const accountId = String(account?.employeeId ?? account?.accountCode ?? account?.id ?? "").trim();
+    const employeeName =
+      getActivityAccountDisplayName(account) ||
+      String(account?.email ?? "Employee").trim() ||
+      "Employee";
+    const createdAt = getCompanyActivityTimestamp(account, ["createdAt", "registeredAt"]);
+    const updatedAt = getCompanyActivityTimestamp(account, ["updatedAt", "modifiedAt"]);
+
+    if (createdAt && !rawKindTargets.has(`add-employee:${accountId}`)) {
+      pushDerivedActivity({
+        id: `derived-employee-created-${accountId || createdAt}`,
+        type: "employee-account",
+        action: "created",
+        adminId,
+        employeeId: accountId,
+        actor: adminActor,
+        title: "Employee account created",
+        description: `${employeeName} was registered as an employee account.`,
+        createdAt,
+      });
+    }
+    if (updatedAt && isCompanyActivityLaterThan(updatedAt, createdAt) && !rawKindTargets.has(`edit-employee:${accountId}`)) {
+      pushDerivedActivity({
+        id: `derived-employee-updated-${accountId || updatedAt}`,
+        type: "employee-account",
+        action: "updated",
+        adminId,
+        employeeId: accountId,
+        actor: adminActor,
+        title: "Employee account updated",
+        description: `${employeeName} employee account was updated.`,
+        createdAt: updatedAt,
+      });
+    }
+  }
+
+  const adminCreatedAt = getCompanyActivityTimestamp(adminAccount, ["createdAt"]);
+  const adminUpdatedAt = getCompanyActivityTimestamp(adminAccount, ["updatedAt"]);
+  const passwordUpdatedAt = getCompanyActivityTimestamp(adminAccount, ["passwordUpdatedAt"]);
+  const storeTypeUpdatedAt = getCompanyActivityTimestamp(adminAccount, ["storeTypeUpdatedAt"]);
+
+  if (
+    adminUpdatedAt &&
+    isCompanyActivityLaterThan(adminUpdatedAt, adminCreatedAt) &&
+    !rawKinds.has("change-profile")
+  ) {
+    pushDerivedActivity({
+      id: `derived-admin-profile-${adminId}-${adminUpdatedAt}`,
+      type: "admin-account",
+      action: "profile-updated",
+      adminId,
+      actor: adminActor,
+      title: "Seller profile updated",
+      description: `${adminActor.displayName} updated seller profile information.`,
+      createdAt: adminUpdatedAt,
+    });
+  }
+  if (
+    passwordUpdatedAt &&
+    isCompanyActivityLaterThan(passwordUpdatedAt, adminCreatedAt) &&
+    !rawKinds.has("change-password")
+  ) {
+    pushDerivedActivity({
+      id: `derived-admin-password-${adminId}-${passwordUpdatedAt}`,
+      type: "admin-account",
+      action: "password-changed",
+      adminId,
+      actor: adminActor,
+      title: "Seller password changed",
+      description: `${adminActor.displayName} changed seller account password.`,
+      createdAt: passwordUpdatedAt,
+    });
+  }
+  if (
+    storeTypeUpdatedAt &&
+    isCompanyActivityLaterThan(storeTypeUpdatedAt, adminCreatedAt) &&
+    !rawKinds.has("change-business-type")
+  ) {
+    pushDerivedActivity({
+      id: `derived-admin-business-type-${adminId}-${storeTypeUpdatedAt}`,
+      type: "admin-account",
+      action: "business-type-changed",
+      adminId,
+      actor: adminActor,
+      title: "Business type changed",
+      description: `Business type is ${String(adminAccount?.storeType ?? adminAccount?.businessType ?? "Unspecified").trim() || "Unspecified"}.`,
+      createdAt: storeTypeUpdatedAt,
+    });
+  }
+
+  const sellerNotifications = Array.isArray(adminAccount?.sellerNotifications)
+    ? adminAccount.sellerNotifications
+    : [];
+  for (const notification of sellerNotifications) {
+    const createdAt = getCompanyActivityTimestamp(notification, ["createdAt", "notifiedAt"]);
+    if (!createdAt) {
+      continue;
+    }
+
+    pushDerivedActivity({
+      id: String(notification.id ?? `derived-seller-report-${adminId}-${createdAt}`).trim(),
+      type: "seller-notification",
+      action: String(notification.type ?? "report").trim() || "report",
+      adminId,
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      title: String(notification.title ?? "Seller report").trim() || "Seller report",
+      description: String(notification.message ?? notification.reason ?? "Seller report recorded.").trim(),
+      createdAt,
+    });
+  }
+
+  return rows;
+}
+
+function getCompanyActivityDedupeKey(row) {
+  const createdTime = getCompanyActivityTimeMs(row?.createdAt);
+  const minuteKey = createdTime ? Math.floor(createdTime / 60000) : String(row?.createdAt ?? "");
+  const normalizedDetails = String(row?.details ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+
+  return [
+    row?.kind,
+    row?.targetId || row?.productId || row?.employeeId || "",
+    minuteKey,
+    normalizedDetails,
+  ].join("|");
+}
+
+function dedupeCompanyActivityRows(rows) {
+  const seen = new Set();
+  const uniqueRows = [];
+
+  for (const row of rows) {
+    if (!row || !row.createdAt) {
+      continue;
+    }
+
+    const key = getCompanyActivityDedupeKey(row);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    uniqueRows.push(row);
+  }
+
+  return uniqueRows;
+}
+
+async function handleSuperAdminCompanyActivityApi(request, response, adminId, requestUrl) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    sendJson(response, 400, { message: "Admin ID is required." });
+    return;
+  }
+
+  try {
+    const requestedLimit = Number(requestUrl.searchParams.get("limit"));
+    const limit =
+      Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(Math.trunc(requestedLimit), 100)
+        : 40;
+    const [activityLog, accounts, products] = await Promise.all([
+      readActivityLog(),
+      readAccounts(),
+      readProducts(),
+    ]);
+    const adminAccount = accounts.find((account) =>
+      isAdminAccount(account) && isRecordInAdminScope(account, normalizedAdminId)
+    );
+
+    if (!adminAccount) {
+      sendJson(response, 404, { message: "Admin account not found." });
+      return;
+    }
+
+    const rawRows = filterRecordsByAdminId(activityLog, normalizedAdminId)
+      .map((activity) => serializeSuperAdminCompanyActivity(activity, accounts, adminAccount))
+      .filter(Boolean);
+    const derivedRows = createDerivedCompanyActivityEntries(
+      adminAccount,
+      accounts,
+      products,
+      rawRows,
+    );
+    const activities = dedupeCompanyActivityRows([...rawRows, ...derivedRows])
+      .sort((left, right) => getCompanyActivityTimeMs(right.createdAt) - getCompanyActivityTimeMs(left.createdAt));
+
+    sendJson(response, 200, {
+      adminId: normalizedAdminId,
+      activities: activities.slice(0, limit),
+      total: activities.length,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load company activity.",
+    });
+  }
+}
+
 function createDeliveryPartnerId(branch) {
   const safeStem = sanitizeFileStem(branch) || "delivery-partner";
   return `delivery-partner-${safeStem}-${Date.now()}`;
@@ -2585,70 +4717,191 @@ function createPaymentPartnerId(branch) {
   return `payment-partner-${safeStem}-${Date.now()}`;
 }
 
-function normalizeDeliveryPartnerRecord(input, existingPartner = null) {
-  const branch = String(input.branch ?? input.name ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const description = String(input.description ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const imageUrl = String(
-    input.imageUrl ?? existingPartner?.imageUrl ?? "",
-  ).trim();
-  const isActive = normalizePartnerEnabledState({
-    ...(existingPartner ?? {}),
-    ...(input ?? {}),
-  });
+function normalizePartnerDuplicateKey(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
 
+function getPartnerVersion(partner, fallback = 1) {
+  const parsedVersion = Number(partner?.version ?? partner);
+  return Number.isInteger(parsedVersion) && parsedVersion > 0
+    ? parsedVersion
+    : Math.max(1, Number(fallback) || 1);
+}
+
+function isPartnerArchived(partner) {
+  const status = String(partner?.status ?? "").trim().toLowerCase();
+  return Boolean(String(partner?.archivedAt ?? "").trim())
+    || ["archived", "deleted"].includes(status);
+}
+
+function getPartnerScopeKey(partner) {
+  return normalizeAdminTenantId(partner?.adminId, "");
+}
+
+function isPartnerAvailableToAdmin(partner, adminId) {
+  const partnerScope = getPartnerScopeKey(partner);
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  return !partnerScope || (normalizedAdminId && partnerScope === normalizedAdminId);
+}
+
+function hasDuplicatePartnerInScope(partners, candidate, excludeId = "") {
+  const candidateName = normalizePartnerDuplicateKey(candidate?.branch ?? candidate?.name);
+  const candidateScope = getPartnerScopeKey(candidate);
+  const normalizedExcludeId = String(excludeId ?? "").trim();
+  if (!candidateName || isPartnerArchived(candidate)) {
+    return false;
+  }
+  return (Array.isArray(partners) ? partners : []).some((partner) =>
+    String(partner?.id ?? "").trim() !== normalizedExcludeId
+    && !isPartnerArchived(partner)
+    && getPartnerScopeKey(partner) === candidateScope
+    && normalizePartnerDuplicateKey(partner?.branch ?? partner?.name) === candidateName
+  );
+}
+
+function normalizePartnerName(value) {
+  const branch = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (branch.length < 2) {
-    throw new Error("Branch must be at least 2 characters long.");
+    throw new Error("Partner name must be at least 2 characters long.");
+  }
+  if (branch.length > MAX_PARTNER_NAME_LENGTH) {
+    throw new Error(`Partner name must be ${MAX_PARTNER_NAME_LENGTH} characters or fewer.`);
+  }
+  return branch;
+}
+
+function normalizePartnerDescription(value) {
+  const description = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (description.length > MAX_PARTNER_DESCRIPTION_LENGTH) {
+    throw new Error(
+      `Partner description must be ${MAX_PARTNER_DESCRIPTION_LENGTH} characters or fewer.`,
+    );
+  }
+  return description;
+}
+
+function normalizePartnerImageUrl(value) {
+  const imageUrl = String(value ?? "").trim();
+  if (!imageUrl) {
+    return "";
+  }
+  if (imageUrl.length > MAX_PARTNER_IMAGE_URL_LENGTH) {
+    throw new Error(`Partner image URL must be ${MAX_PARTNER_IMAGE_URL_LENGTH} characters or fewer.`);
+  }
+  if (imageUrl.startsWith("/") && !imageUrl.startsWith("//")) {
+    return imageUrl;
   }
 
-  const providedId = String(input.id ?? existingPartner?.id ?? "").trim();
+  try {
+    const parsedUrl = new URL(imageUrl);
+    if (["http:", "https:"].includes(parsedUrl.protocol)) {
+      return imageUrl;
+    }
+  } catch (error) {
+    // The validation error below gives clients a stable message.
+  }
+  throw new Error("Partner image URL must be an HTTPS, HTTP, or local absolute path.");
+}
 
-  return {
-    id: providedId || createDeliveryPartnerId(branch),
+function normalizePartnerApiKey(value, existingValue = "", { required = false } = {}) {
+  const apiKey = String(value ?? existingValue ?? "").trim();
+  if (required && !apiKey) {
+    throw new Error("Delivery partner API key is required.");
+  }
+  if (apiKey.length > MAX_PARTNER_API_KEY_LENGTH) {
+    throw new Error(`Delivery partner API key must be ${MAX_PARTNER_API_KEY_LENGTH} characters or fewer.`);
+  }
+  return apiKey;
+}
+
+function normalizePartnerRecord(input, existingPartner, { createId }) {
+  const source = input && typeof input === "object" ? input : {};
+  const existing = existingPartner && typeof existingPartner === "object"
+    ? existingPartner
+    : null;
+  const branch = normalizePartnerName(
+    source.branch ?? source.name ?? existing?.branch ?? existing?.name ?? "",
+  );
+  const description = normalizePartnerDescription(
+    source.description ?? existing?.description ?? "",
+  );
+  const imageUrl = normalizePartnerImageUrl(
+    source.imageUrl ?? existing?.imageUrl ?? "",
+  );
+  const archived = isPartnerArchived(existing);
+  const isActive = archived
+    ? false
+    : normalizePartnerEnabledState({ ...(existing ?? {}), ...source });
+  const providedId = String(source.id ?? existing?.id ?? "").trim();
+  if (providedId && !/^[a-zA-Z0-9._:-]{3,180}$/.test(providedId)) {
+    throw new Error("Partner ID contains unsupported characters.");
+  }
+
+  const createdAt = String(existing?.createdAt ?? "").trim() || new Date().toISOString();
+  const adminId = normalizeAdminTenantId(source.adminId ?? existing?.adminId, "");
+  const record = {
+    id: providedId || createId(branch),
     branch,
     description,
     imageUrl,
     isActive,
     enabled: isActive,
-    status: isActive ? "active" : "inactive",
-    createdAt: existingPartner?.createdAt ?? new Date().toISOString(),
+    isEnabled: isActive,
+    disabled: !isActive,
+    status: archived ? "archived" : isActive ? "active" : "inactive",
+    version: existing ? getPartnerVersion(existing) : 1,
+    createdAt,
+    updatedAt: String(existing?.updatedAt ?? "").trim() || createdAt,
+  };
+  if (adminId) {
+    record.adminId = adminId;
+  }
+  if (archived) {
+    record.archivedAt = String(existing?.archivedAt ?? existing?.updatedAt ?? createdAt).trim();
+    record.archivedBy = String(existing?.archivedBy ?? "").trim();
+    record.archiveReason = String(existing?.archiveReason ?? "").trim();
+  }
+  if (String(existing?.createdBy ?? "").trim()) {
+    record.createdBy = String(existing.createdBy).trim();
+  }
+  if (String(existing?.updatedBy ?? "").trim()) {
+    record.updatedBy = String(existing.updatedBy).trim();
+  }
+  return record;
+}
+
+function normalizeDeliveryPartnerRecord(input, existingPartner = null) {
+  const record = normalizePartnerRecord(input, existingPartner, {
+    createId: createDeliveryPartnerId,
+  });
+  const apiKey = normalizePartnerApiKey(
+    input?.apiKey,
+    existingPartner?.apiKey,
+  );
+  const hasApiKey = Boolean(String(apiKey ?? "").trim());
+  const needsWaybill = Object.prototype.hasOwnProperty.call(input ?? {}, "needsWaybill")
+    ? Boolean(input?.needsWaybill)
+    : existingPartner?.needsWaybill === true || hasApiKey;
+  return {
+    ...record,
+    apiKey,
+    needsWaybill,
   };
 }
 
 function normalizePaymentPartnerRecord(input, existingPartner = null) {
-  const branch = String(input.branch ?? input.name ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const imageUrl = String(
-    input.imageUrl ?? existingPartner?.imageUrl ?? "",
-  ).trim();
-  const isActive = normalizePartnerEnabledState({
-    ...(existingPartner ?? {}),
-    ...(input ?? {}),
+  return normalizePartnerRecord(input, existingPartner, {
+    createId: createPaymentPartnerId,
   });
-
-  if (branch.length < 2) {
-    throw new Error("Branch must be at least 2 characters long.");
-  }
-
-  const providedId = String(input.id ?? existingPartner?.id ?? "").trim();
-
-  return {
-    id: providedId || createPaymentPartnerId(branch),
-    branch,
-    imageUrl,
-    isActive,
-    enabled: isActive,
-    status: isActive ? "active" : "inactive",
-    createdAt: existingPartner?.createdAt ?? new Date().toISOString(),
-  };
 }
 
 const ORDER_STAGE_VALUES = new Set([
   "toPay",
+  "awaitingWaybill",
   "toPrepare",
   "toShip",
   "toReceive",
@@ -2714,7 +4967,12 @@ function codAmountStillNeededToProceed(entry, remainingBalanceAmount) {
 }
 
 function normalizePendingOrderStage(entry) {
-  if (entry.stage !== "toPay" && entry.stage !== "toPrepare") {
+  const currentStage = String(entry?.stage ?? "").trim();
+  if (
+    currentStage !== "toPay"
+    && currentStage !== "toPrepare"
+    && currentStage !== "awaitingWaybill"
+  ) {
     return entry;
   }
 
@@ -2733,9 +4991,11 @@ function normalizePendingOrderStage(entry) {
       ? explicitAmountToPay
       : remainingBalanceAmount;
 
+  const nextStage = nextAmountToPay > 0.009 ? "toPay" : "toPrepare";
   return {
     ...entry,
-    stage: nextAmountToPay > 0.009 ? "toPay" : "toPrepare",
+    stage: nextStage,
+    status: nextStage,
     amountToPayAmount: nextAmountToPay,
     remainingBalanceAmount,
   };
@@ -3097,6 +5357,17 @@ function normalizeStoredOrderEntry(input) {
   const cancelRequestResolvedAtEpochMs = Math.trunc(
     parseFiniteNumber(input.cancelRequestResolvedAtEpochMs, 0),
   );
+  const customerReceivedAtEpochMs = Math.max(
+    0,
+    Math.trunc(
+      parseFiniteNumber(
+        input.customerReceivedAtEpochMs ??
+          input.orderReceivedAtEpochMs ??
+          input.receivedAtEpochMs,
+        0,
+      ),
+    ),
+  );
   const inventoryDeductedAtEpochMs = Math.trunc(
     parseFiniteNumber(input.inventoryDeductedAtEpochMs, 0),
   );
@@ -3159,6 +5430,14 @@ function normalizeStoredOrderEntry(input) {
       Date.parse(String(input.createdAt ?? "").trim()) || Date.now(),
     ),
   );
+  const needsWaybill = input.needsWaybill === true || input.deliveryNeedsWaybill === true
+    ? true
+    : input.needsWaybill === false
+      ? false
+      : undefined;
+  const waybillPrintedAtEpochMs = Math.trunc(
+    parseFiniteNumber(input.waybillPrintedAtEpochMs, 0),
+  );
   const grandTotalAmount = parseFiniteNumber(
     input.grandTotalAmount ?? input.amount ?? input.total ?? input.price,
     0,
@@ -3173,7 +5452,7 @@ function normalizeStoredOrderEntry(input) {
         .filter((addOn) => addOn.id && addOn.name)
     : [];
 
-  return normalizePendingOrderStage({
+  return applyWaybillStageGate(normalizePendingOrderStage({
     id,
     adminId: getRecordAdminId(input),
     accountId,
@@ -3185,8 +5464,14 @@ function normalizeStoredOrderEntry(input) {
     addOns,
     quantity: Math.max(1, Math.trunc(parseFiniteNumber(input.quantity, 1))),
     unitPrice: parseFiniteNumber(input.unitPrice, 0),
+    flashDealId: String(input.flashDealId ?? "").trim(),
+    flashReservationId: String(
+      input.flashReservationId ?? input.reservationId ?? "",
+    ).trim(),
     stage: normalizedStage,
     createdAtEpochMs,
+    needsWaybill,
+    waybillPrintedAtEpochMs,
     grandTotalAmount,
     amountToPayAmount: parseFiniteNumber(input.amountToPayAmount, 0),
     remainingBalanceAmount: parseFiniteNumber(input.remainingBalanceAmount, 0),
@@ -3203,6 +5488,7 @@ function normalizeStoredOrderEntry(input) {
     cancelRequestReason,
     cancelRequestSubmittedAtEpochMs,
     cancelRequestResolvedAtEpochMs,
+    customerReceivedAtEpochMs,
     inventoryDeducted,
     inventoryDeductedAtEpochMs,
     inventoryRestoredAtEpochMs,
@@ -3254,7 +5540,7 @@ function normalizeStoredOrderEntry(input) {
     status: normalizedStage,
     createdAt:
       createdAtEpochMs > 0 ? new Date(createdAtEpochMs).toISOString() : "",
-  });
+  }));
 }
 
 function normalizeOrderEntriesPayload(payload, adminId = "") {
@@ -4333,25 +6619,500 @@ async function syncProductReviewCommentCountsFromOrders(orders, adminId = null) 
   }
 }
 
-async function logActivitySafely(entry) {
+function getRequestIpAddress(request) {
+  if (!request || typeof request !== "object") {
+    return "";
+  }
+
+  const forwardedFor = String(request.headers?.["x-forwarded-for"] ?? "")
+    .split(",")[0]
+    .trim();
+  const rawAddress = forwardedFor ||
+    String(request.headers?.["x-real-ip"] ?? "").trim() ||
+    String(request.socket?.remoteAddress ?? request.connection?.remoteAddress ?? "").trim();
+
+  return rawAddress.replace(/^::ffff:/, "").replace(/^::1$/, "127.0.0.1");
+}
+
+async function logActivitySafely(entry, request = null) {
   if (!entry) {
     return;
   }
 
   try {
+    const normalizedEntry = { ...entry };
+    if (!String(normalizedEntry.ipAddress ?? "").trim()) {
+      const requestIpAddress = getRequestIpAddress(request);
+      if (requestIpAddress) {
+        normalizedEntry.ipAddress = requestIpAddress;
+      }
+    }
+
     const activityLog = await readActivityLog();
-    activityLog.unshift(entry);
+    activityLog.unshift(normalizedEntry);
     await writeActivityLog(activityLog.slice(0, MAX_ACTIVITY_ENTRIES));
   } catch (error) {
     console.error("Unable to record activity log:", error);
   }
 }
 
+function appendPersistentNotifications(notifications, notification) {
+  const next = Array.isArray(notifications) ? notifications.slice() : [];
+  if (!notification || typeof notification !== "object") {
+    return next;
+  }
+  const id = String(notification.id || "").trim();
+  if (id) {
+    const existingIndex = next.findIndex((item) => String(item?.id || "").trim() === id);
+    if (existingIndex >= 0) {
+      next.splice(existingIndex, 1);
+    }
+  }
+  next.unshift(notification);
+  return next.slice(0, MAX_SUPER_ADMIN_NOTIFICATIONS);
+}
+
+function createPersistentLinkedNotification(input = {}) {
+  const now = String(input.createdAt || new Date().toISOString());
+  const type = String(input.type || "notice").trim().toLowerCase() || "notice";
+  return {
+    id: String(input.id || `sa-notif-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`).trim(),
+    type,
+    audience: String(input.audience || "super_admin").trim() || "super_admin",
+    title: String(input.title || "Notification").replace(/\s+/g, " ").trim().slice(0, 160),
+    reason: String(input.reason || "").replace(/\s+/g, " ").trim().slice(0, 500),
+    message: String(input.message || "").replace(/\s+/g, " ").trim().slice(0, 500),
+    status: "unread",
+    read: false,
+    productId: String(input.productId || "").trim(),
+    productName: String(input.productName || "").trim(),
+    feedbackId: String(input.feedbackId || "").trim(),
+    adminId: String(input.adminId || "").trim(),
+    companyName: String(input.companyName || "").trim(),
+    storeName: String(input.storeName || "").trim(),
+    businessName: String(input.businessName || "").trim(),
+    createdBy: String(input.createdBy || "").trim(),
+    targetUrl: String(input.targetUrl || "").trim(),
+    createdAt: now,
+  };
+}
+
+async function readSuperAdminNotifications() {
+  await ensureStoragePaths();
+  try {
+    const raw = await fsPromises.readFile(SUPER_ADMIN_NOTIFICATIONS_FILE, "utf8");
+    const decoded = JSON.parse(raw);
+    return Array.isArray(decoded) ? decoded : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+const SUPER_ADMIN_WELCOME_NOTIFICATION_ID = "sa-notif-welcome";
+
+function createSuperAdminWelcomeNotification(createdAt = new Date().toISOString()) {
+  return createPersistentLinkedNotification({
+    id: SUPER_ADMIN_WELCOME_NOTIFICATION_ID,
+    type: "welcome",
+    audience: "super_admin",
+    title: "Welcome to Switch Super Admin",
+    reason: "Workspace ready",
+    message:
+      "Your command center is ready. Seller onboarding, listing reviews, account actions, and platform alerts will land here.",
+    targetUrl: "/super_admin.html#dashboard",
+    createdAt,
+    createdBy: SUPER_ADMIN_USERNAME,
+  });
+}
+
+async function ensureSuperAdminWelcomeNotification(notifications) {
+  const list = Array.isArray(notifications) ? notifications.slice() : [];
+  const hasWelcome = list.some((entry) => {
+    const id = String(entry?.id || "").trim();
+    const type = String(entry?.type || "").trim().toLowerCase();
+    return id === SUPER_ADMIN_WELCOME_NOTIFICATION_ID || type === "welcome";
+  });
+  if (hasWelcome) {
+    return list;
+  }
+  const welcome = createSuperAdminWelcomeNotification();
+  const next = appendPersistentNotifications(list, welcome);
+  await writeSuperAdminNotifications(next);
+  return next;
+}
+
+async function writeSuperAdminNotifications(notifications) {
+  await writeJsonFileAtomically(
+    SUPER_ADMIN_NOTIFICATIONS_FILE,
+    Array.isArray(notifications) ? notifications.slice(0, MAX_SUPER_ADMIN_NOTIFICATIONS) : [],
+  );
+}
+
+async function persistSuperAdminNotification(notification) {
+  if (!notification) {
+    return null;
+  }
+  const notifications = await readSuperAdminNotifications();
+  await writeSuperAdminNotifications(appendPersistentNotifications(notifications, notification));
+  return notification;
+}
+
+function assignSellerAdminNotification(account, notification) {
+  if (!account || typeof account !== "object" || !notification) {
+    return account;
+  }
+  const previous = Array.isArray(account.sellerNotifications) ? account.sellerNotifications : [];
+  const scopedNotification = {
+    ...notification,
+    audience: String(notification.audience || "seller").trim() || "seller",
+    adminId: String(
+      notification.adminId ||
+        account.adminId ||
+        account.id ||
+        "",
+    ).trim(),
+  };
+  account.lastSellerNotification = scopedNotification;
+  account.sellerNotifications = appendPersistentNotifications(previous, scopedNotification);
+  return account;
+}
+
+function resolveSellerOnboardingAdminId(result, payload = {}) {
+  return normalizeAdminTenantId(
+    result?.account?.id ||
+      result?.account?.adminId ||
+      payload.accountId ||
+      result?.company?.id ||
+      "",
+    "",
+  );
+}
+
+async function notifySellerAdminInboxByAdminId(adminId, notification) {
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId || !notification) {
+    return null;
+  }
+
+  const accounts = await readAccounts();
+  const account = findAdminAccountByScopeId(accounts, normalizedAdminId);
+  if (!account) {
+    return null;
+  }
+
+  assignSellerAdminNotification(account, {
+    ...notification,
+    adminId: normalizedAdminId,
+  });
+  await writeAccounts(accounts);
+  return notification;
+}
+
+function getSellerCompanyDisplayName(account) {
+  return [
+    account?.companyName,
+    account?.storeName,
+    account?.businessName,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .find(Boolean) || "Seller";
+}
+
+function getSellerAccountDeletionScheduledAt(account) {
+  const scheduledAt = new Date(
+    account?.deletionScheduledAt ?? account?.accountDeletionScheduledAt ?? "",
+  );
+  return Number.isFinite(scheduledAt.getTime()) ? scheduledAt : null;
+}
+
+function getSellerAccountDeletionStatus(account) {
+  const status = String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
+    .trim()
+    .toLowerCase();
+  const deletionStatus = String(
+    account?.accountDeletionStatus ?? account?.deletionStatus ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    status === "deleted" ||
+    deletionStatus === "deleted" ||
+    Boolean(account?.accountDeletedAt || account?.deletedAt)
+  ) {
+    return "deleted";
+  }
+  if (deletionStatus === "scheduled" || deletionStatus === "pending") {
+    const scheduledAt = getSellerAccountDeletionScheduledAt(account);
+    if (scheduledAt && scheduledAt.getTime() <= Date.now()) {
+      return "due";
+    }
+    return "scheduled";
+  }
+  return "";
+}
+
+function isSellerAccountDeletionDue(account) {
+  return getSellerAccountDeletionStatus(account) === "due";
+}
+
+function createSellerDeletionInboxNotification(account, now, options = {}) {
+  const companyName = getSellerCompanyDisplayName(account);
+  const scheduledAt = getSellerAccountDeletionScheduledAt(account);
+  const scheduledLabel = scheduledAt
+    ? scheduledAt.toLocaleString()
+    : "the scheduled date";
+  const type = String(options.type || "seller-account-deletion").trim();
+  const isCancel = type === "seller-account-deletion-canceled";
+  return {
+    id: `seller-account-deletion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    audience: "seller",
+    title: isCancel ? "Account deletion canceled" : "Account deletion scheduled",
+    reason: isCancel ? "Seller canceled account deletion" : "Seller requested account deletion",
+    message: isCancel
+      ? `Account deletion for ${companyName} was canceled. Your seller workspace stays active.`
+      : `Your seller account is scheduled for permanent deletion on ${scheduledLabel}. You have 30 days to cancel from Account Settings.`,
+    status: "unread",
+    createdAt: now,
+    createdBy: options.createdBy || "Seller Admin",
+    targetUrl: "/main.html#account-settings",
+    deletionScheduledAt: account?.deletionScheduledAt || null,
+  };
+}
+
+function createActivityFromSellerNotification(notification, adminId) {
+  if (!notification || typeof notification !== "object") {
+    return null;
+  }
+  const createdAt = String(notification.createdAt || notification.notifiedAt || "").trim();
+  if (!createdAt) {
+    return null;
+  }
+  const scopedAdminId = normalizeAdminTenantId(
+    notification.adminId || adminId,
+    "",
+  );
+  if (!scopedAdminId) {
+    return null;
+  }
+  return {
+    id: String(notification.id || `seller-inbox-${scopedAdminId}-${createdAt}`).trim(),
+    type: String(notification.type || "seller-notification").trim() || "seller-notification",
+    action: String(notification.type || "notice").trim() || "notice",
+    source: "super_admin",
+    notificationAudience: "admin",
+    adminId: scopedAdminId,
+    title: String(notification.title || "Seller notice").trim() || "Seller notice",
+    description: String(notification.message || notification.reason || "Seller notice recorded.").trim(),
+    createdAt,
+    targetUrl: String(notification.targetUrl || "").trim(),
+    actor: {
+      role: "admin",
+      accountId: "super-admin",
+      displayName: SUPER_ADMIN_USERNAME,
+    },
+  };
+}
+
+async function verifySellerAccountPassword(account, password) {
+  const submitted = String(password ?? "");
+  if (!submitted || !account) {
+    return false;
+  }
+  if (await isSellerPostgresReady()) {
+    const seller = await findSellerByAdminId(account.adminId || account.id);
+    if (seller?._passwordHash) {
+      return verifyPassword(submitted, seller._passwordHash);
+    }
+  }
+  return submitted === String(account.password ?? "");
+}
+
+function applyScheduledSellerAccountDeletion(account, now, requestedBy = "seller-admin") {
+  const requestedAt = now;
+  const scheduledAt = new Date(Date.parse(now) + SELLER_ACCOUNT_DELETION_GRACE_MS).toISOString();
+  Object.assign(account, {
+    accountDeletionStatus: "scheduled",
+    deletionStatus: "scheduled",
+    deletionRequestedAt: requestedAt,
+    accountDeletionRequestedAt: requestedAt,
+    deletionScheduledAt: scheduledAt,
+    accountDeletionScheduledAt: scheduledAt,
+    deletionRequestedBy: requestedBy,
+    deletionCanceledAt: null,
+    accountDeletionCanceledAt: null,
+    updatedAt: now,
+  });
+  return account;
+}
+
+function clearScheduledSellerAccountDeletion(account, now) {
+  Object.assign(account, {
+    accountDeletionStatus: "",
+    deletionStatus: "",
+    deletionRequestedAt: null,
+    accountDeletionRequestedAt: null,
+    deletionScheduledAt: null,
+    accountDeletionScheduledAt: null,
+    deletionRequestedBy: "",
+    deletionCanceledAt: now,
+    accountDeletionCanceledAt: now,
+    updatedAt: now,
+  });
+  return account;
+}
+
+function applyFinalizedSellerAccountDeletion(account, now) {
+  const accountId = String(account?.id || account?.adminId || "seller").trim();
+  const companyName = getSellerCompanyDisplayName(account);
+  Object.assign(account, {
+    status: "deleted",
+    accountStatus: "deleted",
+    accountState: "deleted",
+    accountDeletionStatus: "deleted",
+    deletionStatus: "deleted",
+    isActive: false,
+    disabled: true,
+    isOnline: false,
+    online: false,
+    loggedIn: false,
+    isLoggedIn: false,
+    sessionActive: false,
+    presenceStatus: "offline",
+    email: `deleted.${accountId.replace(/[^a-z0-9]/gi, "").slice(0, 18) || "seller"}.${Date.now()}@deleted.switch.invalid`,
+    mobileNumber: "",
+    password: `deleted-${crypto.randomBytes(24).toString("hex")}`,
+    googleProfile: null,
+    accountDeletedAt: now,
+    deletedAt: now,
+    updatedAt: now,
+    companyName,
+    storeName: String(account?.storeName || companyName).trim() || companyName,
+    planStatus: "canceled",
+  });
+  return account;
+}
+
+async function deactivateDeletedSellerWorkspace(adminId, now) {
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    return;
+  }
+
+  try {
+    const products = await readProducts();
+    let didChangeProducts = false;
+    const nextProducts = products.map((product) => {
+      if (!isRecordInAdminScope(product, normalizedAdminId) || product?.isActive === false) {
+        return product;
+      }
+      didChangeProducts = true;
+      return {
+        ...product,
+        isActive: false,
+        hiddenWithSellerDeletion: true,
+        sellerDeletedAt: now,
+        updatedAt: now,
+      };
+    });
+    if (didChangeProducts) {
+      await writeProducts(nextProducts);
+    }
+  } catch (error) {
+    console.error("Unable to hide listings for deleted seller account:", error);
+  }
+}
+
+let sellerDeletionSweepPromise = null;
+
+async function processDueSellerAccountDeletions() {
+  if (sellerDeletionSweepPromise) {
+    return sellerDeletionSweepPromise;
+  }
+
+  sellerDeletionSweepPromise = (async () => {
+    const accounts = await readAccounts();
+    const now = new Date().toISOString();
+    const dueSellers = accounts.filter(
+      (account) => isAdminAccount(account) && isSellerAccountDeletionDue(account),
+    );
+    if (!dueSellers.length) {
+      return { processed: 0 };
+    }
+
+    const dueAdminIds = new Set(
+      dueSellers.map((account) => getRecordAdminId(account, account.adminId || account.id)),
+    );
+
+    for (const account of accounts) {
+      if (isAdminAccount(account) && dueAdminIds.has(getRecordAdminId(account, account.adminId || account.id))) {
+        applyFinalizedSellerAccountDeletion(account, now);
+        continue;
+      }
+      if (
+        String(account?.role ?? "").trim().toLowerCase() === "employee" &&
+        dueAdminIds.has(getRecordAdminId(account, account.adminId || ""))
+      ) {
+        Object.assign(account, {
+          status: "deactivated",
+          accountStatus: "deactivated",
+          isActive: false,
+          disabled: true,
+          sellerAccountDeletedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await writeAccounts(accounts);
+
+    for (const account of dueSellers) {
+      const adminId = getRecordAdminId(account, account.adminId || account.id);
+      const companyName = getSellerCompanyDisplayName(account);
+      await deactivateDeletedSellerWorkspace(adminId, now);
+      if (await isSellerPostgresReady()) {
+        try {
+          await deleteSellerAuthIdentities(account.id || adminId);
+        } catch (error) {
+          console.error("Unable to unlink deleted seller identities:", error);
+        }
+      }
+      await persistSuperAdminNotification(
+        createPersistentLinkedNotification({
+          type: "seller-account-deleted",
+          audience: "super_admin",
+          title: "Seller account deleted",
+          reason: "30-day deletion period ended",
+          message: `${companyName} completed the 30-day deletion period and the seller account is now deleted.`,
+          adminId,
+          companyName,
+          storeName: companyName,
+          businessName: companyName,
+          createdBy: companyName,
+          targetUrl: "/super_admin.html#companies",
+          createdAt: now,
+        }),
+      );
+    }
+
+    return { processed: dueSellers.length };
+  })()
+    .catch((error) => {
+      console.error("Unable to process seller account deletions:", error);
+      return { processed: 0 };
+    })
+    .finally(() => {
+      sellerDeletionSweepPromise = null;
+    });
+
+  return sellerDeletionSweepPromise;
+}
+
 function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type,X-File-Name,X-GMS-Admin-ID,X-Admin-ID,X-GMS-Super-Admin-Token",
+    "Content-Type,If-Match,X-Request-ID,X-File-Name,X-GMS-Admin-ID,X-Admin-ID,X-GMS-Super-Admin-Token",
   );
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
 }
@@ -4402,10 +7163,161 @@ function parseRequestBody(request) {
   });
 }
 
+function parseRawRequestBody(request, maxBytes = MAX_JSON_BODY_BYTES) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) {
+        reject(new Error("Request body is too large."));
+        request.destroy();
+      }
+    });
+
+    request.on("end", () => resolve(body));
+    request.on("error", reject);
+  });
+}
+
 function createHttpError(message, statusCode = 400) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function getRequestOrigin(request) {
+  const protocolHeader = String(
+    request.headers["x-forwarded-proto"] || "",
+  ).trim().toLowerCase();
+  const protocol = protocolHeader === "https" ? "https" : "http";
+  const host = String(
+    request.headers["x-forwarded-host"] ||
+    request.headers.host ||
+    `127.0.0.1:${PORT}`,
+  ).trim();
+  return `${protocol}://${host}`;
+}
+
+function sanitizeCompanyProfileData(profileData) {
+  const data = profileData && typeof profileData === "object" ? { ...profileData } : {};
+  delete data.sellerPinHash;
+  return data;
+}
+
+function serializeUnifiedSessionEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  return {
+    account: serializeAccountForList(entry.account || {}),
+    availableModes: Array.isArray(entry.availableModes) ? entry.availableModes : [],
+    activeMode: String(entry.activeMode ?? "").trim() || "buyer",
+    activeCompanyId: entry.activeCompanyId || null,
+    activeCompany: entry.activeCompany
+      ? {
+          id: entry.activeCompany.id,
+          companyCode: entry.activeCompany.companyCode || "",
+          type: entry.activeCompany.type || "",
+          status: entry.activeCompany.status || "",
+          name: entry.activeCompany.name || "",
+          legalName: entry.activeCompany.legalName || "",
+          publicName: entry.activeCompany.publicName || "",
+          maskedPublicName: entry.activeCompany.maskedPublicName || "",
+          email: entry.activeCompany.email || "",
+          countryCode: entry.activeCompany.countryCode || "+63",
+          mobileNumber: entry.activeCompany.mobileNumber || "",
+          logoUrl: entry.activeCompany.logoUrl || "",
+          businessType: entry.activeCompany.businessType || "",
+          subscriptionStatus: entry.activeCompany.subscriptionStatus || "draft",
+          verificationStatus: entry.activeCompany.verificationStatus || "unverified",
+          profileData: sanitizeCompanyProfileData(entry.activeCompany.profileData),
+        }
+      : null,
+    capabilities: Array.isArray(entry.capabilities) ? entry.capabilities : [],
+    companies: Array.isArray(entry.companies)
+      ? entry.companies.map((membership) => ({
+          id: membership.id,
+          companyId: membership.companyId,
+          membershipRole: membership.membershipRole,
+          membershipStatus: membership.membershipStatus,
+          title: membership.title || "",
+          isPrimary: Boolean(membership.isPrimary),
+          metadata: membership.metadata || {},
+          createdAt: membership.createdAt || null,
+          updatedAt: membership.updatedAt || null,
+          company: membership.company
+            ? {
+                id: membership.company.id,
+                companyCode: membership.company.companyCode || "",
+                type: membership.company.type || "",
+                status: membership.company.status || "",
+                name: membership.company.name || "",
+                legalName: membership.company.legalName || "",
+                publicName: membership.company.publicName || "",
+                maskedPublicName: membership.company.maskedPublicName || "",
+                email: membership.company.email || "",
+                countryCode: membership.company.countryCode || "+63",
+                mobileNumber: membership.company.mobileNumber || "",
+                logoUrl: membership.company.logoUrl || "",
+                businessType: membership.company.businessType || "",
+                subscriptionStatus: membership.company.subscriptionStatus || "draft",
+                verificationStatus: membership.company.verificationStatus || "unverified",
+                profileData: sanitizeCompanyProfileData(membership.company.profileData),
+              }
+            : null,
+        }))
+      : [],
+  };
+}
+
+function getUnifiedSessionRequestIdentity(request, requestUrl, payload = null) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  return {
+    accountId: String(
+      source.accountId ??
+      source.id ??
+      requestUrl?.searchParams.get("accountId") ??
+      request.headers["x-gms-account-id"] ??
+      "",
+    ).trim(),
+    email: String(
+      source.email ??
+      requestUrl?.searchParams.get("email") ??
+      request.headers["x-gms-account-email"] ??
+      "",
+    ).trim().toLowerCase(),
+    activeMode: String(
+      source.activeMode ??
+      requestUrl?.searchParams.get("activeMode") ??
+      request.headers["x-gms-active-mode"] ??
+      "",
+    ).trim().toLowerCase(),
+    companyId: String(
+      source.companyId ??
+      requestUrl?.searchParams.get("companyId") ??
+      request.headers["x-gms-company-id"] ??
+      "",
+    ).trim(),
+  };
+}
+
+async function requireUnifiedSessionEntry(request, requestUrl, payload = null) {
+  if (!(await isUnifiedAccountsReady())) {
+    throw createHttpError("Unified account session service is unavailable.", 503);
+  }
+
+  const identity = getUnifiedSessionRequestIdentity(request, requestUrl, payload);
+  if (!identity.accountId && !identity.email) {
+    throw createHttpError("Provide accountId or email.", 400);
+  }
+
+  const entry = await resolveUnifiedSession(identity);
+  if (!entry) {
+    throw createHttpError("Unified account not found.", 404);
+  }
+  return entry;
 }
 
 function parseBinaryRequestBody(
@@ -4611,9 +7523,8 @@ const employeeAccessPermissionKeys = new Set([
 ]);
 
 const employeeAccessPermissionDashboardPaths = [
-  ["employee-dashboard", "/employee_dashboard.html"],
   ["admin-dashboard", "/admin_dashboard.html"],
-  ["live-chat", "/live_chat.html"],
+  ["live-chat", "/main.html#live-chat"],
   ["employee-order", "/employee_order_insight.html"],
   ["employee-inventory", "/employee_stock.html"],
   ["packing-dashboard", "/packing_dashboard.html"],
@@ -4623,6 +7534,7 @@ const employeeAccessPermissionDashboardPaths = [
   ["admin-inventory", "/stock.html"],
   ["employee-data", "/Employee_data.html"],
   ["register", "/register.html"],
+  ["employee-dashboard", "/employee_dashboard.html"],
 ];
 const employeePanelAccessPermissionKeys = new Set([
   "live-chat",
@@ -4790,6 +7702,26 @@ function normalizeAccountRecord(input, existingAccount = null) {
   const countryCode = String(input.countryCode ?? "").trim();
   const mobileNumber = String(input.mobileNumber ?? "").replace(/\D/g, "").trim();
   const password = String(input.password ?? "").trim();
+  const department = String(input.department ?? existingAccount?.department ?? "").trim();
+  const employmentType = String(
+    input.employmentType ?? existingAccount?.employmentType ?? "Regular",
+  ).trim() || "Regular";
+  const dateOfBirth = String(input.dateOfBirth ?? existingAccount?.dateOfBirth ?? "").trim();
+  const gender = String(input.gender ?? existingAccount?.gender ?? "").trim();
+  const startDate = String(
+    input.startDate ?? input.dateHired ?? existingAccount?.startDate ?? existingAccount?.dateHired ?? "",
+  ).trim();
+  const supervisor = String(input.supervisor ?? existingAccount?.supervisor ?? "").trim();
+  const username = String(input.username ?? existingAccount?.username ?? email).trim().toLowerCase();
+  const employeeRole = String(
+    input.employeeRole ?? input.accountRole ?? existingAccount?.employeeRole ?? "Employee",
+  ).trim() || "Employee";
+  const requestedStatus = String(
+    input.status ?? input.accountStatus ?? existingAccount?.status ?? "active",
+  ).trim().toLowerCase();
+  const status = ["active", "inactive", "on-leave", "probation"].includes(requestedStatus)
+    ? requestedStatus
+    : "active";
   const adminId = normalizeAdminTenantId(
     input.adminId ??
       input.ownerAdminId ??
@@ -4970,6 +7902,15 @@ function normalizeAccountRecord(input, existingAccount = null) {
     suffix,
     email,
     address,
+    department,
+    employmentType,
+    dateOfBirth,
+    gender,
+    startDate,
+    supervisor,
+    username,
+    employeeRole,
+    status,
     countryCode,
     mobileNumber,
     password,
@@ -4994,21 +7935,59 @@ function isAdminAccount(account) {
   return String(account?.role ?? "").trim().toLowerCase() === "admin";
 }
 
+function isAdminTemporaryBanExpired(account) {
+  const banType = String(account?.banType ?? account?.ban_mode ?? "")
+    .trim()
+    .toLowerCase();
+  if (banType !== "temporary") {
+    return false;
+  }
+
+  const expiresAt = new Date(account?.banExpiresAt ?? account?.ban_expires_at ?? "");
+  return Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
+}
+
+function isAdminTemporaryRestrictionExpired(account) {
+  const expiresAt = new Date(
+    account?.restrictExpiresAt ?? account?.restrictionExpiresAt ?? account?.restrict_expires_at ?? "",
+  );
+  return Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
+}
+
 function getAdminAccountRestrictionMessage(account) {
   const status = String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
     .trim()
     .toLowerCase();
+  const deletionStatus = getSellerAccountDeletionStatus(account);
+  const isBannedAccount = status === "banned" || account?.isBanned === true;
+  const isRestrictedAccount = isAdminAccountMarkedRestricted(account);
+  const temporaryBanExpired = isBannedAccount && isAdminTemporaryBanExpired(account);
 
-  if (status === "banned" || account?.isBanned === true) {
+  if (deletionStatus === "deleted" || status === "deleted") {
+    return "This seller account has been deleted.";
+  }
+
+  if (isBannedAccount && !temporaryBanExpired) {
+    const expiresAt = new Date(account?.banExpiresAt ?? account?.ban_expires_at ?? "");
+    if (
+      String(account?.banType ?? "").trim().toLowerCase() === "temporary" &&
+      Number.isFinite(expiresAt.getTime())
+    ) {
+      return `This admin account is banned until ${expiresAt.toLocaleString()}.`;
+    }
     return "This admin account is banned.";
   }
 
   if (
-    status === "deactivated" ||
-    status === "inactive" ||
-    status === "disabled" ||
-    account?.isActive === false ||
-    account?.disabled === true
+    !temporaryBanExpired &&
+    !isRestrictedAccount &&
+    (
+      status === "deactivated" ||
+      status === "inactive" ||
+      status === "disabled" ||
+      account?.isActive === false ||
+      account?.disabled === true
+    )
   ) {
     return "This admin account is deactivated.";
   }
@@ -5026,6 +8005,34 @@ function createAdminAccountId(input) {
     "admin",
   );
   return `admin-${stem}-${Date.now()}`;
+}
+
+function normalizeAdminPaymentCardMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const last4 = String(value.last4 ?? "").replace(/\D/g, "").slice(-4);
+  if (last4.length !== 4) {
+    return null;
+  }
+
+  const expiryMonth = Number(value.expiryMonth);
+  const expiryYear = Number(value.expiryYear);
+  return {
+    brand: String(value.brand ?? "Card").replace(/\s+/g, " ").trim().slice(0, 40) || "Card",
+    last4,
+    cardholderName: String(value.cardholderName ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120),
+    expiryMonth: Number.isInteger(expiryMonth) && expiryMonth >= 1 && expiryMonth <= 12
+      ? expiryMonth
+      : null,
+    expiryYear: Number.isInteger(expiryYear) && expiryYear >= 2000 && expiryYear <= 9999
+      ? expiryYear
+      : null,
+  };
 }
 
 function normalizeAdminAccountRecord(input, existingAccount = null) {
@@ -5054,7 +8061,11 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
     .replace(/\D/g, "")
     .trim();
   const countryCode = String(input.countryCode ?? existingAccount?.countryCode ?? "+63").trim() || "+63";
-  const now = new Date().toISOString();
+  const now = normalizeIsoTimestamp(input.updatedAt, new Date().toISOString());
+  const hasPaymentCardInput = Object.prototype.hasOwnProperty.call(input, "paymentCard");
+  const paymentCard = hasPaymentCardInput
+    ? normalizeAdminPaymentCardMetadata(input.paymentCard)
+    : normalizeAdminPaymentCardMetadata(existingAccount?.paymentCard);
 
   if (storeName.length < 2) {
     throw new Error("Company name must be at least 2 characters long.");
@@ -5079,6 +8090,7 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
   const createdAt = existingAccount?.createdAt || now;
 
   return {
+    ...(existingAccount && typeof existingAccount === "object" ? existingAccount : {}),
     id,
     adminId,
     accountCode: existingAccount?.accountCode || adminId,
@@ -5090,6 +8102,10 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
     storeType,
     storeTypeName: storeType,
     businessType: storeType,
+    storeTypeUpdatedAt: normalizeIsoTimestamp(
+      input.storeTypeUpdatedAt,
+      existingAccount?.storeTypeUpdatedAt ?? (storeType ? createdAt : null),
+    ),
     firstName,
     middleName: String(input.middleName ?? existingAccount?.middleName ?? "").trim(),
     lastName,
@@ -5098,6 +8114,42 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
     countryCode,
     mobileNumber,
     password,
+    emailVerified: input.emailVerified === true || existingAccount?.emailVerified === true,
+    mobileVerified: input.mobileVerified === true || existingAccount?.mobileVerified === true,
+    verificationSkipped: Object.prototype.hasOwnProperty.call(input, "verificationSkipped")
+      ? input.verificationSkipped === true
+      : existingAccount?.verificationSkipped === true,
+    verificationChannel: ["email", "mobile"].includes(
+      String(input.verificationChannel ?? existingAccount?.verificationChannel ?? "")
+        .trim()
+        .toLowerCase(),
+    )
+      ? String(input.verificationChannel ?? existingAccount?.verificationChannel).trim().toLowerCase()
+      : "",
+    verificationToken: String(input.verificationToken ?? "").trim(),
+    googleProfile:
+      input.googleProfile && typeof input.googleProfile === "object"
+        ? input.googleProfile
+        : existingAccount?.googleProfile && typeof existingAccount.googleProfile === "object"
+          ? existingAccount.googleProfile
+          : null,
+    paymentCard,
+    paymentCardSkipped: Object.prototype.hasOwnProperty.call(input, "paymentCardSkipped")
+      ? input.paymentCardSkipped === true
+      : existingAccount?.paymentCardSkipped === true,
+    planName: String(input.planName ?? existingAccount?.planName ?? "Free Plan")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "Free Plan",
+    planStatus: String(input.planStatus ?? existingAccount?.planStatus ?? "active")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase()
+      .slice(0, 40) || "active",
+    planStartedAt: normalizeIsoTimestamp(
+      input.planStartedAt,
+      existingAccount?.planStartedAt ?? createdAt,
+    ),
     profileImageUrl: String(
       input.profileImageUrl ??
         input.logoUrl ??
@@ -5116,8 +8168,37 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
   };
 }
 
+function isAdminPresenceTimestampFresh(account) {
+  const rawTimestamp = account?.presenceUpdatedAt ?? account?.lastOnlineAt ?? account?.lastLoginAt ?? "";
+  const timestamp = new Date(rawTimestamp);
+  if (!Number.isFinite(timestamp.getTime())) {
+    return false;
+  }
+  return Date.now() - timestamp.getTime() <= ADMIN_PRESENCE_STALE_MS;
+}
+
+function isAdminAccountPresenceOnline(account) {
+  const statusToken = String(
+    account?.presenceStatus ?? account?.onlineStatus ?? account?.sessionStatus ?? account?.loginStatus ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const hasOnlineFlag = Boolean(
+    account?.isOnline === true ||
+      account?.online === true ||
+      account?.loggedIn === true ||
+      account?.isLoggedIn === true ||
+      account?.sessionActive === true ||
+      statusToken === "online" ||
+      statusToken === "logged-in" ||
+      statusToken === "logged in",
+  );
+  return hasOnlineFlag && isAdminPresenceTimestampFresh(account);
+}
+
 function serializeAdminAccount(account, counts = null) {
   const { password, ...safeAccount } = account || {};
+  const isPresenceOnline = isAdminAccountPresenceOnline(safeAccount);
   const companyName = [
     safeAccount.companyName,
     safeAccount.storeName,
@@ -5134,6 +8215,13 @@ function serializeAdminAccount(account, counts = null) {
     .find(Boolean) || "";
   return {
     ...safeAccount,
+    isOnline: isPresenceOnline,
+    online: isPresenceOnline,
+    loggedIn: isPresenceOnline,
+    isLoggedIn: isPresenceOnline,
+    sessionActive: isPresenceOnline,
+    onlineStatus: isPresenceOnline ? "online" : "offline",
+    presenceStatus: isPresenceOnline ? "online" : "offline",
     companyName,
     storeName: String(safeAccount.storeName ?? "").trim() || companyName,
     businessName: String(safeAccount.businessName ?? "").trim() || companyName,
@@ -5152,6 +8240,25 @@ function serializeAdminAccount(account, counts = null) {
 
 function normalizeProductCompanyMetadataText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function isPaidSellerPlan(planName, amount) {
+  const paidAmount = Number(amount);
+  if (Number.isFinite(paidAmount) && paidAmount > 0) {
+    return true;
+  }
+
+  const name = String(planName ?? "").trim().toLowerCase();
+  if (!name || name === "free" || name === "free plan" || name.startsWith("free ")) {
+    return false;
+  }
+
+  return (
+    name === "basic" ||
+    name === "pro" ||
+    name === "premium" ||
+    name === "starter seller plan"
+  );
 }
 
 function getProductCompanyMetadataByAdminId(accounts = []) {
@@ -5188,9 +8295,27 @@ function getProductCompanyMetadataByAdminId(accounts = []) {
       .map((value) => String(value ?? "").trim())
       .find(Boolean) || "";
 
+    const storeTypeName = normalizeStoreTypeName(
+      serializedAccount.storeType
+        ?? serializedAccount.storeTypeName
+        ?? serializedAccount.businessType,
+    );
+
+    const planName = String(serializedAccount.planName ?? "").trim() || "Free Plan";
+    const hasPaidPlan = isPaidSellerPlan(
+      planName,
+      serializedAccount.planAmount ?? serializedAccount.subscriptionAmount,
+    );
+
     metadataByAdminId.set(adminId, {
       companyName,
       companyPictureUrl,
+      storeType: storeTypeName,
+      storeTypeName,
+      businessType: storeTypeName,
+      planName,
+      hasPaidPlan,
+      isLegitSeller: hasPaidPlan,
     });
   }
 
@@ -5219,6 +8344,24 @@ function attachProductCompanyMetadata(product, metadataByAdminId = new Map()) {
   ]
     .map((value) => String(value ?? "").trim())
     .find(Boolean) || "";
+  const storeTypeName = normalizeStoreTypeName(
+    product.storeType
+      ?? product.storeTypeName
+      ?? product.businessType
+      ?? metadata.storeType
+      ?? metadata.storeTypeName
+      ?? metadata.businessType,
+  );
+
+  const hasPaidPlan = Boolean(
+    product.hasPaidPlan ??
+      product.isLegitSeller ??
+      metadata.hasPaidPlan ??
+      metadata.isLegitSeller,
+  );
+  const planName =
+    String(product.planName ?? metadata.planName ?? "").trim() ||
+    (hasPaidPlan ? "" : "Free Plan");
 
   return {
     ...product,
@@ -5226,6 +8369,12 @@ function attachProductCompanyMetadata(product, metadataByAdminId = new Map()) {
     storeName: String(product.storeName ?? "").trim() || companyName,
     businessName: String(product.businessName ?? "").trim() || companyName,
     companyPictureUrl,
+    storeType: storeTypeName || String(product.storeType ?? "").trim(),
+    storeTypeName: storeTypeName || String(product.storeTypeName ?? product.storeType ?? "").trim(),
+    businessType: storeTypeName || String(product.businessType ?? product.storeType ?? "").trim(),
+    planName,
+    hasPaidPlan,
+    isLegitSeller: hasPaidPlan,
   };
 }
 
@@ -5396,6 +8545,18 @@ function serializeEmployeeAccount(account, faceAttendanceData = null) {
     lastName: safeAccount.lastName,
     suffix: safeAccount.suffix,
     email: safeAccount.email,
+    address: safeAccount.address,
+    department: safeAccount.department || "",
+    employmentType: safeAccount.employmentType || "Regular",
+    dateOfBirth: safeAccount.dateOfBirth || "",
+    gender: safeAccount.gender || "",
+    startDate: safeAccount.startDate || "",
+    supervisor: safeAccount.supervisor || "",
+    username: safeAccount.username || safeAccount.email || "",
+    employeeRole: safeAccount.employeeRole || "Employee",
+    status: safeAccount.status || "active",
+    countryCode: safeAccount.countryCode,
+    mobileNumber: safeAccount.mobileNumber,
     profileImageUrl: safeAccount.profileImageUrl || "",
     gmailBinding: safeAccount.gmailBinding || null,
     accessPermissions,
@@ -5457,13 +8618,15 @@ function getUploadExtension(filename, contentType) {
     return filenameExtension;
   }
 
-  switch (String(contentType ?? "").toLowerCase()) {
+  switch (normalizeUploadMimeType(contentType)) {
     case "image/jpeg":
       return ".jpg";
     case "image/png":
       return ".png";
     case "image/webp":
       return ".webp";
+    case "image/svg+xml":
+      return ".svg";
     case "image/gif":
       return ".gif";
     case "video/mp4":
@@ -5531,10 +8694,46 @@ async function convertUploadedImageToWebp(fileBuffer) {
   }
 }
 
+function normalizeUploadMimeType(contentType) {
+  return String(contentType ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
+function isSvgUploadBuffer(fileBuffer) {
+  if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
+    return false;
+  }
+  const sampleSize = Math.min(fileBuffer.length, 1024);
+  const head = fileBuffer.subarray(0, sampleSize).toString("utf8").trimStart().toLowerCase();
+  if (head.startsWith("<svg")) {
+    return true;
+  }
+  return head.startsWith("<?xml") && head.includes("<svg");
+}
+
 function shouldStoreUploadedImageAsPng(contentType, extension) {
   return (
-    String(contentType ?? "").toLowerCase() === "image/png" ||
+    normalizeUploadMimeType(contentType) === "image/png" ||
     String(extension ?? "").toLowerCase() === ".png"
+  );
+}
+
+function shouldStoreUploadedImageAsSvg(contentType, extension, fileBuffer = null) {
+  if (
+    normalizeUploadMimeType(contentType) === "image/svg+xml" ||
+    String(extension ?? "").toLowerCase() === ".svg"
+  ) {
+    return true;
+  }
+  return isSvgUploadBuffer(fileBuffer);
+}
+
+function shouldPreserveUploadedImageFormat(contentType, extension, fileBuffer = null) {
+  return (
+    shouldStoreUploadedImageAsPng(contentType, extension) ||
+    shouldStoreUploadedImageAsSvg(contentType, extension, fileBuffer)
   );
 }
 
@@ -6141,6 +9340,10 @@ function getProductVisualSearchImageUrls(product) {
     addUrl(imageUrl);
   }
 
+  for (const imageUrl of normalizeProductDescriptionImageUrls(product?.descriptionImageUrls)) {
+    addUrl(imageUrl);
+  }
+
   for (const crop of product?.detailsImageCrops ?? []) {
     addUrl(crop?.croppedImageUrl);
     addUrl(crop?.sourceUrl);
@@ -6206,6 +9409,61 @@ function normalizeProductImageUrls(rawImageUrls, fallbackImageUrl = "") {
   }
 
   return normalizedImageUrls;
+}
+
+function normalizeProductDescriptionImageUrls(rawImageUrls, fallbackImageUrls = []) {
+  const sourceImageUrls = Array.isArray(rawImageUrls)
+    ? rawImageUrls
+    : Array.isArray(fallbackImageUrls)
+      ? fallbackImageUrls
+      : [];
+  const seen = new Set();
+  const normalizedImageUrls = [];
+
+  for (const candidate of sourceImageUrls) {
+    const imageUrl = String(candidate ?? "").trim();
+    const normalizedKey = imageUrl.toLowerCase();
+    if (
+      !imageUrl ||
+      imageUrl.length > MAX_PRODUCT_DESCRIPTION_IMAGE_URL_LENGTH ||
+      seen.has(normalizedKey)
+    ) {
+      continue;
+    }
+
+    seen.add(normalizedKey);
+    normalizedImageUrls.push(imageUrl);
+    if (normalizedImageUrls.length >= MAX_PRODUCT_DESCRIPTION_IMAGE_URLS) {
+      break;
+    }
+  }
+
+  return normalizedImageUrls;
+}
+
+function validateProductDescriptionImageUrls(rawImageUrls) {
+  if (!Array.isArray(rawImageUrls)) {
+    throw new Error("Description images must be submitted as an array.");
+  }
+
+  for (const candidate of rawImageUrls) {
+    if (candidate != null && typeof candidate !== "string") {
+      throw new Error("Each description image must be an uploaded image URL.");
+    }
+    const imageUrl = String(candidate ?? "").trim();
+    if (imageUrl.length > MAX_PRODUCT_DESCRIPTION_IMAGE_URL_LENGTH) {
+      throw new Error(
+        `Each description image URL must be ${MAX_PRODUCT_DESCRIPTION_IMAGE_URL_LENGTH} characters or fewer.`,
+      );
+    }
+  }
+
+  const normalizedImageUrls = normalizeProductImageUrls(rawImageUrls);
+  if (normalizedImageUrls.length > MAX_PRODUCT_DESCRIPTION_IMAGE_URLS) {
+    throw new Error(
+      `A product can have up to ${MAX_PRODUCT_DESCRIPTION_IMAGE_URLS} description images.`,
+    );
+  }
 }
 
 function normalizeProductVideoUrls(rawVideoUrls, fallbackVideoUrl = "") {
@@ -7492,6 +10750,48 @@ function normalizeProductVariants(inputVariants, imageUrls, existingVariants = [
   });
 }
 
+function syncProductVariantAddOnsWithInventory(product, inventoryProducts, adminId) {
+  const productId = String(product?.id ?? "").trim().toLowerCase();
+  const inventoryProductsById = new Map(
+    (Array.isArray(inventoryProducts) ? inventoryProducts : [])
+      .filter((inventoryProduct) =>
+        isRecordInAdminScope(inventoryProduct, adminId)
+        && normalizeProductApprovalStatus(inventoryProduct?.approvalStatus) === PRODUCT_APPROVAL_APPROVED
+        && String(inventoryProduct?.id ?? "").trim().toLowerCase() !== productId)
+      .map((inventoryProduct) => [
+        String(inventoryProduct?.id ?? "").trim().toLowerCase(),
+        inventoryProduct,
+      ]),
+  );
+
+  return {
+    ...product,
+    variants: (Array.isArray(product?.variants) ? product.variants : []).map((variant) => {
+      const seenAddOnIds = new Set();
+      const addOns = normalizeVariantAddOns(variant?.addOns).reduce(
+        (filteredAddOns, addOn) => {
+          const addOnId = String(addOn?.id ?? "").trim().toLowerCase();
+          const inventoryProduct = inventoryProductsById.get(addOnId);
+          if (!addOnId || !inventoryProduct || seenAddOnIds.has(addOnId)) {
+            return filteredAddOns;
+          }
+
+          seenAddOnIds.add(addOnId);
+          filteredAddOns.push({
+            id: String(inventoryProduct.id ?? "").trim(),
+            name: String(inventoryProduct.name ?? "").replace(/\s+/g, " ").trim(),
+            quantity: addOn.quantity,
+          });
+          return filteredAddOns;
+        },
+        [],
+      );
+
+      return { ...variant, addOns };
+    }),
+  };
+}
+
 function normalizeStoredProductVariants(product) {
   const variants = Array.isArray(product?.variants)
     ? product.variants.map((variant, index) => {
@@ -7578,15 +10878,18 @@ function normalizeProductActiveState(value, fallback = true) {
 
 function normalizeProductApprovalStatus(value, fallback = PRODUCT_APPROVAL_APPROVED) {
   const normalizedValue = String(value ?? "").trim().toLowerCase();
-  if (normalizedValue === PRODUCT_APPROVAL_PENDING) {
-    return PRODUCT_APPROVAL_PENDING;
-  }
-  if (normalizedValue === PRODUCT_APPROVAL_APPROVED) {
-    return PRODUCT_APPROVAL_APPROVED;
+  if (
+    normalizedValue === PRODUCT_APPROVAL_PENDING ||
+    normalizedValue === PRODUCT_APPROVAL_APPROVED ||
+    normalizedValue === PRODUCT_APPROVAL_REJECTED
+  ) {
+    return normalizedValue;
   }
 
-  return fallback === PRODUCT_APPROVAL_PENDING
-    ? PRODUCT_APPROVAL_PENDING
+  const normalizedFallback = String(fallback ?? "").trim().toLowerCase();
+  return normalizedFallback === PRODUCT_APPROVAL_PENDING ||
+    normalizedFallback === PRODUCT_APPROVAL_REJECTED
+    ? normalizedFallback
     : PRODUCT_APPROVAL_APPROVED;
 }
 
@@ -7602,6 +10905,4676 @@ function isProductApprovedForApp(product) {
     product?.approvalStatus,
     PRODUCT_APPROVAL_APPROVED,
   ) === PRODUCT_APPROVAL_APPROVED;
+}
+
+function isProductRejected(product) {
+  return normalizeProductApprovalStatus(
+    product?.approvalStatus,
+    PRODUCT_APPROVAL_APPROVED,
+  ) === PRODUCT_APPROVAL_REJECTED;
+}
+
+function getProductYoloInspectionImageUrls(product) {
+  const variantImageUrls = Array.isArray(product?.variants)
+    ? product.variants.flatMap((variant) => [
+        variant?.imageUrl,
+        variant?.imageSourceUrl,
+        variant?.displayImageUrl,
+      ])
+    : [];
+  // Description photos stay in description only — never feed YOLO evidence.
+  return normalizeProductImageUrls(
+    [
+      ...(Array.isArray(product?.imageUrls) ? product.imageUrls : []),
+      product?.imageUrl,
+      product?.mainImageUrl,
+      product?.cardImageUrl,
+      product?.cardImageSourceUrl,
+      product?.buyModalImageUrl,
+      product?.buyModalImageSourceUrl,
+      ...variantImageUrls,
+      ...(Array.isArray(product?.visualSearchImageUrls) ? product.visualSearchImageUrls : []),
+    ],
+    product?.imageUrl ?? product?.mainImageUrl ?? "",
+  );
+}
+
+function getProductDescriptionImageUrlKeySet(product = {}) {
+  return new Set(
+    normalizeProductDescriptionImageUrls(product?.descriptionImageUrls)
+      .map((imageUrl) => String(imageUrl ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function excludeProductDescriptionImageUrls(imageUrls, product = {}) {
+  const descriptionKeys = getProductDescriptionImageUrlKeySet(product);
+  if (!descriptionKeys.size) {
+    return Array.isArray(imageUrls) ? imageUrls : [];
+  }
+  return (Array.isArray(imageUrls) ? imageUrls : []).filter(
+    (imageUrl) => !descriptionKeys.has(String(imageUrl ?? "").trim().toLowerCase()),
+  );
+}
+
+function getProductApprovedTrainingImageUrls(product = {}) {
+  const approvedEvidenceImageUrls = Array.isArray(product?.yoloInspection?.approvedEvidence?.imageUrls)
+    ? product.yoloInspection.approvedEvidence.imageUrls
+    : [];
+  const inspectionImageUrls = Array.isArray(product?.yoloInspection?.imageUrls)
+    ? product.yoloInspection.imageUrls
+    : [];
+  const detailCropImageUrls = Array.isArray(product?.detailsImageCrops)
+    ? product.detailsImageCrops.flatMap((crop) => [
+        crop?.croppedImageUrl,
+        crop?.sourceUrl,
+      ])
+    : [];
+  const variantImageUrls = Array.isArray(product?.variants)
+    ? product.variants.flatMap((variant) => [
+        variant?.imageUrl,
+        variant?.imageSourceUrl,
+        variant?.displayImageUrl,
+      ])
+    : [];
+
+  return excludeProductDescriptionImageUrls(
+    normalizeProductImageUrls(
+      [
+        ...approvedEvidenceImageUrls,
+        ...inspectionImageUrls,
+        ...getProductYoloInspectionImageUrls(product),
+        ...getProductVisualSearchImageUrls(product),
+        product?.visualSearchImageUrl,
+        product?.cardImageSourceUrl,
+        product?.buyModalImageSourceUrl,
+        ...detailCropImageUrls,
+        ...variantImageUrls,
+      ],
+      product?.imageUrl ?? product?.mainImageUrl ?? "",
+    ),
+    product,
+  );
+}
+
+function normalizeYoloDetection(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const rawConfidence = Number(value.confidence ?? value.score ?? value.probability);
+  const confidence = Number.isFinite(rawConfidence)
+    ? Math.max(0, Math.min(1, rawConfidence > 1 ? rawConfidence / 100 : rawConfidence))
+    : 0;
+  const rawBox = value.bbox ?? value.box ?? value.boundingBox;
+  let box = null;
+  if (Array.isArray(rawBox) && rawBox.length >= 4) {
+    const [x, y, width, height] = rawBox.map(Number);
+    if ([x, y, width, height].every(Number.isFinite)) {
+      box = { x, y, width, height };
+    }
+  } else if (rawBox && typeof rawBox === "object") {
+    const x = Number(rawBox.x ?? rawBox.left);
+    const y = Number(rawBox.y ?? rawBox.top);
+    const width = Number(rawBox.width ?? rawBox.w);
+    const height = Number(rawBox.height ?? rawBox.h);
+    if ([x, y, width, height].every(Number.isFinite)) {
+      box = { x, y, width, height };
+    }
+  }
+
+  const rawLabelCandidates = [
+    value.label,
+    value.className,
+    value.name,
+    value.object,
+    value.tag,
+    value.title,
+    value.category,
+    value.class,
+  ];
+  const rawLabel =
+    rawLabelCandidates.find((candidate) => {
+      const candidateLabel = String(candidate ?? "").trim();
+      return candidateLabel && !/^\d+$/.test(candidateLabel);
+    }) ??
+    rawLabelCandidates.find((candidate) => String(candidate ?? "").trim()) ??
+    "";
+
+  return {
+    label: String(rawLabel || "object").trim() || "object",
+    confidence,
+    box,
+    flagged: value.flagged === true,
+    reason: String(value.reason ?? "").trim(),
+    imageUrl: String(value.imageUrl ?? value.url ?? value.mediaUrl ?? "").trim(),
+  };
+}
+
+function normalizeYoloDetectionList(value) {
+  return (Array.isArray(value) ? value : [])
+    .map(normalizeYoloDetection)
+    .filter(Boolean);
+}
+
+function normalizeRejectedEvidenceMatchScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, score > 1 ? score / 100 : score));
+}
+
+function normalizeConfidenceThreshold(value, fallback = 0) {
+  const normalizedValue = normalizeRejectedEvidenceMatchScore(value);
+  if (normalizedValue > 0) {
+    return normalizedValue;
+  }
+
+  return normalizeRejectedEvidenceMatchScore(fallback);
+}
+
+function normalizeYoloRejectedEvidenceMatch(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const score = normalizeRejectedEvidenceMatchScore(
+    value.score ?? value.visualSearchScore ?? value.confidence,
+  );
+  const threshold = normalizeRejectedEvidenceMatchScore(
+    value.threshold ?? REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+  ) || REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE;
+  const status = String(value.status ?? "").trim().toLowerCase();
+  const flagged =
+    value.flagged === true ||
+    status === "matched" ||
+    score >= threshold;
+
+  if (!flagged) {
+    return null;
+  }
+
+  return {
+    flagged: true,
+    status: "matched",
+    matchType:
+      String(value.matchType ?? "rejected-visual-fingerprint").trim() ||
+      "rejected-visual-fingerprint",
+    score,
+    threshold,
+    productId: String(value.productId ?? value.sourceProductId ?? "").trim(),
+    productName: String(value.productName ?? value.sourceProductName ?? "").trim(),
+    imageUrl: String(value.imageUrl ?? value.sourceImageUrl ?? "").trim(),
+    matchedProductId:
+      String(value.matchedProductId ?? value.rejectedProductId ?? "").trim(),
+    matchedProductName:
+      String(value.matchedProductName ?? value.rejectedProductName ?? "").trim(),
+    matchedImageUrl:
+      String(value.matchedImageUrl ?? value.rejectedImageUrl ?? "").trim(),
+    matchedRejectedAt: normalizeOptionalProductDateTime(
+      value.matchedRejectedAt ?? value.rejectedAt,
+    ),
+    matchedRejectedBy: String(value.matchedRejectedBy ?? value.rejectedBy ?? "").trim(),
+    reason:
+      String(value.reason ?? "").trim() ||
+      "Matches rejected product evidence.",
+    updatedAt: normalizeOptionalProductDateTime(value.updatedAt, new Date().toISOString()),
+  };
+}
+
+function normalizeYoloApprovedEvidence(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const imageUrls = normalizeProductImageUrls(value.imageUrls ?? value.images);
+  const approvedAt = normalizeOptionalProductDateTime(
+    value.approvedAt ?? value.recordedAt ?? value.updatedAt,
+  );
+  const updatedAt = normalizeOptionalProductDateTime(
+    value.updatedAt,
+    approvedAt || new Date().toISOString(),
+  );
+
+  return {
+    status: "approved",
+    trainingBucket: "approved",
+    source:
+      String(value.source ?? "").trim() ||
+      "manual-super-admin-approval",
+    productId: String(value.productId ?? "").trim(),
+    productName: String(value.productName ?? value.name ?? "").trim(),
+    adminId: normalizeAdminTenantId(value.adminId, ""),
+    categoryLabel: String(value.categoryLabel ?? value.category ?? "").trim(),
+    categoryBuckets: Array.isArray(value.categoryBuckets)
+      ? value.categoryBuckets.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [],
+    imageUrls,
+    approvedAt,
+    approvedBy: String(value.approvedBy ?? "").trim(),
+    reason:
+      String(value.reason ?? "").trim() ||
+      "Product manually approved as clean YOLO training evidence.",
+    updatedAt,
+  };
+}
+
+function normalizeYoloRevisionEvidence(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const imageUrls = normalizeProductImageUrls(value.imageUrls ?? value.images);
+  const requestedAt = normalizeOptionalProductDateTime(
+    value.requestedAt ?? value.recordedAt ?? value.updatedAt,
+  );
+  const updatedAt = normalizeOptionalProductDateTime(
+    value.updatedAt,
+    requestedAt || new Date().toISOString(),
+  );
+
+  return {
+    status: "revision",
+    trainingBucket: "revision",
+    source:
+      String(value.source ?? "").trim() ||
+      "manual-super-admin-revision",
+    productId: String(value.productId ?? "").trim(),
+    productName: String(value.productName ?? value.name ?? "").trim(),
+    adminId: normalizeAdminTenantId(value.adminId, ""),
+    categoryLabel: String(value.categoryLabel ?? value.category ?? "").trim(),
+    categoryBuckets: Array.isArray(value.categoryBuckets)
+      ? value.categoryBuckets.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [],
+    imageBuckets: Array.isArray(value.imageBuckets)
+      ? value.imageBuckets.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [],
+    imageUrls,
+    requestedAt,
+    requestedBy: String(value.requestedBy ?? "").trim(),
+    reason:
+      String(value.reason ?? "").trim() ||
+      "Product manually sent for revision as YOLO training evidence.",
+    message: String(value.message ?? "").trim(),
+    updatedAt,
+  };
+}
+
+function normalizeYoloInspection(value, fallbackImageUrls = []) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const allowedStatuses = new Set(["queued", "clear", "flagged", "error"]);
+  const requestedStatus = String(value.status ?? "queued").trim().toLowerCase();
+  const status = allowedStatuses.has(requestedStatus) ? requestedStatus : "queued";
+  const imageUrls = normalizeProductImageUrls(
+    Array.isArray(value.imageUrls) ? value.imageUrls : fallbackImageUrls,
+  );
+  const rejectedEvidenceImageUrls = normalizeProductImageUrls(
+    value.rejectedEvidenceImageUrls ??
+      value.rejectedImageUrls ??
+      value.rejectedTrainingImageUrls ??
+      [],
+  );
+  const fingerprints = normalizeVisualSearchFingerprintMetaList(
+    value.fingerprints ??
+      value.rejectedEvidenceFingerprints ??
+      value.visualSearchFingerprints,
+    imageUrls,
+  );
+  const imageResults = (Array.isArray(value.images) ? value.images : [])
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const imageUrl = String(entry.imageUrl ?? entry.url ?? "").trim();
+      if (!imageUrl) {
+        return null;
+      }
+      return {
+        imageUrl,
+        flagged: entry.flagged === true,
+        detections: normalizeYoloDetectionList(entry.detections),
+      };
+    })
+    .filter(Boolean);
+  const detections = normalizeYoloDetectionList(value.detections);
+  const rejectedEvidenceMatch = normalizeYoloRejectedEvidenceMatch(
+    value.rejectedEvidenceMatch ??
+      value.rejectedEvidence ??
+      value.illegalProductMatch,
+  );
+  const approvedEvidence = normalizeYoloApprovedEvidence(
+    value.approvedEvidence ??
+      value.goodProductEvidence ??
+      value.approvedProductEvidence,
+  );
+  const revisionEvidence = normalizeYoloRevisionEvidence(
+    value.revisionEvidence ??
+      value.revisionProductEvidence ??
+      value.revisionTrainingEvidence,
+  );
+  const flagged =
+    value.flagged === true ||
+    status === "flagged" ||
+    rejectedEvidenceMatch?.flagged === true ||
+    detections.some((detection) => detection.flagged) ||
+    imageResults.some((entry) => entry.flagged || entry.detections.some((detection) => detection.flagged));
+  const confidence = normalizeRejectedEvidenceMatchScore(
+    value.confidence ?? value.score ?? value.probability,
+  );
+
+  return {
+    engine: "yolo",
+    model: String(value.model ?? YOLO_INSPECTION_MODEL).trim() || YOLO_INSPECTION_MODEL,
+    status: flagged ? "flagged" : status,
+    flagged,
+    confidence,
+    autoReject: value.autoReject === true,
+    datasetBucket: String(value.datasetBucket ?? "inspection").trim() || "inspection",
+    imageUrls,
+    rejectedEvidenceImageUrls,
+    fingerprints,
+    images: imageResults,
+    detections,
+    rejectedEvidenceMatch,
+    approvedEvidence,
+    revisionEvidence,
+    requestedAt: normalizeOptionalProductDateTime(value.requestedAt),
+    inspectedAt: normalizeOptionalProductDateTime(value.inspectedAt),
+    updatedAt: normalizeOptionalProductDateTime(value.updatedAt),
+    archivedAt: normalizeOptionalProductDateTime(value.archivedAt),
+    error: String(value.error ?? "").trim(),
+  };
+}
+
+function normalizeManualYoloDetectionLabel(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function validateManualYoloDetectionLabel(value) {
+  const label = normalizeManualYoloDetectionLabel(value);
+  const lowerLabel = label.toLowerCase();
+  const blockedLabels = new Set([
+    "object",
+    "item",
+    "thing",
+    "product",
+    "image",
+    "picture",
+    "photo",
+    "unknown",
+    "none",
+    "null",
+    "undefined",
+    "n/a",
+    "na",
+    "test",
+    "sample",
+    "asdf",
+    "qwerty",
+    "haha",
+    "hahaha",
+    "lol",
+    "yolo",
+    "detection",
+    "approve",
+    "approved",
+    "reject",
+    "rejected",
+    "safe",
+    "clean",
+    "illegal",
+  ]);
+  const abusivePattern = /\b(fuck|shit|puta|putang|tangina|gago|bobo|ulol)\b/i;
+
+  if (label.length < 2 || label.length > 48) {
+    return {
+      label: "",
+      message: "Use a real object label between 2 and 48 characters.",
+    };
+  }
+  if (!/[a-z]/i.test(label)) {
+    return {
+      label: "",
+      message: "Detection label must include letters, not only symbols or numbers.",
+    };
+  }
+  if (!/^[a-z0-9][a-z0-9\s&'().,/-]*$/i.test(label)) {
+    return {
+      label: "",
+      message: "Use only letters, numbers, spaces, and simple punctuation for the object label.",
+    };
+  }
+  if (blockedLabels.has(lowerLabel) || abusivePattern.test(label)) {
+    return {
+      label: "",
+      message: "Use a specific object name, not a generic, test, or abusive label.",
+    };
+  }
+  if (/(.)\1{4,}/i.test(label) || /(asdf|qwer|zxcv|1234|0000|xxxx)/i.test(label)) {
+    return {
+      label: "",
+      message: "Use a meaningful object label, not random or repeated characters.",
+    };
+  }
+  if (label.split(/\s+/).filter(Boolean).length > 5) {
+    return {
+      label: "",
+      message: "Keep the detection label short, like \"gummies\" or \"water bottle\".",
+    };
+  }
+
+  return { label, message: "" };
+}
+
+function parseApprovedTrainingDisplayProductId(productId) {
+  const normalizedProductId = String(productId ?? "").trim();
+  const match = normalizedProductId.match(/^(.*)::approved-image::(\d+)$/);
+  if (!match) {
+    return {
+      rawProductId: normalizedProductId,
+      sourceProductId: normalizedProductId,
+      approvedImageIndex: 0,
+    };
+  }
+
+  return {
+    rawProductId: normalizedProductId,
+    sourceProductId: String(match[1] ?? "").trim(),
+    approvedImageIndex: Math.max(0, Number(match[2]) || 0),
+  };
+}
+
+function createManualYoloDetection(label, imageUrl = "", existingDetection = null) {
+  const normalizedExisting = normalizeYoloDetection(existingDetection) || {};
+  return normalizeYoloDetection({
+    ...normalizedExisting,
+    label,
+    imageUrl: String(normalizedExisting.imageUrl || imageUrl || "").trim(),
+    confidence: normalizedExisting.confidence || 1,
+    reason: "Manual Super Admin correction.",
+  });
+}
+
+function applyManualYoloDetectionLabel(product = {}, label = "", options = {}) {
+  const correction = validateManualYoloDetectionLabel(label);
+  if (!correction.label) {
+    return product;
+  }
+
+  const approvalStatus = normalizeProductApprovalStatus(
+    product?.approvalStatus,
+    PRODUCT_APPROVAL_APPROVED,
+  );
+  const baseImageUrls = approvalStatus === PRODUCT_APPROVAL_APPROVED
+    ? getProductApprovedTrainingImageUrls(product)
+    : getProductYoloInspectionImageUrls(product);
+  const targetImageUrl = String(options.targetImageUrl ?? "").trim();
+  const imageUrls = normalizeProductImageUrls(
+    targetImageUrl ? [...baseImageUrls, targetImageUrl] : baseImageUrls,
+    product?.imageUrl ?? product?.mainImageUrl ?? "",
+  );
+  const targetKey = targetImageUrl.toLowerCase();
+  const now = new Date().toISOString();
+  const existingInspection = normalizeYoloInspection(
+    product?.yoloInspection,
+    imageUrls,
+  ) || normalizeYoloInspection({
+    status: approvalStatus === PRODUCT_APPROVAL_APPROVED ? "clear" : "queued",
+    imageUrls,
+    updatedAt: now,
+  }, imageUrls);
+  const topLevelDetections = normalizeYoloDetectionList(existingInspection?.detections);
+  const nextTopLevelDetections = targetKey
+    ? topLevelDetections
+    : (
+        topLevelDetections.length
+          ? topLevelDetections.map((detection) =>
+              createManualYoloDetection(correction.label, detection.imageUrl, detection),
+            )
+          : [createManualYoloDetection(correction.label, imageUrls[0] || "", null)]
+      ).filter(Boolean);
+  const imageResultUrls = normalizeProductImageUrls([
+    ...imageUrls,
+    ...(Array.isArray(existingInspection?.images)
+      ? existingInspection.images.map((entry) => entry?.imageUrl || entry?.url)
+      : []),
+  ]);
+  const imageResultsByKey = new Map(
+    (Array.isArray(existingInspection?.images) ? existingInspection.images : [])
+      .map((entry) => [String(entry?.imageUrl || entry?.url || "").trim().toLowerCase(), entry])
+      .filter(([key]) => key),
+  );
+  const nextImageResults = imageResultUrls.map((imageUrl) => {
+    const key = String(imageUrl || "").trim().toLowerCase();
+    const existingImageResult = imageResultsByKey.get(key) || { imageUrl };
+    const shouldUpdate = !targetKey || key === targetKey;
+    let detections = normalizeYoloDetectionList(existingImageResult?.detections);
+    if (shouldUpdate) {
+      detections = detections.length
+        ? detections.map((detection) =>
+            createManualYoloDetection(correction.label, imageUrl, detection),
+          ).filter(Boolean)
+        : [createManualYoloDetection(correction.label, imageUrl, null)].filter(Boolean);
+    }
+
+    return {
+      imageUrl,
+      flagged: existingImageResult?.flagged === true,
+      detections,
+    };
+  });
+
+  return {
+    ...product,
+    yoloInspection: normalizeYoloInspection({
+      ...(existingInspection || {}),
+      status: existingInspection?.status || (approvalStatus === PRODUCT_APPROVAL_APPROVED ? "clear" : "queued"),
+      imageUrls,
+      detections: nextTopLevelDetections,
+      images: nextImageResults,
+      updatedAt: now,
+    }, imageUrls),
+    updatedAt: now,
+  };
+}
+
+function getYoloServiceImageUrl(imageUrl) {
+  const normalizedImageUrl = String(imageUrl ?? "").trim();
+  if (!normalizedImageUrl || !YOLO_INSPECTION_PUBLIC_BASE_URL || /^https?:\/\//i.test(normalizedImageUrl)) {
+    return normalizedImageUrl;
+  }
+  return normalizedImageUrl.startsWith("/")
+    ? `${YOLO_INSPECTION_PUBLIC_BASE_URL}${normalizedImageUrl}`
+    : `${YOLO_INSPECTION_PUBLIC_BASE_URL}/${normalizedImageUrl}`;
+}
+
+async function runYoloProductInspection(product) {
+  const now = new Date().toISOString();
+  const imageUrls = getProductYoloInspectionImageUrls(product);
+  const datasetBucket = isProductRejected(product)
+    ? "rejected"
+    : String(product?.yoloInspection?.datasetBucket ?? "inspection").trim() || "inspection";
+  const queuedInspection = normalizeYoloInspection({
+    status: "queued",
+    model: YOLO_INSPECTION_MODEL,
+    datasetBucket,
+    imageUrls,
+    requestedAt: now,
+    updatedAt: now,
+  }, imageUrls);
+
+  if (!YOLO_INSPECTION_ENDPOINT || !imageUrls.length) {
+    return queuedInspection;
+  }
+
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), YOLO_INSPECTION_TIMEOUT_MS);
+  try {
+    const headers = { "Content-Type": "application/json", Accept: "application/json" };
+    if (YOLO_INSPECTION_TOKEN) {
+      headers.Authorization = `Bearer ${YOLO_INSPECTION_TOKEN}`;
+    }
+    const yoloResponse = await fetch(YOLO_INSPECTION_ENDPOINT, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        productId: String(product?.id ?? "").trim(),
+        model: YOLO_INSPECTION_MODEL,
+        images: imageUrls.map((imageUrl) => ({
+          imageUrl,
+          sourceUrl: getYoloServiceImageUrl(imageUrl),
+        })),
+        datasetBucket,
+        autoReject: false,
+      }),
+      signal: abortController.signal,
+    });
+    const payload = await yoloResponse.json().catch(() => ({}));
+    if (!yoloResponse.ok) {
+      throw new Error(payload.message || `YOLO inspection failed (${yoloResponse.status}).`);
+    }
+
+    const imageResults = Array.isArray(payload.images)
+      ? payload.images
+      : Array.isArray(payload.results)
+        ? payload.results
+        : [];
+    const flagged =
+      payload.flagged === true ||
+      imageResults.some((entry) => entry?.flagged === true);
+    return normalizeYoloInspection({
+      status: flagged ? "flagged" : "clear",
+      flagged,
+      confidence: payload.confidence ?? payload.score ?? payload.probability,
+      model: payload.model || YOLO_INSPECTION_MODEL,
+      datasetBucket,
+      imageUrls,
+      images: imageResults,
+      detections: payload.detections,
+      requestedAt: now,
+      inspectedAt: now,
+      updatedAt: now,
+    }, imageUrls);
+  } catch (error) {
+    return normalizeYoloInspection({
+      ...queuedInspection,
+      status: "error",
+      error: error instanceof Error ? error.message : "Unable to run YOLO inspection.",
+      updatedAt: now,
+    }, imageUrls);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+const PRODUCT_REVISION_BUCKET_KEYWORDS = Object.freeze({
+  food: [
+    "food",
+    "pagkain",
+    "ulam",
+    "meal",
+    "meals",
+    "dish",
+    "snack",
+    "snacks",
+    "meryenda",
+    "merienda",
+    "fruit",
+    "fruits",
+    "prutas",
+    "vegetable",
+    "vegetables",
+    "veggie",
+    "veggies",
+    "gulay",
+    "drink",
+    "drinks",
+    "beverage",
+    "inumin",
+    "water",
+    "tubig",
+    "juice",
+    "coffee",
+    "kape",
+    "tea",
+    "tsaa",
+    "milk",
+    "gatas",
+    "soda",
+    "cola",
+    "softdrink",
+    "softdrinks",
+    "soft drink",
+    "soft drinks",
+    "coke",
+    "sprite",
+    "pepsi",
+    "grocery",
+    "candy",
+    "chocolate",
+    "gummies",
+    "burger",
+    "pizza",
+    "fries",
+    "sandwich",
+    "hotdog",
+    "hot dog",
+    "donut",
+    "cake",
+    "bread",
+    "tinapay",
+    "cookie",
+    "cookies",
+    "biscuit",
+    "biscuits",
+    "chips",
+    "noodle",
+    "noodles",
+    "pasta",
+    "spaghetti",
+    "soup",
+    "sauce",
+    "rice",
+    "kanin",
+    "bigas",
+    "chicken",
+    "karne",
+    "meat",
+    "fish",
+    "isda",
+    "egg",
+    "eggs",
+    "itlog",
+    "apple",
+    "mango",
+    "orange",
+    "banana",
+    "lemon",
+    "lychee",
+    "strawberry",
+    "strawberries",
+    "grape",
+    "grapes",
+    "ubas",
+    "pineapple",
+    "pinya",
+    "watermelon",
+    "pakwan",
+  ],
+  clothing: [
+    "damit",
+    "kasuotan",
+    "clothes",
+    "clothing",
+    "cloth",
+    "apparel",
+    "shirt",
+    "tshirt",
+    "t-shirt",
+    "sando",
+    "pants",
+    "pantalon",
+    "jeans",
+    "short",
+    "shorts",
+    "dress",
+    "skirt",
+    "blouse",
+    "jacket",
+    "hoodie",
+    "uniform",
+    "cap",
+    "hat",
+    "shoe",
+    "shoes",
+    "sapato",
+    "sapatos",
+    "footwear",
+    "sneaker",
+    "sneakers",
+    "slipper",
+    "slippers",
+    "tsinelas",
+    "sandal",
+    "sandals",
+    "boots",
+    "heels",
+    "fashion",
+    "wear",
+  ],
+  beauty: [
+    "beauty",
+    "cosmetic",
+    "cosmetics",
+    "skin",
+    "skincare",
+    "collagen",
+    "gluta",
+    "glutathione",
+    "soap",
+    "lotion",
+    "cream",
+    "serum",
+    "makeup",
+    "perfume",
+    "shampoo",
+  ],
+  health: [
+    "health",
+    "medicine",
+    "medical",
+    "medical supply",
+    "medicalsuppy",
+    "meds",
+    "drug",
+    "drugs",
+    "pill",
+    "pills",
+    "capsule",
+    "capsules",
+    "tablet",
+    "tablets",
+    "supplement",
+    "vitamin",
+    "vitamins",
+    "collagen",
+    "slimming",
+    "pharmacy",
+  ],
+  electronics: [
+    "electronics",
+    "electronic",
+    "phone",
+    "gadget",
+    "laptop",
+    "charger",
+    "camera",
+  ],
+  home: [
+    "home",
+    "kitchen",
+    "furniture",
+    "decor",
+    "appliance",
+  ],
+});
+
+const PRODUCT_REVISION_SPECIFIC_LABEL_KEYWORDS = Object.freeze({
+  food: ["food", "pagkain"],
+  meal: ["meal", "meals", "ulam", "rice meal", "combo meal"],
+  burger: ["burger", "hamburger", "cheeseburger"],
+  pizza: ["pizza"],
+  fries: ["fries", "french fries"],
+  sandwich: ["sandwich", "hotdog", "hot dog"],
+  chicken: ["chicken"],
+  drink: [
+    "drink",
+    "drinks",
+    "beverage",
+    "beverages",
+    "inumin",
+    "juice",
+    "coffee",
+    "kape",
+    "tea",
+    "tsaa",
+    "water",
+    "tubig",
+    "soda",
+    "softdrink",
+    "softdrinks",
+    "soft drink",
+    "soft drinks",
+    "coke",
+    "sprite",
+    "pepsi",
+  ],
+  milktea: ["milk tea", "milktea", "bubble tea", "boba"],
+  snack: [
+    "snack",
+    "snacks",
+    "meryenda",
+    "merienda",
+    "chips",
+    "cookie",
+    "cookies",
+    "biscuit",
+    "biscuits",
+    "candy",
+    "chocolate",
+    "gummies",
+  ],
+  bread: ["bread", "tinapay", "donut", "cake"],
+  fruit: ["fruit", "fruits", "prutas"],
+  banana: ["banana", "bananas", "saging"],
+  apple: ["apple", "apples", "mansanas"],
+  mango: ["mango", "mangoes", "mangga"],
+  orange: ["orange", "oranges", "kahel"],
+  lemon: ["lemon", "lemons"],
+  lychee: ["lychee", "lychees", "litchi"],
+  strawberry: ["strawberry", "strawberries"],
+  grape: ["grape", "grapes", "ubas"],
+  pineapple: ["pineapple", "pineapples", "pinya"],
+  watermelon: ["watermelon", "watermelons", "pakwan"],
+});
+
+const PRODUCT_REVISION_VISUAL_CATEGORY_COMPATIBILITY = Object.freeze({
+  food: ["food"],
+  meal: ["food", "meal"],
+  burger: ["food", "meal", "burger"],
+  pizza: ["food", "meal", "pizza"],
+  fries: ["food", "snack", "fries"],
+  sandwich: ["food", "meal", "sandwich"],
+  chicken: ["food", "meal", "chicken"],
+  drink: ["food", "drink"],
+  milktea: ["food", "drink", "milktea"],
+  snack: ["food", "snack"],
+  bread: ["food", "snack", "bread"],
+  fruit: [
+    "food",
+    "snack",
+    "fruit",
+    "banana",
+    "apple",
+    "mango",
+    "orange",
+    "lemon",
+    "lychee",
+    "strawberry",
+    "grape",
+    "pineapple",
+    "watermelon",
+  ],
+  banana: ["food", "snack", "fruit", "banana"],
+  apple: ["food", "snack", "fruit", "apple"],
+  mango: ["food", "snack", "fruit", "mango"],
+  orange: ["food", "snack", "fruit", "orange"],
+  lemon: ["food", "snack", "fruit", "lemon"],
+  lychee: ["food", "snack", "fruit", "lychee"],
+  strawberry: ["food", "snack", "fruit", "strawberry"],
+  grape: ["food", "snack", "fruit", "grape"],
+  pineapple: ["food", "snack", "fruit", "pineapple"],
+  watermelon: ["food", "snack", "fruit", "watermelon"],
+});
+
+function normalizeRevisionText(value) {
+  return String(value ?? "")
+    .replace(/[_-]+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getProductRevisionImageText(product = {}) {
+  const imageUrls = getProductRejectedEvidenceImageUrls(product);
+  return [
+    getProductRevisionDetectionText(product),
+    product?.name,
+    ...imageUrls.map((imageUrl) => {
+      const normalizedUrl = String(imageUrl ?? "").trim();
+      try {
+        return decodeURIComponent(normalizedUrl);
+      } catch (error) {
+        return normalizedUrl;
+      }
+    }),
+  ].join(" ");
+}
+
+function getProductRevisionYoloDetections(product = {}) {
+  const detections = normalizeYoloDetectionList(product?.yoloInspection?.detections);
+  const imageDetections = Array.isArray(product?.yoloInspection?.images)
+    ? product.yoloInspection.images.flatMap((entry) =>
+        normalizeYoloDetectionList(entry?.detections).map((detection) => ({
+          ...detection,
+          imageUrl: detection.imageUrl || String(entry?.imageUrl ?? entry?.url ?? "").trim(),
+        })),
+      )
+    : [];
+
+  return [...detections, ...imageDetections];
+}
+
+function getProductRevisionDetectionText(product = {}) {
+  return getProductRevisionYoloDetections(product)
+    .map((detection) => [detection.label, detection.reason].filter(Boolean).join(" "))
+    .join(" ");
+}
+
+function getProductRevisionYoloDetectionsByImage(product = {}) {
+  const imageDetectionsByUrl = new Map();
+  for (const detection of getProductRevisionYoloDetections(product)) {
+    const imageUrl = String(detection?.imageUrl || "").trim();
+    const normalizedImageUrl = normalizeProductEvidenceImageUrl(imageUrl);
+    if (!normalizedImageUrl) {
+      continue;
+    }
+    if (!imageDetectionsByUrl.has(normalizedImageUrl)) {
+      imageDetectionsByUrl.set(normalizedImageUrl, {
+        imageUrl,
+        detections: [],
+      });
+    }
+    imageDetectionsByUrl.get(normalizedImageUrl).detections.push(detection);
+  }
+  return [...imageDetectionsByUrl.values()];
+}
+
+function getProductVariantRevisionImageEntries(product = {}) {
+  return (Array.isArray(product?.variants) ? product.variants : [])
+    .map((variant, index) => {
+      const imageUrl = String(variant?.imageUrl || variant?.imageSourceUrl || "").trim();
+      const normalizedImageUrl = normalizeProductEvidenceImageUrl(imageUrl);
+      if (!normalizedImageUrl) {
+        return null;
+      }
+      return {
+        variant,
+        variantIndex: index,
+        variantName: String(variant?.name || `Variant ${index + 1}`).trim(),
+        imageUrl,
+        normalizedImageUrl,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getProductRevisionFallbackImageText(product = {}) {
+  const imageUrls = getProductRejectedEvidenceImageUrls(product);
+
+  return [
+    product?.name,
+    ...imageUrls.map((imageUrl) => {
+      const normalizedUrl = String(imageUrl ?? "").trim();
+      try {
+        return decodeURIComponent(normalizedUrl);
+      } catch (error) {
+        return normalizedUrl;
+      }
+    }),
+  ].join(" ");
+}
+
+function getProductRevisionCategoryText(product = {}) {
+  return [
+    product?.category,
+    ...(Array.isArray(product?.categories) ? product.categories : []),
+  ].join(" ");
+}
+
+function getRevisionBucketsFromText(value, options = {}) {
+  const text = normalizeRevisionText(value);
+  const buckets = new Set();
+  if (!text) {
+    return buckets;
+  }
+
+  for (const [bucket, keywords] of Object.entries(PRODUCT_REVISION_BUCKET_KEYWORDS)) {
+    for (const keyword of keywords) {
+      const normalizedKeyword = normalizeRevisionText(keyword);
+      if (!normalizedKeyword) {
+        continue;
+      }
+      const pattern = new RegExp(`(^|\\s)${normalizedKeyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`);
+      if (pattern.test(text)) {
+        buckets.add(bucket);
+      }
+    }
+  }
+
+  if (options.category === true && /\bgluta(thione)?\b/.test(text)) {
+    buckets.delete("food");
+    buckets.add("beauty");
+    buckets.add("health");
+  }
+
+  return buckets;
+}
+
+function getRevisionSpecificLabelsFromText(value) {
+  const text = normalizeRevisionText(value);
+  const labels = new Set();
+  if (!text) {
+    return labels;
+  }
+
+  for (const [label, keywords] of Object.entries(PRODUCT_REVISION_SPECIFIC_LABEL_KEYWORDS)) {
+    for (const keyword of keywords) {
+      const normalizedKeyword = normalizeRevisionText(keyword);
+      if (!normalizedKeyword) {
+        continue;
+      }
+      const pattern = new RegExp(`(^|\\s)${normalizedKeyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`);
+      if (pattern.test(text)) {
+        labels.add(label);
+      }
+    }
+  }
+  if (labels.has("milktea")) {
+    labels.add("drink");
+  }
+  return labels;
+}
+
+function getProductApprovedVisualSpecificLabels(product = {}, approvedEvidence = null) {
+  return getRevisionSpecificLabelsFromText([
+    getProductRevisionDetectionText(product),
+    approvedEvidence?.productName,
+    product?.name,
+    getProductRevisionFallbackImageText(product),
+  ].filter(Boolean).join(" "));
+}
+
+function getAllowedCategoryLabelsForVisualLabels(visualLabels) {
+  const allowedLabels = new Set();
+  for (const label of visualLabels || []) {
+    const compatibleLabels = PRODUCT_REVISION_VISUAL_CATEGORY_COMPATIBILITY[label] || [label];
+    for (const compatibleLabel of compatibleLabels) {
+      allowedLabels.add(compatibleLabel);
+    }
+  }
+  return allowedLabels;
+}
+
+function hasAnySetOverlap(leftSet, rightSet) {
+  for (const value of leftSet || []) {
+    if (rightSet?.has(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getProductImageNameCompatibilityFromDetectionSets(
+  labels,
+  buckets,
+  nameSpecificLabels,
+  nameBuckets,
+) {
+  const allowedNameLabels = getAllowedCategoryLabelsForVisualLabels(nameSpecificLabels);
+
+  if (labels?.size && nameSpecificLabels?.size) {
+    return [...labels].every((label) => allowedNameLabels.has(label));
+  }
+
+  if (buckets?.size && nameBuckets?.size) {
+    return hasAnySetOverlap(buckets, nameBuckets);
+  }
+
+  return null;
+}
+
+function getProductMediaNameCompatibilityState(
+  product = {},
+  nameSpecificLabels = new Set(),
+  nameBuckets = new Set(),
+) {
+  const mainImageUrl = normalizeProductEvidenceImageUrl(getProductMainEvidenceImageUrl(product));
+  const imageResults = getProductRevisionYoloDetectionsByImage(product);
+  let mainImageNameCompatibility = null;
+  let hasMediaNameMismatch = false;
+  let hasSupportingMediaNameMismatch = false;
+  const mismatchedMediaLabels = new Set();
+
+  for (const imageResult of imageResults) {
+    const imageUrl = normalizeProductEvidenceImageUrl(imageResult.imageUrl);
+    const isMainImage = Boolean(mainImageUrl && imageUrl === mainImageUrl);
+    const { labels, buckets } = getProductRevisionDetectionSetsFromDetections(
+      imageResult.detections,
+    );
+    const imageNameCompatibility = getProductImageNameCompatibilityFromDetectionSets(
+      labels,
+      buckets,
+      nameSpecificLabels,
+      nameBuckets,
+    );
+
+    if (isMainImage) {
+      mainImageNameCompatibility = imageNameCompatibility;
+    }
+    if (imageNameCompatibility === false) {
+      hasMediaNameMismatch = true;
+      if (!isMainImage) {
+        hasSupportingMediaNameMismatch = true;
+        const visualLabel = [...labels].join(", ") || [...buckets].join(", ");
+        if (visualLabel) {
+          mismatchedMediaLabels.add(visualLabel);
+        }
+      }
+    }
+  }
+
+  return {
+    mainImageNameCompatibility,
+    hasMediaNameMismatch,
+    hasSupportingMediaNameMismatch,
+    mismatchedMediaLabels: [...mismatchedMediaLabels],
+    canReportCategoryMismatch:
+      mainImageNameCompatibility === true && !hasMediaNameMismatch,
+  };
+}
+
+function getProductRevisionDetectionEvidenceImageUrl(product = {}, targetLabels = new Set(), targetBuckets = new Set()) {
+  for (const detection of getProductRevisionYoloDetections(product)) {
+    const imageUrl = String(detection?.imageUrl || "").trim();
+    if (!imageUrl) {
+      continue;
+    }
+    const detectionText = [detection.label, detection.reason].filter(Boolean).join(" ");
+    const detectionLabels = getRevisionSpecificLabelsFromText(detectionText);
+    const detectionBuckets = getRevisionBucketsFromText(detectionText);
+    if (
+      hasAnySetOverlap(detectionLabels, targetLabels) ||
+      (!targetLabels?.size && hasAnySetOverlap(detectionBuckets, targetBuckets)) ||
+      (!targetLabels?.size && !targetBuckets?.size && detection.flagged === true)
+    ) {
+      return imageUrl;
+    }
+  }
+  return "";
+}
+
+function getProductBasicYoloRevisionImageEvidence(product = {}, options = {}) {
+  const productName = String(options.productName ?? product?.name ?? "Unnamed product").trim();
+  const categoryLabel =
+    String(options.categoryLabel || "").trim() ||
+    getProductCategoryList(product).join(", ") ||
+    String(product?.category ?? "").trim() ||
+    "selected category";
+  const categorySpecificLabels = options.categorySpecificLabels instanceof Set
+    ? options.categorySpecificLabels
+    : getRevisionSpecificLabelsFromText(getProductRevisionCategoryText(product));
+  const categoryBuckets = options.categoryBuckets instanceof Set
+    ? options.categoryBuckets
+    : getRevisionBucketsFromText(getProductRevisionCategoryText(product), { category: true });
+  const nameSpecificLabels = options.nameSpecificLabels instanceof Set
+    ? options.nameSpecificLabels
+    : getRevisionSpecificLabelsFromText(productName);
+  const nameBuckets = options.nameBuckets instanceof Set
+    ? options.nameBuckets
+    : getRevisionBucketsFromText(productName, { category: true });
+  const allowedNameLabels = getAllowedCategoryLabelsForVisualLabels(nameSpecificLabels);
+  const mainImageUrl = normalizeProductEvidenceImageUrl(getProductMainEvidenceImageUrl(product));
+  const canReportCategoryMismatchForProduct = options.canReportCategoryMismatch === true;
+  const evidenceEntries = [];
+
+  for (const imageResult of getProductRevisionYoloDetectionsByImage(product)) {
+    const { labels, buckets } = getProductRevisionDetectionSetsFromDetections(
+      imageResult.detections,
+    );
+    if (!labels.size && !buckets.size) {
+      continue;
+    }
+
+    const allowedCategoryLabels = getAllowedCategoryLabelsForVisualLabels(labels);
+    const mismatchedNameSpecificLabels = new Set();
+    if (labels.size > 0 && nameSpecificLabels.size > 0) {
+      for (const label of labels) {
+        if (!allowedNameLabels.has(label)) {
+          mismatchedNameSpecificLabels.add(label);
+        }
+      }
+    }
+    const hasNameSpecificMismatch = mismatchedNameSpecificLabels.size > 0;
+    const hasNameBucketMismatch =
+      !hasNameSpecificMismatch &&
+      buckets.size > 0 &&
+      nameBuckets.size > 0 &&
+      !hasAnySetOverlap(buckets, nameBuckets);
+    const imageUrl = normalizeProductEvidenceImageUrl(imageResult.imageUrl);
+    const isMainImage = Boolean(mainImageUrl && imageUrl === mainImageUrl);
+    const imageNameCompatibility = getProductImageNameCompatibilityFromDetectionSets(
+      labels,
+      buckets,
+      nameSpecificLabels,
+      nameBuckets,
+    );
+    const canReportCategoryMismatch =
+      canReportCategoryMismatchForProduct &&
+      isMainImage &&
+      imageNameCompatibility === true;
+    const hasCategorySpecificMismatch =
+      canReportCategoryMismatch &&
+      labels.size > 0 &&
+      categorySpecificLabels.size > 0 &&
+      [...categorySpecificLabels].some((label) => !allowedCategoryLabels.has(label));
+    const hasCategoryBucketMismatch =
+      canReportCategoryMismatch &&
+      !hasCategorySpecificMismatch &&
+      buckets.size > 0 &&
+      categoryBuckets.size > 0 &&
+      !hasAnySetOverlap(buckets, categoryBuckets);
+
+    if (
+      !hasNameSpecificMismatch &&
+      !hasNameBucketMismatch &&
+      !hasCategorySpecificMismatch &&
+      !hasCategoryBucketMismatch
+    ) {
+      continue;
+    }
+
+    const matchType =
+      hasNameSpecificMismatch || hasNameBucketMismatch
+        ? "yolo-basic-name"
+        : "yolo-basic-category";
+    const evidenceLabels = hasNameSpecificMismatch
+      ? mismatchedNameSpecificLabels
+      : labels;
+    const visualLabel = [...evidenceLabels].join(", ") || [...buckets].join(", ");
+    const reason =
+      matchType === "yolo-basic-name"
+        ? "YOLO detected an item in this image that does not match the product name."
+        : "YOLO detected an item in this image that does not match the selected category.";
+    const message =
+      matchType === "yolo-basic-name"
+        ? `YOLO detected ${visualLabel} in this image, but product name is "${productName}". Ask seller to remove or replace this mismatched image before approval.`
+        : `YOLO detected ${visualLabel} in this image, but category is ${categoryLabel}. Ask seller to remove or replace this mismatched image before approval.`;
+
+    evidenceEntries.push({
+      imageUrl: imageResult.imageUrl,
+      label: visualLabel,
+      imageBuckets: evidenceLabels.size ? [...evidenceLabels] : [...buckets],
+      categoryBuckets: [...categoryBuckets],
+      categoryLabel,
+      matchType,
+      reason,
+      message,
+    });
+  }
+
+  return evidenceEntries;
+}
+
+function getMeaningfulRevisionNameTokens(value) {
+  const stopWords = new Set([
+    "a",
+    "an",
+    "and",
+    "ang",
+    "for",
+    "fresh",
+    "new",
+    "ng",
+    "of",
+    "pack",
+    "packs",
+    "pc",
+    "pcs",
+    "piece",
+    "pieces",
+    "product",
+    "sa",
+    "the",
+    "with",
+  ]);
+  const measurementPattern = /^(?:\d+(?:\.\d+)?(?:g|gram|grams|kg|kilo|kilos|ml|l|liter|liters|litre|litres|oz|lb|lbs|pc|pcs|piece|pieces)?|g|gram|grams|kg|kilo|kilos|ml|l|liter|liters|litre|litres|oz|lb|lbs)$/;
+  return normalizeRevisionText(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !stopWords.has(token) && !measurementPattern.test(token));
+}
+
+function buildProductVariantYoloRevisionSignal(product = {}) {
+  const variantEntries = getProductVariantRevisionImageEntries(product);
+  if (!variantEntries.length) {
+    return null;
+  }
+
+  const productName = String(product?.name || "Unnamed product").trim();
+  const mainImageUrl = getProductMainEvidenceImageUrl(product);
+  const mainImageDetections = getProductRevisionYoloDetectionsForImage(product, mainImageUrl);
+  const mainImageSets = getProductRevisionDetectionSetsFromDetections(mainImageDetections);
+  const productNameLabels = getRevisionSpecificLabelsFromText(productName);
+  const productNameBuckets = getRevisionBucketsFromText(productName, { category: true });
+  const evidenceEntries = [];
+
+  for (const entry of variantEntries) {
+    const detections = getProductRevisionYoloDetectionsForImage(product, entry.imageUrl);
+    if (!detections.length) {
+      continue;
+    }
+
+    const { labels, buckets } = getProductRevisionDetectionSetsFromDetections(detections);
+    if (!labels.size && !buckets.size) {
+      continue;
+    }
+
+    const variantText = [productName, entry.variantName].filter(Boolean).join(" ");
+    const variantNameLabels = getRevisionSpecificLabelsFromText(variantText);
+    const variantNameBuckets = getRevisionBucketsFromText(variantText, { category: true });
+    const allowedVariantLabels = getAllowedCategoryLabelsForVisualLabels(variantNameLabels);
+    const imageMatchesVariantName = getProductImageNameCompatibilityFromDetectionSets(
+      labels,
+      buckets,
+      variantNameLabels.size ? variantNameLabels : productNameLabels,
+      variantNameBuckets.size ? variantNameBuckets : productNameBuckets,
+    );
+    const hasMainLabelMismatch =
+      mainImageSets.labels.size > 0 &&
+      labels.size > 0 &&
+      !hasAnySetOverlap(labels, getAllowedCategoryLabelsForVisualLabels(mainImageSets.labels));
+    const hasMainBucketMismatch =
+      !hasMainLabelMismatch &&
+      mainImageSets.buckets.size > 0 &&
+      buckets.size > 0 &&
+      !hasAnySetOverlap(buckets, mainImageSets.buckets);
+    const mismatchedNameLabels = new Set();
+    if (labels.size > 0 && variantNameLabels.size > 0) {
+      for (const label of labels) {
+        if (!allowedVariantLabels.has(label)) {
+          mismatchedNameLabels.add(label);
+        }
+      }
+    }
+    const hasVariantNameMismatch =
+      imageMatchesVariantName === false ||
+      mismatchedNameLabels.size > 0;
+
+    if (!hasMainLabelMismatch && !hasMainBucketMismatch && !hasVariantNameMismatch) {
+      continue;
+    }
+
+    const imageBuckets = mismatchedNameLabels.size
+      ? [...mismatchedNameLabels]
+      : labels.size
+        ? [...labels]
+        : [...buckets];
+    const visualLabel = imageBuckets.join(", ") || "a different item";
+    const reason = hasVariantNameMismatch
+      ? "Variant image does not match the variant name."
+      : "Variant image does not match the main product image.";
+    const message = hasVariantNameMismatch
+      ? `Variant "${entry.variantName}" image looks like ${visualLabel}, but the product/variant name is "${variantText}". Ask seller to revise the variant name or replace this image.`
+      : `Variant "${entry.variantName}" image looks like ${visualLabel}, but it does not match the main product image for "${productName}". Ask seller to replace this variant image.`;
+
+    evidenceEntries.push({
+      imageUrl: entry.imageUrl,
+      label: visualLabel,
+      imageBuckets,
+      categoryBuckets: [...mainImageSets.buckets],
+      categoryLabel: entry.variantName,
+      matchType: "yolo-variant",
+      reason,
+      message,
+      variantId: String(entry.variant?.id ?? "").trim(),
+      variantName: entry.variantName,
+      variantIndex: entry.variantIndex,
+    });
+  }
+
+  if (!evidenceEntries.length) {
+    return null;
+  }
+
+  const imageUrls = normalizeProductImageUrls(evidenceEntries.map((entry) => entry.imageUrl));
+  const variantNames = [
+    ...new Set(evidenceEntries.map((entry) => entry.variantName).filter(Boolean)),
+  ];
+  const visualLabels = [
+    ...new Set(evidenceEntries.map((entry) => entry.label).filter(Boolean)),
+  ];
+
+  return normalizeProductRevisionSignal({
+    engine: "yolo-revision",
+    status: "suggested",
+    flagged: true,
+    reason: "Variant image/name needs revision.",
+    message: variantNames.length === 1
+      ? evidenceEntries[0].message
+      : `Variants ${variantNames.map((name) => `"${name}"`).join(", ")} have images that do not match the main product image or variant name: ${visualLabels.join("; ")}.`,
+    imageBuckets: visualLabels,
+    categoryBuckets: [...mainImageSets.buckets],
+    categoryLabel: variantNames.join(", "),
+    matchType: "yolo-variant",
+    imageUrl: imageUrls[0] || evidenceEntries[0]?.imageUrl || "",
+    imageUrls,
+    images: evidenceEntries,
+    fields: ["variant", "image"],
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function buildProductBasicYoloRevisionSignal(product = {}) {
+  const detectionText = getProductRevisionDetectionText(product);
+  const detectedSpecificLabels = getRevisionSpecificLabelsFromText(detectionText);
+  const detectedBuckets = getRevisionBucketsFromText(detectionText);
+  if (!detectedSpecificLabels.size && !detectedBuckets.size) {
+    return null;
+  }
+
+  const productName = String(product?.name || "Unnamed product").trim();
+  const categoryLabel =
+    getProductCategoryList(product).join(", ") ||
+    String(product?.category ?? "").trim() ||
+    "selected category";
+  const categorySpecificLabels = getRevisionSpecificLabelsFromText(
+    getProductRevisionCategoryText(product),
+  );
+  const categoryBuckets = getRevisionBucketsFromText(
+    getProductRevisionCategoryText(product),
+    { category: true },
+  );
+  const nameSpecificLabels = getRevisionSpecificLabelsFromText(productName);
+  const nameBuckets = getRevisionBucketsFromText(productName, { category: true });
+  const allowedNameLabels = getAllowedCategoryLabelsForVisualLabels(nameSpecificLabels);
+  const mainImageUrl = getProductMainEvidenceImageUrl(product);
+  const mainImageDetections = getProductRevisionYoloDetectionsForImage(product, mainImageUrl);
+  const mainImageSets = getProductRevisionDetectionSetsFromDetections(mainImageDetections);
+  const mediaNameCompatibility = getProductMediaNameCompatibilityState(
+    product,
+    nameSpecificLabels,
+    nameBuckets,
+  );
+  const allowedCategoryLabels = getAllowedCategoryLabelsForVisualLabels(mainImageSets.labels);
+  const canCheckCategoryAgainstMainImage =
+    mediaNameCompatibility.mainImageNameCompatibility === true;
+  const canReportCategoryMismatch = mediaNameCompatibility.canReportCategoryMismatch;
+  const mismatchedNameSpecificLabels = new Set();
+  if (detectedSpecificLabels.size > 0 && nameSpecificLabels.size > 0) {
+    for (const label of detectedSpecificLabels) {
+      if (!allowedNameLabels.has(label)) {
+        mismatchedNameSpecificLabels.add(label);
+      }
+    }
+  }
+  const hasCategorySpecificMismatch =
+    canCheckCategoryAgainstMainImage &&
+    mainImageSets.labels.size > 0 &&
+    categorySpecificLabels.size > 0 &&
+    [...categorySpecificLabels].some((label) => !allowedCategoryLabels.has(label));
+  const hasCategoryBucketMismatch =
+    canCheckCategoryAgainstMainImage &&
+    !hasCategorySpecificMismatch &&
+    mainImageSets.buckets.size > 0 &&
+    categoryBuckets.size > 0 &&
+    !hasAnySetOverlap(mainImageSets.buckets, categoryBuckets);
+  const hasNameSpecificMismatch =
+    mismatchedNameSpecificLabels.size > 0;
+  const hasNameBucketMismatch =
+    !hasNameSpecificMismatch &&
+    detectedBuckets.size > 0 &&
+    nameBuckets.size > 0 &&
+    !hasAnySetOverlap(detectedBuckets, nameBuckets);
+
+  if (
+    !hasCategorySpecificMismatch &&
+    !hasCategoryBucketMismatch &&
+    !hasNameSpecificMismatch &&
+    !hasNameBucketMismatch
+  ) {
+    return null;
+  }
+
+  const evidenceLabels = hasNameSpecificMismatch
+    ? mismatchedNameSpecificLabels
+    : hasCategorySpecificMismatch || hasCategoryBucketMismatch
+      ? mainImageSets.labels
+      : detectedSpecificLabels;
+  const visualBuckets = hasCategoryBucketMismatch
+    ? mainImageSets.buckets
+    : detectedBuckets;
+  const visualLabel = [...evidenceLabels].join(", ") || [...visualBuckets].join(", ");
+  const imageEvidence = getProductBasicYoloRevisionImageEvidence(product, {
+    productName,
+    categoryLabel,
+    categorySpecificLabels,
+    categoryBuckets,
+    nameSpecificLabels,
+    nameBuckets,
+    canReportCategoryMismatch,
+  });
+  const imageEvidenceUrls = imageEvidence.map((entry) => entry.imageUrl).filter(Boolean);
+  const evidenceImageUrl = imageEvidenceUrls[0] || getProductRevisionDetectionEvidenceImageUrl(
+    product,
+    evidenceLabels,
+    visualBuckets,
+  );
+  const hasNameMismatch = hasNameSpecificMismatch || hasNameBucketMismatch;
+  const hasCategoryMismatch = hasCategorySpecificMismatch || hasCategoryBucketMismatch;
+  const hasMixedMismatch = hasNameMismatch && hasCategoryMismatch;
+  const matchType = hasMixedMismatch
+    ? "yolo-basic-mixed"
+    : hasNameMismatch
+      ? "yolo-basic-name"
+      : "yolo-basic-category";
+  const reason =
+    matchType === "yolo-basic-mixed"
+      ? "Product media and selected category need revision."
+      : matchType === "yolo-basic-name"
+      ? "YOLO detected an item that does not match the product name."
+      : "YOLO detected an item that does not match the selected category.";
+  const mainVisualLabel = [...mainImageSets.labels].join(", ") || [...mainImageSets.buckets].join(", ");
+  const mediaMismatchText = mediaNameCompatibility.mismatchedMediaLabels.length
+    ? `: ${mediaNameCompatibility.mismatchedMediaLabels.join("; ")}`
+    : "";
+  const message =
+    matchType === "yolo-basic-mixed"
+      ? `Product name/main image is "${productName}"${mainVisualLabel ? ` and looks like ${mainVisualLabel}` : ""}, but other media images look different${mediaMismatchText}. Also, category is ${categoryLabel} and does not match the main image.`
+      : mediaNameCompatibility.hasSupportingMediaNameMismatch
+        ? `Product name/main image is "${productName}"${mainVisualLabel ? ` and looks like ${mainVisualLabel}` : ""}, but other media images look different${mediaMismatchText}.`
+        : imageEvidence.length > 1
+      ? `YOLO detected ${visualLabel} in ${imageEvidence.length} images, but product name is "${productName}". Ask seller to remove or replace the mismatched images before approval.`
+      : matchType === "yolo-basic-name"
+        ? `YOLO detected ${visualLabel}, but product name is "${productName}". Ask seller to revise the product name before approval.`
+        : `YOLO detected ${visualLabel}, but category is ${categoryLabel}. Ask seller to revise the category before approval.`;
+  const imageBuckets = matchType === "yolo-basic-category"
+    ? (mainImageSets.labels.size ? [...mainImageSets.labels] : [...mainImageSets.buckets])
+    : (detectedSpecificLabels.size ? [...detectedSpecificLabels] : [...detectedBuckets]);
+
+  return normalizeProductRevisionSignal({
+    engine: "yolo-revision",
+    status: "suggested",
+    flagged: true,
+    reason,
+    message,
+    imageBuckets,
+    categoryBuckets: [...categoryBuckets],
+    categoryLabel,
+    matchType,
+    imageUrl: evidenceImageUrl,
+    imageUrls: imageEvidenceUrls.length
+      ? imageEvidenceUrls
+      : evidenceImageUrl ? [evidenceImageUrl] : [],
+    images: imageEvidence,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function normalizeProductRevisionImageEvidenceEntries(value) {
+  const sourceEntries = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return sourceEntries
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const imageUrl = String(
+        entry.imageUrl ??
+          entry.url ??
+          entry.mediaUrl ??
+          entry.productImageUrl ??
+          "",
+      ).trim();
+      const normalizedImageUrl = normalizeProductEvidenceImageUrl(imageUrl);
+      if (!normalizedImageUrl || seen.has(normalizedImageUrl)) {
+        return null;
+      }
+      seen.add(normalizedImageUrl);
+      const imageBuckets = Array.isArray(entry.imageBuckets ?? entry.labels ?? entry.detectedLabels)
+        ? (entry.imageBuckets ?? entry.labels ?? entry.detectedLabels)
+            .map((bucket) => String(bucket ?? "").trim())
+            .filter(Boolean)
+        : [];
+      const categoryBuckets = Array.isArray(entry.categoryBuckets)
+        ? entry.categoryBuckets.map((bucket) => String(bucket ?? "").trim()).filter(Boolean)
+        : [];
+
+      return {
+        imageUrl,
+        label: String(entry.label ?? entry.visualLabel ?? imageBuckets.join(", ") ?? "").trim(),
+        imageBuckets,
+        categoryBuckets,
+        matchType: String(entry.matchType ?? "").trim(),
+        variantId: String(entry.variantId ?? "").trim(),
+        variantName: String(entry.variantName ?? "").trim(),
+        variantIndex: Number.isFinite(Number(entry.variantIndex))
+          ? Number(entry.variantIndex)
+          : -1,
+        reason: String(entry.reason ?? "").trim(),
+        message: String(entry.message ?? "").trim(),
+        score: normalizeRejectedEvidenceMatchScore(
+          entry.score ?? entry.visualSearchScore ?? entry.confidence,
+        ),
+        threshold: normalizeRejectedEvidenceMatchScore(entry.threshold),
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeProductRevisionCategoryEvidenceEntries(value) {
+  const sourceEntries = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? [value]
+      : [];
+  const seen = new Set();
+  return sourceEntries
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const label = String(
+        entry.label ??
+          entry.category ??
+          entry.categoryName ??
+          entry.categoryLabel ??
+          "",
+      ).trim();
+      const normalizedLabel = normalizeRevisionText(label);
+      if (!normalizedLabel || seen.has(normalizedLabel)) {
+        return null;
+      }
+      seen.add(normalizedLabel);
+      const categoryBuckets = Array.isArray(entry.categoryBuckets ?? entry.buckets)
+        ? (entry.categoryBuckets ?? entry.buckets)
+            .map((bucket) => String(bucket ?? "").trim())
+            .filter(Boolean)
+        : [];
+      return {
+        label,
+        categoryBuckets,
+        categoryLabel: String(entry.categoryLabel ?? label).trim(),
+        matchType: String(entry.matchType ?? "").trim(),
+        reason: String(entry.reason ?? "").trim(),
+        message: String(entry.message ?? "").trim(),
+        score: normalizeRejectedEvidenceMatchScore(
+          entry.score ?? entry.visualSearchScore ?? entry.confidence,
+        ),
+        threshold: normalizeRejectedEvidenceMatchScore(entry.threshold),
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeProductRevisionSignal(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const allowedStatuses = new Set(["suggested", "requested", "resolved"]);
+  const requestedStatus = String(value.status ?? "suggested").trim().toLowerCase();
+  const status = allowedStatuses.has(requestedStatus)
+    ? requestedStatus
+    : "suggested";
+  const imageEvidenceEntries = normalizeProductRevisionImageEvidenceEntries(
+    value.images ?? value.evidenceImages ?? value.mediaEvidence,
+  );
+  const categoryEvidenceEntries = normalizeProductRevisionCategoryEvidenceEntries(
+    value.categoryEvidence ?? value.categoryAlerts ?? value.categoryMismatches,
+  );
+  const explicitImageUrls = normalizeProductImageUrls([
+    String(value.imageUrl ?? "").trim(),
+    ...(Array.isArray(value.imageUrls) ? value.imageUrls : []),
+    ...(Array.isArray(value.evidenceImageUrls) ? value.evidenceImageUrls : []),
+    ...imageEvidenceEntries.map((entry) => entry.imageUrl),
+  ]);
+  const imageUrl = String(value.imageUrl ?? "").trim() || explicitImageUrls[0] || "";
+  const images = imageEvidenceEntries.length
+    ? imageEvidenceEntries
+    : explicitImageUrls.map((entryImageUrl) => ({
+        imageUrl: entryImageUrl,
+        label: "",
+        imageBuckets: [],
+        categoryBuckets: [],
+        matchType: "",
+        reason: "",
+        message: "",
+        score: 0,
+        threshold: 0,
+      }));
+  const revisionFields = Array.isArray(value.fields ?? value.revisionFields)
+    ? (value.fields ?? value.revisionFields)
+        .map((entry) => String(entry ?? "").trim().toLowerCase())
+        .filter(Boolean)
+    : [];
+
+  return {
+    engine: String(value.engine ?? "yolo-revision").trim() || "yolo-revision",
+    status,
+    flagged: value.flagged !== false,
+    reason:
+      String(value.reason ?? "").trim() ||
+      "Product needs revision.",
+    message: String(value.message ?? "").trim(),
+    imageBuckets: Array.isArray(value.imageBuckets)
+      ? value.imageBuckets.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [],
+    categoryBuckets: Array.isArray(value.categoryBuckets)
+      ? value.categoryBuckets.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [],
+    fields: [...new Set(revisionFields)],
+    categoryLabel: String(value.categoryLabel ?? "").trim(),
+    matchType: String(value.matchType ?? "").trim(),
+    score: normalizeRejectedEvidenceMatchScore(value.score ?? value.visualSearchScore ?? value.confidence),
+    threshold: normalizeRejectedEvidenceMatchScore(value.threshold),
+    imageUrl,
+    imageUrls: explicitImageUrls,
+    images,
+    categoryEvidence: categoryEvidenceEntries,
+    matchedProductId: String(value.matchedProductId ?? value.sourceProductId ?? "").trim(),
+    matchedProductName: String(value.matchedProductName ?? value.sourceProductName ?? "").trim(),
+    matchedImageUrl: String(value.matchedImageUrl ?? value.sourceImageUrl ?? "").trim(),
+    requestedAt: normalizeOptionalProductDateTime(value.requestedAt),
+    requestedBy: String(value.requestedBy ?? "").trim(),
+    resolvedAt: normalizeOptionalProductDateTime(value.resolvedAt),
+    updatedAt: normalizeOptionalProductDateTime(value.updatedAt),
+  };
+}
+
+function getProductRevisionComparisonState(revision) {
+  const normalizedRevision = normalizeProductRevisionSignal(revision);
+  if (!normalizedRevision) {
+    return null;
+  }
+
+  return {
+    status: normalizedRevision.status,
+    flagged: normalizedRevision.flagged,
+    reason: normalizedRevision.reason,
+    message: normalizedRevision.message,
+    imageBuckets: normalizedRevision.imageBuckets,
+    categoryBuckets: normalizedRevision.categoryBuckets,
+    fields: normalizedRevision.fields,
+    categoryLabel: normalizedRevision.categoryLabel,
+    matchType: normalizedRevision.matchType,
+    score: Number(normalizedRevision.score.toFixed(4)),
+    threshold: Number(normalizedRevision.threshold.toFixed(4)),
+    imageUrl: normalizedRevision.imageUrl.toLowerCase(),
+    imageUrls: normalizedRevision.imageUrls.map((imageUrl) => imageUrl.toLowerCase()),
+    images: normalizedRevision.images.map((entry) => ({
+      imageUrl: String(entry.imageUrl || "").trim().toLowerCase(),
+      label: entry.label,
+      imageBuckets: entry.imageBuckets,
+      categoryBuckets: entry.categoryBuckets,
+      matchType: entry.matchType,
+      variantId: entry.variantId,
+      variantName: entry.variantName,
+      variantIndex: entry.variantIndex,
+      reason: entry.reason,
+      message: entry.message,
+    })),
+    categoryEvidence: normalizedRevision.categoryEvidence.map((entry) => ({
+      label: entry.label,
+      categoryBuckets: entry.categoryBuckets,
+      categoryLabel: entry.categoryLabel,
+      matchType: entry.matchType,
+      reason: entry.reason,
+      message: entry.message,
+    })),
+    matchedProductId: normalizedRevision.matchedProductId,
+    matchedImageUrl: normalizedRevision.matchedImageUrl.toLowerCase(),
+    requestedAt: normalizedRevision.requestedAt,
+    requestedBy: normalizedRevision.requestedBy,
+  };
+}
+
+function resolveProductRevisionSignal(product = {}) {
+  if (isProductApprovedForApp(product)) {
+    return null;
+  }
+
+  const existingRevision = normalizeProductRevisionSignal(product?.yoloRevision);
+  const isAllowedRevisionMatch =
+    existingRevision?.matchType === "approved-visual-category" ||
+    existingRevision?.matchType === "approved-visual-name" ||
+    existingRevision?.matchType === "approved-visual-media" ||
+    existingRevision?.matchType === "approved-visual-mixed" ||
+    existingRevision?.matchType === "yolo-basic-category" ||
+    existingRevision?.matchType === "yolo-basic-name" ||
+    existingRevision?.matchType === "yolo-basic-mixed" ||
+    existingRevision?.matchType === "yolo-variant" ||
+    existingRevision?.matchType === "manual-super-admin-revision" ||
+    existingRevision?.engine === "manual-super-admin-revision";
+  const basicYoloSignal = buildProductBasicYoloRevisionSignal(product);
+  const variantYoloSignal = buildProductVariantYoloRevisionSignal(product);
+  const nextYoloSignal = variantYoloSignal
+    ? normalizeProductRevisionSignal({
+        ...(basicYoloSignal || {}),
+        ...variantYoloSignal,
+        message: basicYoloSignal?.message
+          ? `${variantYoloSignal.message} ${basicYoloSignal.message}`
+          : variantYoloSignal.message,
+        reason: basicYoloSignal
+          ? "Product media, variant, or category needs revision."
+          : variantYoloSignal.reason,
+        matchType: basicYoloSignal ? "yolo-basic-mixed" : "yolo-variant",
+        imageUrls: normalizeProductImageUrls([
+          ...(Array.isArray(variantYoloSignal.imageUrls) ? variantYoloSignal.imageUrls : []),
+          ...(Array.isArray(basicYoloSignal?.imageUrls) ? basicYoloSignal.imageUrls : []),
+        ]),
+        images: [
+          ...(Array.isArray(variantYoloSignal.images) ? variantYoloSignal.images : []),
+          ...(Array.isArray(basicYoloSignal?.images) ? basicYoloSignal.images : []),
+        ],
+        fields: [
+          ...(Array.isArray(variantYoloSignal.fields) ? variantYoloSignal.fields : []),
+          ...(Array.isArray(basicYoloSignal?.fields) ? basicYoloSignal.fields : []),
+        ],
+        updatedAt: new Date().toISOString(),
+      })
+    : basicYoloSignal;
+  if (existingRevision?.status === "requested" && isAllowedRevisionMatch) {
+    if (
+      nextYoloSignal &&
+      (
+        existingRevision.matchType === "yolo-basic-category" ||
+        existingRevision.matchType === "yolo-basic-name" ||
+        existingRevision.matchType === "yolo-basic-mixed" ||
+        existingRevision.matchType === "yolo-variant"
+      )
+    ) {
+      return normalizeProductRevisionSignal({
+        ...existingRevision,
+        ...nextYoloSignal,
+        status: "requested",
+        requestedAt: existingRevision.requestedAt,
+        requestedBy: existingRevision.requestedBy,
+      });
+    }
+    return existingRevision;
+  }
+  if (
+    existingRevision?.status === "suggested" &&
+    (
+      existingRevision.matchType === "approved-visual-category" ||
+      existingRevision.matchType === "approved-visual-name" ||
+      existingRevision.matchType === "approved-visual-media" ||
+      existingRevision.matchType === "approved-visual-mixed"
+    )
+  ) {
+    return existingRevision;
+  }
+
+  if (nextYoloSignal) {
+    return normalizeProductRevisionSignal({
+      ...(existingRevision || {}),
+      ...nextYoloSignal,
+      status: existingRevision?.status || "suggested",
+      updatedAt: existingRevision?.updatedAt || nextYoloSignal.updatedAt,
+    });
+  }
+
+  return existingRevision?.status === "resolved" ? existingRevision : null;
+}
+
+function applyProductRevisionSignal(product = {}) {
+  const revisionSignal = resolveProductRevisionSignal(product);
+  if (!revisionSignal) {
+    if (!product?.yoloRevision) {
+      return product;
+    }
+
+    return {
+      ...product,
+      yoloRevision: null,
+    };
+  }
+
+  if (
+    JSON.stringify(getProductRevisionComparisonState(product?.yoloRevision)) ===
+    JSON.stringify(getProductRevisionComparisonState(revisionSignal))
+  ) {
+    return product;
+  }
+
+  return {
+    ...product,
+    yoloRevision: revisionSignal,
+  };
+}
+
+async function syncProductRevisionSignals(products = []) {
+  let didChange = false;
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const product = nextProducts[index];
+    if (!isProductPendingApproval(product)) {
+      continue;
+    }
+
+    const autoApproval = await applyApprovedProductEvidenceAutoApproval(product, nextProducts);
+    nextProducts = autoApproval.products;
+    if (autoApproval.match) {
+      didChange = true;
+      nextProducts[index] = autoApproval.product;
+      continue;
+    }
+
+    const approvedEvidenceMatch = await applyApprovedProductEvidenceCategoryMatch(autoApproval.product, nextProducts);
+    nextProducts = approvedEvidenceMatch.products;
+    let productWithRevision = applyProductRevisionSignal(approvedEvidenceMatch.product);
+    if (
+      autoApproval.didChange ||
+      approvedEvidenceMatch.didChange ||
+      JSON.stringify(getProductVisualSafetyState(product)) !==
+        JSON.stringify(getProductVisualSafetyState(productWithRevision)) ||
+      JSON.stringify(getProductRevisionComparisonState(product?.yoloRevision)) !==
+        JSON.stringify(getProductRevisionComparisonState(productWithRevision?.yoloRevision))
+    ) {
+      didChange = true;
+    }
+    nextProducts[index] = productWithRevision;
+  }
+
+  return {
+    products: nextProducts,
+    didChange,
+  };
+}
+
+function applyProductVisualSearchFingerprintFields(product, fingerprintSource) {
+  return {
+    ...product,
+    visualSearchImageUrl: fingerprintSource.visualSearchImageUrl,
+    visualSearchImageUrls: fingerprintSource.visualSearchImageUrls,
+    visualSearchImageAngles: fingerprintSource.visualSearchImageAngles,
+    visualSearchFingerprint: fingerprintSource.visualSearchFingerprint,
+    visualSearchFingerprints: fingerprintSource.visualSearchFingerprints,
+  };
+}
+
+function getProductVisualSafetyState(product) {
+  return {
+    visualSearchImageUrl: product?.visualSearchImageUrl ?? "",
+    visualSearchImageUrls: product?.visualSearchImageUrls ?? [],
+    visualSearchImageAngles: product?.visualSearchImageAngles ?? {},
+    visualSearchFingerprint: product?.visualSearchFingerprint ?? null,
+    visualSearchFingerprints: product?.visualSearchFingerprints ?? [],
+    yoloInspection: product?.yoloInspection ?? null,
+  };
+}
+
+function getProductRejectedEvidenceImageUrls(product = {}) {
+  const explicitRejectedEvidenceImageUrls = normalizeProductImageUrls(
+    product?.yoloInspection?.rejectedEvidenceImageUrls ??
+      product?.yoloInspection?.rejectedImageUrls ??
+      product?.rejectedEvidenceImageUrls ??
+      [],
+  );
+  if (explicitRejectedEvidenceImageUrls.length) {
+    return explicitRejectedEvidenceImageUrls;
+  }
+
+  const yoloInspectionImageUrls = Array.isArray(product?.yoloInspection?.imageUrls)
+    ? product.yoloInspection.imageUrls
+    : [];
+
+  return excludeProductDescriptionImageUrls(
+    normalizeProductImageUrls(
+      [
+        ...yoloInspectionImageUrls,
+        ...getProductApprovedTrainingImageUrls(product),
+        ...getProductYoloInspectionImageUrls(product),
+        ...normalizeProductVisualSearchImageUrls(product),
+      ],
+      product?.imageUrl ?? product?.mainImageUrl ?? "",
+    ),
+    product,
+  );
+}
+
+function resolveSelectedRejectedEvidenceImageUrls(product = {}, payload = {}) {
+  const productImageUrls = getProductYoloInspectionImageUrls(product);
+  const productImageUrlByKey = new Map(
+    productImageUrls.map((imageUrl) => [String(imageUrl ?? "").trim().toLowerCase(), imageUrl]),
+  );
+  const hasExplicitSelectionPayload = [
+    "rejectedEvidenceImageUrls",
+    "rejectedImageUrls",
+    "selectedImageUrls",
+    "imageUrls",
+  ].some((key) => Object.prototype.hasOwnProperty.call(payload ?? {}, key));
+  const requestedImageUrls = normalizeProductImageUrls(
+    payload?.rejectedEvidenceImageUrls ??
+      payload?.rejectedImageUrls ??
+      payload?.selectedImageUrls ??
+      payload?.imageUrls ??
+      [],
+  );
+
+  if (!requestedImageUrls.length) {
+    return {
+      imageUrls: hasExplicitSelectionPayload ? [] : productImageUrls,
+      usedExplicitSelection: hasExplicitSelectionPayload,
+    };
+  }
+
+  const selectedImageUrls = [];
+  const seen = new Set();
+  for (const requestedImageUrl of requestedImageUrls) {
+    const key = String(requestedImageUrl ?? "").trim().toLowerCase();
+    const productImageUrl = productImageUrlByKey.get(key);
+    if (!productImageUrl || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    selectedImageUrls.push(productImageUrl);
+  }
+
+  return {
+    imageUrls: selectedImageUrls,
+    usedExplicitSelection: true,
+  };
+}
+
+function hasYoloDetectorFlag(inspection) {
+  if (!inspection || typeof inspection !== "object") {
+    return false;
+  }
+
+  const detections = normalizeYoloDetectionList(inspection.detections);
+  const imageResults = Array.isArray(inspection.images) ? inspection.images : [];
+  return detections.some((detection) => detection.flagged) ||
+    imageResults.some((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return false;
+      }
+      return entry.flagged === true ||
+        normalizeYoloDetectionList(entry.detections).some((detection) => detection.flagged);
+    });
+}
+
+function createRejectedEvidenceFingerprintEntry(fingerprintMeta, imageUrl) {
+  const normalizedMeta = normalizeVisualSearchFingerprintMeta(
+    fingerprintMeta,
+    imageUrl,
+  );
+  if (!normalizedMeta) {
+    return null;
+  }
+
+  try {
+    const fingerprint = Buffer.from(normalizedMeta.data, "base64");
+    if (fingerprint.length !== VISUAL_SEARCH_FINGERPRINT_LENGTH) {
+      return null;
+    }
+
+    return {
+      imageUrl: normalizedMeta.imageUrl,
+      fingerprint,
+      fingerprintMeta: normalizedMeta,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function getStoredRejectedEvidenceFingerprintEntries(product) {
+  const imageUrls = getProductRejectedEvidenceImageUrls(product);
+  const inspection = normalizeYoloInspection(product?.yoloInspection, imageUrls);
+  const fingerprintSources = [
+    ...(Array.isArray(inspection?.fingerprints) ? inspection.fingerprints : []),
+    ...(Array.isArray(product?.visualSearchFingerprints) ? product.visualSearchFingerprints : []),
+    product?.visualSearchFingerprint,
+  ].filter(Boolean);
+  const entries = [];
+  const seen = new Set();
+
+  for (const imageUrl of imageUrls) {
+    for (const fingerprintSource of fingerprintSources) {
+      const entry = createRejectedEvidenceFingerprintEntry(
+        fingerprintSource,
+        imageUrl,
+      );
+      if (!entry) {
+        continue;
+      }
+
+      const key = String(entry.imageUrl ?? "").trim().toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      entries.push(entry);
+      break;
+    }
+  }
+
+  return entries;
+}
+
+async function getProductRejectedEvidenceFingerprintState(product, options = {}) {
+  const persistFingerprints = options.persistFingerprints === true;
+  let normalizedProduct = normalizeStoredProductRecord(product);
+  const imageUrls = getProductRejectedEvidenceImageUrls(normalizedProduct);
+  let fingerprintEntries = getStoredRejectedEvidenceFingerprintEntries(normalizedProduct);
+  const missingImageUrls = imageUrls.filter((imageUrl) => {
+    const normalizedImageUrl = String(imageUrl ?? "").trim().toLowerCase();
+    return normalizedImageUrl &&
+      !fingerprintEntries.some(
+        (entry) =>
+          String(entry.imageUrl ?? "").trim().toLowerCase() === normalizedImageUrl,
+      );
+  });
+
+  if (missingImageUrls.length) {
+    const generatedFingerprintMetas = [];
+    for (const imageUrl of missingImageUrls) {
+      const fingerprintMeta = await createProductVisualSearchFingerprintMeta(
+        normalizedProduct,
+        imageUrl,
+      );
+      if (!fingerprintMeta) {
+        continue;
+      }
+
+      generatedFingerprintMetas.push(fingerprintMeta);
+      const entry = createRejectedEvidenceFingerprintEntry(
+        fingerprintMeta,
+        imageUrl,
+      );
+      if (entry) {
+        fingerprintEntries.push(entry);
+      }
+    }
+
+    if (persistFingerprints && generatedFingerprintMetas.length) {
+      const existingInspection = normalizeYoloInspection(
+        normalizedProduct?.yoloInspection,
+        imageUrls,
+      );
+      const nextFingerprintMetas = [
+        ...(Array.isArray(existingInspection?.fingerprints)
+          ? existingInspection.fingerprints
+          : []),
+        ...generatedFingerprintMetas,
+      ];
+      const now = new Date().toISOString();
+      normalizedProduct = {
+        ...normalizedProduct,
+        yoloInspection: normalizeYoloInspection({
+          ...(existingInspection || {}),
+          status: existingInspection?.status || "queued",
+          datasetBucket: existingInspection?.datasetBucket ||
+            (isProductRejected(normalizedProduct) ? "rejected" : "inspection"),
+          imageUrls,
+          fingerprints: nextFingerprintMetas,
+          requestedAt: existingInspection?.requestedAt || now,
+          updatedAt: existingInspection?.updatedAt || now,
+        }, imageUrls),
+      };
+      fingerprintEntries = getStoredRejectedEvidenceFingerprintEntries(
+        normalizedProduct,
+      );
+    }
+  }
+
+  if (
+    !persistFingerprints &&
+    !fingerprintEntries.length &&
+    normalizeProductVisualSearchImageUrls(normalizedProduct).length
+  ) {
+    normalizedProduct = await syncProductVisualSearchFingerprint(
+      normalizedProduct,
+      product,
+    );
+    fingerprintEntries = getStoredRejectedEvidenceFingerprintEntries(
+      normalizedProduct,
+    );
+  }
+
+  const didChange =
+    JSON.stringify(getProductVisualSafetyState(normalizedProduct)) !==
+    JSON.stringify(getProductVisualSafetyState(normalizeStoredProductRecord(product)));
+
+  return {
+    product: normalizedProduct,
+    fingerprintEntries,
+    didChange,
+  };
+}
+
+function normalizeApprovedYoloDetectionList(value) {
+  return normalizeYoloDetectionList(value).map((detection) => ({
+    ...detection,
+    flagged: false,
+  }));
+}
+
+function buildApprovedYoloTrainingEvidence(product, imageUrls = [], options = {}) {
+  const categoryLabel =
+    getProductCategoryList(product).join(", ") ||
+    String(product?.category ?? "").trim() ||
+    "selected category";
+  const categoryBuckets = [
+    ...getRevisionBucketsFromText(
+      getProductRevisionCategoryText(product),
+      { category: true },
+    ),
+  ];
+
+  return normalizeYoloApprovedEvidence({
+    source:
+      String(options.source ?? "").trim() ||
+      "manual-super-admin-approval",
+    productId: product?.id,
+    productName: product?.name,
+    adminId: getRecordAdminId(product, product?.adminId),
+    categoryLabel,
+    categoryBuckets,
+    imageUrls,
+    approvedAt: options.approvedAt,
+    approvedBy: options.approvedBy,
+    reason:
+      String(options.reason ?? "").trim() ||
+      "Super Admin approved this product as clean YOLO training evidence.",
+    updatedAt: options.updatedAt ?? options.approvedAt,
+  });
+}
+
+async function applyApprovedProductYoloTrainingEvidence(
+  product,
+  existingProduct = null,
+  options = {},
+) {
+  const now = normalizeOptionalProductDateTime(
+    options.updatedAt ?? options.approvedAt ?? product?.approvedAt,
+    new Date().toISOString(),
+  );
+  const approvedAt = normalizeOptionalProductDateTime(
+    options.approvedAt ?? product?.approvedAt,
+    now,
+  );
+  const approvedBy =
+    String(options.approvedBy ?? product?.approvedBy ?? "").trim() ||
+    SUPER_ADMIN_USERNAME;
+  const imageUrls = getProductApprovedTrainingImageUrls(product);
+  const existingInspection = normalizeYoloInspection(
+    product?.yoloInspection,
+    imageUrls,
+  );
+  const previousInspection = normalizeYoloInspection(
+    existingProduct?.yoloInspection,
+    imageUrls,
+  );
+  const sourceFingerprintMetas = [
+    ...normalizeVisualSearchFingerprintMetaList(
+      existingInspection?.fingerprints,
+      imageUrls,
+    ),
+    ...normalizeVisualSearchFingerprintMetaList(
+      previousInspection?.fingerprints,
+      imageUrls,
+    ),
+    ...normalizeVisualSearchFingerprintMetaList(
+      product?.visualSearchFingerprints,
+      imageUrls,
+    ),
+    ...normalizeVisualSearchFingerprintMetaList(
+      existingProduct?.visualSearchFingerprints,
+      imageUrls,
+    ),
+  ];
+  const sourceSingleFingerprints = [
+    product?.visualSearchFingerprint,
+    existingProduct?.visualSearchFingerprint,
+  ];
+  const nextFingerprintMetas = [];
+
+  for (const imageUrl of imageUrls) {
+    let fingerprintMeta = findVisualSearchFingerprintMetaForUrl(
+      [
+        ...sourceFingerprintMetas,
+        ...sourceSingleFingerprints,
+      ],
+      imageUrl,
+    );
+
+    if (!fingerprintMeta) {
+      fingerprintMeta = await createProductVisualSearchFingerprintMeta(
+        product,
+        imageUrl,
+      );
+    }
+
+    if (fingerprintMeta) {
+      nextFingerprintMetas.push(fingerprintMeta);
+    }
+  }
+
+  const approvedEvidence = buildApprovedYoloTrainingEvidence(product, imageUrls, {
+    approvedAt,
+    approvedBy,
+    source: options.source,
+    reason: options.reason,
+    updatedAt: now,
+  });
+  const inspectionImages = Array.isArray(existingInspection?.images)
+    ? existingInspection.images.map((entry) => ({
+        ...entry,
+        flagged: false,
+        detections: normalizeApprovedYoloDetectionList(entry?.detections),
+      }))
+    : [];
+
+  return {
+    ...product,
+    yoloInspection: normalizeYoloInspection({
+      ...(existingInspection || {}),
+      status: "clear",
+      flagged: false,
+      datasetBucket: "approved",
+      imageUrls,
+      fingerprints: nextFingerprintMetas,
+      images: inspectionImages,
+      detections: normalizeApprovedYoloDetectionList(existingInspection?.detections),
+      rejectedEvidenceMatch: null,
+      approvedEvidence,
+      revisionEvidence: null,
+      requestedAt: existingInspection?.requestedAt || now,
+      inspectedAt: existingInspection?.inspectedAt || now,
+      updatedAt: now,
+      archivedAt: existingInspection?.archivedAt || now,
+      error: "",
+      autoReject: false,
+    }, imageUrls),
+    yoloRevision: null,
+    revisionStatus: "",
+    revisionRequestedAt: "",
+    revisionRequestedBy: "",
+    revisionReason: "",
+    revisionMessage: "",
+  };
+}
+
+function clearApprovedProductYoloTrainingEvidence(product, options = {}) {
+  const now = normalizeOptionalProductDateTime(
+    options.updatedAt ?? product?.approvalUpdatedAt ?? product?.updatedAt,
+    new Date().toISOString(),
+  );
+  const imageUrls = getProductApprovedTrainingImageUrls(product);
+  const existingInspection = normalizeYoloInspection(
+    product?.yoloInspection,
+    imageUrls,
+  );
+  const inspectionImages = Array.isArray(existingInspection?.images)
+    ? existingInspection.images.map((entry) => ({
+        ...entry,
+        flagged: false,
+        detections: normalizeApprovedYoloDetectionList(entry?.detections),
+      }))
+    : [];
+
+  return {
+    ...product,
+    yoloInspection: normalizeYoloInspection({
+      ...(existingInspection || {}),
+      status: "clear",
+      flagged: false,
+      datasetBucket: "inspection",
+      imageUrls,
+      images: inspectionImages,
+      detections: normalizeApprovedYoloDetectionList(existingInspection?.detections),
+      rejectedEvidenceMatch: null,
+      approvedEvidence: null,
+      revisionEvidence: null,
+      requestedAt: existingInspection?.requestedAt || now,
+      inspectedAt: existingInspection?.inspectedAt || now,
+      updatedAt: now,
+      archivedAt: "",
+      error: "",
+      autoReject: false,
+    }, imageUrls),
+    yoloRevision: null,
+    revisionStatus: "",
+    revisionRequestedAt: "",
+    revisionRequestedBy: "",
+    revisionReason: "",
+    revisionMessage: "",
+  };
+}
+
+function isApprovedProductYoloTrainingRecord(product = {}) {
+  if (!isProductApprovedForApp(product)) {
+    return false;
+  }
+
+  const inspection = normalizeYoloInspection(
+    product?.yoloInspection,
+    getProductApprovedTrainingImageUrls(product),
+  );
+  return Boolean(inspection?.approvedEvidence) ||
+    String(inspection?.datasetBucket ?? "").trim().toLowerCase() === "approved";
+}
+
+function isProductLiveListingForApp(product = {}) {
+  return Boolean(String(product?.name ?? "").trim()) &&
+    isProductApprovedForApp(product) &&
+    normalizeProductActiveState(product?.isActive, true) &&
+    normalizeOptionalWholeNumber(product?.stock, 0) > 0;
+}
+
+function normalizeProductListingInsightHistory(product = {}) {
+  const listedAt = normalizeOptionalProductDateTime(
+    product?.listingInsightListedAt ??
+      product?.firstListingInsightListedAt ??
+      product?.firstListedAt,
+  );
+  const hasHistory = Boolean(
+    product?.hasListingInsightHistory === true ||
+      product?.wasListedInInsight === true ||
+      product?.listingInsightHistory === true ||
+      listedAt ||
+      isProductLiveListingForApp(product),
+  );
+
+  return {
+    hasListingInsightHistory: hasHistory,
+    listingInsightListedAt: listedAt ||
+      (
+        isProductLiveListingForApp(product)
+          ? normalizeOptionalProductDateTime(
+              product?.approvedAt ?? product?.updatedAt ?? product?.createdAt,
+            )
+          : ""
+      ),
+  };
+}
+
+function normalizeProductListingRestriction(product = {}) {
+  const source = product?.listingRestriction && typeof product.listingRestriction === "object"
+    ? product.listingRestriction
+    : {};
+  const expiresAt = normalizeOptionalProductDateTime(
+    source?.expiresAt ?? product?.listingRestrictionExpiresAt,
+  );
+  const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
+  const storedActive = source?.active === true || product?.isListingRestricted === true;
+  const active = storedActive && Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+
+  return {
+    active,
+    reason: String(source?.reason ?? product?.listingRestrictionReason ?? "").trim(),
+    durationDays: Math.max(0, Math.trunc(Number(
+      source?.durationDays ?? product?.listingRestrictionDurationDays,
+    ) || 0)),
+    sellerNote: String(source?.sellerNote ?? product?.listingRestrictionSellerNote ?? "").trim(),
+    notifySeller: source?.notifySeller !== false,
+    restrictedAt: normalizeOptionalProductDateTime(
+      source?.restrictedAt ?? product?.listingRestrictedAt,
+    ),
+    restrictedBy: String(source?.restrictedBy ?? product?.listingRestrictedBy ?? "").trim(),
+    expiresAt,
+  };
+}
+
+function isProductListingRestrictedForCustomers(product = {}) {
+  return normalizeProductListingRestriction(product).active;
+}
+
+async function syncApprovedProductYoloTrainingEvidence(products = []) {
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+  let didChange = false;
+  const approvedTrainingRecords = await readApprovedProductTrainingRecords();
+
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const product = nextProducts[index];
+    if (!isProductApprovedForApp(product) || isApprovedProductYoloTrainingRecord(product)) {
+      continue;
+    }
+    if (!getProductApprovedTrainingImageUrls(product).length) {
+      continue;
+    }
+    if (
+      await isApprovedProductFullyTrained(product, [
+        ...approvedTrainingRecords,
+        ...nextProducts,
+      ])
+    ) {
+      continue;
+    }
+
+    const productWithEvidence = await applyApprovedProductYoloTrainingEvidence(
+      product,
+      product,
+      {
+        approvedAt: product?.approvedAt || product?.approvalUpdatedAt || product?.updatedAt,
+        approvedBy: product?.approvedBy || SUPER_ADMIN_USERNAME,
+        updatedAt: product?.approvalUpdatedAt || product?.updatedAt,
+      },
+    );
+    if (
+      JSON.stringify(getProductVisualSafetyState(product)) !==
+        JSON.stringify(getProductVisualSafetyState(productWithEvidence))
+    ) {
+      didChange = true;
+      nextProducts[index] = productWithEvidence;
+    }
+  }
+
+  return {
+    products: nextProducts,
+    didChange,
+  };
+}
+
+function normalizeApprovedProductTrainingArchiveRecord(product = {}) {
+  const normalizedProduct = normalizeStoredProductRecord(product);
+  if (!isApprovedProductYoloTrainingRecord(normalizedProduct)) {
+    return null;
+  }
+
+  const imageUrls = getProductApprovedTrainingImageUrls(normalizedProduct);
+  const inspection = normalizeYoloInspection(
+    normalizedProduct.yoloInspection,
+    imageUrls,
+  );
+  const approvedEvidence = inspection?.approvedEvidence ||
+    buildApprovedYoloTrainingEvidence(normalizedProduct, imageUrls, {
+      approvedAt:
+        normalizedProduct.approvedAt ||
+        normalizedProduct.approvalUpdatedAt ||
+        normalizedProduct.updatedAt,
+      approvedBy: normalizedProduct.approvedBy || SUPER_ADMIN_USERNAME,
+      updatedAt: normalizedProduct.approvalUpdatedAt || normalizedProduct.updatedAt,
+    });
+  const approvedAt =
+    approvedEvidence?.approvedAt ||
+    normalizedProduct.approvedAt ||
+    normalizedProduct.approvalUpdatedAt ||
+    normalizedProduct.updatedAt ||
+    normalizedProduct.createdAt ||
+    new Date().toISOString();
+  const approvedBy =
+    approvedEvidence?.approvedBy ||
+    normalizedProduct.approvedBy ||
+    SUPER_ADMIN_USERNAME;
+
+  return normalizeStoredProductRecord({
+    ...normalizedProduct,
+    approvalStatus: PRODUCT_APPROVAL_APPROVED,
+    approvedAt,
+    approvedBy,
+    approvalUpdatedAt: normalizedProduct.approvalUpdatedAt || approvedAt,
+    yoloInspection: normalizeYoloInspection({
+      ...(inspection || {}),
+      status: "clear",
+      flagged: false,
+      datasetBucket: "approved",
+      imageUrls,
+      rejectedEvidenceMatch: null,
+      approvedEvidence,
+      revisionEvidence: null,
+      updatedAt: inspection?.updatedAt || approvedEvidence?.updatedAt || approvedAt,
+      archivedAt: inspection?.archivedAt || approvedAt,
+      autoReject: false,
+    }, imageUrls),
+    yoloRevision: null,
+    revisionStatus: "",
+    revisionRequestedAt: "",
+    revisionRequestedBy: "",
+    revisionReason: "",
+    revisionMessage: "",
+  });
+}
+
+function createApprovedProductTrainingDisplayRecords(records = []) {
+  const displayRecords = [];
+
+  for (const record of Array.isArray(records) ? records : []) {
+    const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(record);
+    if (!normalizedRecord) {
+      continue;
+    }
+
+    const imageUrls = getProductApprovedTrainingImageUrls(normalizedRecord);
+    if (!imageUrls.length) {
+      displayRecords.push(normalizedRecord);
+      continue;
+    }
+
+    const baseId = String(normalizedRecord.id || "").trim();
+    const inspection = normalizeYoloInspection(
+      normalizedRecord.yoloInspection,
+      imageUrls,
+    );
+    const approvedEvidence = normalizeYoloApprovedEvidence(
+      inspection?.approvedEvidence,
+    );
+    const fingerprintMetas = normalizeVisualSearchFingerprintMetaList(
+      inspection?.fingerprints,
+      imageUrls,
+    );
+    const inspectionImages = Array.isArray(inspection?.images) ? inspection.images : [];
+
+    imageUrls.forEach((imageUrl, index) => {
+      const imageKey = String(imageUrl || "").trim().toLowerCase();
+      const fingerprintMeta = fingerprintMetas.find((meta) =>
+        String(meta?.imageUrl || "").trim().toLowerCase() === imageKey
+      );
+      const perImageInspectionImages = inspectionImages.filter((entry) =>
+        String(entry?.imageUrl || "").trim().toLowerCase() === imageKey
+      );
+      const perImageDetections = perImageInspectionImages.flatMap((entry) =>
+        normalizeApprovedYoloDetectionList(entry?.detections)
+      );
+      const fallbackDetections = normalizeApprovedYoloDetectionList(
+        inspection?.detections,
+      ).filter((detection) => {
+        const detectionImageKey = String(detection?.imageUrl || "").trim().toLowerCase();
+        return !detectionImageKey || detectionImageKey === imageKey;
+      });
+      displayRecords.push(normalizeStoredProductRecord({
+        ...normalizedRecord,
+        id: `${baseId || "approved-product"}::approved-image::${index + 1}`,
+        sourceProductId: baseId,
+        approvedTrainingSourceProductId: baseId,
+        approvedTrainingImageIndex: index + 1,
+        approvedTrainingImageCount: imageUrls.length,
+        imageUrl,
+        mainImageUrl: imageUrl,
+        imageUrls: [imageUrl],
+        cardImageUrl: "",
+        cardImageSourceUrl: "",
+        buyModalImageUrl: "",
+        buyModalImageSourceUrl: "",
+        detailsImageCrops: [],
+        videoUrls: [],
+        videoUrl: "",
+        videoThumbnailUrls: [],
+        videoThumbnailUrl: "",
+        variants: [],
+        visualSearchImageUrl: imageUrl,
+        visualSearchImageUrls: [imageUrl],
+        visualSearchImageAngles: {
+          [VISUAL_SEARCH_PRIMARY_IMAGE_ANGLE]: imageUrl,
+        },
+        visualSearchFingerprint: fingerprintMeta || null,
+        visualSearchFingerprints: fingerprintMeta ? [fingerprintMeta] : [],
+        yoloInspection: normalizeYoloInspection({
+          ...(inspection || {}),
+          imageUrls: [imageUrl],
+          fingerprints: fingerprintMeta ? [fingerprintMeta] : [],
+          images: perImageInspectionImages,
+          detections: perImageDetections.length ? perImageDetections : fallbackDetections,
+          approvedEvidence: normalizeYoloApprovedEvidence({
+            ...(approvedEvidence || {}),
+            productId: baseId,
+            imageUrls: [imageUrl],
+          }),
+        }, [imageUrl]),
+      }));
+    });
+  }
+
+  return displayRecords;
+}
+
+function getApprovedProductTrainingArchiveKey(product = {}) {
+  const imageUrls = getProductApprovedTrainingImageUrls(product);
+  const inspection = normalizeYoloInspection(product?.yoloInspection, imageUrls);
+  return String(
+    product?.id ||
+      inspection?.approvedEvidence?.productId ||
+      "",
+  ).trim();
+}
+
+function mergeApprovedProductTrainingArchiveRecords(
+  existingRecords = [],
+  sourceProducts = [],
+) {
+  const recordsByKey = new Map();
+
+  for (const record of Array.isArray(existingRecords) ? existingRecords : []) {
+    const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(record);
+    const key = normalizedRecord ? getApprovedProductTrainingArchiveKey(normalizedRecord) : "";
+    if (normalizedRecord && key) {
+      recordsByKey.set(key, normalizedRecord);
+    }
+  }
+
+  for (const product of Array.isArray(sourceProducts) ? sourceProducts : []) {
+    const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(product);
+    const key = normalizedRecord ? getApprovedProductTrainingArchiveKey(normalizedRecord) : "";
+    if (normalizedRecord && key) {
+      recordsByKey.set(key, normalizedRecord);
+    }
+  }
+
+  return [...recordsByKey.values()].sort((left, right) =>
+    String(
+      right.yoloInspection?.approvedEvidence?.approvedAt ??
+      right.approvedAt ??
+      right.approvalUpdatedAt ??
+      right.updatedAt ??
+      "",
+    ).localeCompare(String(
+      left.yoloInspection?.approvedEvidence?.approvedAt ??
+      left.approvedAt ??
+      left.approvalUpdatedAt ??
+      left.updatedAt ??
+      "",
+    )),
+  );
+}
+
+async function findApprovedProductFullyTrainedMatch(candidateProduct, sourceProducts = []) {
+  const candidateState = await getProductRejectedEvidenceFingerprintState(candidateProduct);
+  const candidateEntries = candidateState.fingerprintEntries;
+  const candidateNameKey = getApprovedEvidenceAutoApprovalNameKey(candidateState.product);
+  const candidateCategoryKeys = getApprovedEvidenceAutoApprovalCategoryKeys(candidateState.product);
+  const candidateImageUrlCount = getProductApprovedTrainingImageUrls(candidateState.product).length;
+
+  if (
+    !candidateEntries.length ||
+    candidateEntries.length < candidateImageUrlCount ||
+    !candidateNameKey ||
+    !candidateCategoryKeys.size
+  ) {
+    return null;
+  }
+
+  const candidateMainImageUrl = normalizeProductEvidenceImageUrl(
+    getProductMainEvidenceImageUrl(candidateState.product),
+  );
+
+  for (const sourceProduct of Array.isArray(sourceProducts) ? sourceProducts : []) {
+    const normalizedSourceProduct = normalizeApprovedProductTrainingArchiveRecord(sourceProduct);
+    if (!normalizedSourceProduct) {
+      continue;
+    }
+
+    const sourceInspection = normalizeYoloInspection(
+      normalizedSourceProduct?.yoloInspection,
+      getProductApprovedTrainingImageUrls(normalizedSourceProduct),
+    );
+    const sourceApprovedEvidence = normalizeYoloApprovedEvidence(
+      sourceInspection?.approvedEvidence,
+    );
+    const sourceNameKey = getApprovedEvidenceAutoApprovalNameKey(
+      normalizedSourceProduct,
+      sourceApprovedEvidence,
+    );
+    if (!sourceNameKey || sourceNameKey !== candidateNameKey) {
+      continue;
+    }
+
+    const sourceCategoryKeys = getApprovedEvidenceAutoApprovalCategoryKeys(
+      normalizedSourceProduct,
+      sourceApprovedEvidence,
+    );
+    if (
+      !areApprovedEvidenceAutoApprovalCategoryKeysEqual(
+        candidateCategoryKeys,
+        sourceCategoryKeys,
+      )
+    ) {
+      continue;
+    }
+
+    const sourceState = await getProductRejectedEvidenceFingerprintState(
+      normalizedSourceProduct,
+    );
+    const sourceEntries = sourceState.fingerprintEntries;
+    if (!sourceEntries.length) {
+      continue;
+    }
+
+    const sourceMainImageUrl = normalizeProductEvidenceImageUrl(
+      getProductMainEvidenceImageUrl(sourceState.product),
+    );
+    const candidateMatches = candidateEntries.map((candidateEntry) => {
+      let bestApprovedEntry = null;
+      let bestScore = 0;
+      for (const approvedEntry of sourceEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          approvedEntry.fingerprint,
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestApprovedEntry = approvedEntry;
+        }
+      }
+      return {
+        candidateEntry,
+        approvedEntry: bestApprovedEntry,
+        score: bestScore,
+      };
+    });
+    const allImagesCovered = candidateMatches.length === candidateEntries.length &&
+      candidateMatches.every((entry) => entry.score >= APPROVED_PRODUCT_FULLY_TRAINED_MATCH_MIN_SCORE);
+    const mainImageMatch = candidateMainImageUrl
+      ? candidateMatches.find((entry) =>
+          normalizeProductEvidenceImageUrl(entry.candidateEntry?.imageUrl) === candidateMainImageUrl,
+        )
+      : null;
+    const mainImageCovered =
+      !candidateMainImageUrl ||
+      !sourceMainImageUrl ||
+      (
+        mainImageMatch?.score >= APPROVED_PRODUCT_FULLY_TRAINED_MATCH_MIN_SCORE &&
+        normalizeProductEvidenceImageUrl(mainImageMatch?.approvedEntry?.imageUrl) === sourceMainImageUrl
+      );
+
+    if (!allImagesCovered || !mainImageCovered) {
+      continue;
+    }
+
+    const weakestMatch = candidateMatches.reduce((weakest, current) =>
+      current.score < weakest.score ? current : weakest,
+    );
+    return {
+      sourceProduct: sourceState.product,
+      sourceApprovedEvidence,
+      score: weakestMatch.score,
+      matchedImageCount: candidateMatches.length,
+    };
+  }
+
+  return null;
+}
+
+async function isApprovedProductFullyTrained(candidateProduct, sourceProducts = []) {
+  return Boolean(await findApprovedProductFullyTrainedMatch(candidateProduct, sourceProducts));
+}
+
+async function syncApprovedProductTrainingArchive(sourceProducts = []) {
+  const existingRecords = await readApprovedProductTrainingRecords();
+  const sourceRecordsToSave = [];
+  for (const sourceProduct of Array.isArray(sourceProducts) ? sourceProducts : []) {
+    const normalizedSourceRecord = normalizeApprovedProductTrainingArchiveRecord(sourceProduct);
+    if (!normalizedSourceRecord) {
+      continue;
+    }
+    if (
+      await isApprovedProductFullyTrained(
+        normalizedSourceRecord,
+        [...existingRecords, ...sourceRecordsToSave],
+      )
+    ) {
+      continue;
+    }
+    sourceRecordsToSave.push(normalizedSourceRecord);
+  }
+  const nextRecords = mergeApprovedProductTrainingArchiveRecords(
+    existingRecords,
+    sourceRecordsToSave,
+  );
+
+  if (JSON.stringify(existingRecords) !== JSON.stringify(nextRecords)) {
+    await writeApprovedProductTrainingRecords(nextRecords);
+  }
+
+  return nextRecords;
+}
+
+function getApprovedEvidenceCategoryBuckets(product = {}, approvedEvidence = null) {
+  const evidenceBuckets = Array.isArray(approvedEvidence?.categoryBuckets)
+    ? approvedEvidence.categoryBuckets.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  if (evidenceBuckets.length) {
+    return new Set(evidenceBuckets);
+  }
+
+  return getRevisionBucketsFromText(
+    [
+      approvedEvidence?.categoryLabel,
+      getProductRevisionCategoryText(product),
+    ].filter(Boolean).join(" "),
+    { category: true },
+  );
+}
+
+function getApprovedEvidenceAutoApprovalNameKey(product = {}, approvedEvidence = null) {
+  return normalizeRevisionText(
+    approvedEvidence?.productName ||
+      product?.name ||
+      "",
+  );
+}
+
+function normalizeApprovedEvidenceAutoApprovalCategoryKey(value) {
+  const normalizedText = normalizeRevisionText(value);
+  if (!normalizedText) {
+    return "";
+  }
+
+  const specificLabels = getRevisionSpecificLabelsFromText(normalizedText);
+  if (specificLabels.size === 1) {
+    return [...specificLabels][0];
+  }
+
+  const categoryBuckets = getRevisionBucketsFromText(normalizedText, { category: true });
+  if (categoryBuckets.size === 1) {
+    return [...categoryBuckets][0];
+  }
+
+  return normalizedText;
+}
+
+function getApprovedEvidenceAutoApprovalCategoryKeys(product = {}, approvedEvidence = null) {
+  const productCategories = getProductCategoryList(product);
+  const evidenceCategories = String(approvedEvidence?.categoryLabel || "")
+    .split(/[,/|]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const rawCategories = productCategories.length ? productCategories : evidenceCategories;
+  const keys = rawCategories
+    .map((entry) => normalizeApprovedEvidenceAutoApprovalCategoryKey(entry))
+    .filter(Boolean);
+
+  if (keys.length) {
+    return new Set(keys);
+  }
+
+  return getApprovedEvidenceCategoryBuckets(product, approvedEvidence);
+}
+
+function areApprovedEvidenceAutoApprovalCategoryKeysEqual(leftKeys, rightKeys) {
+  if (!leftKeys?.size || !rightKeys?.size || leftKeys.size !== rightKeys.size) {
+    return false;
+  }
+
+  for (const key of leftKeys) {
+    if (!rightKeys.has(key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function createApprovedProductEvidenceAutoApprovalMatch(
+  candidateProduct,
+  candidateEntry,
+  approvedProduct,
+  approvedEntry,
+  approvedEvidence,
+  score,
+) {
+  const categoryLabel =
+    getProductCategoryList(candidateProduct).join(", ") ||
+    String(candidateProduct?.category ?? "").trim() ||
+    "selected category";
+  const approvedCategoryLabel =
+    String(approvedEvidence?.categoryLabel || "").trim() ||
+    getProductCategoryList(approvedProduct).join(", ") ||
+    String(approvedProduct?.category ?? "").trim() ||
+    "approved saved product";
+  const approvedProductName = String(
+    approvedEvidence?.productName ||
+      approvedProduct?.name ||
+      "approved saved product",
+  ).trim();
+
+  return {
+    matchType: "approved-yolo-name-category",
+    score,
+    threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    productName: String(candidateProduct?.name || "").trim(),
+    categoryLabel,
+    matchedProductId: String(approvedProduct?.id ?? "").trim(),
+    matchedProductName: approvedProductName,
+    matchedCategoryLabel: approvedCategoryLabel,
+    imageUrl: String(candidateEntry?.imageUrl ?? "").trim(),
+    matchedImageUrl: String(approvedEntry?.imageUrl ?? "").trim(),
+    approvedAt: approvedEvidence?.approvedAt || approvedProduct?.approvedAt || "",
+    approvedBy: approvedEvidence?.approvedBy || approvedProduct?.approvedBy || "",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function doRevisionNameTokensOverlap(leftValue, rightValue) {
+  const leftTokens = new Set(getMeaningfulRevisionNameTokens(leftValue));
+  const rightTokens = getMeaningfulRevisionNameTokens(rightValue);
+  return rightTokens.some((token) => leftTokens.has(token));
+}
+
+function getProductCategoryRevisionEvidenceEntries(
+  candidateProduct,
+  allowedCategoryLabels,
+  approvedCategoryBuckets,
+  score = 0,
+) {
+  const categories = getProductCategoryList(candidateProduct);
+  const categoryValues = categories.length
+    ? categories
+    : [String(candidateProduct?.category || "").trim()].filter(Boolean);
+  const seen = new Set();
+  const evidenceEntries = [];
+
+  for (const categoryValue of categoryValues) {
+    const categoryLabel = String(categoryValue || "").trim();
+    const normalizedCategoryLabel = normalizeRevisionText(categoryLabel);
+    if (!normalizedCategoryLabel || seen.has(normalizedCategoryLabel)) {
+      continue;
+    }
+    seen.add(normalizedCategoryLabel);
+
+    const categorySpecificLabels = getRevisionSpecificLabelsFromText(categoryLabel);
+    const categoryBuckets = getRevisionBucketsFromText(categoryLabel, { category: true });
+    const mismatchedSpecificLabels = [...categorySpecificLabels].filter(
+      (label) => !allowedCategoryLabels.has(label),
+    );
+    const mismatchedCategoryBuckets = mismatchedSpecificLabels.length
+      ? mismatchedSpecificLabels
+      : [...categoryBuckets].filter(
+          (bucket) => approvedCategoryBuckets.size > 0 && !approvedCategoryBuckets.has(bucket),
+        );
+
+    if (!mismatchedCategoryBuckets.length) {
+      continue;
+    }
+
+    evidenceEntries.push({
+      label: categoryLabel,
+      categoryBuckets: mismatchedCategoryBuckets,
+      categoryLabel,
+      matchType: "approved-visual-category",
+      reason: "This category does not match the main product image and product name.",
+      message: `Category "${categoryLabel}" does not match the main product image and product name. Ask seller to revise this category before approval.`,
+      score: normalizeRejectedEvidenceMatchScore(score),
+      threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    });
+  }
+
+  return evidenceEntries;
+}
+
+function getProductCategoryMismatchLabelsForVisualLabels(product = {}, visualLabels = []) {
+  const allowedVisualLabels = getAllowedCategoryLabelsForVisualLabels(
+    new Set((Array.isArray(visualLabels) ? visualLabels : []).filter(Boolean)),
+  );
+  if (!allowedVisualLabels.size) {
+    return [];
+  }
+
+  const categories = getProductCategoryList(product);
+  const categoryValues = categories.length
+    ? categories
+    : [String(product?.category || "").trim()].filter(Boolean);
+  const seen = new Set();
+  const mismatchedLabels = [];
+
+  for (const categoryValue of categoryValues) {
+    const categoryLabel = String(categoryValue || "").trim();
+    const normalizedCategoryLabel = normalizeRevisionText(categoryLabel);
+    if (!normalizedCategoryLabel || seen.has(normalizedCategoryLabel)) {
+      continue;
+    }
+    seen.add(normalizedCategoryLabel);
+
+    const categorySpecificLabels = getRevisionSpecificLabelsFromText(categoryLabel);
+    if (
+      categorySpecificLabels.size > 0 &&
+      [...categorySpecificLabels].some((label) => !allowedVisualLabels.has(label))
+    ) {
+      mismatchedLabels.push(categoryLabel);
+    }
+  }
+
+  return mismatchedLabels;
+}
+
+function getProductRevisionYoloDetectionsForImage(product = {}, imageUrl = "") {
+  const normalizedImageUrl = String(imageUrl ?? "").trim().toLowerCase();
+  if (!normalizedImageUrl) {
+    return [];
+  }
+  return getProductRevisionYoloDetections(product).filter((detection) =>
+    String(detection?.imageUrl ?? "").trim().toLowerCase() === normalizedImageUrl
+  );
+}
+
+function normalizeProductEvidenceImageUrl(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getProductMainEvidenceImageUrl(product = {}) {
+  return String(
+    product?.imageUrl ||
+      product?.mainImageUrl ||
+      getProductYoloInspectionImageUrls(product)[0] ||
+      "",
+  ).trim();
+}
+
+function getProductRevisionDetectionSetsFromDetections(detections = []) {
+  const detectionText = detections
+    .map((detection) => [detection?.label, detection?.reason].filter(Boolean).join(" "))
+    .join(" ");
+  return {
+    labels: getRevisionSpecificLabelsFromText(detectionText),
+    buckets: getRevisionBucketsFromText(detectionText),
+  };
+}
+
+function getProductImageNameCompatibility(product = {}, imageUrl = "") {
+  const detections = getProductRevisionYoloDetectionsForImage(product, imageUrl);
+  if (!detections.length) {
+    return null;
+  }
+
+  const { labels, buckets } = getProductRevisionDetectionSetsFromDetections(detections);
+  const nameLabels = getRevisionSpecificLabelsFromText(product?.name);
+  const nameBuckets = getRevisionBucketsFromText(product?.name, { category: true });
+  return getProductImageNameCompatibilityFromDetectionSets(
+    labels,
+    buckets,
+    nameLabels,
+    nameBuckets,
+  );
+}
+
+function createApprovedProductEvidenceMediaMismatchSignal(
+  candidateProduct,
+  candidateEntry,
+  approvedProduct,
+  approvedEvidence,
+  score = 0,
+) {
+  const productName = String(candidateProduct?.name || "Unnamed product").trim();
+  const categoryLabel =
+    getProductCategoryList(candidateProduct).join(", ") ||
+    String(candidateProduct?.category ?? "").trim() ||
+    "selected category";
+  const approvedProductName = String(
+    approvedEvidence?.productName ||
+      approvedProduct?.name ||
+      "approved saved product",
+  ).trim();
+  const candidateEntries = (Array.isArray(candidateEntry) ? candidateEntry : [candidateEntry])
+    .map((entry) => entry?.candidateEntry || entry)
+    .filter(Boolean);
+  const imageEvidence = candidateEntries
+    .map((entry) => {
+      const imageUrl = String(entry?.imageUrl || "").trim();
+      if (!imageUrl) {
+        return null;
+      }
+      const detections = getProductRevisionYoloDetectionsForImage(candidateProduct, imageUrl);
+      const { labels, buckets } = getProductRevisionDetectionSetsFromDetections(detections);
+      const visualLabel =
+        [...labels].join(", ") ||
+        [...buckets].join(", ") ||
+        "a different item";
+      return {
+        imageUrl,
+        label: visualLabel,
+        imageBuckets: labels.size ? [...labels] : [...buckets],
+        categoryBuckets: [...getRevisionBucketsFromText(categoryLabel, { category: true })],
+        categoryLabel,
+        matchType: "approved-visual-media",
+        reason: "This media image does not match the approved YOLO evidence for the product name.",
+        message: `YOLO detected ${visualLabel} in this image, but the listing is "${productName}". Ask seller to remove or replace this mismatched image before approval.`,
+        score: normalizeRejectedEvidenceMatchScore(entry?.score ?? score),
+        threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+      };
+    })
+    .filter(Boolean);
+  const imageUrls = normalizeProductImageUrls(imageEvidence.map((entry) => entry.imageUrl));
+  const mismatchCount = imageUrls.length || 1;
+
+  return normalizeProductRevisionSignal({
+    engine: "yolo-revision",
+    status: "suggested",
+    flagged: true,
+    reason: "Product media does not match the approved YOLO evidence for this product name.",
+    message: `YOLO checked every media image for "${productName}". ${mismatchCount === 1 ? "One image is" : `${mismatchCount} images are`} not part of the approved saved media set for ${approvedProductName}. Ask seller to remove or replace the mismatched ${mismatchCount === 1 ? "image" : "images"} before approval.`,
+    imageBuckets: [...getRevisionSpecificLabelsFromText(productName)],
+    categoryBuckets: [...getRevisionBucketsFromText(categoryLabel, { category: true })],
+    categoryLabel,
+    matchType: "approved-visual-media",
+    score,
+    threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    imageUrl: imageUrls[0] || candidateEntries[0]?.imageUrl,
+    imageUrls,
+    images: imageEvidence,
+    matchedProductId: approvedProduct?.id,
+    matchedProductName: approvedProductName,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function findApprovedProductEvidenceAutoApprovalMatch(candidateProduct, products = []) {
+  const candidateState = await getProductRejectedEvidenceFingerprintState(candidateProduct);
+  const candidateEntries = candidateState.fingerprintEntries;
+  const candidateNameKey = getApprovedEvidenceAutoApprovalNameKey(candidateState.product);
+  const candidateCategoryKeys = getApprovedEvidenceAutoApprovalCategoryKeys(candidateState.product);
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+  let didUpdateProducts = false;
+  let bestMatch = null;
+  let bestScore = 0;
+  let bestRevisionMatch = null;
+  let bestRevisionRank = -1;
+
+  if (!candidateEntries.length || !candidateNameKey || !candidateCategoryKeys.size) {
+    return {
+      candidateProduct: candidateState.product,
+      match: null,
+      revisionMatch: null,
+      products: nextProducts,
+      didUpdateProducts,
+    };
+  }
+
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const sourceProduct = nextProducts[index];
+    if (!isApprovedProductYoloTrainingRecord(sourceProduct)) {
+      continue;
+    }
+
+    const sourceInspection = normalizeYoloInspection(
+      sourceProduct?.yoloInspection,
+      getProductApprovedTrainingImageUrls(sourceProduct),
+    );
+    const sourceApprovedEvidence = normalizeYoloApprovedEvidence(
+      sourceInspection?.approvedEvidence,
+    );
+    const sourceNameKey = getApprovedEvidenceAutoApprovalNameKey(
+      sourceProduct,
+      sourceApprovedEvidence,
+    );
+    if (!sourceNameKey || sourceNameKey !== candidateNameKey) {
+      continue;
+    }
+
+    const sourceCategoryKeys = getApprovedEvidenceAutoApprovalCategoryKeys(
+      sourceProduct,
+      sourceApprovedEvidence,
+    );
+    if (
+      !areApprovedEvidenceAutoApprovalCategoryKeysEqual(
+        candidateCategoryKeys,
+        sourceCategoryKeys,
+      )
+    ) {
+      continue;
+    }
+
+    const sourceState = await getProductRejectedEvidenceFingerprintState(
+      sourceProduct,
+      { persistFingerprints: true },
+    );
+    if (sourceState.didChange) {
+      nextProducts[index] = sourceState.product;
+      didUpdateProducts = true;
+    }
+
+    const sourceEntries = sourceState.fingerprintEntries;
+    if (!sourceEntries.length) {
+      continue;
+    }
+    const candidateMainImageUrl = normalizeProductEvidenceImageUrl(
+      getProductMainEvidenceImageUrl(candidateState.product),
+    );
+    const sourceMainImageUrl = normalizeProductEvidenceImageUrl(
+      getProductMainEvidenceImageUrl(sourceState.product),
+    );
+
+    const candidateMatches = candidateEntries.map((candidateEntry) => {
+      let approvedEntryMatch = null;
+      let matchScore = 0;
+      for (const approvedEntry of sourceEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          approvedEntry.fingerprint,
+        );
+        if (score > matchScore) {
+          matchScore = score;
+          approvedEntryMatch = approvedEntry;
+        }
+      }
+      return {
+        candidateEntry,
+        approvedEntry: approvedEntryMatch,
+        score: matchScore,
+        isApprovedBundleMatch: matchScore >= APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+      };
+    });
+
+    const approvedBundleMatches = candidateMatches.filter((entry) => entry.isApprovedBundleMatch);
+    const mainImageMatch = candidateMainImageUrl
+      ? candidateMatches.find((entry) =>
+          normalizeProductEvidenceImageUrl(entry.candidateEntry?.imageUrl) === candidateMainImageUrl,
+        )
+      : null;
+    const mainImageMatchesSourceMain =
+      !candidateMainImageUrl ||
+      !sourceMainImageUrl ||
+      (
+        mainImageMatch?.isApprovedBundleMatch === true &&
+        normalizeProductEvidenceImageUrl(mainImageMatch?.approvedEntry?.imageUrl) === sourceMainImageUrl
+      );
+    const allCandidateImagesMatchBundle =
+      candidateMatches.length > 0 &&
+      approvedBundleMatches.length === candidateMatches.length &&
+      mainImageMatchesSourceMain;
+
+    if (allCandidateImagesMatchBundle) {
+      const weakestMatch = candidateMatches.reduce((weakest, current) =>
+        current.score < weakest.score ? current : weakest,
+      );
+      if (weakestMatch.score > bestScore) {
+        bestScore = weakestMatch.score;
+        bestMatch = createApprovedProductEvidenceAutoApprovalMatch(
+          candidateState.product,
+          weakestMatch.candidateEntry,
+          sourceState.product,
+          weakestMatch.approvedEntry,
+          sourceApprovedEvidence,
+          weakestMatch.score,
+        );
+      }
+      continue;
+    }
+
+    const revisionCandidateMatches = candidateMatches.filter((entry) => {
+      const candidateEntryImageUrl = normalizeProductEvidenceImageUrl(
+        entry.candidateEntry?.imageUrl,
+      );
+      const isMainImageSourceMismatch =
+        candidateMainImageUrl &&
+        sourceMainImageUrl &&
+        candidateEntryImageUrl === candidateMainImageUrl &&
+        !(
+          entry.isApprovedBundleMatch === true &&
+          normalizeProductEvidenceImageUrl(entry.approvedEntry?.imageUrl) === sourceMainImageUrl
+        );
+      return isMainImageSourceMismatch || !entry.isApprovedBundleMatch;
+    });
+    const incompatibleRevisionMatches = revisionCandidateMatches.filter((entry) =>
+      getProductImageNameCompatibility(
+        candidateState.product,
+        entry?.candidateEntry?.imageUrl,
+      ) !== true
+    );
+    if (incompatibleRevisionMatches.length > 0 && approvedBundleMatches.length > 0) {
+      const weakestIncompatibleEntry = incompatibleRevisionMatches.reduce((weakest, current) =>
+        current.score < weakest.score ? current : weakest,
+      );
+      const revisionRank =
+        (approvedBundleMatches.length * 1000) +
+        (incompatibleRevisionMatches.length * 100) +
+        Math.round((weakestIncompatibleEntry.score || 0) * 1000);
+      if (revisionRank > bestRevisionRank) {
+        bestRevisionRank = revisionRank;
+        bestRevisionMatch = createApprovedProductEvidenceMediaMismatchSignal(
+          candidateState.product,
+          incompatibleRevisionMatches,
+          sourceState.product,
+          sourceApprovedEvidence,
+          weakestIncompatibleEntry.score,
+        );
+      }
+    }
+
+    for (const candidateEntry of candidateEntries) {
+      for (const approvedEntry of sourceEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          approvedEntry.fingerprint,
+        );
+        bestScore = Math.max(bestScore, score);
+      }
+    }
+  }
+
+  return {
+    candidateProduct: candidateState.product,
+    match:
+      bestScore >= APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE
+        ? bestMatch
+        : null,
+    revisionMatch: bestMatch ? null : bestRevisionMatch,
+    products: nextProducts,
+    didUpdateProducts,
+  };
+}
+
+async function applyApprovedProductEvidenceAutoApproval(product, products = []) {
+  const approvalStatus = normalizeProductApprovalStatus(
+    product?.approvalStatus,
+    PRODUCT_APPROVAL_APPROVED,
+  );
+
+  if (approvalStatus !== PRODUCT_APPROVAL_PENDING) {
+    return {
+      product,
+      products,
+      match: null,
+      didChange: false,
+    };
+  }
+
+  const existingInspection = normalizeYoloInspection(
+    product?.yoloInspection,
+    getProductYoloInspectionImageUrls(product),
+  );
+  if (existingInspection?.rejectedEvidenceMatch || hasYoloDetectorFlag(existingInspection)) {
+    return {
+      product,
+      products,
+      match: null,
+      didChange: false,
+    };
+  }
+
+  const result = await findApprovedProductEvidenceAutoApprovalMatch(product, products);
+  if (!result.match) {
+    const existingRevision = normalizeProductRevisionSignal(
+      result.candidateProduct?.yoloRevision,
+    );
+    const productWithRevision = result.revisionMatch
+      ? {
+          ...result.candidateProduct,
+          yoloRevision: result.revisionMatch,
+        }
+      : result.candidateProduct;
+    const didRevisionChange =
+      JSON.stringify(getProductRevisionComparisonState(existingRevision)) !==
+      JSON.stringify(getProductRevisionComparisonState(productWithRevision?.yoloRevision));
+    return {
+      product: productWithRevision,
+      products: result.products,
+      match: null,
+      revisionMatch: result.revisionMatch,
+      didChange: result.didUpdateProducts || didRevisionChange,
+    };
+  }
+
+  const now = new Date().toISOString();
+  let approvedProduct = {
+    ...result.candidateProduct,
+    approvalStatus: PRODUCT_APPROVAL_APPROVED,
+    submittedAt: result.candidateProduct.submittedAt || result.candidateProduct.createdAt || now,
+    approvedAt: now,
+    approvedBy: "YOLO_AUTO_APPROVE",
+    rejectedAt: "",
+    rejectedBy: "",
+    rejectionReason: "",
+    yoloRevision: null,
+    revisionStatus: "",
+    revisionRequestedAt: "",
+    revisionRequestedBy: "",
+    revisionReason: "",
+    revisionMessage: "",
+    approvalUpdatedAt: now,
+    updatedAt: now,
+  };
+  approvedProduct = await applyApprovedProductYoloTrainingEvidence(
+    approvedProduct,
+    result.candidateProduct,
+    {
+      approvedAt: now,
+      approvedBy: "YOLO_AUTO_APPROVE",
+      source: "yolo-approved-database-auto-approval",
+      reason:
+        "YOLO auto-approved this product because it matched an approved product with the same name and category.",
+      updatedAt: now,
+    },
+  );
+
+  return {
+    product: approvedProduct,
+    products: result.products,
+    match: result.match,
+    revisionMatch: null,
+    didChange: true,
+  };
+}
+
+function createApprovedProductEvidenceCategorySignal(
+  candidateProduct,
+  candidateEntry,
+  approvedProduct,
+  approvedEntry,
+  approvedEvidence,
+  score,
+) {
+  const approvedCategoryBuckets = getApprovedEvidenceCategoryBuckets(
+    approvedProduct,
+    approvedEvidence,
+  );
+  const candidateCategoryBuckets = getRevisionBucketsFromText(
+    getProductRevisionCategoryText(candidateProduct),
+    { category: true },
+  );
+  const visualSpecificLabels = getProductApprovedVisualSpecificLabels(
+    approvedProduct,
+    approvedEvidence,
+  );
+  const candidateVisualSpecificLabels = getRevisionSpecificLabelsFromText(
+    getProductRevisionDetectionText(candidateProduct),
+  );
+  const categoryVisualLabels = new Set([
+    ...visualSpecificLabels,
+    ...candidateVisualSpecificLabels,
+  ]);
+  const allowedCategoryLabels = getAllowedCategoryLabelsForVisualLabels(categoryVisualLabels);
+  const candidateCategoryLabels = getRevisionSpecificLabelsFromText(
+    getProductRevisionCategoryText(candidateProduct),
+  );
+  const candidateNameLabels = getRevisionSpecificLabelsFromText(candidateProduct?.name);
+  const approvedNameTokens = getMeaningfulRevisionNameTokens(
+    approvedEvidence?.productName || approvedProduct?.name,
+  );
+  const approvedProductNameText = approvedEvidence?.productName || approvedProduct?.name || "";
+  const candidateNameTokens = new Set(getMeaningfulRevisionNameTokens(candidateProduct?.name));
+  const hasApprovedProductNameEvidence = approvedNameTokens.length > 0;
+  const hasSpecificCategoryMismatch =
+    categoryVisualLabels.size > 0 &&
+    candidateCategoryLabels.size > 0 &&
+    [...candidateCategoryLabels].some((label) => !allowedCategoryLabels.has(label));
+  const hasBucketCategoryMismatch =
+    !hasSpecificCategoryMismatch &&
+    approvedCategoryBuckets.size > 0 &&
+    candidateCategoryBuckets.size > 0 &&
+    [...candidateCategoryBuckets].some((bucket) => !approvedCategoryBuckets.has(bucket));
+  const hasNameSpecificMatch = hasAnySetOverlap(candidateNameLabels, visualSpecificLabels);
+  const hasNameTokenMatch = approvedNameTokens.some((token) => candidateNameTokens.has(token));
+  const hasNameCompatibility =
+    hasNameSpecificMatch ||
+    hasNameTokenMatch ||
+    normalizeRevisionText(candidateProduct?.name) === normalizeRevisionText(approvedProductNameText) ||
+    doRevisionNameTokensOverlap(candidateProduct?.name, approvedProductNameText);
+  const hasNameMismatch =
+    (visualSpecificLabels.size > 0 || hasApprovedProductNameEvidence) &&
+    !hasNameCompatibility;
+  const categoryEvidence =
+    !hasNameMismatch && hasNameCompatibility
+      ? getProductCategoryRevisionEvidenceEntries(
+          candidateProduct,
+          allowedCategoryLabels,
+          approvedCategoryBuckets,
+          score,
+        )
+      : [];
+  const hasCategoryMismatch = categoryEvidence.length > 0 &&
+    (hasSpecificCategoryMismatch || hasBucketCategoryMismatch);
+
+  if (!hasNameMismatch && !hasCategoryMismatch) {
+    return null;
+  }
+
+  const categoryLabel =
+    getProductCategoryList(candidateProduct).join(", ") ||
+    String(candidateProduct?.category ?? "").trim() ||
+    "selected category";
+  const approvedCategoryLabel =
+    String(approvedEvidence?.categoryLabel || "").trim() ||
+    getProductCategoryList(approvedProduct).join(", ") ||
+    String(approvedProduct?.category ?? "").trim() ||
+    "approved saved product";
+  const approvedProductName = String(
+    approvedEvidence?.productName ||
+      approvedProduct?.name ||
+      "approved saved product",
+  ).trim();
+  const visualLabel = [...categoryVisualLabels].join(", ") || [...approvedCategoryBuckets].join(", ") || approvedProductName;
+  const matchType = hasNameMismatch
+    ? "approved-visual-name"
+    : "approved-visual-category";
+  const reason = hasNameMismatch
+    ? "Product image matches an approved saved product but the product name is different."
+    : "Product image matches an approved saved product but the category is different.";
+  const message = hasNameMismatch
+    ? `Product image looks like ${visualLabel} from approved saved product ${approvedProductName}, but product name is "${String(candidateProduct?.name || "Unnamed product").trim()}". Ask seller to revise the product name before approval.`
+    : categoryEvidence.length === 1
+      ? categoryEvidence[0].message
+      : `Categories ${categoryEvidence.map((entry) => `"${entry.label}"`).join(", ")} do not match the main product image and product name. Ask seller to revise these categories before approval.`;
+
+  return normalizeProductRevisionSignal({
+    engine: "yolo-revision",
+    status: "suggested",
+    flagged: true,
+    reason,
+    message,
+    imageBuckets: categoryVisualLabels.size ? [...categoryVisualLabels] : [...approvedCategoryBuckets],
+    categoryBuckets: [...candidateCategoryBuckets],
+    categoryLabel,
+    matchType,
+    score,
+    threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    imageUrl: candidateEntry?.imageUrl,
+    categoryEvidence,
+    matchedProductId: approvedProduct?.id,
+    matchedProductName: approvedProductName,
+    matchedImageUrl: approvedEntry?.imageUrl,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function createApprovedProductEvidenceSupportingMediaSignal(
+  candidateProduct,
+  candidateMatches,
+  approvedProduct,
+  approvedEvidence,
+  score = 0,
+) {
+  const productName = String(candidateProduct?.name || "Unnamed product").trim();
+  const categoryLabel =
+    getProductCategoryList(candidateProduct).join(", ") ||
+    String(candidateProduct?.category ?? "").trim() ||
+    "selected category";
+  const candidateCategoryBuckets = getRevisionBucketsFromText(
+    getProductRevisionCategoryText(candidateProduct),
+    { category: true },
+  );
+  const entries = (Array.isArray(candidateMatches) ? candidateMatches : [candidateMatches])
+    .filter(Boolean);
+  const seenImageUrls = new Set();
+  const imageEvidence = [];
+
+  for (const entry of entries) {
+    const candidateEntry = entry?.candidateEntry || entry;
+    const imageUrl = String(candidateEntry?.imageUrl || "").trim();
+    const normalizedImageUrl = normalizeProductEvidenceImageUrl(imageUrl);
+    if (!normalizedImageUrl || seenImageUrls.has(normalizedImageUrl)) {
+      continue;
+    }
+    seenImageUrls.add(normalizedImageUrl);
+
+    const entryApprovedProduct = entry?.approvedProduct || approvedProduct;
+    const entryApprovedEvidence = entry?.approvedEvidence || approvedEvidence;
+    const approvedProductName = String(
+      entryApprovedEvidence?.productName ||
+        entryApprovedProduct?.name ||
+        "approved saved product",
+    ).trim();
+    const approvedVisualLabels = getProductApprovedVisualSpecificLabels(
+      entryApprovedProduct,
+      entryApprovedEvidence,
+    );
+    const approvedCategoryBuckets = getApprovedEvidenceCategoryBuckets(
+      entryApprovedProduct,
+      entryApprovedEvidence,
+    );
+    const match = normalizeProductRevisionSignal(entry?.match);
+    const imageBuckets = match?.imageBuckets?.length
+      ? match.imageBuckets
+      : approvedVisualLabels.size
+        ? [...approvedVisualLabels]
+        : [...approvedCategoryBuckets];
+    const visualLabel = imageBuckets.join(", ") || approvedProductName;
+    const productLabel = productName || "this product";
+    imageEvidence.push({
+      imageUrl,
+      label: visualLabel,
+      imageBuckets,
+      categoryBuckets: match?.categoryBuckets?.length
+        ? match.categoryBuckets
+        : [...candidateCategoryBuckets],
+      categoryLabel,
+      matchType: "approved-visual-media",
+      reason: "This media image matches a different approved saved product.",
+      message: `Product name/main image is "${productLabel}", but this media image looks like ${visualLabel}.`,
+      score: normalizeRejectedEvidenceMatchScore(entry?.score ?? score),
+      threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    });
+  }
+
+  if (!imageEvidence.length) {
+    return null;
+  }
+
+  const imageUrls = normalizeProductImageUrls(imageEvidence.map((entry) => entry.imageUrl));
+  const visualLabels = [
+    ...new Set(imageEvidence.map((entry) => entry.label).filter(Boolean)),
+  ];
+  const mismatchCount = imageUrls.length || imageEvidence.length;
+  const firstEntry = entries.find((entry) => entry?.candidateEntry || entry);
+  const firstApprovedProduct = firstEntry?.approvedProduct || approvedProduct;
+  const firstApprovedEvidence = firstEntry?.approvedEvidence || approvedEvidence;
+  const firstApprovedVisualLabels = getProductApprovedVisualSpecificLabels(
+    firstApprovedProduct,
+    firstApprovedEvidence,
+  );
+  const firstApprovedProductName = String(
+    firstApprovedEvidence?.productName ||
+      firstApprovedProduct?.name ||
+      "approved saved product",
+  ).trim();
+  const message = mismatchCount === 1
+    ? imageEvidence[0].message
+    : `Product name/main image is "${productName}", but other media images look different: ${visualLabels.join("; ")}.`;
+
+  return normalizeProductRevisionSignal({
+    engine: "yolo-revision",
+    status: "suggested",
+    flagged: true,
+    reason: "Product media does not match the product name/main image.",
+    message,
+    imageBuckets: visualLabels.length ? visualLabels : [...firstApprovedVisualLabels],
+    categoryBuckets: [...candidateCategoryBuckets],
+    categoryLabel,
+    matchType: "approved-visual-media",
+    score,
+    threshold: APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    imageUrl: imageUrls[0] || imageEvidence[0]?.imageUrl,
+    imageUrls,
+    images: imageEvidence,
+    matchedProductId: firstApprovedProduct?.id,
+    matchedProductName: firstApprovedProductName,
+    matchedImageUrl: firstEntry?.approvedEntry?.imageUrl,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function combineApprovedProductEvidenceRevisionMatches(mainMatch, mediaMatch) {
+  const normalizedMainMatch = normalizeProductRevisionSignal(mainMatch);
+  const normalizedMediaMatch = normalizeProductRevisionSignal(mediaMatch);
+
+  if (normalizedMediaMatch) {
+    if (normalizedMainMatch?.matchType === "approved-visual-name") {
+      return normalizedMainMatch;
+    }
+    if (normalizedMainMatch?.matchType === "approved-visual-category") {
+      const categoryMessages = normalizedMainMatch.categoryEvidence
+        .map((entry) => String(entry.message || "").trim())
+        .filter(Boolean);
+      const messageParts = [
+        normalizedMediaMatch.message,
+        ...(categoryMessages.length
+          ? [
+              `Also, ${categoryMessages.join(" ")}`,
+            ]
+          : []),
+      ].map((entry) => String(entry || "").trim()).filter(Boolean);
+      const mergedCategoryBuckets = [
+        ...new Set([
+          ...normalizedMediaMatch.categoryBuckets,
+          ...normalizedMainMatch.categoryBuckets,
+        ]),
+      ];
+
+      return normalizeProductRevisionSignal({
+        ...normalizedMediaMatch,
+        reason: "Product media and selected category need revision.",
+        message: messageParts.join(" "),
+        categoryBuckets: mergedCategoryBuckets,
+        categoryEvidence: normalizedMainMatch.categoryEvidence,
+        matchType: "approved-visual-mixed",
+        score: Math.max(normalizedMediaMatch.score || 0, normalizedMainMatch.score || 0),
+        threshold: normalizedMediaMatch.threshold || normalizedMainMatch.threshold,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return normalizedMediaMatch;
+  }
+
+  if (!normalizedMainMatch) {
+    return null;
+  }
+
+  return normalizedMainMatch;
+}
+
+async function findApprovedProductEvidenceCategoryMatch(candidateProduct, products = []) {
+  const candidateState = await getProductRejectedEvidenceFingerprintState(candidateProduct);
+  const candidateEntries = candidateState.fingerprintEntries;
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+  let didUpdateProducts = false;
+  let bestMatch = null;
+  let bestMainScore = 0;
+  const supportingMatchesByImage = new Map();
+
+  if (!candidateEntries.length) {
+    return {
+      candidateProduct: candidateState.product,
+      match: null,
+      products: nextProducts,
+      didUpdateProducts,
+    };
+  }
+
+  const candidateProductId = String(candidateState.product?.id ?? "").trim();
+  const candidateMainImageUrl = normalizeProductEvidenceImageUrl(
+    getProductMainEvidenceImageUrl(candidateState.product),
+  );
+  const fallbackMainEntry = candidateEntries[0] || null;
+  const isCandidateMainEntry = (entry) => {
+    const entryImageUrl = normalizeProductEvidenceImageUrl(entry?.imageUrl);
+    return candidateMainImageUrl
+      ? entryImageUrl === candidateMainImageUrl
+      : entry === fallbackMainEntry;
+  };
+  const mainCandidateEntries = candidateEntries.filter(isCandidateMainEntry);
+  if (!mainCandidateEntries.length && fallbackMainEntry) {
+    mainCandidateEntries.push(fallbackMainEntry);
+  }
+  const supportingCandidateEntries = candidateEntries.filter((entry) =>
+    !isCandidateMainEntry(entry)
+  );
+
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const sourceProduct = nextProducts[index];
+    const sourceProductId = String(sourceProduct?.id ?? "").trim();
+    if (!isApprovedProductYoloTrainingRecord(sourceProduct) || (candidateProductId && sourceProductId === candidateProductId)) {
+      continue;
+    }
+
+    const sourceInspection = normalizeYoloInspection(
+      sourceProduct?.yoloInspection,
+      getProductApprovedTrainingImageUrls(sourceProduct),
+    );
+    const sourceApprovedEvidence = normalizeYoloApprovedEvidence(
+      sourceInspection?.approvedEvidence,
+    );
+    const sourceState = await getProductRejectedEvidenceFingerprintState(
+      sourceProduct,
+      { persistFingerprints: true },
+    );
+    if (sourceState.didChange) {
+      nextProducts[index] = sourceState.product;
+      didUpdateProducts = true;
+    }
+
+    const sourceEntries = sourceState.fingerprintEntries;
+    if (!sourceEntries.length) {
+      continue;
+    }
+
+    const sourceMainImageUrl = normalizeProductEvidenceImageUrl(
+      getProductMainEvidenceImageUrl(sourceState.product),
+    );
+    const sourceMainEntries = sourceMainImageUrl
+      ? sourceEntries.filter((entry) =>
+          normalizeProductEvidenceImageUrl(entry?.imageUrl) === sourceMainImageUrl
+        )
+      : [];
+    const revisionApprovedEntries = sourceMainEntries.length
+      ? sourceMainEntries
+      : sourceEntries.slice(0, 1);
+
+    for (const candidateEntry of mainCandidateEntries) {
+      for (const approvedEntry of revisionApprovedEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          approvedEntry.fingerprint,
+        );
+        if (score > bestMainScore) {
+          const match = createApprovedProductEvidenceCategorySignal(
+            candidateState.product,
+            candidateEntry,
+            sourceState.product,
+            approvedEntry,
+            sourceApprovedEvidence,
+            score,
+          );
+          if (match) {
+            bestMainScore = score;
+            bestMatch = match;
+          }
+        }
+      }
+    }
+
+    for (const candidateEntry of supportingCandidateEntries) {
+      for (const approvedEntry of sourceEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          approvedEntry.fingerprint,
+        );
+        if (score < APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE) {
+          continue;
+        }
+        const match = createApprovedProductEvidenceCategorySignal(
+          candidateState.product,
+          candidateEntry,
+          sourceState.product,
+          approvedEntry,
+          sourceApprovedEvidence,
+          score,
+        );
+        if (!match) {
+          continue;
+        }
+        if (String(match.matchType || "").trim() !== "approved-visual-name") {
+          continue;
+        }
+        const imageKey = normalizeProductEvidenceImageUrl(candidateEntry?.imageUrl);
+        const existingMatch = supportingMatchesByImage.get(imageKey);
+        if (!existingMatch || score > existingMatch.score) {
+          supportingMatchesByImage.set(imageKey, {
+            candidateEntry,
+            approvedEntry,
+            approvedProduct: sourceState.product,
+            approvedEvidence: sourceApprovedEvidence,
+            score,
+            match,
+          });
+        }
+      }
+    }
+  }
+
+  const mainMatch = bestMainScore >= APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE
+    ? bestMatch
+    : null;
+  const supportingMatches = [...supportingMatchesByImage.values()];
+  const bestMediaScore = supportingMatches.reduce(
+    (highest, entry) => Math.max(highest, entry.score || 0),
+    0,
+  );
+  const mediaMatch = bestMediaScore >= APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE
+    ? createApprovedProductEvidenceSupportingMediaSignal(
+        candidateState.product,
+        supportingMatches,
+        null,
+        null,
+        bestMediaScore,
+      )
+    : null;
+
+  return {
+    candidateProduct: candidateState.product,
+    match: combineApprovedProductEvidenceRevisionMatches(mainMatch, mediaMatch),
+    products: nextProducts,
+    didUpdateProducts,
+  };
+}
+
+function setProductApprovedEvidenceCategoryMatch(product, match = null) {
+  const existingRevision = normalizeProductRevisionSignal(product?.yoloRevision);
+  if (match) {
+    if (
+      (
+        existingRevision?.matchType === "approved-visual-category" ||
+        existingRevision?.matchType === "approved-visual-name" ||
+        existingRevision?.matchType === "approved-visual-media" ||
+        existingRevision?.matchType === "approved-visual-mixed"
+      ) &&
+      JSON.stringify(getProductRevisionComparisonState(existingRevision)) ===
+        JSON.stringify(getProductRevisionComparisonState(match))
+    ) {
+      return product;
+    }
+
+    return {
+      ...product,
+      yoloRevision: match,
+    };
+  }
+
+  if (
+    existingRevision?.matchType !== "approved-visual-category" &&
+    existingRevision?.matchType !== "approved-visual-name" &&
+    existingRevision?.matchType !== "approved-visual-media" &&
+    existingRevision?.matchType !== "approved-visual-mixed"
+  ) {
+    return product;
+  }
+
+  return {
+    ...product,
+    yoloRevision: null,
+  };
+}
+
+async function applyApprovedProductEvidenceCategoryMatch(product, products = []) {
+  const approvalStatus = normalizeProductApprovalStatus(
+    product?.approvalStatus,
+    PRODUCT_APPROVAL_APPROVED,
+  );
+
+  if (approvalStatus !== PRODUCT_APPROVAL_PENDING) {
+    return {
+      product,
+      products,
+      match: null,
+      didChange: false,
+    };
+  }
+
+  const result = await findApprovedProductEvidenceCategoryMatch(product, products);
+  const productWithMatch = setProductApprovedEvidenceCategoryMatch(
+    result.candidateProduct,
+    result.match,
+  );
+  const didChange =
+    result.didUpdateProducts ||
+    JSON.stringify(getProductRevisionComparisonState(product?.yoloRevision)) !==
+      JSON.stringify(getProductRevisionComparisonState(productWithMatch?.yoloRevision));
+
+  return {
+    product: productWithMatch,
+    products: result.products,
+    match: result.match,
+    didChange,
+  };
+}
+
+function createRejectedProductEvidenceMatch(
+  candidateProduct,
+  candidateEntry,
+  rejectedProduct,
+  rejectedEntry,
+  score,
+) {
+  return normalizeYoloRejectedEvidenceMatch({
+    flagged: true,
+    status: "matched",
+    matchType: "rejected-visual-fingerprint",
+    score,
+    threshold: REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    productId: candidateProduct?.id,
+    productName: candidateProduct?.name,
+    imageUrl: candidateEntry?.imageUrl,
+    matchedProductId: rejectedProduct?.id,
+    matchedProductName: rejectedProduct?.name,
+    matchedImageUrl: rejectedEntry?.imageUrl,
+    matchedRejectedAt: rejectedProduct?.rejectedAt,
+    matchedRejectedBy: rejectedProduct?.rejectedBy,
+    reason: "This product image matches an item previously rejected as illegal evidence.",
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function getRejectedEvidenceMatchComparisonState(match) {
+  const normalizedMatch = normalizeYoloRejectedEvidenceMatch(match);
+  if (!normalizedMatch) {
+    return null;
+  }
+
+  return {
+    matchType: normalizedMatch.matchType,
+    score: Number(normalizedMatch.score.toFixed(4)),
+    threshold: Number(normalizedMatch.threshold.toFixed(4)),
+    imageUrl: normalizedMatch.imageUrl.toLowerCase(),
+    matchedProductId: normalizedMatch.matchedProductId,
+    matchedImageUrl: normalizedMatch.matchedImageUrl.toLowerCase(),
+  };
+}
+
+function areRejectedEvidenceMatchesEquivalent(firstMatch, secondMatch) {
+  const firstState = getRejectedEvidenceMatchComparisonState(firstMatch);
+  const secondState = getRejectedEvidenceMatchComparisonState(secondMatch);
+  return Boolean(firstState && secondState) &&
+    JSON.stringify(firstState) === JSON.stringify(secondState);
+}
+
+async function findRejectedProductEvidenceMatch(candidateProduct, products = [], options = {}) {
+  const minimumScore = normalizeConfidenceThreshold(
+    options.minimumScore,
+    REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+  ) || REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE;
+  const candidateState = await getProductRejectedEvidenceFingerprintState(candidateProduct);
+  const candidateEntries = candidateState.fingerprintEntries;
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+  let didUpdateProducts = false;
+  let bestMatch = null;
+  let bestScore = 0;
+
+  if (!candidateEntries.length) {
+    return {
+      candidateProduct: candidateState.product,
+      match: null,
+      products: nextProducts,
+      didUpdateProducts,
+    };
+  }
+
+  const candidateProductId = String(candidateState.product?.id ?? "").trim();
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const sourceProduct = nextProducts[index];
+    const sourceProductId = String(sourceProduct?.id ?? "").trim();
+    const sourceInspection = normalizeYoloInspection(
+      sourceProduct?.yoloInspection,
+      getProductYoloInspectionImageUrls(sourceProduct),
+    );
+    const isRejectedEvidence =
+      isProductRejected(sourceProduct) ||
+      String(sourceInspection?.datasetBucket ?? "").trim().toLowerCase() === "rejected";
+
+    if (!isRejectedEvidence || (candidateProductId && sourceProductId === candidateProductId)) {
+      continue;
+    }
+
+    const sourceState = await getProductRejectedEvidenceFingerprintState(
+      sourceProduct,
+      { persistFingerprints: true },
+    );
+    if (sourceState.didChange) {
+      nextProducts[index] = sourceState.product;
+      didUpdateProducts = true;
+    }
+
+    for (const candidateEntry of candidateEntries) {
+      for (const rejectedEntry of sourceState.fingerprintEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          rejectedEntry.fingerprint,
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = createRejectedProductEvidenceMatch(
+            candidateState.product,
+            candidateEntry,
+            sourceState.product,
+            rejectedEntry,
+            score,
+          );
+        }
+      }
+    }
+  }
+
+  return {
+    candidateProduct: candidateState.product,
+    match:
+      bestScore >= minimumScore
+        ? bestMatch
+        : null,
+    bestMatch,
+    bestScore,
+    products: nextProducts,
+    didUpdateProducts,
+  };
+}
+
+function setProductRejectedEvidenceMatch(product, match = null) {
+  const imageUrls = getProductYoloInspectionImageUrls(product);
+  const existingInspection = normalizeYoloInspection(product?.yoloInspection, imageUrls);
+  const now = new Date().toISOString();
+
+  if (match) {
+    if (
+      existingInspection?.rejectedEvidenceMatch &&
+      areRejectedEvidenceMatchesEquivalent(
+        existingInspection.rejectedEvidenceMatch,
+        match,
+      )
+    ) {
+      return product;
+    }
+
+    return {
+      ...product,
+      yoloInspection: normalizeYoloInspection({
+        ...(existingInspection || {}),
+        status: "flagged",
+        flagged: true,
+        datasetBucket: existingInspection?.datasetBucket || "inspection",
+        imageUrls,
+        requestedAt: existingInspection?.requestedAt || now,
+        updatedAt: now,
+        rejectedEvidenceMatch: match,
+      }, imageUrls),
+    };
+  }
+
+  if (!existingInspection?.rejectedEvidenceMatch) {
+    return product;
+  }
+
+  const detectorFlagged = hasYoloDetectorFlag(existingInspection);
+  const nextStatus = detectorFlagged
+    ? "flagged"
+    : existingInspection.status === "error"
+      ? "error"
+      : existingInspection.inspectedAt
+        ? "clear"
+        : "queued";
+
+  return {
+    ...product,
+    yoloInspection: normalizeYoloInspection({
+      ...existingInspection,
+      status: nextStatus,
+      flagged: detectorFlagged,
+      rejectedEvidenceMatch: null,
+      updatedAt: now,
+    }, imageUrls),
+  };
+}
+
+async function applyRejectedProductEvidenceMatch(product, products = []) {
+  const approvalStatus = normalizeProductApprovalStatus(
+    product?.approvalStatus,
+    PRODUCT_APPROVAL_APPROVED,
+  );
+
+  if (approvalStatus !== PRODUCT_APPROVAL_PENDING) {
+    return {
+      product,
+      products,
+      match: null,
+      didChange: false,
+    };
+  }
+
+  const previousState = getProductVisualSafetyState(product);
+  const result = await findRejectedProductEvidenceMatch(product, products);
+  const productWithMatch = setProductRejectedEvidenceMatch(
+    result.candidateProduct,
+    result.match,
+  );
+  const didChange =
+    result.didUpdateProducts ||
+    JSON.stringify(previousState) !==
+      JSON.stringify(getProductVisualSafetyState(productWithMatch));
+
+  return {
+    product: productWithMatch,
+    products: result.products,
+    match: result.match,
+    didChange,
+  };
+}
+
+function getYoloInspectionIllegalConfidence(inspection) {
+  const normalizedInspection = normalizeYoloInspection(inspection);
+  if (!normalizedInspection) {
+    return 0;
+  }
+
+  let maxConfidence = 0;
+  const inspectionConfidence = normalizeRejectedEvidenceMatchScore(
+    normalizedInspection.confidence,
+  );
+  if (inspectionConfidence > 0 && normalizedInspection.flagged) {
+    maxConfidence = Math.max(maxConfidence, inspectionConfidence);
+  }
+  const rejectedEvidenceScore = normalizeRejectedEvidenceMatchScore(
+    normalizedInspection?.rejectedEvidenceMatch?.score,
+  );
+  if (rejectedEvidenceScore > maxConfidence) {
+    maxConfidence = rejectedEvidenceScore;
+  }
+
+  const considerDetection = (detection) => {
+    const normalizedDetection = normalizeYoloDetection(detection);
+    if (!normalizedDetection) {
+      return;
+    }
+    if (normalizedDetection.flagged || normalizedInspection.flagged) {
+      const detectionConfidence = normalizeRejectedEvidenceMatchScore(
+        normalizedDetection.confidence,
+      );
+      maxConfidence = Math.max(
+        maxConfidence,
+        detectionConfidence || (normalizedDetection.flagged ? 1 : 0),
+      );
+    }
+  };
+
+  for (const detection of normalizedInspection.detections || []) {
+    considerDetection(detection);
+  }
+  for (const imageResult of normalizedInspection.images || []) {
+    for (const detection of imageResult?.detections || []) {
+      considerDetection(detection);
+    }
+    if (imageResult?.flagged === true && maxConfidence <= 0) {
+      maxConfidence = 1;
+    }
+  }
+
+  if (normalizedInspection.flagged && maxConfidence <= 0) {
+    maxConfidence = 1;
+  }
+
+  return Math.max(0, Math.min(1, maxConfidence));
+}
+
+function createSellerProductIllegalContentSafety({
+  action = "clear",
+  source = "none",
+  score = 0,
+  rejectedEvidenceMatch = null,
+  yoloInspection = null,
+  message = "",
+} = {}) {
+  const normalizedScore = normalizeRejectedEvidenceMatchScore(score);
+  return {
+    action,
+    source,
+    score: normalizedScore,
+    confidence: normalizedScore,
+    percent: Math.round(normalizedScore * 100),
+    autoRejectThreshold: SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE,
+    manualReviewThreshold: SELLER_PRODUCT_ILLEGAL_MANUAL_REVIEW_SCORE,
+    rejectedEvidenceMatch: normalizeYoloRejectedEvidenceMatch(rejectedEvidenceMatch),
+    yoloInspection: yoloInspection ? normalizeYoloInspection(yoloInspection) : null,
+    message:
+      String(message ?? "").trim() ||
+      (action === "auto-reject"
+        ? "This content is illegal and cannot be listed."
+        : action === "manual-review"
+          ? "This product needs Super Admin review before listing."
+          : "No illegal content signal found."),
+  };
+}
+
+async function inspectSellerProductIllegalContent(product, products = []) {
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+  let inspectedProduct = product;
+  const imageUrls = getProductYoloInspectionImageUrls(inspectedProduct);
+  const existingInspection = normalizeYoloInspection(
+    inspectedProduct?.yoloInspection,
+    imageUrls,
+  );
+  const yoloInspection = await runYoloProductInspection(inspectedProduct);
+  let mergedInspection = normalizeYoloInspection({
+    ...(existingInspection || {}),
+    ...(yoloInspection || {}),
+    rejectedEvidenceMatch: existingInspection?.rejectedEvidenceMatch || null,
+    approvedEvidence: existingInspection?.approvedEvidence || null,
+    revisionEvidence: existingInspection?.revisionEvidence || null,
+  }, imageUrls);
+
+  inspectedProduct = {
+    ...inspectedProduct,
+    yoloInspection: mergedInspection,
+  };
+
+  const evidenceResult = await findRejectedProductEvidenceMatch(
+    inspectedProduct,
+    nextProducts,
+    { minimumScore: SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE },
+  );
+  inspectedProduct = evidenceResult.candidateProduct || inspectedProduct;
+  nextProducts = evidenceResult.products;
+  const rejectedEvidenceMatch = evidenceResult.match || null;
+  const rejectedEvidenceScore = normalizeRejectedEvidenceMatchScore(
+    rejectedEvidenceMatch?.score ?? evidenceResult.bestScore,
+  );
+  const yoloScore = getYoloInspectionIllegalConfidence(mergedInspection);
+  const score = Math.max(yoloScore, rejectedEvidenceScore);
+  const source = rejectedEvidenceScore >= yoloScore && rejectedEvidenceMatch
+    ? "rejected-evidence"
+    : yoloScore > 0
+      ? "yolo"
+      : "none";
+
+  if (rejectedEvidenceMatch) {
+    inspectedProduct = setProductRejectedEvidenceMatch(
+      inspectedProduct,
+      rejectedEvidenceMatch,
+    );
+    mergedInspection = normalizeYoloInspection(
+      inspectedProduct?.yoloInspection,
+      imageUrls,
+    );
+  }
+
+  if (score >= SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE) {
+    return {
+      product: inspectedProduct,
+      products: nextProducts,
+      safety: createSellerProductIllegalContentSafety({
+        action: "auto-reject",
+        source,
+        score,
+        rejectedEvidenceMatch,
+        yoloInspection: mergedInspection,
+        message: "This content is illegal and cannot be listed.",
+      }),
+    };
+  }
+
+  if (score >= SELLER_PRODUCT_ILLEGAL_MANUAL_REVIEW_SCORE) {
+    const now = new Date().toISOString();
+    inspectedProduct = {
+      ...inspectedProduct,
+      yoloInspection: normalizeYoloInspection({
+        ...(mergedInspection || {}),
+        status: "flagged",
+        flagged: true,
+        autoReject: false,
+        datasetBucket: "inspection",
+        updatedAt: now,
+      }, imageUrls),
+    };
+    return {
+      product: inspectedProduct,
+      products: nextProducts,
+      safety: createSellerProductIllegalContentSafety({
+        action: "manual-review",
+        source,
+        score,
+        rejectedEvidenceMatch,
+        yoloInspection: inspectedProduct.yoloInspection,
+        message: "This product needs Super Admin review before listing.",
+      }),
+    };
+  }
+
+  return {
+    product: inspectedProduct,
+    products: nextProducts,
+    safety: createSellerProductIllegalContentSafety({
+      action: "clear",
+      source,
+      score,
+      rejectedEvidenceMatch,
+      yoloInspection: mergedInspection,
+    }),
+  };
+}
+
+async function applySellerIllegalContentAutoReject(product, safety = null) {
+  const now = new Date().toISOString();
+  const imageUrls = getProductYoloInspectionImageUrls(product);
+  const existingInspection = normalizeYoloInspection(product?.yoloInspection, imageUrls);
+  let rejectedProduct = {
+    ...product,
+    approvalStatus: PRODUCT_APPROVAL_REJECTED,
+    rejectedAt: now,
+    rejectedBy: "YOLO_AUTO_REJECT",
+    rejectionReason: String(
+      safety?.message || "This content is illegal and cannot be listed.",
+    ).trim(),
+    approvedAt: "",
+    approvedBy: "",
+    approvalUpdatedAt: now,
+    yoloRevision: null,
+    yoloInspection: normalizeYoloInspection({
+      ...(existingInspection || {}),
+      status: "flagged",
+      flagged: true,
+      autoReject: true,
+      datasetBucket: "rejected",
+      imageUrls,
+      rejectedEvidenceMatch:
+        safety?.rejectedEvidenceMatch ||
+        existingInspection?.rejectedEvidenceMatch ||
+        null,
+      requestedAt: existingInspection?.requestedAt || now,
+      inspectedAt: existingInspection?.inspectedAt || now,
+      archivedAt: now,
+      updatedAt: now,
+    }, imageUrls),
+  };
+
+  const fingerprintState = await getProductRejectedEvidenceFingerprintState(
+    rejectedProduct,
+    { persistFingerprints: true },
+  );
+  rejectedProduct = fingerprintState.product;
+  return normalizeStoredProductRecord(rejectedProduct);
+}
+
+async function inspectSellerImageBufferIllegalContent(fileBuffer, options = {}) {
+  if (!sharp) {
+    return createSellerProductIllegalContentSafety({
+      action: "clear",
+      source: "unavailable",
+      score: 0,
+      message: "Image safety pre-check is unavailable.",
+    });
+  }
+
+  const products = Array.isArray(options.products) ? [...options.products] : await readProducts();
+  let nextProducts = [...products];
+  let didUpdateProducts = false;
+  let bestScore = 0;
+  let bestMatch = null;
+  const sourceFilename = String(options.sourceFilename ?? "uploaded-image").trim() || "uploaded-image";
+  const queryFingerprints = await createVisualSearchQueryFingerprints(fileBuffer);
+  const candidateProduct = {
+    id: `seller-upload-check-${Date.now()}`,
+    name: sourceFilename,
+  };
+  const candidateEntries = queryFingerprints.map((fingerprint, index) => ({
+    imageUrl: `${sourceFilename}#${index + 1}`,
+    fingerprint,
+  }));
+
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const sourceProduct = nextProducts[index];
+    const sourceInspection = normalizeYoloInspection(
+      sourceProduct?.yoloInspection,
+      getProductYoloInspectionImageUrls(sourceProduct),
+    );
+    const isRejectedEvidence =
+      isProductRejected(sourceProduct) ||
+      String(sourceInspection?.datasetBucket ?? "").trim().toLowerCase() === "rejected";
+    if (!isRejectedEvidence) {
+      continue;
+    }
+
+    const sourceState = await getProductRejectedEvidenceFingerprintState(
+      sourceProduct,
+      { persistFingerprints: true },
+    );
+    if (sourceState.didChange) {
+      nextProducts[index] = sourceState.product;
+      didUpdateProducts = true;
+    }
+
+    for (const candidateEntry of candidateEntries) {
+      for (const rejectedEntry of sourceState.fingerprintEntries) {
+        const score = compareVisualSearchFingerprints(
+          candidateEntry.fingerprint,
+          rejectedEntry.fingerprint,
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = createRejectedProductEvidenceMatch(
+            candidateProduct,
+            candidateEntry,
+            sourceState.product,
+            rejectedEntry,
+            score,
+          );
+        }
+      }
+    }
+  }
+
+  if (didUpdateProducts) {
+    await writeProducts(nextProducts);
+  }
+
+  if (bestScore >= SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE) {
+    return createSellerProductIllegalContentSafety({
+      action: "auto-reject",
+      source: "rejected-evidence",
+      score: bestScore,
+      rejectedEvidenceMatch: bestMatch,
+      message: "This content is illegal and cannot be listed.",
+    });
+  }
+
+  if (bestScore >= REJECTED_PRODUCT_VISUAL_MATCH_MIN_SCORE) {
+    return createSellerProductIllegalContentSafety({
+      action: "manual-review",
+      source: "rejected-evidence",
+      score: bestScore,
+      rejectedEvidenceMatch: bestMatch,
+      message: "This product needs Super Admin review before listing.",
+    });
+  }
+
+  return createSellerProductIllegalContentSafety({
+    action: "clear",
+    source: "rejected-evidence",
+    score: bestScore,
+  });
+}
+
+async function syncRejectedProductEvidenceMatches(products = []) {
+  let nextProducts = Array.isArray(products) ? [...products] : [];
+  let didChange = false;
+
+  for (let index = 0; index < nextProducts.length; index += 1) {
+    const product = nextProducts[index];
+    if (!isProductPendingApproval(product)) {
+      continue;
+    }
+
+    const result = await applyRejectedProductEvidenceMatch(product, nextProducts);
+    nextProducts = result.products;
+    if (result.didChange) {
+      didChange = true;
+    }
+    if (
+      JSON.stringify(getProductVisualSafetyState(product)) !==
+      JSON.stringify(getProductVisualSafetyState(result.product))
+    ) {
+      nextProducts[index] = result.product;
+    }
+  }
+
+  return {
+    products: nextProducts,
+    didChange,
+  };
 }
 
 function normalizeOptionalProductDateTime(value, fallback = "") {
@@ -8400,6 +16373,36 @@ function normalizeStoredProductRecord(product) {
     product?.submittedAt,
     product?.createdAt ?? updatedAt,
   ) || updatedAt;
+  const resolvedYoloRevision = resolveProductRevisionSignal(product);
+  const revisionStatus = String(product?.revisionStatus ?? "").trim();
+  const revisionFields = Array.isArray(product?.revisionFields)
+    ? [...new Set(product.revisionFields
+        .map((entry) => String(entry ?? "").trim().toLowerCase())
+        .filter(Boolean))]
+    : [];
+  const manualRevisionSignal = !resolvedYoloRevision && revisionStatus.toLowerCase() === "requested"
+    ? normalizeProductRevisionSignal({
+        engine: "manual-super-admin-revision",
+        status: "requested",
+        flagged: true,
+        matchType: "manual-super-admin-revision",
+        reason: String(product?.revisionReason ?? "").trim() || "Product needs revision.",
+        message: String(product?.revisionMessage ?? "").trim(),
+        fields: revisionFields,
+        requestedAt: product?.revisionRequestedAt,
+        requestedBy: product?.revisionRequestedBy,
+        updatedAt: product?.approvalUpdatedAt ?? product?.updatedAt,
+      })
+    : null;
+  const normalizedIsActive =
+    sellableStock > 0 && normalizeProductActiveState(product?.isActive, true);
+  const listingInsightHistory = normalizeProductListingInsightHistory({
+    ...product,
+    approvalStatus,
+    isActive: normalizedIsActive,
+    stock: sellableStock,
+  });
+  const listingRestriction = normalizeProductListingRestriction(product);
 
   return normalizeStoredProductVariants(
     {
@@ -8408,16 +16411,41 @@ function normalizeStoredProductRecord(product) {
       approvalStatus,
       isApprovalPending: approvalStatus === PRODUCT_APPROVAL_PENDING,
       isApproved: approvalStatus === PRODUCT_APPROVAL_APPROVED,
+      isRejected: approvalStatus === PRODUCT_APPROVAL_REJECTED,
       submittedAt,
       approvedAt: normalizeOptionalProductDateTime(product?.approvedAt),
       approvedBy: String(product?.approvedBy ?? "").trim(),
+      rejectedAt: normalizeOptionalProductDateTime(product?.rejectedAt),
+      rejectedBy: String(product?.rejectedBy ?? "").trim(),
+      rejectionReason: String(product?.rejectionReason ?? "").trim(),
       approvalUpdatedAt: normalizeOptionalProductDateTime(product?.approvalUpdatedAt),
+      yoloInspection: normalizeYoloInspection(
+        product?.yoloInspection,
+        getProductYoloInspectionImageUrls(product),
+      ),
+      yoloRevision: resolvedYoloRevision,
+      revisionSignal: manualRevisionSignal,
+      superAdminUploadedImageUrls: normalizeProductImageUrls(product?.superAdminUploadedImageUrls),
+      superAdminImageUploadedAt: normalizeOptionalProductDateTime(product?.superAdminImageUploadedAt),
+      superAdminImageUploadedBy: String(product?.superAdminImageUploadedBy ?? "").trim(),
+      revisionStatus,
+      revisionRequestedAt: normalizeOptionalProductDateTime(product?.revisionRequestedAt),
+      revisionRequestedBy: String(product?.revisionRequestedBy ?? "").trim(),
+      revisionReason: String(product?.revisionReason ?? "").trim(),
+      revisionMessage: String(product?.revisionMessage ?? "").trim(),
+      revisionFields,
+      listingRestriction,
+      isListingRestricted: listingRestriction.active,
       stock: sellableStock,
       inventoryStock: normalizedStock,
-      isActive:
-        sellableStock > 0 && normalizeProductActiveState(product?.isActive, true),
+      isActive: normalizedIsActive,
+      hasListingInsightHistory: listingInsightHistory.hasListingInsightHistory,
+      listingInsightListedAt: listingInsightHistory.listingInsightListedAt,
       categories: normalizedCategories,
       category: normalizedCategories[0] ?? "General",
+      descriptionImageUrls: normalizeProductDescriptionImageUrls(
+        product?.descriptionImageUrls,
+      ),
       deliveryPartnerIds: normalizePartnerIdList(product?.deliveryPartnerIds),
       paymentPartnerIds: normalizePartnerIdList(product?.paymentPartnerIds),
       videoUrls,
@@ -8516,6 +16544,9 @@ async function migrateProductsForImageGallery() {
 
     if (
       normalizedProduct.isActive !== product?.isActive ||
+      normalizedProduct.hasListingInsightHistory !== product?.hasListingInsightHistory ||
+      normalizedProduct.listingInsightListedAt !==
+        normalizeOptionalProductDateTime(product?.listingInsightListedAt) ||
       normalizedProduct.category !== getPrimaryProductCategory(product, "General") ||
       JSON.stringify(normalizedProduct.categories ?? []) !==
         JSON.stringify(getProductCategoryList(product)) ||
@@ -8528,6 +16559,10 @@ async function migrateProductsForImageGallery() {
       JSON.stringify(normalizedProduct.detailsImageCrops ?? []) !==
         JSON.stringify(
           Array.isArray(product?.detailsImageCrops) ? product.detailsImageCrops : [],
+        ) ||
+      JSON.stringify(normalizedProduct.descriptionImageUrls ?? []) !==
+        JSON.stringify(
+          Array.isArray(product?.descriptionImageUrls) ? product.descriptionImageUrls : [],
         ) ||
       normalizedProduct.cardImagePositionX !==
         normalizeProductCardImagePosition(product?.cardImagePositionX) ||
@@ -8618,6 +16653,17 @@ function normalizeProduct(input, existingProduct = null) {
   );
   const category = categories[0] ?? "";
   const description = String(input.description ?? "").trim();
+  const hasDescriptionImageUrls = Object.prototype.hasOwnProperty.call(
+    input ?? {},
+    "descriptionImageUrls",
+  );
+  if (hasDescriptionImageUrls) {
+    validateProductDescriptionImageUrls(input.descriptionImageUrls);
+  }
+  const descriptionImageUrls = normalizeProductDescriptionImageUrls(
+    input.descriptionImageUrls,
+    existingProduct?.descriptionImageUrls,
+  );
   const fallbackImageUrl = String(
     input.imageUrl ??
       input.mainImageUrl ??
@@ -8878,8 +16924,8 @@ function normalizeProduct(input, existingProduct = null) {
     throw new Error("At least one category is required.");
   }
 
-  if (!description) {
-    throw new Error("Description is required.");
+  if (!description && !descriptionImageUrls.length) {
+    throw new Error("Description text or at least one description image is required.");
   }
 
   if (!Number.isFinite(originalPrice) || originalPrice < 0) {
@@ -8912,6 +16958,29 @@ function normalizeProduct(input, existingProduct = null) {
     throw new Error("Rating must be a valid number from 0 to 5.");
   }
 
+  const createdAt = existingProduct?.createdAt ?? new Date().toISOString();
+  const existingListingInsightHistory =
+    normalizeProductListingInsightHistory(existingProduct ?? {});
+  const currentListingInsightHistory = normalizeProductListingInsightHistory({
+    hasListingInsightHistory: existingProduct?.hasListingInsightHistory,
+    listingInsightListedAt: existingProduct?.listingInsightListedAt,
+    firstListingInsightListedAt: existingProduct?.firstListingInsightListedAt,
+    firstListedAt: existingProduct?.firstListedAt,
+    name,
+    approvalStatus,
+    approvedAt,
+    updatedAt,
+    createdAt,
+    isActive,
+    stock,
+  });
+  const hasListingInsightHistory =
+    existingListingInsightHistory.hasListingInsightHistory ||
+    currentListingInsightHistory.hasListingInsightHistory;
+  const listingInsightListedAt =
+    existingListingInsightHistory.listingInsightListedAt ||
+    currentListingInsightHistory.listingInsightListedAt;
+
   return {
     id: existingProduct?.id ?? `prd-${Date.now()}`,
     adminId: getRecordAdminId(input, getRecordAdminId(existingProduct)),
@@ -8919,9 +16988,36 @@ function normalizeProduct(input, existingProduct = null) {
     submittedAt,
     approvedAt,
     approvedBy,
+    rejectedAt: approvalStatus === PRODUCT_APPROVAL_REJECTED
+      ? normalizeOptionalProductDateTime(input.rejectedAt ?? existingProduct?.rejectedAt, updatedAt)
+      : "",
+    rejectedBy: approvalStatus === PRODUCT_APPROVAL_REJECTED
+      ? String(input.rejectedBy ?? existingProduct?.rejectedBy ?? "").trim()
+      : "",
+    rejectionReason: approvalStatus === PRODUCT_APPROVAL_REJECTED
+      ? String(input.rejectionReason ?? existingProduct?.rejectionReason ?? "").trim()
+      : "",
     approvalUpdatedAt,
+    yoloInspection: normalizeYoloInspection(
+      input.yoloInspection ?? existingProduct?.yoloInspection,
+      imageUrls,
+    ),
+    yoloRevision: normalizeProductRevisionSignal(
+      input.yoloRevision ?? existingProduct?.yoloRevision,
+    ),
+    superAdminUploadedImageUrls: normalizeProductImageUrls(
+      input.superAdminUploadedImageUrls ?? existingProduct?.superAdminUploadedImageUrls,
+    ),
+    superAdminImageUploadedAt: normalizeOptionalProductDateTime(
+      input.superAdminImageUploadedAt ?? existingProduct?.superAdminImageUploadedAt,
+    ),
+    superAdminImageUploadedBy: String(
+      input.superAdminImageUploadedBy ?? existingProduct?.superAdminImageUploadedBy ?? "",
+    ).trim(),
     name,
     isActive,
+    hasListingInsightHistory,
+    listingInsightListedAt,
     originalPrice,
     salesPrice,
     category,
@@ -8929,6 +17025,7 @@ function normalizeProduct(input, existingProduct = null) {
     deliveryPartnerIds,
     paymentPartnerIds,
     description,
+    descriptionImageUrls,
     imageUrl,
     mainImageUrl: imageUrl,
     imageUrls,
@@ -8981,7 +17078,7 @@ function normalizeProduct(input, existingProduct = null) {
       input.moveBarcodeToPackingDashboard ?? existingProduct?.moveBarcodeToPackingDashboard,
     ),
     updatedAt,
-    createdAt: existingProduct?.createdAt ?? new Date().toISOString(),
+    createdAt,
   };
 }
 
@@ -8989,6 +17086,24 @@ function normalizeChatTimestamp(value, fallback = null) {
   const fallbackDate = fallback instanceof Date ? fallback : new Date();
   const parsedDate = new Date(value);
   return Number.isNaN(parsedDate.getTime()) ? fallbackDate : parsedDate;
+}
+
+function normalizeChatAssetUrl(value) {
+  const assetUrl = String(value ?? "").trim();
+  if (!assetUrl || /^(?:data|blob):/i.test(assetUrl)) {
+    return assetUrl;
+  }
+
+  try {
+    const parsedUrl = new URL(assetUrl, `http://127.0.0.1:${PORT}`);
+    if (parsedUrl.pathname.startsWith("/uploads/")) {
+      return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+    }
+  } catch (_) {
+    return assetUrl;
+  }
+
+  return assetUrl;
 }
 
 function normalizeOptionalChatTimestamp(value) {
@@ -9032,7 +17147,7 @@ function normalizeChatTypingActor(input, fallbackActor = "") {
   const displayName =
     String(input.displayName ?? input.name ?? "").replace(/\s+/g, " ").trim() ||
     (actor === "employee" ? "Employee" : "App User");
-  const avatarUrl = String(input.avatarUrl ?? input.profileImageUrl ?? "").trim();
+  const avatarUrl = normalizeChatAssetUrl(input.avatarUrl ?? input.profileImageUrl ?? "");
 
   return {
     actor,
@@ -9287,16 +17402,71 @@ function shouldAutoReplyWithAi(thread) {
   if (!latestMessage || latestMessage.isFromSupport) {
     return false;
   }
-
-  const latestUserTimestamp = normalizeChatTimestamp(latestMessage.timestamp);
-  const supportReadAt = normalizeOptionalChatTimestamp(thread?.supportReadAt);
-
-  return !supportReadAt || latestUserTimestamp.getTime() > supportReadAt.getTime();
+  const text = String(latestMessage.text ?? "").trim();
+  const hasAttachment = Boolean(String(latestMessage.imageUrl ?? "").trim());
+  return Boolean(text || hasAttachment);
 }
 
-async function requestChatAiReply(thread) {
+async function getChatAiAssistantStatusPayload() {
+  try {
+    if (typeof restoredSaApis?.getLaunchedChatAssistantStatus === "function") {
+      return await restoredSaApis.getLaunchedChatAssistantStatus();
+    }
+  } catch (error) {
+    console.error("Unable to load launched AI assistant status:", error);
+  }
+  return {
+    available: false,
+    launched: false,
+    configured: false,
+    manualReplyEnabled: false,
+    autoReplyEnabled: false,
+    provider: "",
+    providerLabel: "",
+    model: "",
+    source: "super-admin",
+    chatbot: {
+      capability: "chatbot",
+      available: false,
+      launched: false,
+      configured: false,
+      enabled: false,
+      message: "Launch an AI integration in Super Admin > Services > AI Integration.",
+    },
+    autoReply: {
+      capability: "autoReply",
+      available: false,
+      launched: false,
+      configured: false,
+      enabled: false,
+      message: "Launch an AI integration in Super Admin > Services > AI Integration.",
+    },
+  };
+}
+
+async function requestChatAiReply(thread, capability = "chatbot") {
+  const systemPrompt = buildChatAiSystemPrompt(thread);
+  const history = buildChatAiHistory(thread);
+
+  let configuredReply = null;
+  try {
+    configuredReply = await restoredSaApis.requestLaunchedChatCompletion({
+      systemPrompt,
+      messages: history,
+      capability,
+    });
+  } catch (error) {
+    console.error("Launched AI integration chat failed:", error?.message || error);
+  }
+
+  if (configuredReply?.text) {
+    return configuredReply.text;
+  }
+
   if (!CHAT_AI_API_KEY) {
-    throw new Error(CHAT_AI_ENV_HINT);
+    throw new Error(
+      "Chat AI is not configured. Launch an AI integration in Super Admin > Services > AI Integration, or set OPENAI_API_KEY / CHAT_AI_API_KEY for the legacy fallback.",
+    );
   }
 
   if (typeof fetch !== "function") {
@@ -9370,10 +17540,174 @@ function normalizeChatReplyReference(input) {
   };
 }
 
+function normalizeChatSenderField(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeChatSenderInfo(input, isFromSupport, source) {
+  const rawSender = input?.sender && typeof input.sender === "object"
+    ? input.sender
+    : {};
+  const senderRole = normalizeChatSenderField(
+    input?.senderRole ??
+      input?.sender_role ??
+      rawSender.role ??
+      rawSender.type ??
+      (isFromSupport ? source : "user"),
+  ).toLowerCase();
+  const senderName = normalizeChatSenderField(
+    input?.senderName ??
+      input?.senderDisplayName ??
+      input?.supportSenderName ??
+      input?.employeeName ??
+      input?.adminName ??
+      rawSender.displayName ??
+      rawSender.name ??
+      rawSender.fullName ??
+      "",
+  );
+  const senderId = String(
+    input?.senderId ??
+      input?.sender_id ??
+      rawSender.id ??
+      rawSender.accountId ??
+      rawSender.employeeId ??
+      rawSender.adminId ??
+      rawSender.email ??
+      "",
+  ).trim();
+  const senderAvatarUrl = normalizeChatAssetUrl(
+    input?.senderAvatarUrl ??
+      input?.sender_avatar_url ??
+      rawSender.avatarUrl ??
+      rawSender.profileImageUrl ??
+      rawSender.photoUrl ??
+      rawSender.imageUrl ??
+      "",
+  );
+
+  return {
+    senderName,
+    senderRole,
+    senderId,
+    senderAvatarUrl,
+  };
+}
+
+function normalizeChatSupportActorRole(value) {
+  const role = normalizeChatSenderField(value).toLowerCase();
+  if (["admin", "administrator", "seller", "owner"].includes(role)) {
+    return "admin";
+  }
+  if (["employee", "staff", "agent"].includes(role)) {
+    return "employee";
+  }
+  return "";
+}
+
+function getChatSupportActorAccountKeys(account) {
+  return [
+    account?.id,
+    account?.accountId,
+    account?.adminId,
+    account?.employeeId,
+    account?.accountCode,
+    account?.email,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function resolveChatSupportActor(input, requestAdminId) {
+  const rawActor = input?.actor && typeof input.actor === "object" ? input.actor : {};
+  const requestedRole = normalizeChatSupportActorRole(
+    input?.actorRole ??
+      input?.senderRole ??
+      rawActor.role,
+  );
+  const requestedId = String(
+    input?.actorId ??
+      input?.senderId ??
+      rawActor.id ??
+      rawActor.accountId ??
+      rawActor.employeeId ??
+      rawActor.adminId ??
+      rawActor.email ??
+      "",
+  ).trim();
+  if (!requestedRole || !requestedId) {
+    return null;
+  }
+
+  const requestedIdKey = requestedId.toLowerCase();
+  const accounts = await readAccounts();
+  let account = null;
+
+  if (requestedRole === "admin") {
+    const adminAccount = findAdminAccountByScopeId(accounts, requestAdminId);
+    if (adminAccount && getChatSupportActorAccountKeys(adminAccount).includes(requestedIdKey)) {
+      account = adminAccount;
+    }
+  } else {
+    account = accounts.find((candidate) => {
+      if (
+        String(candidate?.role ?? "").trim().toLowerCase() !== "employee" ||
+        !isRecordInAdminScope(candidate, requestAdminId)
+      ) {
+        return false;
+      }
+      return getChatSupportActorAccountKeys(candidate).includes(requestedIdKey);
+    }) || null;
+  }
+
+  if (!account) {
+    return null;
+  }
+
+  const role = String(account?.role ?? "").trim().toLowerCase() === "employee"
+    ? "employee"
+    : "admin";
+  const senderId = String(
+    role === "employee"
+      ? (account?.id ?? account?.employeeId ?? account?.accountCode ?? account?.email ?? "")
+      : (account?.id ?? account?.adminId ?? account?.accountCode ?? account?.email ?? ""),
+  ).trim();
+  const senderName =
+    getActivityAccountDisplayName(account) ||
+    String(
+      account?.companyName ??
+        account?.storeName ??
+        account?.businessName ??
+        account?.sellerName ??
+        "",
+    ).replace(/\s+/g, " ").trim() ||
+    (role === "employee" ? "Employee" : "Admin");
+
+  return {
+    senderRole: role,
+    senderId,
+    senderName,
+    senderAvatarUrl: normalizeChatAssetUrl(getActivityAccountProfileImageUrl(account)),
+  };
+}
+
 function normalizeChatMessage(input, index = 0) {
   const text = String(input?.text ?? "").replace(/\s+/g, " ").trim();
-  const imageUrl = String(input?.imageUrl ?? "").trim();
-  const imageName = String(input?.imageName ?? "").trim();
+  const imageUrl = normalizeChatAssetUrl(
+    input?.imageUrl ??
+      input?.mediaUrl ??
+      input?.attachmentUrl ??
+      input?.fileUrl ??
+      "",
+  );
+  const imageName = String(
+    input?.imageName ??
+      input?.mediaName ??
+      input?.attachmentName ??
+      input?.fileName ??
+      "",
+  ).trim();
+  const contentType = String(input?.contentType ?? input?.mimeType ?? "").trim();
   const deletedAt = normalizeOptionalChatTimestamp(input?.deletedAt);
   if (!text && !imageUrl && !deletedAt) {
     return null;
@@ -9391,12 +17725,14 @@ function normalizeChatMessage(input, index = 0) {
     : (normalizedSource === "pin-product" ? "pin-product" : "user");
   const replyTo = normalizeChatReplyReference(input?.replyTo);
   const editedAt = normalizeOptionalChatTimestamp(input?.editedAt);
+  const senderInfo = normalizeChatSenderInfo(input, isFromSupport, source);
 
   return {
     id: messageId,
     text,
     imageUrl,
     imageName,
+    contentType,
     isFromSupport,
     isSentToServer: !isFromSupport,
     timestamp: timestamp.toISOString(),
@@ -9404,6 +17740,7 @@ function normalizeChatMessage(input, index = 0) {
     editedAt: editedAt ? editedAt.toISOString() : null,
     deletedAt: deletedAt ? deletedAt.toISOString() : null,
     replyTo,
+    ...senderInfo,
   };
 }
 
@@ -9465,6 +17802,11 @@ function mergeChatMessages(existingMessages, incomingMessages) {
               : normalizedMessage.deletedAt
               ? null
               : (normalizedMessage.replyTo ?? existingMessage.replyTo ?? null),
+            senderName: normalizedMessage.senderName || existingMessage.senderName || "",
+            senderRole: normalizedMessage.senderRole || existingMessage.senderRole || "",
+            senderId: normalizedMessage.senderId || existingMessage.senderId || "",
+            senderAvatarUrl:
+              normalizedMessage.senderAvatarUrl || existingMessage.senderAvatarUrl || "",
           }
         : normalizedMessage,
     );
@@ -9479,6 +17821,188 @@ function mergeChatMessages(existingMessages, incomingMessages) {
     }
 
     return left.id.localeCompare(right.id);
+  });
+}
+
+function normalizeChatIdentityKey(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getChatCustomerAccountKeys(account) {
+  return [
+    account?.id,
+    account?._id,
+    account?.accountId,
+    account?.accountCode,
+    account?.userId,
+    account?.email,
+  ]
+    .map(normalizeChatIdentityKey)
+    .filter(Boolean);
+}
+
+function getChatThreadCustomerKeys(thread) {
+  return [
+    thread?.customerId,
+    thread?.userId,
+    thread?.user_id,
+    thread?.customerAccountId,
+    thread?.accountId,
+    thread?.customerEmail,
+  ]
+    .map(normalizeChatIdentityKey)
+    .filter(Boolean);
+}
+
+function getChatCustomerAccountName(account) {
+  const fullName = [
+    account?.firstName,
+    account?.middleName,
+    account?.lastName,
+    account?.suffix,
+  ]
+    .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    fullName ||
+    [
+      account?.displayName,
+      account?.fullName,
+      account?.name,
+      account?.email,
+    ]
+      .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
+      .find(Boolean) ||
+    ""
+  );
+}
+
+function getChatCustomerAccountAvatarUrl(account) {
+  return normalizeChatAssetUrl(
+    account?.profileImageUrl ??
+      account?.avatarUrl ??
+      account?.photoUrl ??
+      account?.pictureUrl ??
+      account?.imageUrl ??
+      "",
+  );
+}
+
+function getChatCustomerAccountPhone(account) {
+  const phone = String(
+    account?.mobileNumber ??
+      account?.phoneNumber ??
+      account?.phone ??
+      account?.contactNumber ??
+      "",
+  ).trim();
+  if (!phone || phone.startsWith("+")) {
+    return phone;
+  }
+
+  const countryCode = String(account?.countryCode ?? "").trim();
+  return [countryCode, phone].filter(Boolean).join(" ");
+}
+
+function getChatProductDisplayImageUrl(product) {
+  const imageSources = [
+    product?.cardImageUrl,
+    product?.mainImageUrl,
+    product?.imageUrl,
+    product?.buyModalImageUrl,
+    ...(Array.isArray(product?.imageUrls) ? product.imageUrls : []),
+  ];
+  return imageSources
+    .map(normalizeChatAssetUrl)
+    .find(Boolean) || "";
+}
+
+function enrichChatThreadsWithCurrentData(threads, accounts, products) {
+  const accountByKey = new Map();
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    for (const accountKey of getChatCustomerAccountKeys(account)) {
+      if (!accountByKey.has(accountKey)) {
+        accountByKey.set(accountKey, account);
+      }
+    }
+  }
+
+  const productsByScopedId = new Map();
+  const productsById = new Map();
+  for (const product of Array.isArray(products) ? products : []) {
+    const productId = normalizeChatIdentityKey(product?.id ?? product?.productId);
+    if (!productId) {
+      continue;
+    }
+    const adminId = normalizeChatIdentityKey(getRecordAdminId(product));
+    if (adminId) {
+      productsByScopedId.set(`${adminId}:${productId}`, product);
+    }
+    if (!productsById.has(productId)) {
+      productsById.set(productId, product);
+    }
+  }
+
+  return (Array.isArray(threads) ? threads : []).map((thread) => {
+    const account = getChatThreadCustomerKeys(thread)
+      .map((key) => accountByKey.get(key))
+      .find(Boolean);
+    const productId = normalizeChatIdentityKey(thread?.productId);
+    const adminId = normalizeChatIdentityKey(getRecordAdminId(thread));
+    const product =
+      productsByScopedId.get(`${adminId}:${productId}`) ||
+      productsById.get(productId);
+    const customerName = account
+      ? getChatCustomerAccountName(account)
+      : String(thread?.customerName ?? thread?.customerLabel ?? "").trim();
+    const customerAvatarUrl = account
+      ? getChatCustomerAccountAvatarUrl(account)
+      : normalizeChatAssetUrl(
+          thread?.customerAvatarUrl ??
+            thread?.customerImageUrl ??
+            thread?.customerProfileImageUrl ??
+            thread?.avatarUrl ??
+            thread?.profileImageUrl ??
+            "",
+        );
+
+    return {
+      ...thread,
+      customerName: customerName || "App User",
+      customerLabel: customerName || String(thread?.customerLabel ?? "").trim() || "App User",
+      customerAccountId: String(
+        account?.id ??
+          account?.accountId ??
+          account?.accountCode ??
+          thread?.customerAccountId ??
+          thread?.customerId ??
+          "",
+      ).trim(),
+      customerAccountCode: String(
+        account?.accountCode ?? thread?.customerAccountCode ?? "",
+      ).trim(),
+      customerAvatarUrl,
+      customerEmail: String(
+        account?.email ?? thread?.customerEmail ?? "",
+      ).trim(),
+      customerPhone: account
+        ? getChatCustomerAccountPhone(account)
+        : String(thread?.customerPhone ?? "").trim(),
+      customerAddress: String(
+        account?.address ?? thread?.customerAddress ?? "",
+      ).trim(),
+      customerCreatedAt: String(
+        account?.createdAt ??
+          account?.registeredAt ??
+          thread?.customerCreatedAt ??
+          "",
+      ).trim(),
+      productImageUrl:
+        getChatProductDisplayImageUrl(product) ||
+        normalizeChatAssetUrl(thread?.productImageUrl),
+    };
   });
 }
 
@@ -9590,6 +18114,41 @@ function mergeChatThreadRecords(leftThread, rightThread) {
       String(rightThread?.customerLabel ?? "").trim() ||
       String(leftThread?.customerLabel ?? "").trim() ||
       "App User",
+    customerName:
+      String(rightThread?.customerName ?? "").trim() ||
+      String(leftThread?.customerName ?? "").trim(),
+    customerAccountId:
+      String(rightThread?.customerAccountId ?? "").trim() ||
+      String(leftThread?.customerAccountId ?? "").trim() ||
+      customerId,
+    customerAccountCode:
+      String(rightThread?.customerAccountCode ?? "").trim() ||
+      String(leftThread?.customerAccountCode ?? "").trim(),
+    customerAvatarUrl:
+      normalizeChatAssetUrl(
+        rightThread?.customerAvatarUrl ??
+          rightThread?.customerImageUrl ??
+          rightThread?.customerProfileImageUrl ??
+          "",
+      ) ||
+      normalizeChatAssetUrl(
+        leftThread?.customerAvatarUrl ??
+          leftThread?.customerImageUrl ??
+          leftThread?.customerProfileImageUrl ??
+          "",
+      ),
+    customerEmail:
+      String(rightThread?.customerEmail ?? "").trim() ||
+      String(leftThread?.customerEmail ?? "").trim(),
+    customerPhone:
+      String(rightThread?.customerPhone ?? "").trim() ||
+      String(leftThread?.customerPhone ?? "").trim(),
+    customerAddress:
+      String(rightThread?.customerAddress ?? "").trim() ||
+      String(leftThread?.customerAddress ?? "").trim(),
+    customerCreatedAt:
+      String(rightThread?.customerCreatedAt ?? "").trim() ||
+      String(leftThread?.customerCreatedAt ?? "").trim(),
     productId: String(productThread?.productId ?? "").trim(),
     productName:
       String(productThread?.productName ?? "").trim() ||
@@ -9597,7 +18156,7 @@ function mergeChatThreadRecords(leftThread, rightThread) {
       "Unnamed Product",
     productCategory: String(productThread?.productCategory ?? "").trim(),
     productDescription: String(productThread?.productDescription ?? "").trim(),
-    productImageUrl: String(productThread?.productImageUrl ?? "").trim(),
+    productImageUrl: normalizeChatAssetUrl(productThread?.productImageUrl),
     productOriginalPrice: Number(productThread?.productOriginalPrice ?? 0) || 0,
     productSalesPrice:
       typeof productThread?.productSalesPrice === "number"
@@ -9619,24 +18178,21 @@ function mergeChatThreadRecords(leftThread, rightThread) {
       String(rightThread?.companyName ?? rightThread?.storeName ?? rightThread?.businessName ?? "").trim() ||
       String(leftThread?.companyName ?? leftThread?.storeName ?? leftThread?.businessName ?? "").trim(),
     companyPictureUrl:
-      String(
+      normalizeChatAssetUrl(
         productThread?.companyPictureUrl ??
           productThread?.companyProfileImageUrl ??
-          productThread?.profileImageUrl ??
           "",
-      ).trim() ||
-      String(
+      ) ||
+      normalizeChatAssetUrl(
         rightThread?.companyPictureUrl ??
           rightThread?.companyProfileImageUrl ??
-          rightThread?.profileImageUrl ??
           "",
-      ).trim() ||
-      String(
+      ) ||
+      normalizeChatAssetUrl(
         leftThread?.companyPictureUrl ??
           leftThread?.companyProfileImageUrl ??
-          leftThread?.profileImageUrl ??
           "",
-      ).trim(),
+      ),
     employeeRating: rightRatingIsNewer
       ? normalizeChatThreadRating(rightThread?.employeeRating, 0)
       : normalizeChatThreadRating(leftThread?.employeeRating, 0),
@@ -9687,14 +18243,32 @@ function mergeChatThreadsByCustomer(threads) {
 }
 
 async function readNormalizedChatThreads(adminId = DEFAULT_ADMIN_ID) {
-  return mergeChatThreadsByCustomer(
-    filterRecordsByAdminId(await readChatThreads(), adminId).map(normalizeStoredChatThreadRecord),
+  const [storedThreads, accounts, products] = await Promise.all([
+    readChatThreads(),
+    readAccounts(),
+    readProducts(),
+  ]);
+  return enrichChatThreadsWithCurrentData(
+    mergeChatThreadsByCustomer(
+      filterRecordsByAdminId(storedThreads, adminId).map(normalizeStoredChatThreadRecord),
+    ),
+    accounts,
+    products,
   );
 }
 
 async function readAllNormalizedChatThreads() {
-  return mergeChatThreadsByCustomer(
-    (await readChatThreads()).map(normalizeStoredChatThreadRecord),
+  const [storedThreads, accounts, products] = await Promise.all([
+    readChatThreads(),
+    readAccounts(),
+    readProducts(),
+  ]);
+  return enrichChatThreadsWithCurrentData(
+    mergeChatThreadsByCustomer(
+      storedThreads.map(normalizeStoredChatThreadRecord),
+    ),
+    accounts,
+    products,
   );
 }
 
@@ -9737,11 +18311,54 @@ function normalizeStoredChatThreadRecord(thread) {
     userId: customerId,
     customerLabel:
       String(thread?.customerLabel ?? "").trim() || "App User",
+    customerName: String(
+      thread?.customerName ??
+        thread?.clientName ??
+        thread?.fullName ??
+        thread?.displayName ??
+        "",
+    ).trim(),
+    customerAccountId: String(
+      thread?.customerAccountId ??
+        thread?.accountId ??
+        customerId,
+    ).trim(),
+    customerAccountCode: String(thread?.customerAccountCode ?? "").trim(),
+    customerAvatarUrl: normalizeChatAssetUrl(
+      thread?.customerAvatarUrl ??
+        thread?.customerImageUrl ??
+        thread?.customerProfileImageUrl ??
+        thread?.avatarUrl ??
+        thread?.profileImageUrl ??
+        thread?.photoUrl ??
+        "",
+    ),
+    customerEmail: String(thread?.customerEmail ?? thread?.email ?? "").trim(),
+    customerPhone: String(
+      thread?.customerPhone ??
+        thread?.mobileNumber ??
+        thread?.phoneNumber ??
+        thread?.phone ??
+        "",
+    ).trim(),
+    customerAddress: String(thread?.customerAddress ?? thread?.address ?? "").trim(),
+    customerCreatedAt: String(
+      thread?.customerCreatedAt ??
+        thread?.customerSince ??
+        thread?.registeredAt ??
+        "",
+    ).trim(),
     productId,
     productName: String(thread?.productName ?? "").trim() || "Unnamed Product",
     productCategory: String(thread?.productCategory ?? "").trim(),
     productDescription: String(thread?.productDescription ?? "").trim(),
-    productImageUrl: String(thread?.productImageUrl ?? "").trim(),
+    productImageUrl: normalizeChatAssetUrl(
+      thread?.productImageUrl ??
+        thread?.product?.cardImageUrl ??
+        thread?.product?.mainImageUrl ??
+        thread?.product?.imageUrl ??
+        "",
+    ),
     productOriginalPrice: parsePriceInput(thread?.productOriginalPrice) || 0,
     productSalesPrice: hasInputValue(thread?.productSalesPrice)
       ? parsePriceInput(thread?.productSalesPrice)
@@ -9759,12 +18376,11 @@ function normalizeStoredChatThreadRecord(thread) {
     companyName: String(
       thread?.companyName ?? thread?.storeName ?? thread?.businessName ?? "",
     ).trim(),
-    companyPictureUrl: String(
+    companyPictureUrl: normalizeChatAssetUrl(
       thread?.companyPictureUrl ??
         thread?.companyProfileImageUrl ??
-        thread?.profileImageUrl ??
         "",
-    ).trim(),
+    ),
     employeeRating: normalizeChatThreadRating(thread?.employeeRating, 0),
     employeeRatingComment: String(thread?.employeeRatingComment ?? "").trim(),
     employeeRatingUpdatedAt: employeeRatingUpdatedAt?.toISOString() ?? null,
@@ -9845,6 +18461,62 @@ function normalizeIncomingChatThread(input, existingThread = null) {
     customerLabel:
       String(input?.customerLabel ?? existingThread?.customerLabel ?? "").trim() ||
       "App User",
+    customerName: String(
+      input?.customerName ??
+        input?.clientName ??
+        input?.fullName ??
+        input?.displayName ??
+        existingThread?.customerName ??
+        "",
+    ).trim(),
+    customerAccountId: String(
+      input?.customerAccountId ??
+        input?.accountId ??
+        existingThread?.customerAccountId ??
+        customerId,
+    ).trim(),
+    customerAccountCode: String(
+      input?.customerAccountCode ??
+        existingThread?.customerAccountCode ??
+        "",
+    ).trim(),
+    customerAvatarUrl: normalizeChatAssetUrl(
+      input?.customerAvatarUrl ??
+        input?.customerImageUrl ??
+        input?.customerProfileImageUrl ??
+        input?.avatarUrl ??
+        input?.profileImageUrl ??
+        input?.photoUrl ??
+        existingThread?.customerAvatarUrl ??
+        "",
+    ),
+    customerEmail: String(
+      input?.customerEmail ??
+        input?.email ??
+        existingThread?.customerEmail ??
+        "",
+    ).trim(),
+    customerPhone: String(
+      input?.customerPhone ??
+        input?.mobileNumber ??
+        input?.phoneNumber ??
+        input?.phone ??
+        existingThread?.customerPhone ??
+        "",
+    ).trim(),
+    customerAddress: String(
+      input?.customerAddress ??
+        input?.address ??
+        existingThread?.customerAddress ??
+        "",
+    ).trim(),
+    customerCreatedAt: String(
+      input?.customerCreatedAt ??
+        input?.customerSince ??
+        input?.registeredAt ??
+        existingThread?.customerCreatedAt ??
+        "",
+    ).trim(),
     productId,
     productName:
       String(input?.productName ?? existingThread?.productName ?? "").trim() ||
@@ -9855,9 +18527,14 @@ function normalizeIncomingChatThread(input, existingThread = null) {
     productDescription: String(
       input?.productDescription ?? existingThread?.productDescription ?? "",
     ).trim(),
-    productImageUrl: String(
-      input?.productImageUrl ?? existingThread?.productImageUrl ?? "",
-    ).trim(),
+    productImageUrl: normalizeChatAssetUrl(
+      input?.productImageUrl ??
+        input?.product?.cardImageUrl ??
+        input?.product?.mainImageUrl ??
+        input?.product?.imageUrl ??
+        existingThread?.productImageUrl ??
+        "",
+    ),
     productOriginalPrice: Number.isFinite(originalPrice) ? originalPrice : 0,
     productSalesPrice:
       Number.isFinite(salesPrice) && salesPrice >= 0 ? salesPrice : null,
@@ -9880,15 +18557,13 @@ function normalizeIncomingChatThread(input, existingThread = null) {
         existingThread?.businessName ??
         "",
     ).trim(),
-    companyPictureUrl: String(
+    companyPictureUrl: normalizeChatAssetUrl(
       input?.companyPictureUrl ??
         input?.companyProfileImageUrl ??
-        input?.profileImageUrl ??
         existingThread?.companyPictureUrl ??
         existingThread?.companyProfileImageUrl ??
-        existingThread?.profileImageUrl ??
         "",
-    ).trim(),
+    ),
     employeeRating,
     employeeRatingComment: String(
       input?.employeeRatingComment ?? existingThread?.employeeRatingComment ?? "",
@@ -9937,8 +18612,9 @@ async function handleChatSupportApi(request, response, requestUrl) {
       )
         .trim()
         .toLowerCase();
+      const aiAssistant = await getChatAiAssistantStatusPayload();
       if (!requestedCustomerId && !requestHasAdminScope) {
-        sendJson(response, 200, { threads: [] });
+        sendJson(response, 200, { threads: [], aiAssistant });
         return;
       }
       const threads = sortChatThreadsByUpdatedAt(
@@ -9952,7 +18628,7 @@ async function handleChatSupportApi(request, response, requestUrl) {
           )
         : threads;
 
-      sendJson(response, 200, { threads: visibleThreads });
+      sendJson(response, 200, { threads: visibleThreads, aiAssistant });
     } catch (error) {
       sendJson(response, 500, {
         message: error instanceof Error ? error.message : "Unable to load chat threads.",
@@ -9998,7 +18674,7 @@ async function handleChatSupportApi(request, response, requestUrl) {
 
       if (shouldAutoReplyWithAi(normalizedThread)) {
         try {
-          const aiReplyText = await requestChatAiReply(normalizedThread);
+          const aiReplyText = await requestChatAiReply(normalizedThread, "autoReply");
           const aiReplyMessage = normalizeChatMessage({
             id: createChatMessageId(true),
             text: aiReplyText,
@@ -10037,6 +18713,7 @@ async function handleChatSupportApi(request, response, requestUrl) {
       await writeNormalizedChatThreadsForAdmin(effectiveAdminId, sortedThreads);
       sendJson(response, 200, {
         thread: normalizedThread,
+        aiAssistant: await getChatAiAssistantStatusPayload(),
         message: "Chat thread synced.",
       });
     } catch (error) {
@@ -10255,6 +18932,12 @@ async function handleChatSupportApi(request, response, requestUrl) {
       .map((value) => String(value ?? "").trim())
       .find(Boolean) || "";
 
+    const planName = String(safeAccount.planName ?? "").trim() || "Free Plan";
+    const hasPaidPlan = isPaidSellerPlan(
+      planName,
+      safeAccount.planAmount ?? safeAccount.subscriptionAmount,
+    );
+
     return {
       adminId,
       name: companyName || adminId,
@@ -10268,6 +18951,9 @@ async function handleChatSupportApi(request, response, requestUrl) {
       companyPictureUrl: imageUrl,
       createdAt: safeAccount.createdAt || "",
       productCount: sellerProducts.length,
+      planName,
+      hasPaidPlan,
+      isLegitSeller: hasPaidPlan,
     };
   }
 
@@ -10278,12 +18964,17 @@ async function handleChatSupportApi(request, response, requestUrl) {
     }
 
     try {
-      const [accounts, products] = await Promise.all([
+      const [accounts, products, storedStoreTypes] = await Promise.all([
         readAccounts(),
         readProducts(),
+        readStoreTypes(),
       ]);
       const normalizedProducts = attachProductsCompanyMetadata(
-        products.map(normalizeStoredProductRecord),
+        hideInactiveStoreTypeCategoriesFromProducts(
+          products.map(normalizeStoredProductRecord),
+          accounts,
+          storedStoreTypes,
+        ),
         accounts,
       );
       const sellers = accounts
@@ -10393,7 +19084,10 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
         return;
       }
 
-      sendJson(response, 200, { thread });
+      sendJson(response, 200, {
+        thread,
+        aiAssistant: await getChatAiAssistantStatusPayload(),
+      });
     } catch (error) {
       sendJson(response, 500, {
         message: error instanceof Error ? error.message : "Unable to load chat thread.",
@@ -10518,9 +19212,33 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
       const replyText = String(payload?.text ?? "").replace(/\s+/g, " ").trim();
       const replyImageUrl = String(payload?.imageUrl ?? "").trim();
       const replyImageName = String(payload?.imageName ?? "").trim();
+      const replyContentType = String(payload?.contentType ?? payload?.mimeType ?? "").trim();
       const replyTo = normalizeChatReplyReference(payload?.replyTo);
+      const hasDeclaredActor = Boolean(
+        normalizeChatSenderField(
+          payload?.actorRole ??
+            payload?.senderRole ??
+            payload?.actor?.role,
+        ) ||
+        String(
+          payload?.actorId ??
+            payload?.senderId ??
+            payload?.actor?.id ??
+            payload?.actor?.accountId ??
+            "",
+        ).trim(),
+      );
+      const replyActor = hasDeclaredActor
+        ? await resolveChatSupportActor(payload, requestAdminId)
+        : null;
       if (!replyText && !replyImageUrl) {
         throw new Error("Reply message or attachment is required.");
+      }
+      if (hasDeclaredActor && !replyActor) {
+        sendJson(response, 403, {
+          message: "Unable to verify the support account sending this reply.",
+        });
+        return;
       }
 
       const threads = await readNormalizedChatThreads(requestAdminId);
@@ -10537,10 +19255,12 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
         text: replyText,
         imageUrl: replyImageUrl,
         imageName: replyImageName,
+        contentType: replyContentType,
         isFromSupport: true,
         source: "support",
         timestamp: new Date().toISOString(),
         replyTo,
+        ...(replyActor || { senderRole: "support" }),
       });
       if (!replyMessage) {
         throw new Error("Reply message or attachment is required.");
@@ -10574,8 +19294,8 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
       sendJson(response, 400, {
         message: error instanceof Error ? error.message : "Unable to send reply.",
       });
-  }
-      return;
+    }
+    return;
   }
 
   if (
@@ -10588,6 +19308,17 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
       const nextText = String(payload?.text ?? "").replace(/\s+/g, " ").trim();
       if (!messageId || !nextText) {
         throw new Error("Message ID and updated text are required.");
+      }
+      if (!hasRequestAdminScope(request, requestUrl)) {
+        sendJson(response, 401, { message: "Admin workspace identity is required." });
+        return;
+      }
+      const editActor = await resolveChatSupportActor(payload, requestAdminId);
+      if (!editActor || editActor.senderRole !== "admin") {
+        sendJson(response, 403, {
+          message: "Employees cannot edit messages. Only the admin who sent this message can edit it.",
+        });
+        return;
       }
 
       const threads = await readNormalizedChatThreads(requestAdminId);
@@ -10618,6 +19349,21 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
       }
 
       const targetIsFromSupport = targetMessage.isFromSupport === true;
+      const targetSenderRole = normalizeChatSupportActorRole(targetMessage.senderRole);
+      const targetSenderId = String(targetMessage.senderId ?? "").trim().toLowerCase();
+      const editActorId = String(editActor.senderId ?? "").trim().toLowerCase();
+      if (
+        !targetIsFromSupport ||
+        targetSenderRole !== "admin" ||
+        !targetSenderId ||
+        !editActorId ||
+        targetSenderId !== editActorId
+      ) {
+        sendJson(response, 403, {
+          message: "Only your own admin messages can be edited.",
+        });
+        return;
+      }
       const targetSource = String(targetMessage.source || "").trim().toLowerCase() || (
         targetIsFromSupport ? "support" : "user"
       );
@@ -10836,7 +19582,7 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
       }
 
       const targetThread = threads[threadIndex];
-      const aiReplyText = await requestChatAiReply(targetThread);
+      const aiReplyText = await requestChatAiReply(targetThread, "chatbot");
       const aiReplyMessage = normalizeChatMessage({
         id: createChatMessageId(true),
         text: aiReplyText,
@@ -10859,6 +19605,7 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
       await writeNormalizedChatThreadsForAdmin(requestAdminId, sortedThreads);
       sendJson(response, 200, {
         thread: updatedThread,
+        aiAssistant: await getChatAiAssistantStatusPayload(),
         message: "AI reply sent.",
       });
     } catch (error) {
@@ -10918,6 +19665,58 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
   sendJson(response, 405, { message: "Method not allowed." });
 }
 
+async function handleProductIllegalContentCheckApi(request, response) {
+  const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+  const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (!isUsableProductAdminScope(requestAdminId)) {
+    sendProductAdminScopeRequired(response);
+    return;
+  }
+
+  try {
+    const contentType = normalizeUploadMimeType(request.headers["content-type"]);
+    const sourceFilename = String(request.headers["x-file-name"] ?? "product-image").trim();
+    const extension = getUploadExtension(sourceFilename, contentType);
+    const isImageUpload = isImageUploadType(contentType, extension);
+    if (!isImageUpload) {
+      throw new Error("Please send a valid product photo.");
+    }
+
+    const fileBuffer = await parseBinaryRequestBody(request);
+    if (!fileBuffer.length) {
+      throw new Error("Product photo is empty.");
+    }
+
+    const safety = await inspectSellerImageBufferIllegalContent(fileBuffer, {
+      sourceFilename,
+    });
+    sendJson(response, 200, {
+      checked: true,
+      blocked: safety.action === "auto-reject",
+      requiresReview: safety.action === "manual-review",
+      yoloSafety: safety,
+      message: safety.message,
+    });
+  } catch (error) {
+    const statusCode =
+      Number.isInteger(error?.statusCode) && error.statusCode >= 400
+        ? error.statusCode
+        : 400;
+    sendJson(response, statusCode, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to check product image safety.",
+    });
+  }
+}
+
 async function handleProductsApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
@@ -10943,10 +19742,11 @@ async function handleProductsApi(request, response) {
       return;
     }
 
-    const [allProducts, accounts, allOrders] = await Promise.all([
+    const [allProducts, accounts, allOrders, storedStoreTypes] = await Promise.all([
       readProducts(),
       readAccounts(),
       readOrders(),
+      readStoreTypes(),
     ]);
     const reviewAggregates = buildProductReviewAggregates(
       allOrders,
@@ -10958,9 +19758,19 @@ async function handleProductsApi(request, response) {
     ).map(normalizeStoredProductRecord).map((product) =>
       applyProductReviewAggregate(product, reviewAggregates),
     );
+    products = hideInactiveStoreTypeCategoriesFromProducts(
+      products,
+      accounts,
+      storedStoreTypes,
+    );
     if (hasApprovalStatusFilter) {
       products = products.filter((product) =>
         normalizeProductApprovalStatus(product?.approvalStatus) === requestedApprovalStatus
+      );
+    }
+    if (allowPublicApprovedCatalog) {
+      products = products.filter((product) =>
+        !isProductListingRestrictedForCustomers(product)
       );
     }
     sendJson(response, 200, {
@@ -10976,7 +19786,32 @@ async function handleProductsApi(request, response) {
         return;
       }
 
+      if (
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "post_products",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
+      if (
+        doesProductPayloadChangePromotion(payload) &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "create_promos",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const submittedAt = new Date().toISOString();
       let product = applyAdminId(normalizeProduct({
         ...payload,
@@ -10987,8 +19822,10 @@ async function handleProductsApi(request, response) {
         approvedBy: "",
         approvalUpdatedAt: submittedAt,
       }), requestAdminId);
-      product = await validateProductPartnerSelections(product);
-      const products = await readProducts();
+      product = await applyAdminBusinessTypeCategoryScope(product, requestAdminId);
+      product = await validateProductPartnerSelections(product, requestAdminId);
+      let products = await readProducts();
+      product = syncProductVariantAddOnsWithInventory(product, products, requestAdminId);
 
       // Check for duplicate barcode
       const barcodeValue = String(product.barcode ?? "").trim();
@@ -11003,16 +19840,64 @@ async function handleProductsApi(request, response) {
       }
 
       product = await syncProductVisualSearchFingerprint(product);
+      const illegalContentGate = await inspectSellerProductIllegalContent(product, products);
+      product = illegalContentGate.product;
+      products = illegalContentGate.products;
+      if (illegalContentGate.safety.action === "auto-reject") {
+        product = await applySellerIllegalContentAutoReject(
+          product,
+          illegalContentGate.safety,
+        );
+        products.unshift(product);
+        await writeProducts(products);
+        await logActivitySafely(createProductActivityEntry("updated", product, payload?.__activityActor), request);
+        const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(await readAccounts());
+        sendJson(response, 422, {
+          code: "PRODUCT_ILLEGAL_CONTENT_AUTO_REJECTED",
+          product: attachProductCompanyMetadata(
+            normalizeStoredProductRecord(product),
+            companyMetadataByAdminId,
+          ),
+          yoloSafety: illegalContentGate.safety,
+          message: "This content is illegal and cannot be listed.",
+        });
+        return;
+      }
+      const evidenceMatch = await applyRejectedProductEvidenceMatch(product, products);
+      product = evidenceMatch.product;
+      products = evidenceMatch.products;
+      const autoApproval = await applyApprovedProductEvidenceAutoApproval(product, products);
+      product = autoApproval.product;
+      products = autoApproval.products;
+      if (!autoApproval.match) {
+        const approvedEvidenceMatch = await applyApprovedProductEvidenceCategoryMatch(product, products);
+        product = approvedEvidenceMatch.product;
+        products = approvedEvidenceMatch.products;
+        product = applyProductRevisionSignal(product);
+      }
+      product = {
+        ...product,
+        ...normalizeProductListingInsightHistory(product),
+      };
       products.unshift(product);
       await writeProducts(products);
-      await logActivitySafely(createProductActivityEntry("created", product, payload?.__activityActor));
+      if (isApprovedProductYoloTrainingRecord(product)) {
+        await syncApprovedProductTrainingArchive([product]);
+      }
+      await logActivitySafely(createProductActivityEntry("created", product, payload?.__activityActor), request);
       const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(await readAccounts());
       sendJson(response, 201, {
         product: attachProductCompanyMetadata(
           normalizeStoredProductRecord(product),
           companyMetadataByAdminId,
         ),
-        message: "Product submitted for super admin review.",
+        message: evidenceMatch.match
+          ? "Product submitted for super admin review and flagged against rejected YOLO evidence."
+          : autoApproval.match
+            ? "Product auto-approved from the approved YOLO database."
+          : illegalContentGate.safety.action === "manual-review"
+            ? "Product submitted for super admin review because YOLO detected a possible policy issue."
+          : "Product submitted for super admin review.",
       });
     } catch (error) {
       sendJson(response, 400, {
@@ -11027,6 +19912,74 @@ async function handleProductsApi(request, response) {
 
 // Super admin: get products by company (adminId)
 async function handleSuperAdminProductsApi(request, response, adminId) {
+  if (request.method === "DELETE") {
+    if (!requireSuperAdmin(request, response)) {
+      return;
+    }
+
+    const target = parseApprovedTrainingDisplayProductId(adminId);
+    const targetIds = new Set([
+      target.rawProductId,
+      target.sourceProductId,
+    ].map((value) => String(value || "").trim()).filter(Boolean));
+    if (!targetIds.size) {
+      sendJson(response, 400, { message: "Product ID is required." });
+      return;
+    }
+
+    try {
+      const [products, approvedTrainingRecords] = await Promise.all([
+        readProducts(),
+        readApprovedProductTrainingRecords(),
+      ]);
+      let deletedProduct = null;
+      const nextProducts = products.filter((product) => {
+        const productId = String(product?.id ?? "").trim();
+        const shouldDelete = targetIds.has(productId);
+        if (shouldDelete && !deletedProduct) {
+          deletedProduct = product;
+        }
+        return !shouldDelete;
+      });
+      let didDeleteApprovedRecord = false;
+      const nextApprovedTrainingRecords = approvedTrainingRecords.filter((record) => {
+        const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(record);
+        const archiveKey = normalizedRecord ? getApprovedProductTrainingArchiveKey(normalizedRecord) : "";
+        const shouldDelete = archiveKey && targetIds.has(archiveKey);
+        if (shouldDelete) {
+          didDeleteApprovedRecord = true;
+        }
+        return !shouldDelete;
+      });
+
+      if (!deletedProduct && !didDeleteApprovedRecord) {
+        sendJson(response, 404, { message: "Product not found." });
+        return;
+      }
+
+      if (nextProducts.length !== products.length) {
+        await writeProducts(nextProducts);
+      }
+      if (didDeleteApprovedRecord) {
+        await writeApprovedProductTrainingRecords(nextApprovedTrainingRecords);
+      }
+      if (deletedProduct) {
+        await logActivitySafely(createProductActivityEntry("deleted", deletedProduct, SUPER_ADMIN_USERNAME));
+      }
+
+      sendJson(response, 200, {
+        message: "Product deleted.",
+        deletedId: target.rawProductId,
+        sourceProductId: target.sourceProductId,
+      });
+    } catch (error) {
+      sendJson(response, 500, {
+        message: error instanceof Error ? error.message : "Unable to delete product.",
+      });
+    }
+    return;
+  }
+
   if (request.method !== "GET") {
     sendJson(response, 405, { message: "Method not allowed." });
     return;
@@ -11094,13 +20047,22 @@ async function handleProductVisualSearchApi(request, response) {
     }
 
     const searchFingerprints = await createVisualSearchQueryFingerprints(fileBuffer);
-    const allStoredProducts = await readProducts();
+    const [allStoredProducts, accounts, storedStoreTypes] = await Promise.all([
+      readProducts(),
+      readAccounts(),
+      readStoreTypes(),
+    ]);
     const storedProducts = filterRecordsByAdminId(allStoredProducts, requestAdminId);
+    const inactiveCategoryIndexes = buildInactiveStoreTypeCategoryIndexes(accounts, storedStoreTypes);
     const matches = [];
     let didUpdateStoredFingerprints = false;
 
     for (let index = 0; index < storedProducts.length; index += 1) {
       let product = normalizeStoredProductRecord(storedProducts[index]);
+      product = hideInactiveStoreTypeCategoriesFromProduct(product, inactiveCategoryIndexes);
+      if (!product) {
+        continue;
+      }
       const visualSearchImageUrls = normalizeProductVisualSearchImageUrls(product);
       if (
         !String(product?.name ?? "").trim() ||
@@ -11223,7 +20185,7 @@ async function handleProductVisualSearchApi(request, response) {
     sendJson(response, 200, {
       products: attachProductsCompanyMetadata(
         matches.slice(0, VISUAL_SEARCH_MAX_RESULTS),
-        matches.length ? await readAccounts() : [],
+        accounts,
       ),
       total: matches.length,
       message: matches.length
@@ -11244,55 +20206,542 @@ async function handleProductVisualSearchApi(request, response) {
   }
 }
 
-async function handleDeliveryPartnersApi(request, response) {
+function getPartnerResourceConfig(partnerType) {
+  if (partnerType === "delivery") {
+    return {
+      type: "delivery",
+      label: "Delivery partner",
+      pluralLabel: "delivery partners",
+      referenceField: "deliveryPartnerIds",
+      read: readDeliveryPartners,
+      write: writeDeliveryPartners,
+      normalize: normalizeDeliveryPartnerRecord,
+      permission: "",
+    };
+  }
+  return {
+    type: "payment",
+    label: "Payment partner",
+    pluralLabel: "payment partners",
+    referenceField: "paymentPartnerIds",
+    read: readPaymentPartners,
+    write: writePaymentPartners,
+    normalize: normalizePaymentPartnerRecord,
+    permission: "access_payouts",
+  };
+}
+
+function createPartnerApiError(statusCode, message, code = "PARTNER_REQUEST_FAILED", details = {}) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  error.details = details && typeof details === "object" ? details : {};
+  return error;
+}
+
+function sendPartnerApiError(response, error, fallbackMessage) {
+  const statusCode = Number.isInteger(error?.statusCode)
+    ? error.statusCode
+    : error?.code === "INVALID_STORAGE_DATA"
+      ? 500
+      : 400;
+  sendJson(response, statusCode, {
+    message: error instanceof Error ? error.message : fallbackMessage,
+    ...(String(error?.code ?? "").trim() ? { code: String(error.code).trim() } : {}),
+    ...(error?.details && typeof error.details === "object" ? error.details : {}),
+  });
+}
+
+function serializePartnerRecord(partner, usage = null) {
+  const record = partner && typeof partner === "object" ? partner : {};
+  const { apiKey: storedApiKey, ...publicRecord } = record;
+  const hasApiKey = Boolean(String(storedApiKey ?? "").trim());
+  const archived = isPartnerArchived(record);
+  const isActive = !archived && normalizePartnerEnabledState(record);
+  const createdAt = String(record.createdAt ?? "").trim();
+  const updatedAt = String(record.updatedAt ?? "").trim() || createdAt;
+  return {
+    ...publicRecord,
+    hasApiKey,
+    apiKeyMasked: hasApiKey ? "*******" : "",
+    isActive,
+    enabled: isActive,
+    isEnabled: isActive,
+    disabled: !isActive,
+    status: archived ? "archived" : isActive ? "active" : "inactive",
+    version: getPartnerVersion(record),
+    createdAt,
+    updatedAt,
+    ...(usage ? {
+      usage,
+      connectedProductCount: usage.connectedProductCount,
+    } : {}),
+  };
+}
+
+function parsePartnerQueryBoolean(value, fallback = false) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalizedValue)) return true;
+  if (["0", "false", "no", "off"].includes(normalizedValue)) return false;
+  return fallback;
+}
+
+function getPartnerSearchText(partner) {
+  return [
+    partner?.id,
+    partner?.branch,
+    partner?.name,
+    partner?.description,
+    partner?.adminId,
+    partner?.status,
+  ].join(" ").toLowerCase();
+}
+
+function getPartnerDateValue(partner, field) {
+  const timestamp = Date.parse(String(partner?.[field] ?? ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getPartnerCollectionSummary(records) {
+  const sourceRecords = Array.isArray(records) ? records : [];
+  const archived = sourceRecords.filter(isPartnerArchived).length;
+  const currentRecords = sourceRecords.filter((partner) => !isPartnerArchived(partner));
+  const active = currentRecords.filter(normalizePartnerEnabledState).length;
+  const inactive = Math.max(0, currentRecords.length - active);
+  const merchantScoped = sourceRecords.filter((partner) => Boolean(getPartnerScopeKey(partner))).length;
+  return {
+    total: currentRecords.length,
+    all: sourceRecords.length,
+    active,
+    inactive,
+    archived,
+    global: Math.max(0, sourceRecords.length - merchantScoped),
+    merchantScoped,
+  };
+}
+
+function buildPartnerProductUsageMap(products, partnerType) {
+  const config = getPartnerResourceConfig(partnerType);
+  const usageByPartnerId = new Map();
+  for (const product of Array.isArray(products) ? products : []) {
+    const productId = String(product?.id ?? product?.productId ?? "").trim();
+    if (!productId) continue;
+    for (const partnerId of normalizePartnerIdList(product?.[config.referenceField])) {
+      const key = partnerId.toLowerCase();
+      const currentUsage = usageByPartnerId.get(key) || {
+        connectedProductCount: 0,
+        activeProductCount: 0,
+        productIds: [],
+      };
+      currentUsage.connectedProductCount += 1;
+      if (normalizeProductActiveState(product?.isActive, true)) {
+        currentUsage.activeProductCount += 1;
+      }
+      if (currentUsage.productIds.length < 25) {
+        currentUsage.productIds.push(productId);
+      }
+      usageByPartnerId.set(key, currentUsage);
+    }
+  }
+  return usageByPartnerId;
+}
+
+function getPartnerUsage(usageByPartnerId, partnerId) {
+  return usageByPartnerId?.get(String(partnerId ?? "").trim().toLowerCase()) || {
+    connectedProductCount: 0,
+    activeProductCount: 0,
+    productIds: [],
+  };
+}
+
+async function buildPartnerCollectionPayload({
+  partnerType,
+  records,
+  requestUrl,
+  requestAdminId,
+  requestIsSuperAdmin,
+  productOptions,
+}) {
+  const sourceRecords = Array.isArray(records) ? records : [];
+  const scopedRecords = requestIsSuperAdmin
+    ? sourceRecords
+    : productOptions
+      ? sourceRecords.filter((partner) => isPartnerAvailableToAdmin(partner, requestAdminId))
+      : filterRecordsByAdminId(sourceRecords, requestAdminId);
+
+  if (productOptions) {
+    const partners = getActiveProductPartnerOptionRecords(scopedRecords)
+      .filter((partner) => !isPartnerArchived(partner))
+      .map((partner) => serializePartnerRecord(partner));
+    return {
+      partners,
+      summary: getPartnerCollectionSummary(scopedRecords),
+      pagination: {
+        page: partners.length ? 1 : 0,
+        pageSize: partners.length,
+        total: partners.length,
+        totalPages: partners.length ? 1 : 0,
+        hasPrevious: false,
+        hasNext: false,
+      },
+    };
+  }
+
+  const searchParams = requestUrl.searchParams;
+  const searchTerm = String(searchParams.get("search") ?? searchParams.get("q") ?? "")
+    .trim()
+    .toLowerCase();
+  const requestedStatus = String(searchParams.get("status") ?? "all").trim().toLowerCase();
+  const status = ["all", "active", "inactive", "archived"].includes(requestedStatus)
+    ? requestedStatus
+    : "all";
+  const requestedScope = String(
+    searchParams.get("partnerScope") ?? searchParams.get("managementScope") ?? "all",
+  ).trim().toLowerCase();
+  const scope = ["all", "global", "merchant"].includes(requestedScope)
+    ? requestedScope
+    : "all";
+  const includeArchived = status === "archived"
+    || parsePartnerQueryBoolean(searchParams.get("includeArchived"), false);
+  const includeUsage = parsePartnerQueryBoolean(searchParams.get("includeUsage"), false);
+  const requestedSort = String(searchParams.get("sort") ?? "updated-desc").trim().toLowerCase();
+  const sort = [
+    "updated-desc",
+    "updated-asc",
+    "created-desc",
+    "created-asc",
+    "name-asc",
+    "name-desc",
+    "status-asc",
+  ].includes(requestedSort) ? requestedSort : "updated-desc";
+
+  let filteredRecords = scopedRecords.filter((partner) => includeArchived || !isPartnerArchived(partner));
+  if (status === "archived") {
+    filteredRecords = filteredRecords.filter(isPartnerArchived);
+  } else if (status === "active") {
+    filteredRecords = filteredRecords.filter(
+      (partner) => !isPartnerArchived(partner) && normalizePartnerEnabledState(partner),
+    );
+  } else if (status === "inactive") {
+    filteredRecords = filteredRecords.filter(
+      (partner) => !isPartnerArchived(partner) && !normalizePartnerEnabledState(partner),
+    );
+  }
+  if (scope === "global") {
+    filteredRecords = filteredRecords.filter((partner) => !getPartnerScopeKey(partner));
+  } else if (scope === "merchant") {
+    filteredRecords = filteredRecords.filter((partner) => Boolean(getPartnerScopeKey(partner)));
+  }
+  if (searchTerm) {
+    filteredRecords = filteredRecords.filter((partner) =>
+      getPartnerSearchText(partner).includes(searchTerm)
+    );
+  }
+
+  filteredRecords.sort((left, right) => {
+    if (sort === "name-asc" || sort === "name-desc") {
+      const direction = sort === "name-desc" ? -1 : 1;
+      return direction * String(left?.branch ?? left?.name ?? "").localeCompare(
+        String(right?.branch ?? right?.name ?? ""),
+        undefined,
+        { sensitivity: "base" },
+      );
+    }
+    if (sort === "status-asc") {
+      const leftStatus = isPartnerArchived(left)
+        ? "archived"
+        : normalizePartnerEnabledState(left) ? "active" : "inactive";
+      const rightStatus = isPartnerArchived(right)
+        ? "archived"
+        : normalizePartnerEnabledState(right) ? "active" : "inactive";
+      return leftStatus.localeCompare(rightStatus)
+        || String(left?.branch ?? "").localeCompare(String(right?.branch ?? ""));
+    }
+    const field = sort.startsWith("created") ? "createdAt" : "updatedAt";
+    const direction = sort.endsWith("-asc") ? 1 : -1;
+    return direction * (getPartnerDateValue(left, field) - getPartnerDateValue(right, field));
+  });
+
+  const paginationRequested = searchParams.has("page") || searchParams.has("pageSize");
+  const requestedPage = Math.trunc(Number(searchParams.get("page") ?? 1));
+  const requestedPageSize = Math.trunc(Number(searchParams.get("pageSize") ?? 25));
+  const pageSize = paginationRequested
+    ? Math.min(MAX_PARTNER_PAGE_SIZE, Math.max(1, requestedPageSize || 25))
+    : Math.max(1, filteredRecords.length);
+  const total = filteredRecords.length;
+  const totalPages = total ? Math.ceil(total / pageSize) : 0;
+  const page = totalPages ? Math.min(Math.max(1, requestedPage || 1), totalPages) : 0;
+  const pageStart = page ? (page - 1) * pageSize : 0;
+  const pageRecords = paginationRequested
+    ? filteredRecords.slice(pageStart, pageStart + pageSize)
+    : filteredRecords;
+
+  let usageByPartnerId = null;
+  if (includeUsage) {
+    const storedProducts = await readProducts();
+    const products = requestIsSuperAdmin
+      ? storedProducts
+      : filterRecordsByAdminId(storedProducts, requestAdminId);
+    usageByPartnerId = buildPartnerProductUsageMap(products, partnerType);
+  }
+
+  return {
+    partners: pageRecords.map((partner) => serializePartnerRecord(
+      partner,
+      usageByPartnerId ? getPartnerUsage(usageByPartnerId, partner?.id) : null,
+    )),
+    summary: getPartnerCollectionSummary(scopedRecords),
+    pagination: {
+      page,
+      pageSize: total ? (paginationRequested ? pageSize : total) : 0,
+      total,
+      totalPages,
+      hasPrevious: page > 1,
+      hasNext: page > 0 && page < totalPages,
+    },
+    query: {
+      search: searchTerm,
+      status,
+      scope,
+      sort,
+      includeArchived,
+      includeUsage,
+    },
+  };
+}
+
+function getPartnerAuditActor(payload, requestAdminId, requestIsSuperAdmin) {
+  const suppliedActor = payload?.__activityActor;
+  if (suppliedActor && typeof suppliedActor === "object") {
+    return {
+      role: String(suppliedActor.role ?? (requestIsSuperAdmin ? "super-admin" : "admin")).trim(),
+      accountId: String(
+        suppliedActor.accountId ?? suppliedActor.id ?? (requestIsSuperAdmin ? "super-admin" : requestAdminId),
+      ).trim(),
+      displayName: String(
+        suppliedActor.displayName ?? suppliedActor.name ?? (requestIsSuperAdmin ? SUPER_ADMIN_USERNAME : requestAdminId),
+      ).trim(),
+    };
+  }
+  return {
+    role: requestIsSuperAdmin ? "super-admin" : "admin",
+    accountId: requestIsSuperAdmin ? "super-admin" : requestAdminId,
+    displayName: requestIsSuperAdmin ? SUPER_ADMIN_USERNAME : requestAdminId,
+  };
+}
+
+function createPartnerAuditSnapshot(partner) {
+  if (!partner || typeof partner !== "object") return null;
+  return {
+    id: String(partner.id ?? "").trim(),
+    branch: String(partner.branch ?? partner.name ?? "").trim(),
+    description: String(partner.description ?? "").trim(),
+    imageUrl: String(partner.imageUrl ?? "").trim(),
+    adminId: getPartnerScopeKey(partner),
+    status: isPartnerArchived(partner)
+      ? "archived"
+      : normalizePartnerEnabledState(partner) ? "active" : "inactive",
+    version: getPartnerVersion(partner),
+    archivedAt: String(partner.archivedAt ?? "").trim(),
+  };
+}
+
+function getPartnerChangedFields(before, after) {
+  const previous = createPartnerAuditSnapshot(before) || {};
+  const next = createPartnerAuditSnapshot(after) || {};
+  return [
+    "branch",
+    "description",
+    "imageUrl",
+    "adminId",
+    "status",
+    "archivedAt",
+  ].filter((field) => JSON.stringify(previous[field] ?? null) !== JSON.stringify(next[field] ?? null));
+}
+
+async function logPartnerAuditSafely({
+  partnerType,
+  action,
+  before = null,
+  after = null,
+  partnerIds = [],
+  payload = null,
+  request = null,
+  requestAdminId = "",
+  requestIsSuperAdmin = false,
+  metadata = {},
+}) {
+  try {
+    const normalizedPartnerIds = normalizePartnerIdList([
+      ...partnerIds,
+      before?.id,
+      after?.id,
+    ]);
+    const actor = getPartnerAuditActor(payload, requestAdminId, requestIsSuperAdmin);
+    const now = new Date().toISOString();
+    const entry = {
+      id: `partner-audit-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      partnerType: partnerType === "delivery" ? "delivery" : "payment",
+      partnerId: normalizedPartnerIds[0] || "",
+      partnerIds: normalizedPartnerIds,
+      action: String(action ?? "updated").trim().toLowerCase() || "updated",
+      adminId: getPartnerScopeKey(after || before) || normalizeAdminTenantId(requestAdminId, ""),
+      actor,
+      before: createPartnerAuditSnapshot(before),
+      after: createPartnerAuditSnapshot(after),
+      changedFields: getPartnerChangedFields(before, after),
+      metadata: metadata && typeof metadata === "object" ? metadata : {},
+      requestId: String(request?.headers?.["x-request-id"] ?? "").trim(),
+      ipAddress: getRequestIpAddress(request),
+      createdAt: now,
+    };
+    await enqueueSerializedMutation("partner:audit", async () => {
+      const entries = await readPartnerAuditLog();
+      entries.unshift(entry);
+      await writePartnerAuditLog(entries.slice(0, MAX_PARTNER_AUDIT_ENTRIES));
+    });
+    return entry;
+  } catch (error) {
+    console.error("Unable to record partner audit event:", error);
+    return null;
+  }
+}
+
+function getPartnerMutationActorId(payload, requestAdminId, requestIsSuperAdmin) {
+  const actor = getPartnerAuditActor(payload, requestAdminId, requestIsSuperAdmin);
+  return actor.displayName || actor.accountId || (requestIsSuperAdmin ? SUPER_ADMIN_USERNAME : requestAdminId);
+}
+
+async function requirePartnerResourcePermission({
+  request,
+  response,
+  requestUrl,
+  config,
+  requestAdminId,
+  requestIsSuperAdmin,
+  productOptions = false,
+}) {
+  if (
+    !config.permission
+    || requestIsSuperAdmin
+    || productOptions
+    || !hasRequestAdminScope(request, requestUrl)
+  ) {
+    return true;
+  }
+  return requireAdminRestrictionAllowed(
+    request,
+    response,
+    requestUrl,
+    config.permission,
+    requestAdminId,
+  );
+}
+
+async function handlePartnerCollectionApi(request, response, partnerType) {
+  const config = getPartnerResourceConfig(partnerType);
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
   const requestIsSuperAdmin = isSuperAdminAuthorized(request);
-  const requestShouldUseAdminScope = !requestIsSuperAdmin;
+  const requestIsProductOptions = isProductPartnerOptionsRequest(requestUrl);
 
   if (request.method === "GET") {
     try {
-      const storedPartners = await readDeliveryPartners();
-      const partners = requestShouldUseAdminScope
-        ? filterRecordsByAdminId(storedPartners, requestAdminId)
-        : storedPartners;
-      sendJson(response, 200, { partners });
-    } catch (error) {
-      sendJson(response, 500, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to load delivery partners.",
+      if (!(await requirePartnerResourcePermission({
+        request,
+        response,
+        requestUrl,
+        config,
+        requestAdminId,
+        requestIsSuperAdmin,
+        productOptions: requestIsProductOptions,
+      }))) return;
+
+      const storedPartners = await config.read();
+      const responsePayload = await buildPartnerCollectionPayload({
+        partnerType: config.type,
+        records: storedPartners,
+        requestUrl,
+        requestAdminId,
+        requestIsSuperAdmin,
+        productOptions: requestIsProductOptions,
       });
+      sendJson(response, 200, responsePayload);
+    } catch (error) {
+      sendPartnerApiError(response, error, `Unable to load ${config.pluralLabel}.`);
     }
     return;
   }
 
   if (request.method === "POST") {
     try {
+      if (!(await requirePartnerResourcePermission({
+        request,
+        response,
+        requestUrl,
+        config,
+        requestAdminId,
+        requestIsSuperAdmin,
+      }))) return;
+
       const payload = await parseRequestBody(request);
-      const partner = requestIsSuperAdmin
-        ? normalizeDeliveryPartnerRecord(payload)
-        : applyAdminId(normalizeDeliveryPartnerRecord(payload), requestAdminId);
-      const partners = await readDeliveryPartners();
-      partners.unshift(partner);
-      await writeDeliveryPartners(partners);
+      const actorId = getPartnerMutationActorId(payload, requestAdminId, requestIsSuperAdmin);
+      const partner = await runPartnerMutation(config.type, async () => {
+        const partners = await config.read();
+        let nextPartner = config.normalize(payload);
+        if (!requestIsSuperAdmin) {
+          nextPartner = applyAdminId(nextPartner, requestAdminId);
+        }
+        if (partners.some((record) =>
+          String(record?.id ?? "").trim().toLowerCase()
+            === String(nextPartner.id ?? "").trim().toLowerCase()
+        )) {
+          throw createPartnerApiError(
+            409,
+            `${config.label} ID already exists.`,
+            "PARTNER_ID_CONFLICT",
+          );
+        }
+        if (hasDuplicatePartnerInScope(partners, nextPartner)) {
+          throw createPartnerApiError(
+            409,
+            `A ${config.label.toLowerCase()} with this name already exists in this scope.`,
+            "PARTNER_NAME_CONFLICT",
+          );
+        }
+        nextPartner = {
+          ...nextPartner,
+          createdBy: actorId,
+          updatedBy: actorId,
+        };
+        partners.unshift(nextPartner);
+        await config.write(partners);
+        return nextPartner;
+      });
+      await logPartnerAuditSafely({
+        partnerType: config.type,
+        action: "created",
+        after: partner,
+        payload,
+        request,
+        requestAdminId,
+        requestIsSuperAdmin,
+      });
       sendJson(response, 201, {
-        partner,
-        message: "Delivery partner saved.",
+        partner: serializePartnerRecord(partner),
+        message: `${config.label} saved.`,
       });
     } catch (error) {
-      sendJson(response, 400, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to save delivery partner.",
-      });
+      sendPartnerApiError(response, error, `Unable to save ${config.label.toLowerCase()}.`);
     }
     return;
   }
 
   sendJson(response, 405, { message: "Method not allowed." });
+}
+
+async function handleDeliveryPartnersApi(request, response) {
+  await handlePartnerCollectionApi(request, response, "delivery");
 }
 
 function normalizeEmployeeLoginId(value) {
@@ -11374,20 +20823,29 @@ function findEmployeeLoginAccountWithPassword(accounts, employeeId, password) {
   ) || null;
 }
 
-function setAdminAccountPresence(account, isOnline) {
+function setAdminAccountPresence(account, isOnline, options = {}) {
   if (!account || typeof account !== "object") {
     return account;
   }
 
   const now = new Date().toISOString();
+  const presenceEvent = String(options.event ?? "").trim().toLowerCase()
+    || (isOnline === true ? "heartbeat" : "logout");
   account.isOnline = isOnline === true;
+  account.online = account.isOnline;
+  account.loggedIn = account.isOnline;
+  account.isLoggedIn = account.isOnline;
+  account.sessionActive = account.isOnline;
   account.onlineStatus = isOnline === true ? "online" : "offline";
   account.presenceStatus = account.onlineStatus;
   account.presenceUpdatedAt = now;
 
   if (isOnline === true) {
-    account.lastLoginAt = now;
-  } else {
+    account.lastOnlineAt = now;
+    if (presenceEvent === "login" || !account.lastLoginAt) {
+      account.lastLoginAt = now;
+    }
+  } else if (presenceEvent === "logout") {
     account.lastLogoutAt = now;
   }
 
@@ -11441,6 +20899,63 @@ async function handleAdminLoginApi(request, response) {
       return;
     }
 
+    if (await isSellerPostgresReady()) {
+      await processDueSellerAccountDeletions();
+      const pgLogin = await loginSeller({ email, password });
+      if (pgLogin.ok) {
+        const account = pgLogin.account;
+        const restrictionMessage = getAdminAccountRestrictionMessage(account);
+        if (restrictionMessage) {
+          const accountStatus = String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
+            .trim()
+            .toLowerCase();
+          const isBannedAccount = accountStatus === "banned" ||
+            account?.isBanned === true ||
+            account?.banned === true;
+          const isRestrictedAccount = accountStatus === "restricted" ||
+            account?.isRestricted === true ||
+            account?.restricted === true;
+          sendJson(response, 403, {
+            message: restrictionMessage,
+            accountStatus: isBannedAccount
+              ? "banned"
+              : isRestrictedAccount
+                ? "restricted"
+                : accountStatus,
+            isBanned: isBannedAccount,
+            isRestricted: isRestrictedAccount,
+            banReason: String(account?.banReason ?? account?.lastBanReason ?? "")
+              .replace(/\s+/g, " ")
+              .trim(),
+            banDescription: String(account?.banDescription ?? account?.banDetails ?? "")
+              .replace(/\s+/g, " ")
+              .trim(),
+            restrictionReason: String(account?.restrictionReason ?? account?.restrictReason ?? "")
+              .replace(/\s+/g, " ")
+              .trim(),
+            restrictionDescription: getAdminRestrictionDescription(account),
+            authStore: "postgres",
+          });
+          return;
+        }
+
+        sendJson(response, 200, {
+          admin: serializeAdminAccount(account),
+          dashboardPath: "/admin_dashboard.html",
+          redirectPath: "/main.html",
+          message: "Seller login verified.",
+          authStore: "postgres",
+        });
+        return;
+      }
+
+      sendJson(response, 401, {
+        message: "Admin email or password is incorrect.",
+      });
+      return;
+    }
+
+    await processDueSellerAccountDeletions();
     const accounts = await readAccounts();
     const account = accounts.find((candidate) =>
       isAdminAccount(candidate) &&
@@ -11456,19 +20971,47 @@ async function handleAdminLoginApi(request, response) {
 
     const restrictionMessage = getAdminAccountRestrictionMessage(account);
     if (restrictionMessage) {
+      const accountStatus = String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
+        .trim()
+        .toLowerCase();
+      const isBannedAccount = accountStatus === "banned" ||
+        account?.isBanned === true ||
+        account?.banned === true;
+      const isRestrictedAccount = accountStatus === "restricted" ||
+        account?.isRestricted === true ||
+        account?.restricted === true;
       sendJson(response, 403, {
         message: restrictionMessage,
+        accountStatus: isBannedAccount
+          ? "banned"
+          : isRestrictedAccount
+            ? "restricted"
+            : accountStatus,
+        isBanned: isBannedAccount,
+        isRestricted: isRestrictedAccount,
+        banReason: String(account?.banReason ?? account?.lastBanReason ?? "")
+          .replace(/\s+/g, " ")
+          .trim(),
+        banDescription: String(account?.banDescription ?? account?.banDetails ?? "")
+          .replace(/\s+/g, " ")
+          .trim(),
+        restrictionReason: String(account?.restrictionReason ?? account?.restrictReason ?? "")
+          .replace(/\s+/g, " ")
+          .trim(),
+        restrictionDescription: getAdminRestrictionDescription(account),
       });
       return;
     }
 
-    setAdminAccountPresence(account, true);
+    setAdminAccountPresence(account, true, { event: "login" });
     await writeAccounts(accounts);
 
     sendJson(response, 200, {
       admin: serializeAdminAccount(account),
-      redirectPath: "/admin_dashboard.html",
-      message: "Admin login verified.",
+      dashboardPath: "/admin_dashboard.html",
+      redirectPath: "/main.html",
+      message: "Seller login verified.",
+      authStore: "json",
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -11476,6 +21019,93 @@ async function handleAdminLoginApi(request, response) {
         error instanceof Error
           ? error.message
           : "Unable to verify admin login.",
+    });
+  }
+}
+
+async function handleAdminLookupApi(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const email = String(requestUrl.searchParams.get("email") ?? "").trim().toLowerCase();
+
+    if (!email) {
+      sendJson(response, 400, { message: "Seller email is required." });
+      return;
+    }
+
+    let account = null;
+    if (await isSellerPostgresReady()) {
+      account = await findSellerByEmail(email);
+    }
+    if (!account) {
+      const accounts = await readAccounts();
+      account = accounts.find((candidate) =>
+        isAdminAccount(candidate) &&
+        String(candidate.email ?? "").trim().toLowerCase() === email
+      ) || null;
+    }
+
+    if (!account) {
+      sendJson(response, 404, { message: "Registered seller account not found." });
+      return;
+    }
+
+    const restrictionMessage = getAdminAccountRestrictionMessage(account);
+    if (restrictionMessage) {
+      sendJson(response, 403, {
+        message: restrictionMessage,
+        accountStatus: String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
+          .trim()
+          .toLowerCase(),
+      });
+      return;
+    }
+
+    const serializedAccount = serializeAdminAccount(stripSellerInternalFields(account) || account);
+    const companyPictureUrl = [
+      serializedAccount.companyPictureUrl,
+      serializedAccount.companyProfileImageUrl,
+      serializedAccount.businessLogoUrl,
+      serializedAccount.profileImageUrl,
+      serializedAccount.avatarUrl,
+      serializedAccount.photoUrl,
+      serializedAccount.logoUrl,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "";
+    sendJson(response, 200, {
+      account: {
+        email: String(serializedAccount.email ?? email).trim().toLowerCase(),
+        role: "admin",
+        adminId: serializedAccount.adminId,
+        displayName: serializedAccount.displayName,
+        companyName: serializedAccount.companyName,
+        storeName: serializedAccount.storeName,
+        businessName: serializedAccount.businessName,
+        businessLogoSkipped: serializedAccount.businessLogoSkipped === true,
+        companyPictureUrl:
+          serializedAccount.businessLogoSkipped === true ? "" : companyPictureUrl,
+        companyProfileImageUrl: String(serializedAccount.companyProfileImageUrl ?? "").trim(),
+        businessLogoUrl: String(serializedAccount.businessLogoUrl ?? "").trim(),
+        profileImageUrl:
+          serializedAccount.businessLogoSkipped === true
+            ? ""
+            : String(serializedAccount.profileImageUrl ?? companyPictureUrl).trim(),
+        logoUrl: String(serializedAccount.logoUrl ?? "").trim(),
+      },
+      message: "Registered seller account found.",
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to check seller account.",
     });
   }
 }
@@ -11488,6 +21118,43 @@ async function handleAdminPresenceApi(request, response) {
 
   try {
     const payload = await parseRequestBody(request);
+
+    if (await isSellerPostgresReady()) {
+      const matchValues = [
+        payload?.adminId,
+        payload?.id,
+        payload?.accountCode,
+        payload?.email,
+      ]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean);
+
+      let pgAccount = null;
+      for (const value of matchValues) {
+        pgAccount = await findSellerByAdminId(value);
+        if (!pgAccount && value.includes("@")) {
+          pgAccount = await findSellerByEmail(value);
+        }
+        if (pgAccount) {
+          break;
+        }
+      }
+
+      if (pgAccount) {
+        const updated = await updateSellerPresence(
+          pgAccount.id,
+          payload?.isOnline === true,
+          { event: payload?.presenceEvent },
+        );
+        sendJson(response, 200, {
+          admin: serializeAdminAccount(stripSellerInternalFields(updated) || updated),
+          message: updated?.isOnline ? "Admin is online." : "Admin is offline.",
+          authStore: "postgres",
+        });
+        return;
+      }
+    }
+
     const accounts = await readAccounts();
     const account = findAdminPresenceAccount(accounts, payload);
     if (!account) {
@@ -11495,12 +21162,15 @@ async function handleAdminPresenceApi(request, response) {
       return;
     }
 
-    setAdminAccountPresence(account, payload?.isOnline === true);
+    setAdminAccountPresence(account, payload?.isOnline === true, {
+      event: payload?.presenceEvent,
+    });
     await writeAccounts(accounts);
 
     sendJson(response, 200, {
       admin: serializeAdminAccount(account),
       message: account.isOnline ? "Admin is online." : "Admin is offline.",
+      authStore: "json",
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -11508,6 +21178,1496 @@ async function handleAdminPresenceApi(request, response) {
         error instanceof Error
           ? error.message
           : "Unable to update admin presence.",
+    });
+  }
+}
+
+async function handleAuthVerificationSendApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Verification service is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const purpose = String(payload.purpose ?? "registration").trim().toLowerCase() || "registration";
+    const channel = String(payload.channel ?? "email").trim().toLowerCase() === "mobile"
+      ? "mobile"
+      : "email";
+    const target = channel === "mobile"
+      ? String(payload.mobileNumber ?? payload.target ?? "").trim()
+      : String(payload.email ?? payload.target ?? "").trim();
+
+    if (purpose === "password_reset") {
+      const registered = await isSwitchRegisteredAccountForPasswordReset({
+        channel,
+        target,
+      });
+      if (!registered) {
+        sendJson(response, 404, {
+          message:
+            channel === "mobile"
+              ? "This mobile number is not registered on Switch."
+              : "This email is not registered on Switch.",
+        });
+        return;
+      }
+    }
+
+    const result = await sendVerificationCode({ purpose, channel, target });
+    sendJson(response, 200, {
+      message: "Verification code sent.",
+      channel: result.channel,
+      target: result.target,
+      expiresAt: result.expiresAt,
+      createdAt: result.createdAt,
+      resendAvailableAt: result.resendAvailableAt,
+      resendCooldownSeconds: result.resendCooldownSeconds,
+      delivery: result.delivery,
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to send verification code.",
+    });
+  }
+}
+
+async function handleUnifiedAuthSessionApi(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const entry = await requireUnifiedSessionEntry(request, requestUrl);
+    sendJson(response, 200, {
+      session: serializeUnifiedSessionEntry(entry),
+      message: "Unified session loaded.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 500, {
+      message: error instanceof Error ? error.message : "Unable to load unified session.",
+    });
+  }
+}
+
+async function handleUnifiedAccountRolesApi(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const entry = await requireUnifiedSessionEntry(request, requestUrl);
+    sendJson(response, 200, {
+      accountId: entry.account?.id || "",
+      email: String(entry.account?.email ?? "").trim().toLowerCase(),
+      availableModes: Array.isArray(entry.availableModes) ? entry.availableModes : [],
+      capabilities: Array.isArray(entry.capabilities) ? entry.capabilities : [],
+      companies: Array.isArray(entry.companies)
+        ? entry.companies.map((membership) => ({
+            companyId: membership.companyId,
+            membershipRole: membership.membershipRole,
+            membershipStatus: membership.membershipStatus,
+            isPrimary: Boolean(membership.isPrimary),
+            title: membership.title || "",
+            company: membership.company || null,
+          }))
+        : [],
+      message: "Account roles loaded.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 500, {
+      message: error instanceof Error ? error.message : "Unable to load account roles.",
+    });
+  }
+}
+
+async function handlePreferredLanguageApi(request, response) {
+  if (request.method !== "PATCH" && request.method !== "PUT" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Language preference is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const accountId = String(payload.accountId ?? payload.id ?? "").trim();
+    const preferredLanguage = normalizePreferredLanguage(
+      payload.preferredLanguage ?? payload.language ?? payload.languageCode,
+    );
+
+    if (!accountId) {
+      sendJson(response, 400, { message: "Account ID is required." });
+      return;
+    }
+
+    const updated = await updateCustomerPreferredLanguage(accountId, preferredLanguage);
+    sendJson(response, 200, {
+      account: serializeAccountForList(stripInternalFields(updated)),
+      preferredLanguage,
+      message: "Language preference updated.",
+    });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 400;
+    sendJson(response, statusCode, {
+      message: error instanceof Error ? error.message : "Unable to update language preference.",
+    });
+  }
+}
+
+async function handleBuyerAccountDeletionApi(request, response) {
+  if (request.method !== "DELETE") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const accountId = String(payload.accountId ?? payload.id ?? "").trim();
+    const email = String(payload.email ?? "").trim().toLowerCase();
+    const confirmationEmail = String(payload.confirmationEmail ?? "").trim().toLowerCase();
+
+    if (!accountId || !email) {
+      sendJson(response, 400, { message: "Account ID and email are required." });
+      return;
+    }
+    if (!confirmationEmail || confirmationEmail !== email) {
+      sendJson(response, 400, { message: "Enter your account email exactly to confirm deletion." });
+      return;
+    }
+
+    let deletedAccount = null;
+    if (await isCustomerPostgresReady()) {
+      const account = await findCustomerById(accountId);
+      if (!account || String(account.email ?? "").trim().toLowerCase() !== email) {
+        sendJson(response, 404, { message: "Buyer account was not found." });
+        return;
+      }
+
+      const deleted = await deleteAccountById(account.id);
+      if (!deleted) {
+        sendJson(response, 404, { message: "Buyer account was not found." });
+        return;
+      }
+      deletedAccount = account;
+    } else {
+      const accounts = await readAccounts();
+      const accountIndex = accounts.findIndex((account) =>
+        !isAdminAccount(account)
+        && String(account.id ?? account.accountId ?? "").trim() === accountId
+        && String(account.email ?? "").trim().toLowerCase() === email
+      );
+      if (accountIndex < 0) {
+        sendJson(response, 404, { message: "Buyer account was not found." });
+        return;
+      }
+      [deletedAccount] = accounts.splice(accountIndex, 1);
+      await writeAccounts(accounts);
+    }
+
+    const deletedAt = new Date().toISOString();
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "buyer-account",
+      action: "self-deleted",
+      title: "Buyer account deleted",
+      actor: email,
+      adminId: getRecordAdminId(deletedAccount, DEFAULT_ADMIN_ID),
+      description: `${email} permanently deleted their Switch buyer account.`,
+      createdAt: deletedAt,
+    }, request);
+
+    sendJson(response, 200, {
+      accountId,
+      deletedAt,
+      message: "Your Switch account has been permanently deleted.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to delete account.",
+    });
+  }
+}
+
+function assertBuyerPasswordStrength(password) {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters.";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Include at least 1 uppercase letter.";
+  }
+  if (!/\d/.test(password)) {
+    return "Include at least 1 number.";
+  }
+  if (!/[!@#$%^&*(),.?":{}|<>[\]\\\/_\-+=~`;]/.test(password)) {
+    return "Include at least 1 symbol.";
+  }
+  return "";
+}
+
+async function handleBuyerChangePasswordApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const accountId = String(payload.accountId ?? payload.id ?? "").trim();
+    const email = String(payload.email ?? "").trim().toLowerCase();
+    const currentPassword = String(
+      payload.currentPassword ?? payload.oldPassword ?? "",
+    );
+    const newPassword = String(payload.newPassword ?? payload.password ?? "");
+    const confirmPassword = String(
+      payload.confirmPassword ?? payload.passwordConfirm ?? newPassword,
+    );
+
+    if (!accountId && !email) {
+      sendJson(response, 400, { message: "Account ID or email is required." });
+      return;
+    }
+    if (!currentPassword) {
+      sendJson(response, 400, { message: "Enter your current password." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      sendJson(response, 400, { message: "Passwords do not match." });
+      return;
+    }
+    const strengthError = assertBuyerPasswordStrength(newPassword);
+    if (strengthError) {
+      sendJson(response, 400, { message: strengthError });
+      return;
+    }
+
+    let updatedAccount = null;
+    if (await isCustomerPostgresReady()) {
+      updatedAccount = await changeCustomerPassword({
+        accountId,
+        email,
+        currentPassword,
+        newPassword,
+      });
+    } else {
+      const accounts = await readAccounts();
+      const accountIndex = accounts.findIndex((account) => {
+        if (isAdminAccount(account)) return false;
+        const id = String(account.id ?? account.accountId ?? "").trim();
+        const accountEmail = String(account.email ?? "").trim().toLowerCase();
+        if (accountId && id === accountId) return true;
+        if (email && accountEmail === email) return true;
+        return false;
+      });
+      if (accountIndex < 0) {
+        sendJson(response, 404, { message: "Buyer account was not found." });
+        return;
+      }
+
+      const account = accounts[accountIndex];
+      const existingPassword = String(account.password ?? "");
+      if (!existingPassword) {
+        sendJson(response, 400, {
+          message:
+            "This account has no password yet. Use forgot password or link an email sign-in first.",
+        });
+        return;
+      }
+      const currentOk = await verifyPassword(currentPassword, existingPassword);
+      if (!currentOk) {
+        sendJson(response, 401, { message: "Current password is incorrect." });
+        return;
+      }
+      if (await verifyPassword(newPassword, existingPassword)) {
+        sendJson(response, 400, {
+          message: "Your new password cannot be the same as your old password.",
+        });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      accounts[accountIndex] = {
+        ...account,
+        password: newPassword,
+        passwordUpdatedAt: now,
+        updatedAt: now,
+      };
+      await writeAccounts(accounts);
+      const { password, ...safeAccount } = accounts[accountIndex];
+      updatedAccount = safeAccount;
+    }
+
+    const actorEmail = String(updatedAccount?.email ?? email ?? "").trim();
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "buyer-account",
+      action: "password-changed",
+      title: "Buyer password changed",
+      actor: actorEmail || accountId,
+      adminId: getRecordAdminId(updatedAccount, DEFAULT_ADMIN_ID),
+      description: `${actorEmail || accountId} changed their Switch buyer password.`,
+      createdAt: new Date().toISOString(),
+    }, request);
+
+    sendJson(response, 200, {
+      accountId: String(updatedAccount?.id ?? accountId),
+      passwordUpdatedAt: updatedAccount?.passwordUpdatedAt ?? null,
+      message: "Password updated successfully.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to change password.",
+    });
+  }
+}
+
+async function handleUnifiedAuthSwitchRoleApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const requestedMode = String(payload.activeMode ?? payload.role ?? "").trim().toLowerCase();
+    if (!requestedMode) {
+      sendJson(response, 400, { message: "activeMode is required." });
+      return;
+    }
+
+    const identity = getUnifiedSessionRequestIdentity(request, requestUrl, payload);
+    const existing = await requireUnifiedSessionEntry(request, requestUrl, payload);
+    if (!Array.isArray(existing.availableModes) || !existing.availableModes.includes(requestedMode)) {
+      sendJson(response, 403, {
+        message: `This account cannot switch to ${requestedMode}.`,
+      });
+      return;
+    }
+
+    const switched = await resolveUnifiedSession({
+      accountId: identity.accountId || existing.account?.id,
+      email: identity.email || existing.account?.email,
+      activeMode: requestedMode,
+      companyId: identity.companyId,
+    });
+
+    sendJson(response, 200, {
+      session: serializeUnifiedSessionEntry(switched),
+      message: `Switched to ${requestedMode}.`,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 500, {
+      message: error instanceof Error ? error.message : "Unable to switch role.",
+    });
+  }
+}
+
+async function handleUnifiedAccountsApi(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isUnifiedAccountsReady())) {
+      sendJson(response, 503, {
+        message: "Unified account service is unavailable.",
+      });
+      return;
+    }
+
+    const entries = await listUnifiedAccounts();
+    sendJson(response, 200, {
+      accounts: entries.map(serializeUnifiedSessionEntry),
+      message: "Unified accounts loaded.",
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load unified accounts.",
+    });
+  }
+}
+
+async function handleUnifiedAccountProfileImageApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Account service is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const requestedAccountId = String(payload.accountId ?? payload.id ?? "").trim();
+    const requestedEmail = String(payload.email ?? "").trim().toLowerCase();
+    const currentSession = await resolveUnifiedSession({
+      accountId: requestedAccountId,
+      email: requestedEmail,
+    });
+    const accountId = String(
+      currentSession?.account?.id ?? currentSession?.accountId ?? requestedAccountId,
+    ).trim();
+    if (!accountId) {
+      sendJson(response, 404, { message: "Account was not found." });
+      return;
+    }
+
+    const profileImageUrl = String(payload.profileImageUrl ?? "").trim();
+    const updated = await updateAccountProfileImage(accountId, profileImageUrl);
+    if (!updated) {
+      sendJson(response, 404, { message: "Account was not found." });
+      return;
+    }
+
+    const session = await resolveUnifiedSession({ accountId });
+    sendJson(response, 200, {
+      session: serializeUnifiedSessionEntry(session),
+      message: "Profile picture updated.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to update profile picture.",
+    });
+  }
+}
+
+async function handleBecomeSellerStartApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, {
+        message: "Seller onboarding is unavailable.",
+      });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const result = await startSellerOnboarding(payload);
+    const now = new Date().toISOString();
+    const companyName = String(
+      result?.company?.name ??
+      payload.companyName ??
+      payload.storeName ??
+      payload.businessName ??
+      "Seller company",
+    ).trim();
+    const sellerAdminId = resolveSellerOnboardingAdminId(result, payload);
+    const createdBy = String(result?.account?.email ?? payload.email ?? "").trim() || "Buyer";
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "seller-onboarding-started",
+        audience: "super_admin",
+        title: "Seller onboarding started",
+        reason: "Buyer requested seller upgrade via Be Part of Switch",
+        message: `${companyName} started the Become a Seller flow and is awaiting payment or review.`,
+        adminId: sellerAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      title: "Seller onboarding started",
+      actor: {
+        role: "admin",
+        accountId: sellerAdminId || createdBy,
+        displayName: companyName,
+      },
+      adminId: sellerAdminId,
+      source: "seller_onboarding",
+      notificationAudience: "super_admin",
+      description: `${companyName} started the Become a Seller workflow.`,
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, result.alreadyExists ? 200 : 201, {
+      onboarding: {
+        ...result,
+        company: result.company
+          ? {
+              ...result.company,
+              profileData: sanitizeCompanyProfileData(result.company.profileData),
+            }
+          : result.company,
+      },
+      pinUnlockToken: String(result.pinUnlockToken || "").trim(),
+      session: await resolveUnifiedSession({
+        accountId: result?.account?.id,
+        companyId: result?.company?.id,
+      }).then(serializeUnifiedSessionEntry),
+      message: result.alreadyExists
+        ? "Existing seller onboarding loaded."
+        : "Seller onboarding created.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to start seller onboarding.",
+    });
+  }
+}
+
+function getSellerPlanCatalog(paymentPartners = []) {
+  const activePartners = (Array.isArray(paymentPartners) ? paymentPartners : [])
+    .filter((partner) => partner && partner.enabled !== false && partner.isActive !== false)
+    .map((partner) => ({
+      id: String(partner.id || "").trim(),
+      name: String(partner.branch || partner.name || "Payment Partner").trim(),
+      imageUrl: String(partner.imageUrl || "").trim(),
+      status: String(partner.status || "active").trim().toLowerCase() || "active",
+    }))
+    .filter((partner) => partner.id && partner.name);
+
+  return {
+    plans: [
+      {
+        id: "seller-free",
+        name: "Free",
+        billingCycle: "monthly",
+        amount: 0,
+        yearlyAmount: 0,
+        currencyCode: "PHP",
+        popular: false,
+        free: true,
+        description: "Start selling on Switch at no cost. Upgrade anytime for Legit seller badge and more tools.",
+        features: [
+          "Seller admin dashboard",
+          "Up to 10 active listings",
+          "Order basics",
+          "Buyer + seller unified account",
+        ],
+      },
+      {
+        id: "seller-basic-monthly",
+        name: "Basic",
+        billingCycle: "monthly",
+        amount: 299,
+        yearlyAmount: 2870,
+        currencyCode: "PHP",
+        popular: false,
+        description: "Everything you need to list products and start selling on Switch.",
+        features: [
+          "Seller admin dashboard",
+          "Up to 50 active listings",
+          "Order and inventory basics",
+          "Email support",
+          "Buyer + seller unified account",
+          "Legit badge for original products",
+        ],
+      },
+      {
+        id: "seller-pro-monthly",
+        name: "Pro",
+        billingCycle: "monthly",
+        amount: 499,
+        yearlyAmount: 4790,
+        currencyCode: "PHP",
+        popular: true,
+        description: "The perfect balance of tools for growing seller teams.",
+        features: [
+          "Everything in Basic",
+          "Up to 500 active listings",
+          "Employee workspace access",
+          "Priority support",
+          "Live chat with buyers",
+          "Company branding on storefront",
+          "Legit badge for original products",
+        ],
+      },
+      {
+        id: "seller-premium-monthly",
+        name: "Premium",
+        billingCycle: "monthly",
+        amount: 999,
+        yearlyAmount: 9590,
+        currencyCode: "PHP",
+        popular: false,
+        description: "Maximum control for high-volume seller operations.",
+        features: [
+          "Everything in Pro",
+          "Unlimited listings",
+          "Advanced analytics",
+          "Dedicated onboarding help",
+          "Multi-warehouse inventory",
+          "API access (coming soon)",
+          "Priority dispute handling",
+          "Legit badge for original products",
+        ],
+      },
+    ],
+    paymentPartners: activePartners,
+  };
+}
+
+async function handleSellerPlansApi(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const paymentPartners = await readPaymentPartners();
+    sendJson(response, 200, {
+      catalog: getSellerPlanCatalog(paymentPartners),
+      message: "Seller plans loaded.",
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load seller plans.",
+    });
+  }
+}
+
+async function handleBecomeSellerCheckoutIntentApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, {
+        message: "Seller checkout is unavailable.",
+      });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const result = await createSellerCheckoutIntent(payload);
+    const checkoutIntent = result.checkoutIntent || null;
+    const requestOrigin = getRequestOrigin(request);
+    const hostedGateway = getHostedGatewayConfig();
+    let hostedCheckout = null;
+
+    if (checkoutIntent && hostedGateway.enabled) {
+      hostedCheckout = await createHostedCheckoutSession({
+        checkoutIntent,
+        customerEmail: String(payload.email || "").trim(),
+        customerName: String(payload.customerName || "").trim(),
+        successUrl: `${requestOrigin}/unified_account.html?checkout=success&companyId=${encodeURIComponent(result.companyId)}&intentId=${encodeURIComponent(checkoutIntent.id)}`,
+        cancelUrl: `${requestOrigin}/unified_account.html?checkout=cancel&companyId=${encodeURIComponent(result.companyId)}&intentId=${encodeURIComponent(checkoutIntent.id)}`,
+      });
+
+      await updateSellerCheckoutIntentGatewayState(checkoutIntent.id, {
+        paymentGateway: hostedCheckout.provider,
+        checkoutUrl: hostedCheckout.checkoutUrl,
+        status: "pending_payment",
+        metadata: {
+          hostedProvider: hostedCheckout.provider,
+          hostedCheckoutId: hostedCheckout.externalId,
+          hostedLivemode: hostedCheckout.livemode,
+          paymentMethodTypes: hostedCheckout.paymentMethodTypes,
+        },
+      });
+    }
+
+    sendJson(response, 201, {
+      checkoutIntent: hostedCheckout
+        ? {
+            ...checkoutIntent,
+            paymentGateway: hostedCheckout.provider,
+            checkoutUrl: hostedCheckout.checkoutUrl,
+            providerCheckoutId: hostedCheckout.externalId,
+            paymentMethodTypes: hostedCheckout.paymentMethodTypes,
+            livemode: hostedCheckout.livemode,
+          }
+        : checkoutIntent,
+      message: "Seller checkout intent created.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to prepare seller checkout.",
+    });
+  }
+}
+
+async function handlePaymongoSellerWebhookApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const rawBody = await parseRawRequestBody(request);
+    const eventPayload = rawBody ? JSON.parse(rawBody) : {};
+    const eventData = eventPayload?.data || {};
+    const eventType = String(eventData?.type || "").trim();
+    const livemode = Boolean(eventData?.livemode);
+    const signatureHeader = String(request.headers["paymongo-signature"] || "").trim();
+    const webhookSecret = String(process.env.PAYMONGO_WEBHOOK_SECRET ?? "").trim();
+
+    if (webhookSecret && !verifyPaymongoWebhook({
+      rawBody,
+      signatureHeader,
+      webhookSecret,
+      livemode,
+    })) {
+      sendJson(response, 401, { message: "Invalid PayMongo signature." });
+      return;
+    }
+
+    if (eventType !== "checkout_session.payment.paid") {
+      sendJson(response, 200, {
+        message: "Webhook received.",
+        ignored: true,
+        eventType,
+      });
+      return;
+    }
+
+    const sessionData = eventData?.data || {};
+    const attributes = sessionData?.attributes || {};
+    const paymentReference = String(attributes?.reference_number || "").trim();
+    if (!paymentReference) {
+      sendJson(response, 400, { message: "Missing checkout reference number." });
+      return;
+    }
+
+    const intent = await findSellerCheckoutIntentByPaymentReference(paymentReference);
+    if (!intent) {
+      sendJson(response, 404, { message: "Checkout intent not found." });
+      return;
+    }
+
+    await updateSellerCheckoutIntentGatewayState(intent.id, {
+      paymentGateway: "paymongo",
+      status: "active",
+      metadata: {
+        hostedCheckoutId: String(sessionData?.id || "").trim(),
+        paymentPaidAt: new Date().toISOString(),
+        paymongoEventType: eventType,
+        paymongoLivemode: livemode,
+        paymongoWebhookPayload: eventPayload,
+      },
+    });
+
+    const confirmed = await confirmSellerOnboarding({
+      accountId: intent.accountId,
+      companyId: intent.companyId,
+      planName: intent.planName,
+      billingCycle: intent.billingCycle,
+      paymentGateway: "paymongo",
+      paymentReference: intent.paymentReference,
+      amount: intent.amount,
+      currencyCode: intent.currencyCode,
+    });
+
+    sendJson(response, 200, {
+      message: "Seller checkout webhook processed.",
+      session: serializeUnifiedSessionEntry(confirmed.session),
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to process PayMongo webhook.",
+    });
+  }
+}
+
+async function handleBecomeSellerConfirmApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, {
+        message: "Seller onboarding is unavailable.",
+      });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const result = await confirmSellerOnboarding(payload);
+    const now = new Date().toISOString();
+    const companyName = String(result?.company?.name ?? "Seller company").trim();
+    const sellerAdminId = resolveSellerOnboardingAdminId(result, payload);
+    const createdBy = String(result?.account?.email ?? payload.email ?? "").trim() || "Buyer";
+    const isActive = Boolean(result?.active);
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: isActive ? "seller-onboarding-activated" : "seller-onboarding-pending-review",
+        audience: "super_admin",
+        title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
+        reason: isActive
+          ? "Payment and verification completed via Be Part of Switch"
+          : "Payment completed but manual review is still required",
+        message: isActive
+          ? `${companyName} can now access Seller Mode.`
+          : `${companyName} completed payment and is waiting for activation review.`,
+        adminId: sellerAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+
+    if (sellerAdminId) {
+      await notifySellerAdminInboxByAdminId(
+        sellerAdminId,
+        createPersistentLinkedNotification({
+          type: isActive ? "seller-onboarding-activated" : "seller-onboarding-pending-review",
+          audience: "seller",
+          title: isActive ? "Seller workspace ready" : "Seller upgrade pending review",
+          reason: isActive
+            ? "Your Be Part of Switch upgrade is complete"
+            : "Your company is waiting for activation review",
+          message: isActive
+            ? `${companyName} is ready. Open Seller Mode to manage your store.`
+            : `${companyName} payment was received. Super Admin still needs to finish activation.`,
+          adminId: sellerAdminId,
+          companyName,
+          storeName: companyName,
+          businessName: companyName,
+          createdBy: SUPER_ADMIN_USERNAME,
+          targetUrl: isActive ? "/main.html#dashboard" : "/switch_account.html",
+          createdAt: now,
+        }),
+      );
+    }
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
+      actor: {
+        role: "admin",
+        accountId: sellerAdminId || createdBy,
+        displayName: companyName,
+      },
+      adminId: sellerAdminId,
+      source: "seller_onboarding",
+      notificationAudience: "admin",
+      description: isActive
+        ? `${companyName} completed seller activation.`
+        : `${companyName} completed seller payment and is awaiting review.`,
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      onboarding: result,
+      session: serializeUnifiedSessionEntry(result.session),
+      message: isActive
+        ? "Seller role activated."
+        : "Seller payment confirmed. Review is still pending.",
+      redirectPath: isActive ? "/main.html#dashboard" : "",
+      dashboardPath: isActive ? "/main.html#dashboard" : "",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to confirm seller onboarding.",
+    });
+  }
+}
+
+async function handleBecomeSellerMarkVerifiedApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, {
+        message: "Seller onboarding is unavailable.",
+      });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const result = await markAccountVerifiedForSellerOnboarding(payload);
+    sendJson(response, 200, {
+      account: result.account,
+      session: serializeUnifiedSessionEntry(result.session),
+      channel: result.channel,
+      prototype: Boolean(result.prototype),
+      message: result.prototype
+        ? "Prototype verification applied."
+        : "Account verification updated.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to mark account verified.",
+    });
+  }
+}
+
+async function handleSellerSwitchPinApi(request, response, action) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, { message: "Seller workspace is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const accountId = String(payload.accountId || "").trim();
+    const email = String(payload.email || "").trim().toLowerCase();
+    const companyId = String(payload.companyId || "").trim();
+    if (!accountId && !email) {
+      sendJson(response, 400, { message: "Account ID or email is required." });
+      return;
+    }
+
+    const session = await resolveUnifiedSession({
+      accountId,
+      email,
+      companyId: companyId || undefined,
+    });
+    const resolvedAccountId = String(session?.account?.id || accountId).trim();
+    if (!resolvedAccountId) {
+      sendJson(response, 404, { message: "Account was not found." });
+      return;
+    }
+
+    if (action === "status") {
+      const status = await getSellerSwitchPinStatus({
+        accountId: resolvedAccountId,
+        companyId,
+      });
+      sendJson(response, 200, {
+        ...status,
+        message: status.hasPin
+          ? "Enter your Switch PIN to open seller admin."
+          : "Create a Switch PIN before opening seller admin.",
+      });
+      return;
+    }
+
+    if (action === "set") {
+      const result = await setSellerSwitchPin({
+        accountId: resolvedAccountId,
+        companyId,
+        pin: payload.pin,
+        confirmPin: payload.confirmPin,
+      });
+      sendJson(response, 200, {
+        ...result,
+        message: "Switch PIN saved. You can open seller admin.",
+      });
+      return;
+    }
+
+    if (action === "check-unlock") {
+      const unlock = checkSellerSwitchPinUnlock({
+        token: payload.unlockToken,
+        accountId: resolvedAccountId,
+        companyId,
+      });
+      sendJson(response, 200, {
+        ...unlock,
+        message: unlock.unlocked ? "Switch PIN accepted." : "Enter your Switch PIN to open seller admin.",
+      });
+      return;
+    }
+
+    const result = await verifySellerSwitchPin({
+      accountId: resolvedAccountId,
+      companyId,
+      pin: payload.pin,
+    });
+    sendJson(response, 200, {
+      ...result,
+      message: "Switch PIN accepted.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to check Switch PIN.",
+    });
+  }
+}
+
+async function handleBecomeSellerOpenWorkspaceApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady()) || !(await isSellerPostgresReady())) {
+      sendJson(response, 503, {
+        message: "Seller workspace is unavailable.",
+      });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const accountId = String(payload.accountId || "").trim();
+    const email = String(payload.email || "").trim().toLowerCase();
+    if (!accountId && !email) {
+      sendJson(response, 400, { message: "Account ID or email is required." });
+      return;
+    }
+
+    const session = await resolveUnifiedSession({
+      accountId,
+      email,
+      activeMode: "seller_admin",
+      companyId: String(payload.companyId || "").trim() || undefined,
+    });
+    const modes = Array.isArray(session?.availableModes) ? session.availableModes : [];
+    if (!modes.includes("seller_admin")) {
+      sendJson(response, 403, {
+        message: "Seller admin access is not active on this account yet.",
+      });
+      return;
+    }
+
+    let seller = null;
+    if (session?.account?.id) {
+      seller = await findSellerByAdminId(session.account.id);
+    }
+    if (!seller && email) {
+      seller = await findSellerByEmail(email);
+    }
+    if (!seller) {
+      sendJson(response, 404, {
+        message: "Seller workspace profile was not found. Finish onboarding first.",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      admin: serializeAdminAccount(seller),
+      dashboardPath: "/main.html#dashboard",
+      redirectPath: "/main.html#dashboard",
+      message: "Seller workspace ready.",
+      authStore: "postgres",
+      pinRequired: true,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to open seller workspace.",
+    });
+  }
+}
+
+async function isSwitchRegisteredAccountForPasswordReset({ channel, target }) {
+  const normalizedChannel = channel === "mobile" ? "mobile" : "email";
+  const rawTarget = String(target ?? "").trim();
+  if (!rawTarget) {
+    return false;
+  }
+
+  if (normalizedChannel === "email") {
+    const email = rawTarget.toLowerCase();
+
+    if (await isSellerPostgresReady()) {
+      const seller = await findSellerByEmail(email);
+      if (seller) {
+        return true;
+      }
+    }
+
+    if (await isCustomerPostgresReady()) {
+      const customer = await findCustomerByEmail(email);
+      if (customer) {
+        return true;
+      }
+    }
+
+    const accounts = await readAccounts();
+    return accounts.some((account) => {
+      const accountEmail = String(account?.email ?? "").trim().toLowerCase();
+      return accountEmail === email;
+    });
+  }
+
+  const mobileDigits = rawTarget.replace(/\D/g, "");
+  const accounts = await readAccounts();
+  return accounts.some((account) => {
+    const accountMobile = String(
+      account?.mobileNumber ?? account?.phone ?? "",
+    ).replace(/\D/g, "");
+    return Boolean(accountMobile) && (
+      accountMobile === mobileDigits
+      || accountMobile.endsWith(mobileDigits)
+      || mobileDigits.endsWith(accountMobile)
+    );
+  });
+}
+
+async function handleAuthPasswordResetApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Password reset service is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const email = String(payload.email ?? payload.target ?? "").trim().toLowerCase();
+    const password = String(payload.password ?? payload.newPassword ?? "");
+    const confirmPassword = String(
+      payload.confirmPassword ?? payload.passwordConfirm ?? password,
+    );
+    const verificationToken = String(payload.verificationToken ?? "").trim();
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sendJson(response, 400, { message: "Enter a valid email address." });
+      return;
+    }
+    if (password.length < 8) {
+      sendJson(response, 400, { message: "Password must be at least 8 characters." });
+      return;
+    }
+    if (!/[A-Z]/.test(password)) {
+      sendJson(response, 400, { message: "Include at least 1 uppercase letter." });
+      return;
+    }
+    if (!/\d/.test(password)) {
+      sendJson(response, 400, { message: "Include at least 1 number." });
+      return;
+    }
+    if (password !== confirmPassword) {
+      sendJson(response, 400, { message: "Passwords do not match." });
+      return;
+    }
+    if (!verificationToken) {
+      sendJson(response, 400, { message: "Verify the code sent to your email first." });
+      return;
+    }
+
+    let postgresSeller = null;
+    if (await isSellerPostgresReady()) {
+      postgresSeller = await findSellerByEmail(email);
+    }
+
+    const accounts = await readAccounts();
+    const accountIndex = accounts.findIndex(
+      (account) =>
+        isAdminAccount(account) &&
+        String(account.email ?? "").trim().toLowerCase() === email,
+    );
+
+    if (!postgresSeller && accountIndex < 0) {
+      sendJson(response, 404, { message: "This email is not registered on Switch." });
+      return;
+    }
+
+    const existingPasswordMatchesSeller = Boolean(
+      postgresSeller?._passwordHash && (await verifyPassword(password, postgresSeller._passwordHash)),
+    );
+    const existingPasswordMatchesLocal = Boolean(
+      accountIndex >= 0
+        && (await verifyPassword(password, accounts[accountIndex]?.password ?? "")),
+    );
+
+    if (existingPasswordMatchesSeller || existingPasswordMatchesLocal) {
+      sendJson(response, 400, {
+        message: "Your new password cannot be the same as your old password.",
+      });
+      return;
+    }
+
+    await consumeVerificationToken({
+      purpose: "password_reset",
+      channel: "email",
+      target: email,
+      verificationToken,
+    });
+
+    if (postgresSeller) {
+      await updateSellerPasswordByEmail(email, password);
+    }
+
+    if (accountIndex >= 0) {
+      const now = new Date().toISOString();
+      const previousAccount = accounts[accountIndex];
+      accounts[accountIndex] = {
+        ...previousAccount,
+        password,
+        passwordUpdatedAt: now,
+        passwordResetRequired: false,
+        mustChangePassword: false,
+        updatedAt: now,
+      };
+      await writeAccounts(accounts);
+    }
+
+    sendJson(response, 200, {
+      message: "Password updated. You can sign in with your new password.",
+      email,
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to reset password.",
+    });
+  }
+}
+
+async function handleAuthVerificationVerifyApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Verification service is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const purpose = String(payload.purpose ?? "registration").trim().toLowerCase() || "registration";
+    const channel = String(payload.channel ?? "email").trim().toLowerCase() === "mobile"
+      ? "mobile"
+      : "email";
+    const target = channel === "mobile"
+      ? String(payload.mobileNumber ?? payload.target ?? "").trim()
+      : String(payload.email ?? payload.target ?? "").trim();
+    const code = String(payload.code ?? "").trim();
+
+    const result = await verifyVerificationCode({
+      purpose,
+      channel,
+      target,
+      code,
+    });
+
+    sendJson(response, 200, {
+      message: "Verification successful.",
+      verificationToken: result.verificationToken,
+      channel: result.channel,
+      target: result.target,
+      expiresAt: result.expiresAt,
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to verify code.",
+    });
+  }
+}
+
+async function handleAuthGoogleProfileApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Google sign-in is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const profile = await verifyGoogleCredential({
+      idToken: payload.idToken,
+      accessToken: payload.accessToken,
+    });
+
+    sendJson(response, 200, {
+      profile: {
+        provider: profile.provider,
+        subject: profile.subject,
+        email: profile.email,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        displayName: profile.displayName,
+        picture: profile.picture,
+      },
+      message: "Google account verified.",
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to verify Google account.",
+    });
+  }
+}
+
+async function handleAuthGoogleLoginApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isCustomerPostgresReady())) {
+      sendJson(response, 503, { message: "Google sign-in is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const createIfMissing =
+      payload.createIfMissing === undefined
+        ? true
+        : Boolean(payload.createIfMissing);
+    const loginResult = await loginCustomerWithGoogle({
+      idToken: payload.idToken,
+      accessToken: payload.accessToken,
+      createIfMissing,
+      verificationToken: payload.verificationToken,
+      preferredLanguage: payload.preferredLanguage,
+    });
+
+    if (!loginResult.ok) {
+      const statusCode =
+        loginResult.code === "not_found"
+          ? 404
+          : loginResult.code === "verification_required"
+            ? 409
+            : 400;
+      sendJson(response, statusCode, {
+        message: loginResult.message,
+        code: loginResult.code,
+        profile: loginResult.profile
+          ? {
+              email: loginResult.profile.email,
+              firstName: loginResult.profile.firstName,
+              lastName: loginResult.profile.lastName,
+            }
+          : undefined,
+      });
+      return;
+    }
+
+    const restrictionMessage = getBuyerRestrictionMessage(loginResult.account);
+    if (restrictionMessage) {
+      sendJson(response, 403, {
+        message: restrictionMessage,
+        accountStatus: getBuyerAccountStatus(loginResult.account),
+        authStore: "postgres",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      account: serializeAccountForList(stripInternalFields(loginResult.account)),
+      message: loginResult.created
+        ? "Welcome! Your Switch account was created with Google."
+        : "Login successful.",
+      created: Boolean(loginResult.created),
+      authStore: "postgres",
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to sign in with Google.",
+    });
+  }
+}
+
+async function handleAuthGoogleConfigApi(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const clientIds = getGoogleClientIds();
+  sendJson(response, 200, {
+    clientId: clientIds[0] || "",
+    configured: clientIds.length > 0,
+  });
+}
+
+async function handleAuthGoogleSellerLoginApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerPostgresReady())) {
+      sendJson(response, 503, { message: "Google seller sign-in is unavailable." });
+      return;
+    }
+
+    await processDueSellerAccountDeletions();
+    const payload = await parseRequestBody(request);
+    const createIfMissing =
+      payload.createIfMissing === undefined
+        ? true
+        : Boolean(payload.createIfMissing);
+    const loginResult = await loginSellerWithGoogle({
+      idToken: payload.idToken,
+      accessToken: payload.accessToken,
+      createIfMissing,
+    });
+
+    if (!loginResult.ok) {
+      const statusCode = loginResult.code === "not_found" ? 404 : 400;
+      sendJson(response, statusCode, {
+        message: loginResult.message,
+        code: loginResult.code,
+        profile: loginResult.profile
+          ? {
+              email: loginResult.profile.email,
+              firstName: loginResult.profile.firstName,
+              lastName: loginResult.profile.lastName,
+              displayName: loginResult.profile.displayName,
+              picture: loginResult.profile.picture,
+              subject: loginResult.profile.subject,
+            }
+          : undefined,
+      });
+      return;
+    }
+
+    const admin = loginResult.account;
+    const restrictionMessage = getAdminAccountRestrictionMessage(admin);
+    if (restrictionMessage) {
+      sendJson(response, 403, {
+        message: restrictionMessage,
+        banReason: String(admin?.banReason ?? admin?.lastBanReason ?? "").trim(),
+        banDescription: String(admin?.banDescription ?? admin?.banDetails ?? "").trim(),
+        authStore: "postgres",
+      });
+      return;
+    }
+
+    sendJson(response, 200, {
+      admin: serializeAdminAccount(admin),
+      redirectPath: "/main.html#dashboard",
+      dashboardPath: "/main.html#dashboard",
+      message: loginResult.created
+        ? "Welcome! Your seller account was created with Google."
+        : "Seller login successful.",
+      created: Boolean(loginResult.created),
+      authStore: "postgres",
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to sign in seller with Google.",
     });
   }
 }
@@ -11527,6 +22687,55 @@ async function handleAppUserLoginApi(request, response) {
       sendJson(response, 400, {
         message: "Please enter both email and password.",
       });
+      return;
+    }
+
+    if (await isCustomerPostgresReady()) {
+      const pgLogin = await loginCustomer({ email, password });
+      if (pgLogin.ok) {
+        const restrictionMessage = getBuyerRestrictionMessage(pgLogin.account);
+        if (restrictionMessage) {
+          sendJson(response, 403, {
+            message: restrictionMessage,
+            accountStatus: getBuyerAccountStatus(pgLogin.account),
+            banReason: String(
+              pgLogin.account?.banReason
+                ?? pgLogin.account?.suspensionReason
+                ?? pgLogin.account?.lockReason
+                ?? "",
+            )
+              .replace(/\s+/g, " ")
+              .trim(),
+            authStore: "postgres",
+          });
+          return;
+        }
+
+        sendJson(response, 200, {
+          account: serializeAccountForList(stripInternalFields(pgLogin.account)),
+          message: "Login successful.",
+          authStore: "postgres",
+        });
+        return;
+      }
+
+      if (pgLogin.code === "bad_password") {
+        sendJson(response, 401, { message: "Incorrect Password", code: "bad_password" });
+        return;
+      }
+
+      if (
+        pgLogin.code === "google_sign_in_required"
+        || pgLogin.code === "password_not_set"
+      ) {
+        sendJson(response, 403, {
+          message: pgLogin.message,
+          code: pgLogin.code,
+        });
+        return;
+      }
+
+      sendJson(response, 404, { message: "Incorrect Email", code: "not_found" });
       return;
     }
 
@@ -11550,9 +22759,37 @@ async function handleAppUserLoginApi(request, response) {
       return;
     }
 
+    const restrictionMessage = getBuyerRestrictionMessage(account);
+    if (restrictionMessage) {
+      sendJson(response, 403, {
+        message: restrictionMessage,
+        accountStatus: getBuyerAccountStatus(account),
+        banReason: String(account?.banReason ?? account?.suspensionReason ?? account?.lockReason ?? "")
+          .replace(/\s+/g, " ")
+          .trim(),
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    Object.assign(account, {
+      lastLoginAt: now,
+      lastActiveAt: now,
+      isOnline: true,
+      online: true,
+      loggedIn: true,
+      isLoggedIn: true,
+      sessionActive: true,
+      presenceStatus: "online",
+      onlineStatus: "online",
+      presenceUpdatedAt: now,
+    });
+    await writeAccounts(accounts);
+
     sendJson(response, 200, {
       account: serializeAccountForList(account),
       message: "Login successful.",
+      authStore: "json",
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -11593,6 +22830,7 @@ async function handleAdminAccountApi(request, response) {
 
   if (request.method === "GET") {
     try {
+      await processDueSellerAccountDeletions();
       const accounts = await readAccounts();
       const accountIndex = findAdminAccountIndexForRequest(accounts, requestAdminId);
       if (accountIndex < 0) {
@@ -11600,8 +22838,17 @@ async function handleAdminAccountApi(request, response) {
         return;
       }
 
+      const account = accounts[accountIndex];
+      if (getSellerAccountDeletionStatus(account) === "deleted") {
+        sendJson(response, 403, {
+          message: "This seller account has been deleted.",
+          accountStatus: "deleted",
+        });
+        return;
+      }
+
       sendJson(response, 200, {
-        admin: serializeAdminAccount(accounts[accountIndex]),
+        admin: serializeAdminAccount(account),
       });
     } catch (error) {
       sendJson(response, 500, {
@@ -11613,6 +22860,18 @@ async function handleAdminAccountApi(request, response) {
 
   if (request.method === "PUT") {
     try {
+      if (
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "update_store_profile",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       const accounts = await readAccounts();
       const accountIndex = findAdminAccountIndexForRequest(accounts, requestAdminId);
@@ -11621,6 +22880,13 @@ async function handleAdminAccountApi(request, response) {
       }
 
       const existingAccount = accounts[accountIndex];
+      if (getSellerAccountDeletionStatus(existingAccount) === "deleted") {
+        sendJson(response, 403, {
+          message: "This seller account has been deleted.",
+          accountStatus: "deleted",
+        });
+        return;
+      }
       const storeName = String(
         payload.companyName ??
           payload.storeName ??
@@ -11639,6 +22905,20 @@ async function handleAdminAccountApi(request, response) {
       const profileImageUrl = Object.prototype.hasOwnProperty.call(payload, "profileImageUrl")
         ? String(payload.profileImageUrl ?? "").trim()
         : String(existingAccount.profileImageUrl ?? "").trim();
+      const hasStoreTypeInput =
+        Object.prototype.hasOwnProperty.call(payload, "storeType") ||
+        Object.prototype.hasOwnProperty.call(payload, "storeTypeName") ||
+        Object.prototype.hasOwnProperty.call(payload, "businessType");
+      const previousStoreType = normalizeStoreTypeName(
+        existingAccount.storeType ??
+          existingAccount.storeTypeName ??
+          existingAccount.businessType ??
+          "",
+      );
+      const requestedStoreType = hasStoreTypeInput
+        ? normalizeStoreTypeName(payload.storeType ?? payload.storeTypeName ?? payload.businessType ?? "")
+        : previousStoreType;
+      const accountUpdatedAt = new Date().toISOString();
 
       if (storeName.length < 2) {
         throw new Error("Company name must be at least 2 characters long.");
@@ -11664,6 +22944,31 @@ async function handleAdminAccountApi(request, response) {
         throw new Error("New password must be at least 6 characters long.");
       }
 
+      const passwordWasChanged = Boolean(
+        submittedPassword &&
+        submittedPassword !== String(existingAccount.password ?? ""),
+      );
+      const businessTypeWasChanged = requestedStoreType !== previousStoreType;
+      const previousProfileSnapshot = JSON.stringify({
+        companyName: String(existingAccount.companyName ?? existingAccount.storeName ?? "").trim(),
+        firstName: String(existingAccount.firstName ?? "").trim(),
+        lastName: String(existingAccount.lastName ?? "").trim(),
+        email: String(existingAccount.email ?? "").trim().toLowerCase(),
+        countryCode: String(existingAccount.countryCode ?? "+63").trim() || "+63",
+        mobileNumber: String(existingAccount.mobileNumber ?? "").replace(/\D/g, "").trim(),
+        profileImageUrl: String(existingAccount.profileImageUrl ?? "").trim(),
+      });
+      const nextProfileSnapshot = JSON.stringify({
+        companyName: storeName,
+        firstName,
+        lastName,
+        email,
+        countryCode,
+        mobileNumber,
+        profileImageUrl,
+      });
+      const profileWasChanged = previousProfileSnapshot !== nextProfileSnapshot;
+
       const emailTaken = accounts.some((account, index) =>
         index !== accountIndex &&
         isAdminAccount(account) &&
@@ -11688,19 +22993,73 @@ async function handleAdminAccountApi(request, response) {
         storeName,
         companyName: storeName,
         businessName: storeName,
+        storeType: requestedStoreType,
+        storeTypeName: requestedStoreType,
+        businessType: requestedStoreType,
         firstName,
         lastName,
         email,
         countryCode,
         mobileNumber,
         password: submittedPassword || existingAccount.password,
+        passwordUpdatedAt: passwordWasChanged
+          ? accountUpdatedAt
+          : existingAccount.passwordUpdatedAt ?? existingAccount.createdAt ?? accountUpdatedAt,
+        storeTypeUpdatedAt: businessTypeWasChanged
+          ? accountUpdatedAt
+          : existingAccount.storeTypeUpdatedAt ?? null,
         adminId: getRecordAdminId(existingAccount, requestAdminId),
         profileImageUrl,
         createdAt: existingAccount.createdAt,
+        updatedAt: accountUpdatedAt,
       }, existingAccount);
 
       accounts[accountIndex] = normalizedAdmin;
       await writeAccounts(accounts);
+      const adminActivityActor = createAdminAccountActivityActor(normalizedAdmin);
+      const activityEntries = [];
+      if (profileWasChanged) {
+        activityEntries.push({
+          id: createActivityLogId(),
+          type: "admin-account",
+          action: "profile-updated",
+          title: "Seller profile updated",
+          actor: adminActivityActor,
+          adminId: requestAdminId,
+          targetPermission: "",
+          description: `${adminActivityActor.displayName} updated seller profile information.`,
+          createdAt: accountUpdatedAt,
+        });
+      }
+      if (passwordWasChanged) {
+        activityEntries.push({
+          id: createActivityLogId(),
+          type: "admin-account",
+          action: "password-changed",
+          title: "Seller password changed",
+          actor: adminActivityActor,
+          adminId: requestAdminId,
+          targetPermission: "",
+          description: `${adminActivityActor.displayName} changed seller account password.`,
+          createdAt: accountUpdatedAt,
+        });
+      }
+      if (businessTypeWasChanged) {
+        activityEntries.push({
+          id: createActivityLogId(),
+          type: "admin-account",
+          action: "business-type-changed",
+          title: "Business type changed",
+          actor: adminActivityActor,
+          adminId: requestAdminId,
+          targetPermission: "",
+          description: `Business type changed from ${previousStoreType || "Unspecified"} to ${requestedStoreType || "Unspecified"}.`,
+          previousBusinessType: previousStoreType,
+          nextBusinessType: requestedStoreType,
+          createdAt: accountUpdatedAt,
+        });
+      }
+      await Promise.all(activityEntries.map((entry) => logActivitySafely(entry, request)));
       sendJson(response, 200, {
         admin: serializeAdminAccount(normalizedAdmin),
         message: "Admin account updated.",
@@ -11714,6 +23073,195 @@ async function handleAdminAccountApi(request, response) {
   }
 
   sendJson(response, 405, { message: "Method not allowed." });
+}
+
+async function handleAdminAccountDeletionApi(request, response) {
+  const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+  const requestAdminId = normalizeAdminTenantId(
+    request.headers["x-gms-admin-id"] ??
+      request.headers["x-admin-id"] ??
+      requestUrl.searchParams.get("adminId") ??
+      requestUrl.searchParams.get("tenantId") ??
+      requestUrl.searchParams.get("workspaceId"),
+    "",
+  );
+
+  if (!requestAdminId) {
+    sendJson(response, 401, { message: "Admin session was not found." });
+    return;
+  }
+
+  const isCancelRequest =
+    request.method === "DELETE" ||
+    (request.method === "POST" && requestUrl.pathname.endsWith("/cancel"));
+
+  if (request.method !== "POST" && request.method !== "DELETE") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    await processDueSellerAccountDeletions();
+    const payload = request.method === "POST"
+      ? await parseRequestBody(request).catch(() => ({}))
+      : {};
+    const accounts = await readAccounts();
+    const accountIndex = findAdminAccountIndexForRequest(accounts, requestAdminId);
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Admin account was not found." });
+      return;
+    }
+
+    const existingAccount = accounts[accountIndex];
+    const deletionStatus = getSellerAccountDeletionStatus(existingAccount);
+    if (deletionStatus === "deleted") {
+      sendJson(response, 403, {
+        message: "This seller account has been deleted.",
+        accountStatus: "deleted",
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const companyName = getSellerCompanyDisplayName(existingAccount);
+    const adminActivityActor = createAdminAccountActivityActor(existingAccount);
+
+    if (isCancelRequest) {
+      if (deletionStatus !== "scheduled") {
+        sendJson(response, 400, {
+          message: "This seller account is not scheduled for deletion.",
+        });
+        return;
+      }
+
+      clearScheduledSellerAccountDeletion(existingAccount, now);
+      const sellerNotification = createSellerDeletionInboxNotification(existingAccount, now, {
+        type: "seller-account-deletion-canceled",
+        createdBy: adminActivityActor.displayName,
+      });
+      assignSellerAdminNotification(existingAccount, sellerNotification);
+      accounts[accountIndex] = existingAccount;
+      await writeAccounts(accounts);
+
+      await persistSuperAdminNotification(
+        createPersistentLinkedNotification({
+          type: "seller-account-deletion-canceled",
+          audience: "super_admin",
+          title: "Seller canceled account deletion",
+          reason: "Seller kept the account",
+          message: `${companyName} canceled the scheduled seller account deletion.`,
+          adminId: requestAdminId,
+          companyName,
+          storeName: companyName,
+          businessName: companyName,
+          createdBy: companyName,
+          targetUrl: "/super_admin.html#companies",
+          createdAt: now,
+        }),
+      );
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-account-deletion",
+        action: "deletion-canceled",
+        source: "super_admin",
+        notificationAudience: "admin",
+        title: sellerNotification.title,
+        description: sellerNotification.message,
+        actor: adminActivityActor,
+        adminId: requestAdminId,
+        targetUrl: "/main.html#account-settings",
+        createdAt: now,
+        skipLinkedNotification: true,
+      }, request);
+
+      sendJson(response, 200, {
+        admin: serializeAdminAccount(existingAccount),
+        message: "Account deletion canceled. Your seller account stays active.",
+      });
+      return;
+    }
+
+    if (deletionStatus === "scheduled") {
+      sendJson(response, 200, {
+        admin: serializeAdminAccount(existingAccount),
+        message: "Account deletion is already scheduled.",
+      });
+      return;
+    }
+
+    const confirmation = String(payload.confirmation ?? payload.confirmText ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toUpperCase();
+    if (confirmation !== "DELETE") {
+      sendJson(response, 400, {
+        message: "Type DELETE to confirm account deletion.",
+      });
+      return;
+    }
+
+    const passwordValid = await verifySellerAccountPassword(
+      existingAccount,
+      payload.password ?? payload.currentPassword,
+    );
+    if (!passwordValid) {
+      sendJson(response, 403, {
+        message: "Current password is incorrect.",
+      });
+      return;
+    }
+
+    applyScheduledSellerAccountDeletion(existingAccount, now, adminActivityActor.displayName);
+    const sellerNotification = createSellerDeletionInboxNotification(existingAccount, now, {
+      createdBy: adminActivityActor.displayName,
+    });
+    assignSellerAdminNotification(existingAccount, sellerNotification);
+    accounts[accountIndex] = existingAccount;
+    await writeAccounts(accounts);
+
+    const scheduledAt = getSellerAccountDeletionScheduledAt(existingAccount);
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "seller-account-deletion",
+        audience: "super_admin",
+        title: "Seller requested account deletion",
+        reason: "30-day deletion period started",
+        message: `${companyName} scheduled seller account deletion on ${scheduledAt ? scheduledAt.toLocaleString() : "the scheduled date"}.`,
+        adminId: requestAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy: companyName,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-account-deletion",
+      action: "deletion-scheduled",
+      source: "super_admin",
+      notificationAudience: "admin",
+      title: sellerNotification.title,
+      description: sellerNotification.message,
+      actor: adminActivityActor,
+      adminId: requestAdminId,
+      targetUrl: "/main.html#account-settings",
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      admin: serializeAdminAccount(existingAccount),
+      message: "Account deletion scheduled. You have 30 days to cancel.",
+      deletionScheduledAt: existingAccount.deletionScheduledAt,
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to update account deletion.",
+    });
+  }
 }
 
 async function handleSuperAdminLoginApi(request, response) {
@@ -11753,9 +23301,137 @@ async function handleSuperAdminLoginApi(request, response) {
   }
 }
 
+async function handleWorkspaceThemeApi(request, response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+
+  if (request.method === "GET") {
+    try {
+      const settings = await readWorkspaceSettings();
+      sendJson(response, 200, {
+        workspaceColor: settings.workspaceColor,
+        configured: Boolean(settings.workspaceColor),
+        updatedAt: settings.updatedAt,
+      });
+    } catch (error) {
+      sendJson(response, 500, {
+        message: "Unable to load workspace theme.",
+      });
+    }
+    return;
+  }
+
+  if (request.method !== "PUT" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const workspaceColor = normalizeWorkspaceColor(
+      payload.workspaceColor ?? payload.color,
+    );
+    if (!workspaceColor) {
+      sendJson(response, 400, {
+        message: "Workspace color must use a six-digit hex value.",
+      });
+      return;
+    }
+
+    const currentSettings = await readWorkspaceSettings();
+    const settings = await writeWorkspaceSettings({
+      ...currentSettings,
+      workspaceColor,
+      updatedAt: new Date().toISOString(),
+    });
+    sendJson(response, 200, {
+      workspaceColor: settings.workspaceColor,
+      configured: true,
+      updatedAt: settings.updatedAt,
+      message: "Workspace color updated.",
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to update workspace theme.",
+    });
+  }
+}
+
+async function handlePaymentPartnerApiKeyApi(request, response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method === "GET") {
+    try {
+      const settings = await readWorkspaceSettings();
+      const configured = Boolean(settings.paymentPartnerApiKey);
+      sendJson(response, 200, {
+        configured,
+        apiKeyMasked: configured ? "*******" : "",
+        updatedAt: settings.updatedAt,
+      });
+    } catch (error) {
+      sendJson(response, 500, { message: "Unable to load the payment partner API key status." });
+    }
+    return;
+  }
+
+  if (request.method !== "PUT" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const apiKey = normalizePaymentPartnerWorkspaceApiKey(payload.apiKey);
+    if (!apiKey) {
+      sendJson(response, 400, { message: "Payment partner API key is required." });
+      return;
+    }
+    const currentSettings = await readWorkspaceSettings();
+    const settings = await writeWorkspaceSettings({
+      ...currentSettings,
+      paymentPartnerApiKey: apiKey,
+      updatedAt: new Date().toISOString(),
+    });
+    sendJson(response, 200, {
+      configured: true,
+      apiKeyMasked: "*******",
+      updatedAt: settings.updatedAt,
+      message: "Payment partner API key updated.",
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to update the payment partner API key.",
+    });
+  }
+}
+
 async function createAdminAccountFromPayload(payload) {
+  const normalizedAdmin = normalizeAdminAccountRecord({
+    ...payload,
+    verificationToken: payload.verificationToken,
+    verificationChannel: payload.verificationChannel,
+    googleProfile: payload.googleProfile,
+  });
+
+  if (await isSellerPostgresReady()) {
+    const pgAdmin = await createSellerAccount(normalizedAdmin);
+    return {
+      admin: stripSellerInternalFields(pgAdmin) || normalizedAdmin,
+      authStore: "postgres",
+    };
+  }
+
   const accounts = await readAccounts();
-  const normalizedAdmin = normalizeAdminAccountRecord(payload);
   const emailTaken = accounts.some((account) =>
     isAdminAccount(account) &&
     String(account.email ?? "").trim().toLowerCase() === normalizedAdmin.email
@@ -11780,6 +23456,7 @@ async function createAdminAccountFromPayload(payload) {
   return {
     admin: normalizedAdmin,
     accounts,
+    authStore: "json",
   };
 }
 
@@ -11789,20 +23466,57 @@ async function handleAdminRegisterApi(request, response) {
     return;
   }
 
+  sendJson(response, 410, {
+    message:
+      "Direct seller registration is closed. Create a buyer account first, then use Be Part of Switch / Start upgrade to create your company.",
+    redirectPath: "/login.html?intent=seller-upgrade",
+    upgradePath: "/switch_account.html",
+    code: "SELLER_REGISTER_VIA_UPGRADE_ONLY",
+  });
+}
+
+async function handleAdminSignupAvailabilityApi(request, response, requestUrl) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
   try {
-    const payload = await parseRequestBody(request);
-    const { admin } = await createAdminAccountFromPayload(payload);
-    sendJson(response, 201, {
-      admin: serializeAdminAccount(admin),
-      redirectPath: "/login.html?role=admin",
-      message: "Admin account created.",
+    const email = String(requestUrl.searchParams.get("email") ?? "").trim().toLowerCase();
+    const mobileNumber = normalizeAccountPhoneForComparison(
+      requestUrl.searchParams.get("mobileNumber") ??
+        requestUrl.searchParams.get("mobile") ??
+        "",
+    );
+
+    if (await isSellerPostgresReady()) {
+      const availability = await checkSellerAvailability({ email, mobileNumber });
+      sendJson(response, 200, availability);
+      return;
+    }
+
+    const accounts = await readAccounts();
+    const emailTaken = Boolean(email) && accounts.some((account) =>
+      isAdminAccount(account) &&
+      String(account.email ?? "").trim().toLowerCase() === email
+    );
+    const mobileTaken = Boolean(mobileNumber) && accounts.some((account) =>
+      isAdminAccount(account) &&
+      normalizeAccountPhoneForComparison(account.mobileNumber) === mobileNumber
+    );
+
+    sendJson(response, 200, {
+      emailTaken,
+      emailAvailable: !emailTaken,
+      mobileTaken,
+      mobileAvailable: !mobileTaken,
     });
   } catch (error) {
-    sendJson(response, 400, {
+    sendJson(response, 500, {
       message:
         error instanceof Error
           ? error.message
-          : "Unable to create admin account.",
+          : "Unable to check account availability.",
     });
   }
 }
@@ -11810,6 +23524,11 @@ async function handleAdminRegisterApi(request, response) {
 function getAdminWorkspaceCounts(adminId, sources) {
   const normalizedAdminId = normalizeAdminTenantId(adminId, DEFAULT_ADMIN_ID);
   const adminProducts = filterRecordsByAdminId(sources.products, normalizedAdminId);
+  const businessTypeCategoryScope = getAdminBusinessTypeCategoryScope(
+    sources.accounts,
+    sources.storeTypes,
+    normalizedAdminId,
+  );
   const reviewSummary = summarizeProductReviewAggregatesForProducts(
     adminProducts,
     buildProductReviewAggregates(sources.orders, normalizedAdminId),
@@ -11826,7 +23545,7 @@ function getAdminWorkspaceCounts(adminId, sources) {
     chatThreads: filterRecordsByAdminId(sources.chatThreads, normalizedAdminId).length,
     deliveryPartners: filterRecordsByAdminId(sources.deliveryPartners, normalizedAdminId).length,
     paymentPartners: filterRecordsByAdminId(sources.paymentPartners, normalizedAdminId).length,
-    categories: getAdminCategoryList(sources.categories, sources.products, normalizedAdminId).length,
+    categories: businessTypeCategoryScope.categories.length,
     rating: reviewSummary.rating,
     ratingCount: reviewSummary.ratingCount,
     ratingsCount: reviewSummary.ratingsCount,
@@ -11844,7 +23563,7 @@ async function readAdminWorkspaceSources() {
     chatThreads,
     deliveryPartners,
     paymentPartners,
-    categories,
+    storeTypes,
   ] = await Promise.all([
     readAccounts(),
     readProducts(),
@@ -11852,7 +23571,7 @@ async function readAdminWorkspaceSources() {
     readChatThreads(),
     readDeliveryPartners(),
     readPaymentPartners(),
-    readCategories(),
+    readStoreTypes(),
   ]);
 
   return {
@@ -11862,7 +23581,7 @@ async function readAdminWorkspaceSources() {
     chatThreads,
     deliveryPartners,
     paymentPartners,
-    categories,
+    storeTypes,
   };
 }
 
@@ -11873,6 +23592,7 @@ async function handleSuperAdminAdminsApi(request, response) {
 
   if (request.method === "GET") {
     try {
+      await processDueSellerAccountDeletions();
       const sources = await readAdminWorkspaceSources();
       const admins = sources.accounts
         .filter(isAdminAccount)
@@ -11902,36 +23622,249 @@ async function handleSuperAdminAdminsApi(request, response) {
   }
 
   if (request.method === "POST") {
-    try {
-      const payload = await parseRequestBody(request);
-      const { admin: normalizedAdmin, accounts } = await createAdminAccountFromPayload(payload);
-      sendJson(response, 201, {
-        admin: serializeAdminAccount(
-          normalizedAdmin,
-          getAdminWorkspaceCounts(normalizedAdmin.adminId, {
-            accounts,
-            products: [],
-            orders: [],
-            chatThreads: [],
-            deliveryPartners: [],
-            paymentPartners: [],
-            categories: [],
-          }),
-        ),
-        message: "Admin account created.",
-      });
-    } catch (error) {
-      sendJson(response, 400, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to create admin account.",
-      });
-    }
+    sendJson(response, 410, {
+      message:
+        "Direct company registration is closed. Sellers must create a buyer account and complete Be Part of Switch / Start upgrade.",
+      code: "SELLER_REGISTER_VIA_UPGRADE_ONLY",
+      upgradePath: "/switch_account.html?tab=seller&becomeSeller=1",
+    });
     return;
   }
 
   sendJson(response, 405, { message: "Method not allowed." });
+}
+
+function getSuperAdminSellerWarningCount(account) {
+  const countSources = [
+    account?.restrictionWarningCount,
+    account?.restrictionLevelCount,
+    account?.restrictedLevelCount,
+    account?.superAdminWarningCount,
+    account?.warningCount,
+    account?.warnings,
+  ];
+  let warningCount = 0;
+
+  for (const source of countSources) {
+    const numericValue = Array.isArray(source) ? source.length : Number(source);
+    if (Number.isFinite(numericValue)) {
+      warningCount = Math.max(warningCount, Math.trunc(numericValue));
+    }
+  }
+
+  return Math.trunc(clampNumber(warningCount, 0, 3));
+}
+
+function applySuperAdminSellerNotifyAction(updatedAccount, previousAccount, payload, now) {
+  const notificationType = String(payload?.notificationType ?? payload?.notifyType ?? "warning")
+    .trim()
+    .toLowerCase() === "notice"
+      ? "notice"
+      : "warning";
+  const isWarning = notificationType === "warning";
+  const previousWarningCount = getSuperAdminSellerWarningCount(previousAccount);
+  const nextWarningCount = isWarning
+    ? Math.trunc(clampNumber(previousWarningCount + 1, 1, 3))
+    : previousWarningCount;
+  const notificationReason = String(
+    payload?.notificationReason ??
+      payload?.reason ??
+      (isWarning ? "Seller account warning" : "Seller account notice"),
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  const notificationMessage = String(
+    payload?.notificationMessage ??
+      payload?.message ??
+      (isWarning
+        ? "Super Admin sent a warning notice. Please review seller account compliance."
+        : "Super Admin sent a seller account notice."),
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  const notification = {
+    id: `seller-notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: notificationType,
+    audience: "seller",
+    adminId: getRecordAdminId(updatedAccount, updatedAccount?.adminId || updatedAccount?.id || ""),
+    title: String(payload?.notificationTitle ?? (isWarning ? "Super Admin Warning" : "Super Admin Notice"))
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120),
+    reason: notificationReason,
+    message: notificationMessage,
+    status: "unread",
+    createdAt: now,
+    createdBy: SUPER_ADMIN_USERNAME,
+    warningCount: nextWarningCount,
+  };
+
+  Object.assign(updatedAccount, {
+    lastSuperAdminNotifiedAt: now,
+    superAdminNotificationCount:
+      Math.max(0, Number(previousAccount?.superAdminNotificationCount) || 0) + 1,
+    superAdminNotificationType: notificationType,
+    superAdminNotificationReason: notificationReason,
+    lastSuperAdminNotificationReason: notificationReason,
+    lastSuperAdminNotificationMessage: notificationMessage,
+  });
+  assignSellerAdminNotification(updatedAccount, notification);
+
+  if (isWarning) {
+    Object.assign(updatedAccount, {
+      warningCount: nextWarningCount,
+      warnings: nextWarningCount,
+      superAdminWarningCount: nextWarningCount,
+      restrictionWarningCount: nextWarningCount,
+      restrictionLevelCount: nextWarningCount,
+      restrictedLevelCount: nextWarningCount,
+      lastWarningAt: now,
+      lastWarningBy: SUPER_ADMIN_USERNAME,
+      lastWarningReason: notificationReason,
+    });
+  }
+
+  return {
+    message: isWarning
+      ? `Seller warning sent. Warning level ${nextWarningCount} of 3.`
+      : "Seller notice sent.",
+    notification,
+  };
+}
+
+function applySuperAdminSellerRestrictionAction(updatedAccount, previousAccount, restriction, now) {
+  const restrictionReason = normalizeAdminRestrictionLimitLabel(
+    restriction?.restrictionReason || "Seller account restriction",
+    500,
+  ) || "Seller account restriction";
+  const restrictionDescription = normalizeAdminRestrictionLimitLabel(
+    restriction?.restrictionDescription || "",
+    500,
+  );
+  const restrictionLimits = Array.isArray(restriction?.restrictionLimits)
+    ? restriction.restrictionLimits
+    : [];
+  const restrictionLimitLabels = normalizeAdminRestrictionLimitLabelList(
+    restriction?.restrictionLimitLabels,
+    120,
+  );
+  const durationValue = Math.max(1, Math.trunc(Number(restriction?.restrictDurationValue) || 1));
+  const durationUnit = String(restriction?.restrictDurationUnit ?? "").trim().toLowerCase() === "days"
+    ? "days"
+    : "hours";
+  const expiresAt = String(restriction?.restrictExpiresAt ?? "").trim();
+  const expiresAtDate = new Date(expiresAt);
+  const expiresAtLabel = Number.isFinite(expiresAtDate.getTime())
+    ? expiresAtDate.toLocaleString()
+    : "the selected time";
+  const durationLabel = `${durationValue} ${durationValue === 1
+    ? durationUnit.replace(/s$/, "")
+    : durationUnit}`;
+  const limitsLabel = restrictionLimitLabels.length
+    ? `Limited access: ${restrictionLimitLabels.join(", ")}.`
+    : "";
+  const notificationMessage = [
+    `Your seller account has been restricted for ${durationLabel} until ${expiresAtLabel}.`,
+    `Reason: ${restrictionReason}.`,
+    limitsLabel,
+    restrictionDescription ? `Details: ${restrictionDescription}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 900);
+  const notification = {
+    id: `seller-restriction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: "restriction",
+    audience: "seller",
+    adminId: getRecordAdminId(updatedAccount, updatedAccount?.adminId || updatedAccount?.id || ""),
+    title: "Account Restricted by Super Admin",
+    reason: restrictionReason,
+    message: notificationMessage,
+    status: "unread",
+    createdAt: now,
+    createdBy: SUPER_ADMIN_USERNAME,
+    restrictionLimits,
+    restrictionLimitLabels,
+    restrictionReason,
+    restrictionDescription,
+    restrictDurationValue: durationValue,
+    restrictDurationUnit: durationUnit,
+    restrictExpiresAt: expiresAt,
+  };
+
+  Object.assign(updatedAccount, {
+    lastSuperAdminNotifiedAt: now,
+    superAdminNotificationCount:
+      Math.max(0, Number(previousAccount?.superAdminNotificationCount) || 0) + 1,
+    superAdminNotificationType: "restriction",
+    superAdminNotificationReason: restrictionReason,
+    lastSuperAdminNotificationReason: restrictionReason,
+    lastSuperAdminNotificationMessage: notificationMessage,
+  });
+  assignSellerAdminNotification(updatedAccount, notification);
+
+  return notification;
+}
+
+function applySuperAdminProductListingRestrictionNotification(
+  updatedAccount,
+  previousAccount,
+  product,
+  restriction,
+  now,
+) {
+  const productName = String(product?.name ?? "Product").trim() || "Product";
+  const durationDays = Math.max(1, Math.trunc(Number(restriction?.durationDays) || 1));
+  const reason = String(restriction?.reason ?? "Product listing policy review")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  const sellerNote = String(restriction?.sellerNote ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  const expiresAt = String(restriction?.expiresAt ?? "").trim();
+  const message = [
+    `Your listing \"${productName}\" has been hidden from customers for ${durationDays} ${durationDays === 1 ? "day" : "days"}.`,
+    `Reason: ${reason}.`,
+    sellerNote ? `Note: ${sellerNote}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 900);
+  const notification = {
+    id: `listing-restriction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: "listing-restriction",
+    audience: "seller",
+    adminId: getRecordAdminId(updatedAccount, updatedAccount?.adminId || updatedAccount?.id || ""),
+    title: "Product Listing Restricted",
+    reason,
+    message,
+    status: "unread",
+    productId: String(product?.id ?? "").trim(),
+    productName,
+    durationDays,
+    expiresAt,
+    createdAt: now,
+    createdBy: SUPER_ADMIN_USERNAME,
+  };
+
+  Object.assign(updatedAccount, {
+    lastSuperAdminNotifiedAt: now,
+    superAdminNotificationCount:
+      Math.max(0, Number(previousAccount?.superAdminNotificationCount) || 0) + 1,
+    superAdminNotificationType: "listing-restriction",
+    superAdminNotificationReason: reason,
+    lastSuperAdminNotificationReason: reason,
+    lastSuperAdminNotificationMessage: message,
+  });
+  assignSellerAdminNotification(updatedAccount, notification);
+
+  return notification;
 }
 
 async function handleSuperAdminAdminActionApi(request, response, adminId) {
@@ -11956,12 +23889,128 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
       .trim()
       .toLowerCase()
       .replace(/\s+/g, "-");
-    const normalizedAction = action === "banned" ? "ban" : action;
-    const allowedActions = new Set(["notify", "deactivate", "ban"]);
+    const normalizedAction = action === "banned"
+      ? "ban"
+      : action === "unbanned"
+        ? "unban"
+        : action === "unrestricted"
+          ? "unrestrict"
+          : action;
+    const allowedActions = new Set(["notify", "deactivate", "restrict", "unrestrict", "ban", "unban"]);
 
     if (!allowedActions.has(normalizedAction)) {
       sendJson(response, 400, { message: "Unsupported admin action." });
       return;
+    }
+
+    const banReason = String(payload?.banReason ?? payload?.reason ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const banDescription = String(payload?.banDescription ?? payload?.description ?? payload?.banDetails ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    let restrictDurationValue = null;
+    let restrictDurationUnit = "";
+    let restrictExpiresAt = null;
+    const restrictionReason = String(
+      payload?.restrictionReason ?? payload?.restrictReason ?? payload?.reasonForRestriction ?? "",
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const restrictionDescription = String(
+      payload?.restrictionDescription ?? payload?.restrictDescription ?? "",
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const rawRestrictionLimits = Array.isArray(payload?.restrictionLimits)
+      ? payload.restrictionLimits
+      : Array.isArray(payload?.restrictLimits)
+        ? payload.restrictLimits
+        : String(payload?.restrictionLimits ?? payload?.restrictLimits ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+    const rawRestrictionLimitLabels = Array.isArray(payload?.restrictionLimitLabels)
+      ? payload.restrictionLimitLabels
+      : Array.isArray(payload?.restrictLimitLabels)
+        ? payload.restrictLimitLabels
+        : String(payload?.restrictionLimitLabels ?? payload?.restrictLimitLabels ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+    const allowedRestrictionLimits = ADMIN_RESTRICTION_LIMIT_LABELS;
+    const restrictionLimits = [...new Set(rawRestrictionLimits
+      .map((value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_"))
+      .filter((value) => allowedRestrictionLimits.has(value)))];
+    const payloadRestrictionLimitLabels = normalizeAdminRestrictionLimitLabelList(rawRestrictionLimitLabels);
+    const restrictionLimitLabelByValue = new Map();
+    rawRestrictionLimits.forEach((rawLimit, index) => {
+      const normalizedLimit = String(rawLimit || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+      const label = payloadRestrictionLimitLabels[index] || "";
+      if (allowedRestrictionLimits.has(normalizedLimit) && label && !restrictionLimitLabelByValue.has(normalizedLimit)) {
+        restrictionLimitLabelByValue.set(normalizedLimit, label);
+      }
+    });
+    const restrictionLimitLabels = restrictionLimits.map((value, index) =>
+      restrictionLimitLabelByValue.get(value) ||
+      payloadRestrictionLimitLabels[index] ||
+      allowedRestrictionLimits.get(value) ||
+      value,
+    );
+
+    if (normalizedAction === "ban" && !banReason) {
+      sendJson(response, 400, { message: "Ban reason is required." });
+      return;
+    }
+
+    if (normalizedAction === "ban" && banReason.length > 500) {
+      sendJson(response, 400, { message: "Ban reason must be 500 characters or fewer." });
+      return;
+    }
+
+    if (normalizedAction === "ban" && banDescription.length > 500) {
+      sendJson(response, 400, { message: "Ban description must be 500 characters or fewer." });
+      return;
+    }
+
+    if (normalizedAction === "restrict") {
+      if (!restrictionReason) {
+        sendJson(response, 400, { message: "Restriction reason is required." });
+        return;
+      }
+
+      if (restrictionReason.length > 500) {
+        sendJson(response, 400, { message: "Restriction reason must be 500 characters or fewer." });
+        return;
+      }
+
+      if (restrictionDescription.length > 500) {
+        sendJson(response, 400, { message: "Restriction description must be 500 characters or fewer." });
+        return;
+      }
+
+      if (!restrictionLimits.length) {
+        sendJson(response, 400, { message: "Select at least one access limit." });
+        return;
+      }
+
+      restrictDurationValue = Math.trunc(
+        Number(payload?.restrictDurationValue ?? payload?.durationValue ?? payload?.duration ?? 0),
+      );
+      restrictDurationUnit = String(payload?.restrictDurationUnit ?? payload?.durationUnit ?? "hours")
+        .trim()
+        .toLowerCase() === "days"
+          ? "days"
+          : "hours";
+
+      if (!Number.isFinite(restrictDurationValue) || restrictDurationValue < 1) {
+        sendJson(response, 400, { message: "Restriction duration is required." });
+        return;
+      }
+
+      restrictExpiresAt = new Date(
+        Date.now() + restrictDurationValue * (restrictDurationUnit === "days" ? 86400000 : 3600000),
+      ).toISOString();
     }
 
     const sources = await readAdminWorkspaceSources();
@@ -11985,10 +24034,27 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
     let message = "Admin action applied.";
 
     if (normalizedAction === "notify") {
-      updatedAccount.lastSuperAdminNotifiedAt = now;
-      updatedAccount.superAdminNotificationCount =
-        Math.max(0, Number(updatedAccount.superAdminNotificationCount) || 0) + 1;
-      message = "Company notified.";
+      const notifyResult = applySuperAdminSellerNotifyAction(updatedAccount, previousAccount, payload, now);
+      message = notifyResult.message;
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-notification",
+        source: "super_admin",
+        targetPermission: "",
+        adminId: normalizedAdminId,
+        action: "warning",
+        title: notifyResult.notification?.title || "Super Admin Warning",
+        description:
+          notifyResult.notification?.message ||
+          "Super Admin sent a warning notice. Please review seller account compliance.",
+        notificationAudience: "admin",
+        actor: {
+          role: "admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+      });
     } else if (normalizedAction === "deactivate") {
       Object.assign(updatedAccount, {
         status: "deactivated",
@@ -12006,6 +24072,67 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         deactivatedBy: SUPER_ADMIN_USERNAME,
       });
       message = "Company deactivated.";
+    } else if (normalizedAction === "restrict") {
+      Object.assign(updatedAccount, {
+        status: "restricted",
+        accountStatus: "restricted",
+        accountState: "restricted",
+        isActive: true,
+        disabled: false,
+        isRestricted: true,
+        restricted: true,
+        restrictedAt: now,
+        restrictedBy: SUPER_ADMIN_USERNAME,
+        restrictDurationValue,
+        restrictDurationUnit,
+        restrictExpiresAt,
+        restrictionReason,
+        restrictReason: restrictionReason,
+        restrictionDescription,
+        restrictDescription: restrictionDescription,
+        restrictionLimits,
+        restrictLimits: restrictionLimits,
+        restrictionLimitLabels,
+        restrictLimitLabels: restrictionLimitLabels,
+      });
+      const restrictionNotification = applySuperAdminSellerRestrictionAction(
+        updatedAccount,
+        previousAccount,
+        {
+          restrictionReason,
+          restrictionDescription,
+          restrictionLimits,
+          restrictionLimitLabels,
+          restrictDurationValue,
+          restrictDurationUnit,
+          restrictExpiresAt,
+        },
+        now,
+      );
+      message = `Company restricted until ${new Date(restrictExpiresAt).toLocaleString()}.`;
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-restriction",
+        source: "super_admin",
+        targetPermission: "",
+        adminId: normalizedAdminId,
+        action: "restricted",
+        title: restrictionNotification.title,
+        description: restrictionNotification.message,
+        notificationAudience: "admin",
+        targetUrl: "/admin_dashboard.html",
+        restrictionReason,
+        restrictionDescription,
+        restrictionLimits,
+        restrictionLimitLabels,
+        restrictExpiresAt,
+        actor: {
+          role: "admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+      });
     } else if (normalizedAction === "ban") {
       Object.assign(updatedAccount, {
         status: "banned",
@@ -12022,8 +24149,109 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         presenceStatus: "offline",
         bannedAt: now,
         bannedBy: SUPER_ADMIN_USERNAME,
+        banReason,
+        banDescription,
+        banDetails: banDescription,
+        banType: "permanent",
+        banDurationValue: null,
+        banDurationUnit: "",
+        banExpiresAt: null,
       });
-      message = "Company banned.";
+      message = "Company permanently banned.";
+    } else if (normalizedAction === "unban") {
+      Object.assign(updatedAccount, {
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        adminStatus: "active",
+        userStatus: "active",
+        isActive: true,
+        disabled: false,
+        isBanned: false,
+        banned: false,
+        isRestricted: false,
+        restricted: false,
+        isSuspended: false,
+        suspended: false,
+        bannedAt: null,
+        bannedBy: "",
+        banReason: "",
+        banDescription: "",
+        banDetails: "",
+        banType: "",
+        banDurationValue: null,
+        banDurationUnit: "",
+        banExpiresAt: null,
+        bannedUntil: null,
+        restrictedAt: null,
+        restrictedBy: "",
+        restrictDurationValue: null,
+        restrictDurationUnit: "",
+        restrictExpiresAt: null,
+        restrictionReason: "",
+        restrictReason: "",
+        restrictionDescription: "",
+        restrictDescription: "",
+        restrictionLimits: [],
+        restrictLimits: [],
+        restrictionLimitLabels: [],
+        restrictLimitLabels: [],
+        suspendedAt: null,
+        deactivatedAt: null,
+        disabledAt: null,
+        lastBannedAt: previousAccount?.bannedAt || null,
+        lastBannedBy: String(previousAccount?.bannedBy || "").trim(),
+        lastBanReason: String(previousAccount?.banReason || "").trim(),
+        unbannedAt: now,
+        unbannedBy: SUPER_ADMIN_USERNAME,
+        isOnline: false,
+        online: false,
+        loggedIn: false,
+        isLoggedIn: false,
+        sessionActive: false,
+        presenceStatus: "offline",
+      });
+      message = "Company unbanned and login access restored.";
+    } else if (normalizedAction === "unrestrict") {
+      Object.assign(updatedAccount, {
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        adminStatus: "active",
+        userStatus: "active",
+        isActive: true,
+        disabled: false,
+        isRestricted: false,
+        restricted: false,
+        restrictedAt: null,
+        restricted_at: null,
+        restrictedBy: "",
+        restricted_by: "",
+        restrictDurationValue: null,
+        restrictDurationUnit: "",
+        restrictExpiresAt: null,
+        restrictionExpiresAt: null,
+        restrictedUntil: null,
+        restrict_expires_at: null,
+        restrictionReason: "",
+        restrictReason: "",
+        restriction_reason: "",
+        restrict_reason: "",
+        restrictionDescription: "",
+        restrictDescription: "",
+        restriction_description: "",
+        restrict_description: "",
+        restrictionLimits: [],
+        restrictLimits: [],
+        restrictionLimitLabels: [],
+        restrictLimitLabels: [],
+        lastRestrictedAt: previousAccount?.restrictedAt || null,
+        lastRestrictedBy: String(previousAccount?.restrictedBy || "").trim(),
+        lastRestrictionReason: String(previousAccount?.restrictionReason ?? previousAccount?.restrictReason ?? "").trim(),
+        unrestrictedAt: now,
+        unrestrictedBy: SUPER_ADMIN_USERNAME,
+      });
+      message = "Company restriction removed.";
     }
 
     sources.accounts[accountIndex] = updatedAccount;
@@ -12047,6 +24275,1599 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
   }
 }
 
+function isBuyerAccountRecord(account) {
+  if (!account || typeof account !== "object" || isAdminAccount(account)) {
+    return false;
+  }
+
+  const role = String(account.role ?? "").trim().toLowerCase();
+  const source = String(account.source ?? "").trim().toLowerCase();
+  if (role === "employee") {
+    return false;
+  }
+
+  return source === "app" || role === "user" || role === "buyer" || role === "customer";
+}
+
+function getBuyerAccountStatus(account) {
+  const status = String(account?.accountStatus ?? account?.userStatus ?? account?.status ?? account?.accountState ?? "")
+    .trim()
+    .toLowerCase();
+  if (account?.deletedAt || status === "deleted") {
+    return "deleted";
+  }
+  if (account?.isBanned === true || account?.banned === true || status === "banned") {
+    return "banned";
+  }
+  if (account?.locked === true || status === "locked") {
+    return "locked";
+  }
+  if (account?.isSuspended === true || account?.suspended === true || status === "suspended") {
+    return "suspended";
+  }
+  if (account?.isRestricted === true || account?.restricted === true || status === "restricted") {
+    return "restricted";
+  }
+  return status || "active";
+}
+
+function findBuyerAccountIndexById(accounts, buyerId) {
+  const normalizedBuyerId = String(buyerId ?? "").trim().toLowerCase();
+  if (!normalizedBuyerId) {
+    return -1;
+  }
+
+  return (Array.isArray(accounts) ? accounts : []).findIndex((account) => {
+    if (!isBuyerAccountRecord(account)) {
+      return false;
+    }
+    return [
+      account.id,
+      account.accountId,
+      account.accountCode,
+      account.userId,
+      account.email,
+      account.mobileNumber,
+    ].some((value) => String(value ?? "").trim().toLowerCase() === normalizedBuyerId);
+  });
+}
+
+function normalizeBuyerActionName(value) {
+  const action = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+  if (action === "restricted") return "restrict";
+  if (action === "suspended") return "suspend";
+  if (action === "banned") return "ban";
+  if (action === "active") return "activate";
+  if (action === "require-verification") return "require-verification";
+  if (action === "require-contact-verification") return "require-contact-verification";
+  if (action === "require-password-reset") return "require-password-reset";
+  if (action === "logout-devices" || action === "log-out-devices") return "logout-devices";
+  if (action === "lock-suspicious-account") return "lock";
+  return action;
+}
+
+function normalizeBuyerActionText(value, limit = 500) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
+function getBuyerActionDuration(payload, action) {
+  const durationUnit = String(payload?.durationUnit ?? payload?.unit ?? "days")
+    .trim()
+    .toLowerCase();
+  const normalizedUnit = durationUnit === "permanent"
+    ? "permanent"
+    : durationUnit === "hours"
+      ? "hours"
+      : "days";
+  const durationValue = Math.trunc(Number(payload?.durationValue ?? payload?.duration ?? 0));
+
+  if (action === "ban" && normalizedUnit === "permanent") {
+    return {
+      durationValue: null,
+      durationUnit: "permanent",
+      expiresAt: null,
+    };
+  }
+
+  if (!Number.isFinite(durationValue) || durationValue < 1) {
+    throw new Error("Duration is required.");
+  }
+
+  if (normalizedUnit === "permanent") {
+    throw new Error("Permanent duration is only available for bans.");
+  }
+
+  return {
+    durationValue,
+    durationUnit: normalizedUnit,
+    expiresAt: new Date(
+      Date.now() + durationValue * (normalizedUnit === "days" ? 86400000 : 3600000),
+    ).toISOString(),
+  };
+}
+
+function createBuyerNotification(action, reason, account, now, payload = {}) {
+  const actionLabels = {
+    notify: "Account Notice",
+    restrict: "Restriction Notice",
+    suspend: "Suspension Notice",
+    ban: "Account Ban Notice",
+    "require-verification": "Verification Request",
+    "require-contact-verification": "Verification Request",
+    "require-password-reset": "Password Reset Required",
+    lock: "Account Locked",
+    "logout-devices": "Security Session Notice",
+  };
+  return {
+    id: `buyer-notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: normalizeBuyerActionText(payload.notificationType || action, 80),
+    action,
+    audience: "buyer",
+    title: actionLabels[action] || "Account Notice",
+    message: reason,
+    reason,
+    status: "unread",
+    accountId: String(account?.id ?? account?.accountCode ?? "").trim(),
+    createdAt: now,
+    sentAt: now,
+    createdBy: SUPER_ADMIN_USERNAME,
+    sentBy: SUPER_ADMIN_USERNAME,
+  };
+}
+
+function getBuyerRestrictionMessage(account) {
+  const status = getBuyerAccountStatus(account);
+  const expiresAtValue =
+    account?.suspendedExpiresAt ??
+    account?.suspendExpiresAt ??
+    account?.lockedExpiresAt ??
+    account?.banExpiresAt ??
+    "";
+  const expiresAt = new Date(expiresAtValue);
+  const hasExpiry = Number.isFinite(expiresAt.getTime());
+  const untilText = hasExpiry ? ` until ${expiresAt.toLocaleString()}` : "";
+
+  if (status === "deleted") {
+    return "This buyer account has been deleted.";
+  }
+  if (status === "banned") {
+    return `This buyer account is banned${untilText}.`;
+  }
+  if (status === "locked") {
+    return "This buyer account is locked for security review.";
+  }
+  if (status === "suspended") {
+    return `This buyer account is suspended${untilText}.`;
+  }
+  return "";
+}
+
+async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "PATCH" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const action = normalizeBuyerActionName(payload?.action);
+    const allowedActions = new Set([
+      "notify",
+      "restrict",
+      "suspend",
+      "ban",
+      "activate",
+      "require-verification",
+      "require-contact-verification",
+      "require-password-reset",
+      "logout-devices",
+      "lock",
+    ]);
+
+    if (!allowedActions.has(action)) {
+      sendJson(response, 400, { message: "Unsupported buyer action." });
+      return;
+    }
+
+    const reason = normalizeBuyerActionText(payload?.reason, 180);
+    const internalNote = normalizeBuyerActionText(payload?.internalNote ?? payload?.note, 500);
+    if (!reason) {
+      sendJson(response, 400, { message: "Reason is required." });
+      return;
+    }
+    if (!internalNote) {
+      sendJson(response, 400, { message: "Internal note is required." });
+      return;
+    }
+
+    const duration = ["restrict", "suspend", "ban"].includes(action)
+      ? getBuyerActionDuration(payload, action)
+      : { durationValue: null, durationUnit: "", expiresAt: null };
+    const accounts = await readAccounts();
+    const accountIndex = findBuyerAccountIndexById(accounts, buyerId);
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Buyer account not found." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const previousAccount = accounts[accountIndex];
+    const previousStatus = getBuyerAccountStatus(previousAccount);
+    const updatedAccount = {
+      ...previousAccount,
+      updatedAt: now,
+      superAdminActionUpdatedAt: now,
+      superAdminActionUpdatedBy: SUPER_ADMIN_USERNAME,
+    };
+    let message = "Buyer action applied.";
+    let notification = null;
+
+    if (action === "activate") {
+      Object.assign(updatedAccount, {
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        userStatus: "active",
+        isActive: true,
+        disabled: false,
+        isBanned: false,
+        banned: false,
+        isRestricted: false,
+        restricted: false,
+        isSuspended: false,
+        suspended: false,
+        locked: false,
+        lockedAt: null,
+        suspendedAt: null,
+        suspendedBy: "",
+        suspendedExpiresAt: null,
+        suspensionReason: "",
+        restrictedAt: null,
+        restrictedBy: "",
+        restrictExpiresAt: null,
+        restrictionReason: "",
+        bannedAt: null,
+        bannedBy: "",
+        banReason: "",
+        banType: "",
+        banExpiresAt: null,
+      });
+      message = "Buyer account restored to active.";
+    } else if (action === "restrict") {
+      Object.assign(updatedAccount, {
+        status: "restricted",
+        accountStatus: "restricted",
+        accountState: "restricted",
+        userStatus: "restricted",
+        isActive: true,
+        disabled: false,
+        isRestricted: true,
+        restricted: true,
+        restrictedAt: now,
+        restrictedBy: SUPER_ADMIN_USERNAME,
+        restrictDurationValue: duration.durationValue,
+        restrictDurationUnit: duration.durationUnit,
+        restrictExpiresAt: duration.expiresAt,
+        restrictionReason: reason,
+        restrictReason: reason,
+        buyerInternalNote: internalNote,
+      });
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer account restricted.";
+    } else if (action === "suspend") {
+      Object.assign(updatedAccount, {
+        status: "suspended",
+        accountStatus: "suspended",
+        accountState: "suspended",
+        userStatus: "suspended",
+        isActive: false,
+        disabled: true,
+        isSuspended: true,
+        suspended: true,
+        isOnline: false,
+        online: false,
+        loggedIn: false,
+        isLoggedIn: false,
+        sessionActive: false,
+        suspendedAt: now,
+        suspendedBy: SUPER_ADMIN_USERNAME,
+        suspendDurationValue: duration.durationValue,
+        suspendDurationUnit: duration.durationUnit,
+        suspendedExpiresAt: duration.expiresAt,
+        suspensionReason: reason,
+        buyerInternalNote: internalNote,
+      });
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer account suspended.";
+    } else if (action === "ban") {
+      Object.assign(updatedAccount, {
+        status: "banned",
+        accountStatus: "banned",
+        accountState: "banned",
+        userStatus: "banned",
+        isActive: false,
+        disabled: true,
+        isBanned: true,
+        banned: true,
+        isOnline: false,
+        online: false,
+        loggedIn: false,
+        isLoggedIn: false,
+        sessionActive: false,
+        bannedAt: now,
+        bannedBy: SUPER_ADMIN_USERNAME,
+        banReason: reason,
+        banDescription: internalNote,
+        banDetails: internalNote,
+        banType: duration.durationUnit === "permanent" ? "permanent" : "temporary",
+        banDurationValue: duration.durationValue,
+        banDurationUnit: duration.durationUnit,
+        banExpiresAt: duration.expiresAt,
+      });
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer account banned.";
+    } else if (action === "require-verification" || action === "require-contact-verification") {
+      Object.assign(updatedAccount, {
+        verificationStatus: "pending",
+        identityVerificationStatus: action === "require-verification" ? "pending" : updatedAccount.identityVerificationStatus ?? "unverified",
+        verificationRequired: true,
+        emailVerificationRequired: true,
+        phoneVerificationRequired: true,
+        verificationRequestedAt: now,
+        verificationRequestedBy: SUPER_ADMIN_USERNAME,
+        verificationRequestReason: reason,
+      });
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer verification required.";
+    } else if (action === "require-password-reset") {
+      Object.assign(updatedAccount, {
+        passwordResetRequired: true,
+        passwordResetRequestedAt: now,
+        passwordResetRequestedBy: SUPER_ADMIN_USERNAME,
+        passwordResetReason: reason,
+      });
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Password reset required for buyer.";
+    } else if (action === "logout-devices") {
+      Object.assign(updatedAccount, {
+        isOnline: false,
+        online: false,
+        loggedIn: false,
+        isLoggedIn: false,
+        sessionActive: false,
+        presenceStatus: "offline",
+        forceLogoutAt: now,
+        sessionVersion: Math.max(0, Number(updatedAccount.sessionVersion) || 0) + 1,
+      });
+      try {
+        const accountId = String(
+          updatedAccount.id ?? updatedAccount.accountId ?? "",
+        ).trim();
+        if (accountId && typeof accountDevicesApi?.revokeAllForAccount === "function") {
+          await accountDevicesApi.revokeAllForAccount(accountId);
+        }
+      } catch (deviceError) {
+        console.warn("Unable to revoke buyer device sessions.", deviceError);
+      }
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer devices logged out.";
+    } else if (action === "lock") {
+      Object.assign(updatedAccount, {
+        status: "suspended",
+        accountStatus: "suspended",
+        accountState: "suspended",
+        userStatus: "suspended",
+        isActive: false,
+        disabled: true,
+        isSuspended: true,
+        suspended: true,
+        locked: true,
+        lockedAt: now,
+        lockedBy: SUPER_ADMIN_USERNAME,
+        lockReason: reason,
+        isOnline: false,
+        online: false,
+        loggedIn: false,
+        isLoggedIn: false,
+        sessionActive: false,
+      });
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer account locked.";
+    } else if (action === "notify") {
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer notification sent.";
+    }
+
+    const newStatus = getBuyerAccountStatus(updatedAccount);
+    const actionEntry = {
+      id: createActivityLogId(),
+      type: "buyer-admin-action",
+      action,
+      reason,
+      internalNote,
+      previousStatus,
+      newStatus,
+      durationValue: duration.durationValue,
+      durationUnit: duration.durationUnit,
+      expiresAt: duration.expiresAt,
+      notificationSent: Boolean(notification),
+      createdAt: now,
+      createdBy: SUPER_ADMIN_USERNAME,
+    };
+    const previousActions = Array.isArray(previousAccount.buyerAdminActions)
+      ? previousAccount.buyerAdminActions
+      : [];
+    updatedAccount.buyerAdminActions = [actionEntry, ...previousActions].slice(0, 100);
+
+    if (notification) {
+      const previousNotifications = Array.isArray(previousAccount.buyerNotifications)
+        ? previousAccount.buyerNotifications
+        : [];
+      updatedAccount.buyerNotifications = [notification, ...previousNotifications].slice(0, 100);
+      updatedAccount.lastBuyerNotification = notification;
+      updatedAccount.lastBuyerNotifiedAt = now;
+    }
+
+    accounts[accountIndex] = updatedAccount;
+    await writeAccounts(accounts);
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "buyer-admin-action",
+      source: "super_admin",
+      targetPermission: "user-data",
+      buyerId: String(updatedAccount.id ?? updatedAccount.accountId ?? updatedAccount.accountCode ?? buyerId ?? "").trim(),
+      accountId: String(updatedAccount.id ?? updatedAccount.accountId ?? updatedAccount.accountCode ?? "").trim(),
+      accountCode: String(updatedAccount.accountCode ?? "").trim(),
+      userId: String(updatedAccount.userId ?? "").trim(),
+      userEmail: String(updatedAccount.email ?? "").trim(),
+      mobileNumber: String(updatedAccount.mobileNumber ?? updatedAccount.phone ?? "").trim(),
+      targetId: String(updatedAccount.id ?? updatedAccount.accountCode ?? "").trim(),
+      action,
+      title: `Buyer ${action.replace(/-/g, " ")}`,
+      description: `${getActivityAccountDisplayName(updatedAccount) || "Buyer"}: ${reason}`,
+      previousStatus,
+      newStatus,
+      notificationSent: Boolean(notification),
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+    }, request);
+
+    sendJson(response, 200, {
+      account: serializeAccountForList(updatedAccount),
+      action,
+      message,
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to update buyer account.",
+    });
+  }
+}
+
+function generateTemporaryAccountPassword(length = 12) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
+  const bytes = crypto.randomBytes(Math.max(8, Number(length) || 12));
+  let password = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    password += alphabet[bytes[index] % alphabet.length];
+  }
+  return password;
+}
+
+async function handleSuperAdminRevealPasswordDisabledApi(request, response, subjectLabel) {
+  if (request.method === "GET") {
+    sendJson(response, 410, {
+      message:
+        `${subjectLabel} password reveal is disabled. Use reset password instead. ` +
+        "Existing passwords are hashed and cannot be recovered.",
+      code: "password_reveal_disabled",
+    });
+    return;
+  }
+  sendJson(response, 405, { message: "Method not allowed." });
+}
+
+async function handleSuperAdminAdminPasswordResetApi(request, response, adminId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method === "GET") {
+    await handleSuperAdminRevealPasswordDisabledApi(request, response, "Seller");
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+    if (!normalizedAdminId) {
+      sendJson(response, 400, { message: "Seller account id is required." });
+      return;
+    }
+
+    const accounts = await readAccounts();
+    const accountIndex = accounts.findIndex(
+      (account) =>
+        isAdminAccount(account) &&
+        isRecordInAdminScope(account, normalizedAdminId),
+    );
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Seller account was not found." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const temporaryPassword = generateTemporaryAccountPassword(12);
+    const previousAccount = accounts[accountIndex];
+    const companyName = [
+      previousAccount.companyName,
+      previousAccount.storeName,
+      previousAccount.businessName,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "your store";
+
+    const notification = {
+      id: `seller-password-reset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "seller-password-reset",
+      audience: "seller",
+      title: "Password Reset by Super Admin",
+      reason: "Security password reset",
+      message:
+        `Super Admin reset the login password for ${companyName}. ` +
+        "Sign in with the temporary password provided by support, then change it immediately in Account Settings.",
+      status: "unread",
+      productId: "",
+      productName: "",
+      feedbackId: "",
+      adminId: getRecordAdminId(previousAccount, previousAccount.adminId || previousAccount.id),
+      targetUrl: "/main.html#account",
+      createdAt: now,
+      createdBy: SUPER_ADMIN_USERNAME,
+      companyName: "",
+      storeName: "",
+      businessName: "",
+    };
+
+    const updatedAccount = {
+      ...previousAccount,
+      password: temporaryPassword,
+      passwordUpdatedAt: now,
+      passwordResetRequired: true,
+      mustChangePassword: true,
+      passwordResetRequestedAt: now,
+      passwordResetRequestedBy: SUPER_ADMIN_USERNAME,
+      passwordResetReason: "Reset by Super Admin",
+      updatedAt: now,
+      superAdminActionUpdatedAt: now,
+      superAdminActionUpdatedBy: SUPER_ADMIN_USERNAME,
+    };
+    assignSellerAdminNotification(updatedAccount, notification);
+
+    accounts[accountIndex] = updatedAccount;
+    await writeAccounts(accounts);
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-admin-action",
+      source: "super_admin",
+      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
+      action: "password-reset",
+      title: "Seller password reset",
+      description: `Super Admin reset the password for ${companyName}.`,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      message:
+        "Temporary password created. Share it securely once — it will not be shown again.",
+      temporaryPassword,
+      shownOnce: true,
+      passwordResetRequired: true,
+      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to reset seller password.",
+    });
+  }
+}
+
+async function handleSuperAdminBuyerPasswordResetApi(request, response, buyerId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method === "GET") {
+    await handleSuperAdminRevealPasswordDisabledApi(request, response, "Buyer");
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const accounts = await readAccounts();
+    const accountIndex = findBuyerAccountIndexById(accounts, buyerId);
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Buyer account was not found." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const temporaryPassword = generateTemporaryAccountPassword(12);
+    const previousAccount = accounts[accountIndex];
+    const notification = createBuyerNotification(
+      "require-password-reset",
+      "Super Admin reset your password. Sign in with the temporary password from support, then change it immediately.",
+      previousAccount,
+      now,
+      { notificationType: "password-reset" },
+    );
+
+    const previousNotifications = Array.isArray(previousAccount.buyerNotifications)
+      ? previousAccount.buyerNotifications
+      : Array.isArray(previousAccount.notifications)
+        ? previousAccount.notifications
+        : [];
+
+    const updatedAccount = {
+      ...previousAccount,
+      password: temporaryPassword,
+      passwordUpdatedAt: now,
+      passwordResetRequired: true,
+      mustChangePassword: true,
+      passwordResetRequestedAt: now,
+      passwordResetRequestedBy: SUPER_ADMIN_USERNAME,
+      passwordResetReason: "Reset by Super Admin",
+      updatedAt: now,
+      superAdminActionUpdatedAt: now,
+      superAdminActionUpdatedBy: SUPER_ADMIN_USERNAME,
+      lastBuyerNotification: notification,
+      buyerNotifications: [notification, ...previousNotifications],
+      notifications: [notification, ...previousNotifications],
+    };
+
+    accounts[accountIndex] = updatedAccount;
+    await writeAccounts(accounts);
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "buyer-admin-action",
+      source: "super_admin",
+      targetPermission: "user-data",
+      buyerId: String(updatedAccount.id ?? buyerId ?? "").trim(),
+      accountId: String(updatedAccount.id ?? "").trim(),
+      action: "password-reset",
+      title: "Buyer password reset",
+      description: `${getActivityAccountDisplayName(updatedAccount) || "Buyer"} password was reset by Super Admin.`,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      message:
+        "Temporary password created. Share it securely once — it will not be shown again.",
+      temporaryPassword,
+      shownOnce: true,
+      passwordResetRequired: true,
+      accountId: String(updatedAccount.id ?? "").trim(),
+    });
+  } catch (error) {
+    sendJson(response, 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to reset buyer password.",
+    });
+  }
+}
+
+function normalizeBuyerActivityKey(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function addBuyerActivityMatchKey(keys, value) {
+  const normalizedValue = normalizeBuyerActivityKey(value);
+  if (normalizedValue) {
+    keys.add(normalizedValue);
+  }
+
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) {
+    return;
+  }
+
+  keys.add(digits);
+  if (digits.startsWith("0") && digits.length > 1) {
+    keys.add(digits.slice(1));
+  }
+  if (digits.startsWith("63") && digits.length > 2) {
+    keys.add(digits.slice(2));
+    keys.add(`0${digits.slice(2)}`);
+  }
+}
+
+function getBuyerActivityAccountKeys(account) {
+  const keys = new Set();
+  [
+    account?.id,
+    account?.accountId,
+    account?.accountCode,
+    account?.userId,
+    account?.email,
+    account?.mobileNumber,
+    account?.phone,
+    account?.contactNumber,
+  ].forEach((value) => addBuyerActivityMatchKey(keys, value));
+  return keys;
+}
+
+function getBuyerActivityOrderKeys(order) {
+  const keys = new Set();
+  [
+    order?.accountId,
+    order?.customerAccountId,
+    order?.userId,
+    order?.customerId,
+    order?.buyerId,
+    order?.email,
+    order?.clientEmail,
+    order?.customerEmail,
+    order?.buyerEmail,
+    order?.mobileNumber,
+    order?.phone,
+    order?.contactNumber,
+    order?.clientContactNumber,
+    order?.customerContactNumber,
+  ].forEach((value) => addBuyerActivityMatchKey(keys, value));
+  return keys;
+}
+
+function isOrderForBuyerActivity(order, buyerAccount) {
+  const buyerKeys = getBuyerActivityAccountKeys(buyerAccount);
+  if (!buyerKeys.size) {
+    return false;
+  }
+
+  for (const key of getBuyerActivityOrderKeys(order)) {
+    if (buyerKeys.has(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getBuyerActivityDirectKeys(activity) {
+  const keys = new Set();
+  [
+    activity?.buyerId,
+    activity?.accountId,
+    activity?.accountCode,
+    activity?.userId,
+    activity?.targetId,
+    activity?.customerAccountId,
+    activity?.customerId,
+    activity?.userEmail,
+    activity?.email,
+    activity?.customerEmail,
+    activity?.buyerEmail,
+    activity?.mobileNumber,
+    activity?.phone,
+    activity?.contactNumber,
+  ].forEach((value) => addBuyerActivityMatchKey(keys, value));
+  return keys;
+}
+
+function isRawBuyerActivityForAccount(activity, buyerAccount) {
+  if (!activity || typeof activity !== "object" || isLiveChatActivity(activity)) {
+    return false;
+  }
+
+  const buyerKeys = getBuyerActivityAccountKeys(buyerAccount);
+  if (!buyerKeys.size) {
+    return false;
+  }
+
+  for (const key of getBuyerActivityDirectKeys(activity)) {
+    if (buyerKeys.has(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getBuyerActivityIdentity(account) {
+  const name =
+    getActivityAccountDisplayName(account) ||
+    String(account?.fullName ?? account?.displayName ?? account?.username ?? "").replace(/\s+/g, " ").trim() ||
+    "Buyer";
+  return {
+    name,
+    email: String(account?.email ?? account?.mobileNumber ?? account?.accountCode ?? "").trim(),
+  };
+}
+
+function getBuyerActivityKind(activity) {
+  const type = normalizeBuyerActivityKey(activity?.type);
+  const action = normalizeBuyerActivityKey(activity?.action);
+  const title = normalizeBuyerActivityKey(activity?.title);
+  const description = normalizeBuyerActivityKey(activity?.description);
+  const haystack = `${type} ${action} ${title} ${description}`;
+
+  if (type === "buyer-report" || type === "buyer-notification" || type === "buyer-admin-action") {
+    return "reports";
+  }
+  if (action === "account-created" || haystack.includes("account created") || haystack.includes("registered")) {
+    return "account-created";
+  }
+  if (haystack.includes("checkout") || haystack.includes("checked out") || haystack.includes("order placed")) {
+    return "checkout";
+  }
+  if (haystack.includes("booking") || haystack.includes("booked")) {
+    return "booking";
+  }
+  if (haystack.includes("cancel")) {
+    return "cancel-order";
+  }
+  if (haystack.includes("password")) {
+    return "change-password";
+  }
+  if (haystack.includes("profile image") || haystack.includes("avatar") || haystack.includes("photo")) {
+    return haystack.includes("add") || haystack.includes("upload") ? "add-image" : "edit-image";
+  }
+  if (haystack.includes("profile")) {
+    return "update-profile";
+  }
+  if (haystack.includes("login") || haystack.includes("logged in")) {
+    return "user-login";
+  }
+  if (haystack.includes("logout") || haystack.includes("logged out")) {
+    return "user-logout";
+  }
+  if (haystack.includes("image") || haystack.includes("media")) {
+    return "add-image";
+  }
+  if (haystack.includes("review") || haystack.includes("rating")) {
+    return "product-review";
+  }
+
+  return "buyer-activity";
+}
+
+function getBuyerActivityLabel(kind, activity = null) {
+  const labels = {
+    "account-created": "Account Created",
+    "user-login": "User Login",
+    "user-logout": "User Logout",
+    checkout: "Checkout",
+    booking: "Booking",
+    "cancel-order": "Cancel Order",
+    "change-password": "Change Password",
+    "update-profile": "Update Profile",
+    "add-image": "Add Image",
+    "edit-image": "Edit Image",
+    "product-review": "Product Review",
+    reports: "Reports",
+    "buyer-activity": "Buyer Activity",
+  };
+
+  return labels[kind] || String(activity?.title ?? "Buyer Activity").trim() || "Buyer Activity";
+}
+
+function getBuyerActivityActorSummary(activity, buyerAccount) {
+  const actor = normalizeActivityActor(activity?.actor);
+  if (String(actor.accountId ?? "").trim().toLowerCase() === "super-admin") {
+    return {
+      name: actor.displayName || SUPER_ADMIN_USERNAME,
+      email: "",
+    };
+  }
+  if (actor.displayName && actor.displayName !== "User" && actor.displayName !== "Buyer") {
+    return {
+      name: actor.displayName,
+      email: String(actor.accountId ?? "").trim(),
+    };
+  }
+  return getBuyerActivityIdentity(buyerAccount);
+}
+
+function getBuyerActivityDetails(kind, activity) {
+  const description = String(activity?.description ?? "").replace(/\s+/g, " ").trim();
+  if (description) {
+    return description;
+  }
+
+  const orderReference = String(activity?.orderReference ?? activity?.orderId ?? activity?.bookingId ?? "").trim();
+  const itemName = String(activity?.itemName ?? activity?.productName ?? activity?.serviceName ?? "").trim();
+  const reason = String(activity?.reason ?? activity?.message ?? activity?.internalNote ?? activity?.note ?? "").replace(/\s+/g, " ").trim();
+
+  if (kind === "checkout") {
+    return `Checked out${orderReference ? ` order ${orderReference}` : ""}${itemName ? ` for ${itemName}` : ""}.`;
+  }
+  if (kind === "booking") {
+    return `Created booking${orderReference ? ` ${orderReference}` : ""}${itemName ? ` for ${itemName}` : ""}.`;
+  }
+  if (kind === "cancel-order") {
+    return `Cancelled${orderReference ? ` order ${orderReference}` : " an order"}.`;
+  }
+  if (kind === "change-password") {
+    return "Changed account password.";
+  }
+  if (kind === "update-profile") {
+    return "Updated buyer profile information.";
+  }
+  if (kind === "add-image") {
+    return itemName ? `Added image for ${itemName}.` : "Added image.";
+  }
+  if (kind === "edit-image") {
+    return itemName ? `Updated image for ${itemName}.` : "Updated image.";
+  }
+  if (kind === "product-review") {
+    const rating = Number(activity?.rating ?? activity?.productReviewRating);
+    const ratingText = Number.isFinite(rating) && rating > 0 ? ` Rating: ${rating}/5.` : "";
+    return `Added product review${itemName ? ` for ${itemName}` : ""}.${ratingText}`.replace(/\s+/g, " ").trim();
+  }
+  if (kind === "reports") {
+    return reason || "Buyer report or Super Admin action recorded.";
+  }
+  if (kind === "user-login") {
+    return "Logged in to the system.";
+  }
+  if (kind === "user-logout") {
+    return "Logged out from the system.";
+  }
+  if (kind === "account-created") {
+    return "Buyer account was registered.";
+  }
+
+  return reason || String(activity?.title ?? "Buyer activity recorded.").trim() || "Buyer activity recorded.";
+}
+
+function serializeSuperAdminBuyerActivity(activity, buyerAccount) {
+  if (!activity || typeof activity !== "object" || isLiveChatActivity(activity)) {
+    return null;
+  }
+
+  const kind = getBuyerActivityKind(activity);
+  const createdAt = getCompanyActivityTimestamp(activity, [
+    "createdAt",
+    "updatedAt",
+    "sentAt",
+    "timestamp",
+    "date",
+  ]);
+  if (!createdAt) {
+    return null;
+  }
+
+  const actorSummary = getBuyerActivityActorSummary(activity, buyerAccount);
+  const targetId = String(
+    activity.targetId ??
+      activity.orderId ??
+      activity.bookingId ??
+      activity.accountId ??
+      activity.buyerId ??
+      "",
+  ).trim();
+
+  return {
+    id: String(activity.id ?? `buyer-activity-${kind}-${createdAt}-${targetId}`).trim(),
+    kind,
+    activity: getBuyerActivityLabel(kind, activity),
+    userName: actorSummary.name,
+    userEmail: actorSummary.email,
+    details: getBuyerActivityDetails(kind, activity),
+    ipAddress: String(activity.ipAddress ?? activity.ip ?? activity.remoteAddress ?? "").trim(),
+    createdAt,
+    targetId,
+    source: String(activity.source ?? "activity-log").trim() || "activity-log",
+  };
+}
+
+function pushBuyerDerivedActivity(rows, buyerAccount, activity) {
+  const row = serializeSuperAdminBuyerActivity(
+    { ...activity, source: activity.source || "derived" },
+    buyerAccount,
+  );
+  if (row) {
+    rows.push(row);
+  }
+}
+
+function getBuyerActivityProfileImageUrl(account) {
+  return String(
+    account?.profileImageUrl ??
+      account?.avatarUrl ??
+      account?.imageUrl ??
+      account?.photoUrl ??
+      "",
+  ).trim();
+}
+
+function getBuyerReportRecordsForActivity(account) {
+  return []
+    .concat(Array.isArray(account?.buyerReports) ? account.buyerReports : [])
+    .concat(Array.isArray(account?.reports) ? account.reports : [])
+    .concat(Array.isArray(account?.violations) ? account.violations : [])
+    .filter((record) => record && typeof record === "object");
+}
+
+function hasSimilarRawBuyerActivity(rawRows, kind, createdAt, details) {
+  const createdTime = getCompanyActivityTimeMs(createdAt);
+  const normalizedDetails = String(details ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  return (Array.isArray(rawRows) ? rawRows : []).some((row) => {
+    if (row?.kind !== kind) {
+      return false;
+    }
+
+    const rowTime = getCompanyActivityTimeMs(row?.createdAt);
+    if (createdTime && rowTime && Math.abs(rowTime - createdTime) > 5000) {
+      return false;
+    }
+
+    if (!normalizedDetails) {
+      return true;
+    }
+
+    const rowDetails = String(row?.details ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (!rowDetails) {
+      return false;
+    }
+    return rowDetails.includes(normalizedDetails) || normalizedDetails.includes(rowDetails);
+  });
+}
+
+function createBuyerAccountActivityRows(buyerAccount, rawRows) {
+  const rows = [];
+  const buyerId = String(buyerAccount?.id ?? buyerAccount?.accountId ?? buyerAccount?.accountCode ?? "").trim();
+  const buyerIdentity = getBuyerActivityIdentity(buyerAccount);
+  const buyerActor = {
+    role: "user",
+    accountId: buyerId || buyerIdentity.email,
+    displayName: buyerIdentity.name,
+  };
+  const rawKinds = new Set((Array.isArray(rawRows) ? rawRows : []).map((row) => row.kind));
+  const createdAt = getCompanyActivityTimestamp(buyerAccount, ["createdAt", "registeredAt"]);
+  const updatedAt = getCompanyActivityTimestamp(buyerAccount, ["updatedAt", "modifiedAt"]);
+  const lastLoginAt = getCompanyActivityTimestamp(buyerAccount, ["lastLoginAt", "lastActiveAt"]);
+  const lastLogoutAt = getCompanyActivityTimestamp(buyerAccount, ["lastLogoutAt"]);
+  const passwordUpdatedAt = getCompanyActivityTimestamp(buyerAccount, ["passwordUpdatedAt"]);
+  const superAdminActionUpdatedAt = getCompanyActivityTimestamp(buyerAccount, ["superAdminActionUpdatedAt"]);
+  const profileImageUrl = getBuyerActivityProfileImageUrl(buyerAccount);
+  const profileImageUpdatedAt = getCompanyActivityTimestamp(buyerAccount, [
+    "profileImageUpdatedAt",
+    "avatarUpdatedAt",
+    "imageUpdatedAt",
+    "photoUpdatedAt",
+    "updatedAt",
+  ]);
+
+  if (createdAt && !rawKinds.has("account-created")) {
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      id: `derived-buyer-created-${buyerId || createdAt}`,
+      type: "buyer-account",
+      action: "account-created",
+      title: "Account Created",
+      actor: buyerActor,
+      buyerId,
+      targetId: buyerId,
+      description: `${buyerIdentity.name} registered a buyer account.`,
+      createdAt,
+    });
+  }
+
+  if (lastLoginAt && isCompanyActivityLaterThan(lastLoginAt, createdAt) && !rawKinds.has("user-login")) {
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      id: `derived-buyer-login-${buyerId || lastLoginAt}`,
+      type: "buyer-account",
+      action: "login",
+      title: "User Login",
+      actor: buyerActor,
+      buyerId,
+      targetId: buyerId,
+      description: "Logged in to the system.",
+      createdAt: lastLoginAt,
+    });
+  }
+
+  if (lastLogoutAt && isCompanyActivityLaterThan(lastLogoutAt, createdAt) && !rawKinds.has("user-logout")) {
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      id: `derived-buyer-logout-${buyerId || lastLogoutAt}`,
+      type: "buyer-account",
+      action: "logout",
+      title: "User Logout",
+      actor: buyerActor,
+      buyerId,
+      targetId: buyerId,
+      description: "Logged out from the system.",
+      createdAt: lastLogoutAt,
+    });
+  }
+
+  if (passwordUpdatedAt && isCompanyActivityLaterThan(passwordUpdatedAt, createdAt) && !rawKinds.has("change-password")) {
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      id: `derived-buyer-password-${buyerId || passwordUpdatedAt}`,
+      type: "buyer-account",
+      action: "password-changed",
+      title: "Change Password",
+      actor: buyerActor,
+      buyerId,
+      targetId: buyerId,
+      description: "Changed account password.",
+      createdAt: passwordUpdatedAt,
+    });
+  }
+
+  const updatedBySuperAdmin =
+    superAdminActionUpdatedAt &&
+    Math.abs(getCompanyActivityTimeMs(updatedAt) - getCompanyActivityTimeMs(superAdminActionUpdatedAt)) <= 2000;
+  const updatedByPassword =
+    passwordUpdatedAt &&
+    Math.abs(getCompanyActivityTimeMs(updatedAt) - getCompanyActivityTimeMs(passwordUpdatedAt)) <= 2000;
+  if (
+    updatedAt &&
+    isCompanyActivityLaterThan(updatedAt, createdAt) &&
+    !updatedBySuperAdmin &&
+    !updatedByPassword &&
+    !rawKinds.has("update-profile")
+  ) {
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      id: `derived-buyer-profile-${buyerId || updatedAt}`,
+      type: "buyer-account",
+      action: "profile-updated",
+      title: "Update Profile",
+      actor: buyerActor,
+      buyerId,
+      targetId: buyerId,
+      description: "Updated buyer profile information.",
+      createdAt: updatedAt,
+    });
+  }
+
+  if (profileImageUrl && profileImageUpdatedAt) {
+    const imageWasUpdated = isCompanyActivityLaterThan(profileImageUpdatedAt, createdAt);
+    const imageKind = imageWasUpdated ? "edit-image" : "add-image";
+    if (!rawKinds.has(imageKind)) {
+      pushBuyerDerivedActivity(rows, buyerAccount, {
+        id: `derived-buyer-image-${buyerId || profileImageUpdatedAt}`,
+        type: "buyer-account",
+        action: imageWasUpdated ? "profile-image-updated" : "profile-image-added",
+        title: imageWasUpdated ? "Edit Image" : "Add Image",
+        actor: buyerActor,
+        buyerId,
+        targetId: buyerId,
+        description: imageWasUpdated ? "Updated profile image." : "Added profile image.",
+        createdAt: profileImageUpdatedAt,
+      });
+    }
+  }
+
+  const adminActions = Array.isArray(buyerAccount?.buyerAdminActions)
+    ? buyerAccount.buyerAdminActions
+    : [];
+  for (const actionEntry of adminActions) {
+    const actionCreatedAt = getCompanyActivityTimestamp(actionEntry, ["createdAt", "updatedAt"]);
+    if (!actionCreatedAt) {
+      continue;
+    }
+    const actionDetails = String(actionEntry.reason ?? actionEntry.internalNote ?? "Super Admin action recorded.").trim();
+    if (hasSimilarRawBuyerActivity(rawRows, "reports", actionCreatedAt, actionDetails)) {
+      continue;
+    }
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      ...actionEntry,
+      id: String(actionEntry.id ?? `derived-buyer-admin-action-${buyerId}-${actionCreatedAt}`).trim(),
+      type: "buyer-admin-action",
+      source: "account-actions",
+      title: "Reports",
+      description: actionDetails,
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: actionEntry.createdBy || SUPER_ADMIN_USERNAME,
+      },
+      buyerId,
+      targetId: buyerId,
+      createdAt: actionCreatedAt,
+    });
+  }
+
+  const notifications = Array.isArray(buyerAccount?.buyerNotifications)
+    ? buyerAccount.buyerNotifications
+    : [];
+  for (const notification of notifications) {
+    const notificationCreatedAt = getCompanyActivityTimestamp(notification, ["createdAt", "sentAt"]);
+    if (!notificationCreatedAt) {
+      continue;
+    }
+    const notificationDetails = String(notification.message ?? notification.reason ?? "Buyer notification sent.").trim();
+    if (hasSimilarRawBuyerActivity(rawRows, "reports", notificationCreatedAt, notificationDetails)) {
+      continue;
+    }
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      ...notification,
+      id: String(notification.id ?? `derived-buyer-notification-${buyerId}-${notificationCreatedAt}`).trim(),
+      type: "buyer-notification",
+      source: "account-notifications",
+      title: "Reports",
+      description: notificationDetails,
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: notification.sentBy || notification.createdBy || SUPER_ADMIN_USERNAME,
+      },
+      buyerId,
+      targetId: buyerId,
+      createdAt: notificationCreatedAt,
+    });
+  }
+
+  for (const report of getBuyerReportRecordsForActivity(buyerAccount)) {
+    const reportCreatedAt = getCompanyActivityTimestamp(report, ["createdAt", "reportedAt", "updatedAt"]);
+    if (!reportCreatedAt) {
+      continue;
+    }
+    pushBuyerDerivedActivity(rows, buyerAccount, {
+      ...report,
+      id: String(report.id ?? `derived-buyer-report-${buyerId}-${reportCreatedAt}`).trim(),
+      type: "buyer-report",
+      source: "account-reports",
+      title: "Reports",
+      description: String(report.reason ?? report.reportReason ?? report.type ?? "Buyer report recorded.").trim(),
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      buyerId,
+      targetId: String(report.relatedOrderId ?? report.orderId ?? report.bookingId ?? buyerId).trim(),
+      createdAt: reportCreatedAt,
+    });
+  }
+
+  return rows;
+}
+
+function isBuyerActivityBookingOrder(order) {
+  const type = normalizeBuyerActivityKey(order?.type || order?.transactionType || order?.orderType || "");
+  return Boolean(
+    type.includes("booking") ||
+      order?.bookingId ||
+      order?.bookingDate ||
+      order?.serviceId ||
+      order?.serviceName,
+  );
+}
+
+function getBuyerOrderActivityTimestamp(order) {
+  return getCompanyActivityTimestamp(order, [
+    "createdAt",
+    "orderedAt",
+    "checkoutAt",
+    "placedAt",
+    "date",
+  ]);
+}
+
+function getBuyerOrderReference(order) {
+  return String(order?.bookingId ?? order?.orderId ?? order?.checkoutId ?? order?.id ?? "").trim();
+}
+
+function getBuyerOrderItemName(order) {
+  return String(order?.serviceName ?? order?.productName ?? order?.product ?? order?.name ?? "Order item").trim() || "Order item";
+}
+
+function getBuyerOrderSellerName(order) {
+  return String(order?.companyName ?? order?.storeName ?? order?.sellerName ?? order?.businessName ?? "").trim();
+}
+
+function formatBuyerActivityMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return "";
+  }
+  return `PHP ${amount.toLocaleString("en-US", {
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  })}`;
+}
+
+function getBuyerOrderTotal(order) {
+  return order?.grandTotalAmount ?? order?.amountToPayAmount ?? order?.total ?? order?.amount ?? order?.price;
+}
+
+function getBuyerOrderReviewTimestamp(order) {
+  const ratedAtEpochMs = Number(order?.productRatedAtEpochMs ?? order?.ratedAtEpochMs ?? 0);
+  if (Number.isFinite(ratedAtEpochMs) && ratedAtEpochMs > 0) {
+    return new Date(ratedAtEpochMs).toISOString();
+  }
+  return getCompanyActivityTimestamp(order, ["productRatedAt", "reviewedAt", "updatedAt", "createdAt"]);
+}
+
+function getBuyerReviewMediaUploadedAt(media) {
+  const uploadedAtEpochMs = Number(media?.uploadedAtEpochMs ?? media?.createdAtEpochMs ?? 0);
+  if (Number.isFinite(uploadedAtEpochMs) && uploadedAtEpochMs > 0) {
+    return new Date(uploadedAtEpochMs).toISOString();
+  }
+  return getCompanyActivityTimestamp(media, ["uploadedAt", "createdAt", "updatedAt"]);
+}
+
+function createBuyerOrderActivityRows(buyerAccount, orders) {
+  const rows = [];
+  const buyerId = String(buyerAccount?.id ?? buyerAccount?.accountId ?? buyerAccount?.accountCode ?? "").trim();
+  const buyerIdentity = getBuyerActivityIdentity(buyerAccount);
+  const buyerActor = {
+    role: "user",
+    accountId: buyerId || buyerIdentity.email,
+    displayName: buyerIdentity.name,
+  };
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    if (!isOrderForBuyerActivity(order, buyerAccount)) {
+      continue;
+    }
+
+    const createdAt = getBuyerOrderActivityTimestamp(order);
+    const orderReference = getBuyerOrderReference(order);
+    const itemName = getBuyerOrderItemName(order);
+    const sellerName = getBuyerOrderSellerName(order);
+    const total = formatBuyerActivityMoney(getBuyerOrderTotal(order));
+    const isBooking = isBuyerActivityBookingOrder(order);
+    if (createdAt) {
+      const detailParts = [
+        isBooking ? "Created booking" : "Checked out",
+        orderReference ? (isBooking ? orderReference : `order ${orderReference}`) : "",
+        itemName ? `for ${itemName}` : "",
+        sellerName ? `from ${sellerName}` : "",
+        total ? `Total: ${total}` : "",
+      ].filter(Boolean);
+      pushBuyerDerivedActivity(rows, buyerAccount, {
+        id: `derived-buyer-order-${orderReference || order?.id || createdAt}`,
+        type: isBooking ? "booking" : "checkout",
+        action: isBooking ? "booking" : "checkout",
+        title: isBooking ? "Booking" : "Checkout",
+        actor: buyerActor,
+        buyerId,
+        orderId: orderReference,
+        bookingId: String(order?.bookingId ?? "").trim(),
+        targetId: orderReference,
+        itemName,
+        productName: String(order?.productName ?? "").trim(),
+        serviceName: String(order?.serviceName ?? "").trim(),
+        description: `${detailParts.join(" ")}.`,
+        createdAt,
+      });
+    }
+
+    const statusText = normalizeBuyerActivityKey(
+      order?.cancelRequestStatus || order?.orderStatus || order?.bookingStatus || order?.stage || order?.status,
+    );
+    if (statusText.includes("cancel")) {
+      const cancelledAt =
+        getCompanyActivityTimestamp(order, ["cancelledAt", "canceledAt", "cancelRequestResolvedAt", "updatedAt"]) ||
+        (() => {
+          const epochMs = Number(order?.cancelRequestResolvedAtEpochMs ?? order?.cancelledAtEpochMs ?? 0);
+          return Number.isFinite(epochMs) && epochMs > 0 ? new Date(epochMs).toISOString() : "";
+        })() ||
+        createdAt;
+      if (cancelledAt) {
+        pushBuyerDerivedActivity(rows, buyerAccount, {
+          id: `derived-buyer-order-cancel-${orderReference || order?.id || cancelledAt}`,
+          type: "order",
+          action: "cancel-order",
+          title: "Cancel Order",
+          actor: buyerActor,
+          buyerId,
+          orderId: orderReference,
+          targetId: orderReference,
+          itemName,
+          description: `Cancelled${orderReference ? ` order ${orderReference}` : " an order"}${itemName ? ` for ${itemName}` : ""}.`,
+          createdAt: cancelledAt,
+        });
+      }
+    }
+
+    const reviewRating = Number(order?.productReviewRating ?? order?.productRating ?? 0);
+    const reviewComment = String(order?.productReviewComment ?? order?.reviewComment ?? "").trim();
+    const reviewMedia = Array.isArray(order?.productReviewMedia) ? order.productReviewMedia : [];
+    if ((Number.isFinite(reviewRating) && reviewRating > 0) || reviewComment || reviewMedia.length) {
+      const reviewedAt = getBuyerOrderReviewTimestamp(order);
+      if (reviewedAt) {
+        pushBuyerDerivedActivity(rows, buyerAccount, {
+          id: `derived-buyer-review-${orderReference || order?.id || reviewedAt}`,
+          type: "product-review",
+          action: "review",
+          title: "Product Review",
+          actor: buyerActor,
+          buyerId,
+          orderId: orderReference,
+          targetId: orderReference,
+          itemName,
+          productName: itemName,
+          rating: reviewRating,
+          description: `Added product review for ${itemName}${Number.isFinite(reviewRating) && reviewRating > 0 ? ` with ${reviewRating}/5 rating` : ""}.`,
+          createdAt: reviewedAt,
+        });
+      }
+    }
+
+    for (const [index, media] of reviewMedia.entries()) {
+      const uploadedAt = getBuyerReviewMediaUploadedAt(media);
+      if (!uploadedAt) {
+        continue;
+      }
+      pushBuyerDerivedActivity(rows, buyerAccount, {
+        id: `derived-buyer-review-image-${orderReference || order?.id || uploadedAt}-${index}`,
+        type: "buyer-image",
+        action: "image-added",
+        title: "Add Image",
+        actor: buyerActor,
+        buyerId,
+        orderId: orderReference,
+        targetId: orderReference,
+        itemName,
+        description: `Added review image for ${itemName}.`,
+        createdAt: uploadedAt,
+      });
+    }
+  }
+
+  return rows;
+}
+
+function getBuyerActivityDedupeKey(row) {
+  const createdTime = getCompanyActivityTimeMs(row?.createdAt);
+  const minuteKey = createdTime ? Math.floor(createdTime / 60000) : String(row?.createdAt ?? "");
+  const normalizedDetails = String(row?.details ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+
+  return [
+    row?.kind,
+    row?.targetId || "",
+    minuteKey,
+    normalizedDetails,
+  ].join("|");
+}
+
+function dedupeBuyerActivityRows(rows) {
+  const seen = new Set();
+  const uniqueRows = [];
+
+  for (const row of rows) {
+    if (!row || !row.createdAt) {
+      continue;
+    }
+
+    const key = getBuyerActivityDedupeKey(row);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    uniqueRows.push(row);
+  }
+
+  return uniqueRows;
+}
+
+async function handleSuperAdminBuyerActivityApi(request, response, buyerId, requestUrl) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const requestedLimit = Number(requestUrl.searchParams.get("limit"));
+    const limit =
+      Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? Math.min(Math.trunc(requestedLimit), 100)
+        : 50;
+    const [accounts, orders, activityLog] = await Promise.all([
+      readAccounts(),
+      readOrders(),
+      readActivityLog(),
+    ]);
+    const accountIndex = findBuyerAccountIndexById(accounts, buyerId);
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Buyer account not found." });
+      return;
+    }
+
+    const buyerAccount = accounts[accountIndex];
+    const rawRows = (Array.isArray(activityLog) ? activityLog : [])
+      .filter((activity) => isRawBuyerActivityForAccount(activity, buyerAccount))
+      .map((activity) => serializeSuperAdminBuyerActivity(activity, buyerAccount))
+      .filter(Boolean);
+    const derivedRows = [
+      ...createBuyerAccountActivityRows(buyerAccount, rawRows),
+      ...createBuyerOrderActivityRows(buyerAccount, orders),
+    ];
+    const activities = dedupeBuyerActivityRows([...rawRows, ...derivedRows])
+      .sort((left, right) => getCompanyActivityTimeMs(right.createdAt) - getCompanyActivityTimeMs(left.createdAt));
+
+    sendJson(response, 200, {
+      buyerId: String(buyerAccount.id ?? buyerAccount.accountId ?? buyerAccount.accountCode ?? buyerId ?? "").trim(),
+      activities: activities.slice(0, limit),
+      total: activities.length,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load buyer activity.",
+    });
+  }
+}
+
+function createSuperAdminProductNotificationSummary(product = {}) {
+  return {
+    id: String(product?.id ?? product?._id ?? product?.productId ?? "").trim(),
+    productId: String(product?.productId ?? product?.id ?? "").trim(),
+    requestId: String(product?.requestId ?? "").trim(),
+    name: String(product?.name ?? "Unnamed product").trim(),
+    adminId: getRecordAdminId(product),
+    companyId: String(product?.companyId ?? "").trim(),
+    submittedAt: String(product?.submittedAt ?? "").trim(),
+    createdAt: String(product?.createdAt ?? "").trim(),
+    updatedAt: String(product?.updatedAt ?? "").trim(),
+    approvalUpdatedAt: String(product?.approvalUpdatedAt ?? "").trim(),
+    companyName: String(product?.companyName ?? "").trim(),
+    storeName: String(product?.storeName ?? "").trim(),
+    businessName: String(product?.businessName ?? "").trim(),
+    companyPictureUrl: String(product?.companyPictureUrl ?? "").trim(),
+    companyProfileImageUrl: String(product?.companyProfileImageUrl ?? "").trim(),
+    companyImageUrl: String(product?.companyImageUrl ?? "").trim(),
+    companyLogoUrl: String(product?.companyLogoUrl ?? "").trim(),
+    storeLogoUrl: String(product?.storeLogoUrl ?? "").trim(),
+    profileImageUrl: String(product?.profileImageUrl ?? "").trim(),
+    logoUrl: String(product?.logoUrl ?? "").trim(),
+  };
+}
+
 async function handleSuperAdminProductRequestsApi(request, response) {
   if (!requireSuperAdmin(request, response)) {
     return;
@@ -12058,13 +25879,61 @@ async function handleSuperAdminProductRequestsApi(request, response) {
   }
 
   try {
-    const [products, accounts] = await Promise.all([
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const isNotificationRequest = requestUrl.searchParams.get("view") === "notifications";
+    let [products, accounts] = await Promise.all([
       readProducts(),
       readAccounts(),
     ]);
+    if (isNotificationRequest) {
+      const notificationProducts = attachProductsCompanyMetadata(
+        products
+          .map(normalizeStoredProductRecord)
+          .filter(isProductPendingApproval)
+          .sort((left, right) =>
+            String(right.submittedAt ?? right.createdAt ?? "").localeCompare(
+              String(left.submittedAt ?? left.createdAt ?? ""),
+            ),
+          ),
+        accounts,
+      ).map(createSuperAdminProductNotificationSummary);
+      let linkedNotifications = [];
+      try {
+        linkedNotifications = await ensureSuperAdminWelcomeNotification(
+          await readSuperAdminNotifications(),
+        );
+      } catch (_) {
+        linkedNotifications = [];
+      }
+      sendJson(response, 200, {
+        products: notificationProducts,
+        total: notificationProducts.length,
+        notifications: linkedNotifications,
+      });
+      return;
+    }
+
+    const evidenceSync = await syncRejectedProductEvidenceMatches(products);
+    if (evidenceSync.didChange) {
+      products = evidenceSync.products;
+      await writeProducts(products);
+    }
+    const approvedTrainingSync = await syncApprovedProductYoloTrainingEvidence(products);
+    if (approvedTrainingSync.didChange) {
+      products = approvedTrainingSync.products;
+      await writeProducts(products);
+    }
+    const revisionSync = await syncProductRevisionSignals(products);
+    if (revisionSync.didChange) {
+      products = revisionSync.products;
+      await writeProducts(products);
+    }
+    const normalizedProducts = products.map(normalizeStoredProductRecord);
+    const approvedTrainingRecords = await syncApprovedProductTrainingArchive(
+      normalizedProducts,
+    );
     const pendingProducts = attachProductsCompanyMetadata(
-      products
-        .map(normalizeStoredProductRecord)
+      normalizedProducts
         .filter(isProductPendingApproval)
         .sort((left, right) =>
           String(right.submittedAt ?? right.createdAt ?? "").localeCompare(
@@ -12073,10 +25942,73 @@ async function handleSuperAdminProductRequestsApi(request, response) {
         ),
       accounts,
     );
+    const rejectedProducts = attachProductsCompanyMetadata(
+      normalizedProducts
+        .filter(isProductRejected)
+        .sort((left, right) =>
+          String(
+            right.rejectedAt ??
+            right.yoloInspection?.updatedAt ??
+            right.approvalUpdatedAt ??
+            right.updatedAt ??
+            "",
+          ).localeCompare(String(
+            left.rejectedAt ??
+            left.yoloInspection?.updatedAt ??
+            left.approvalUpdatedAt ??
+            left.updatedAt ??
+            "",
+          )),
+        ),
+      accounts,
+    );
+    const approvedTrainingDisplayRecords = createApprovedProductTrainingDisplayRecords(
+      approvedTrainingRecords,
+    );
+    const approvedProducts = attachProductsCompanyMetadata(
+      approvedTrainingDisplayRecords,
+      accounts,
+    );
+    const liveProducts = attachProductsCompanyMetadata(
+      normalizedProducts
+        .filter(isProductLiveListingForApp)
+        .sort((left, right) =>
+          String(
+            right.approvedAt ??
+            right.approvalUpdatedAt ??
+            right.updatedAt ??
+            "",
+          ).localeCompare(String(
+            left.approvedAt ??
+            left.approvalUpdatedAt ??
+            left.updatedAt ??
+            "",
+          )),
+        ),
+      accounts,
+    );
+    const stats = {
+      submitted: normalizedProducts.length,
+      inReview: normalizedProducts.filter(isProductPendingApproval).length,
+      approved: approvedProducts.length,
+      rejected: normalizedProducts.filter(isProductRejected).length,
+    };
 
     sendJson(response, 200, {
       products: pendingProducts,
       total: pendingProducts.length,
+      rejectedProducts,
+      rejectedTotal: rejectedProducts.length,
+      approvedProducts,
+      approvedTotal: approvedProducts.length,
+      liveProducts,
+      liveTotal: liveProducts.length,
+      stats,
+      yoloInspection: {
+        configured: Boolean(YOLO_INSPECTION_ENDPOINT),
+        model: YOLO_INSPECTION_MODEL,
+        autoReject: false,
+      },
     });
   } catch (error) {
     sendJson(response, 500, {
@@ -12084,6 +26016,549 @@ async function handleSuperAdminProductRequestsApi(request, response) {
         error instanceof Error
           ? error.message
           : "Unable to load product requests.",
+    });
+  }
+}
+
+async function handleSuperAdminProductListingRestrictionApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedProductId = String(productId ?? "").trim();
+  if (!normalizedProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const reason = String(payload?.reason ?? payload?.restrictionReason ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const durationDays = Math.trunc(Number(
+      payload?.durationDays ?? payload?.restrictionDurationDays,
+    ));
+    const sellerNote = String(payload?.sellerNote ?? payload?.notes ?? "").trim();
+    const notifySeller = payload?.notifySeller !== false;
+
+    if (!reason) {
+      sendJson(response, 400, { message: "Restriction reason is required." });
+      return;
+    }
+    if (reason.length > 500) {
+      sendJson(response, 400, { message: "Restriction reason is too long." });
+      return;
+    }
+    if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365) {
+      sendJson(response, 400, { message: "Select a restriction duration from 1 to 365 days." });
+      return;
+    }
+    if (sellerNote.length > 500) {
+      sendJson(response, 400, { message: "Seller note is too long." });
+      return;
+    }
+
+    const [products, accounts] = await Promise.all([readProducts(), readAccounts()]);
+    const productIndex = products.findIndex((product) =>
+      String(product?.id ?? "").trim() === normalizedProductId
+    );
+    if (productIndex === -1) {
+      sendJson(response, 404, { message: "Product not found." });
+      return;
+    }
+
+    const previousProduct = products[productIndex];
+    if (!isProductApprovedForApp(previousProduct)) {
+      sendJson(response, 409, { message: "Only an approved live listing can be restricted." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+    const listingRestriction = {
+      active: true,
+      reason,
+      durationDays,
+      sellerNote,
+      notifySeller,
+      restrictedAt: now,
+      restrictedBy: SUPER_ADMIN_USERNAME,
+      expiresAt,
+    };
+    const updatedProduct = {
+      ...previousProduct,
+      listingRestriction,
+      isListingRestricted: true,
+      listingRestrictionReason: reason,
+      listingRestrictionDurationDays: durationDays,
+      listingRestrictionSellerNote: sellerNote,
+      listingRestrictedAt: now,
+      listingRestrictedBy: SUPER_ADMIN_USERNAME,
+      listingRestrictionExpiresAt: expiresAt,
+      updatedAt: now,
+    };
+    products[productIndex] = updatedProduct;
+
+    const adminId = getRecordAdminId(previousProduct, "");
+    const accountIndex = accounts.findIndex((account) =>
+      normalizeAdminTenantId(account?.id, "") === adminId ||
+      getRecordAdminId(account, "") === adminId
+    );
+    let notification = null;
+    if (notifySeller && accountIndex !== -1) {
+      const previousAccount = accounts[accountIndex];
+      const updatedAccount = { ...previousAccount };
+      notification = applySuperAdminProductListingRestrictionNotification(
+        updatedAccount,
+        previousAccount,
+        updatedProduct,
+        listingRestriction,
+        now,
+      );
+      accounts[accountIndex] = updatedAccount;
+    }
+
+    const writes = [writeProducts(products)];
+    if (notifySeller && accountIndex !== -1) {
+      writes.push(writeAccounts(accounts));
+    }
+    await Promise.all(writes);
+
+    if (notification) {
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "listing-restriction",
+        source: "super_admin",
+        targetPermission: "products",
+        adminId,
+        action: "restricted",
+        productId: normalizedProductId,
+        productName: String(updatedProduct?.name ?? "Product").trim() || "Product",
+        title: notification.title,
+        description: notification.message,
+        notificationAudience: "admin",
+        targetUrl: `/product_panel.html?productId=${encodeURIComponent(normalizedProductId)}`,
+        actor: {
+          role: "admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+      });
+    }
+
+    sendJson(response, 200, {
+      product: normalizeStoredProductRecord(updatedProduct),
+      restriction: listingRestriction,
+      sellerNotified: Boolean(notification),
+      message: `Listing restricted for ${durationDays} ${durationDays === 1 ? "day" : "days"}.`,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to restrict product listing.",
+    });
+  }
+}
+
+async function handleSuperAdminProductDetectionLabelApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "PATCH" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const target = parseApprovedTrainingDisplayProductId(productId);
+  if (!target.sourceProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const validation = validateManualYoloDetectionLabel(
+      payload?.label ?? payload?.detectionLabel ?? payload?.objectLabel,
+    );
+    if (!validation.label) {
+      sendJson(response, 400, {
+        message: validation.message || "Use a valid object label.",
+      });
+      return;
+    }
+
+    const [products, approvedTrainingRecords] = await Promise.all([
+      readProducts(),
+      readApprovedProductTrainingRecords(),
+    ]);
+    const targetIds = new Set([
+      target.rawProductId,
+      target.sourceProductId,
+    ].map((value) => String(value || "").trim()).filter(Boolean));
+    let targetImageUrl = String(payload?.imageUrl ?? payload?.targetImageUrl ?? "").trim();
+    let changedProduct = null;
+    let didUpdateProduct = false;
+    let didUpdateApprovedRecord = false;
+
+    const nextApprovedTrainingRecords = approvedTrainingRecords.map((record) => {
+      const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(record);
+      const recordKey = normalizedRecord ? getApprovedProductTrainingArchiveKey(normalizedRecord) : "";
+      if (!normalizedRecord || !targetIds.has(recordKey)) {
+        return record;
+      }
+
+      const recordImageUrls = getProductApprovedTrainingImageUrls(normalizedRecord);
+      const recordTargetImageUrl = target.approvedImageIndex > 0
+        ? recordImageUrls[target.approvedImageIndex - 1] || ""
+        : targetImageUrl;
+      if (recordTargetImageUrl && !targetImageUrl) {
+        targetImageUrl = recordTargetImageUrl;
+      }
+      const updatedRecord = applyManualYoloDetectionLabel(
+        normalizedRecord,
+        validation.label,
+        { targetImageUrl: recordTargetImageUrl },
+      );
+      if (JSON.stringify(normalizedRecord) !== JSON.stringify(updatedRecord)) {
+        didUpdateApprovedRecord = true;
+      }
+      return updatedRecord;
+    });
+
+    const nextProducts = products.map((product) => {
+      const productIdValue = String(product?.id ?? "").trim();
+      if (!targetIds.has(productIdValue)) {
+        return product;
+      }
+
+      const productImageUrls = getProductApprovedTrainingImageUrls(product);
+      const productTargetImageUrl = targetImageUrl ||
+        (target.approvedImageIndex > 0 ? productImageUrls[target.approvedImageIndex - 1] || "" : "");
+      const updatedProduct = applyManualYoloDetectionLabel(
+        product,
+        validation.label,
+        { targetImageUrl: productTargetImageUrl },
+      );
+      if (JSON.stringify(product) !== JSON.stringify(updatedProduct)) {
+        didUpdateProduct = true;
+        changedProduct = updatedProduct;
+      }
+      return updatedProduct;
+    });
+
+    if (!didUpdateProduct && !didUpdateApprovedRecord) {
+      sendJson(response, 404, {
+        message: "Product detection record not found.",
+      });
+      return;
+    }
+
+    if (didUpdateProduct) {
+      await writeProducts(nextProducts);
+    }
+    if (didUpdateApprovedRecord) {
+      await writeApprovedProductTrainingRecords(nextApprovedTrainingRecords);
+    } else if (changedProduct && isApprovedProductYoloTrainingRecord(changedProduct)) {
+      await syncApprovedProductTrainingArchive([changedProduct]);
+    }
+
+    sendJson(response, 200, {
+      product: changedProduct ? normalizeStoredProductRecord(changedProduct) : null,
+      label: validation.label,
+      message: `YOLO detection updated to "${validation.label}".`,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to update YOLO detection label.",
+    });
+  }
+}
+
+function appendSuperAdminUploadedProductImages(product = {}, uploadedImageUrls = [], now = new Date().toISOString()) {
+  const normalizedUploadedImageUrls = normalizeProductImageUrls(uploadedImageUrls);
+  const normalizedProduct = normalizeStoredProductRecord(product);
+  const approvalStatus = normalizeProductApprovalStatus(
+    product?.approvalStatus ?? normalizedProduct.approvalStatus,
+    normalizedProduct.approvalStatus,
+  );
+  const existingImageUrls = normalizeProductImageUrls(
+    [
+      ...(Array.isArray(product?.imageUrls) ? product.imageUrls : []),
+      ...(Array.isArray(normalizedProduct.imageUrls) ? normalizedProduct.imageUrls : []),
+      product?.imageUrl,
+      product?.mainImageUrl,
+      normalizedProduct.imageUrl,
+      normalizedProduct.mainImageUrl,
+    ],
+    product?.imageUrl ?? product?.mainImageUrl ?? normalizedProduct.imageUrl ?? "",
+  );
+  const nextImageUrls = normalizeProductImageUrls([
+    ...existingImageUrls,
+    ...normalizedUploadedImageUrls,
+  ]);
+  const mainImageIndex = resolveProductMainImageIndex(
+    nextImageUrls,
+    product?.mainImageIndex ?? normalizedProduct.mainImageIndex,
+    product?.mainImageUrl ?? product?.imageUrl ?? normalizedProduct.mainImageUrl,
+  );
+  const mainImageUrl = nextImageUrls[mainImageIndex] || nextImageUrls[0] || "";
+  const productForEvidence = {
+    ...normalizedProduct,
+    ...product,
+    approvalStatus,
+    imageUrl: mainImageUrl,
+    mainImageUrl,
+    imageUrls: nextImageUrls,
+    mainImageIndex,
+  };
+  const existingInspection = normalizeYoloInspection(
+    product?.yoloInspection ?? normalizedProduct.yoloInspection,
+    getProductYoloInspectionImageUrls(productForEvidence),
+  );
+  const yoloImageUrls = normalizeProductImageUrls(
+    [
+      ...(Array.isArray(existingInspection?.imageUrls) ? existingInspection.imageUrls : []),
+      ...getProductYoloInspectionImageUrls(productForEvidence),
+      ...normalizedUploadedImageUrls,
+    ],
+    mainImageUrl,
+  );
+  const superAdminUploadedImageUrls = normalizeProductImageUrls([
+    ...(Array.isArray(product?.superAdminUploadedImageUrls) ? product.superAdminUploadedImageUrls : []),
+    ...(Array.isArray(normalizedProduct.superAdminUploadedImageUrls)
+      ? normalizedProduct.superAdminUploadedImageUrls
+      : []),
+    ...normalizedUploadedImageUrls,
+  ]);
+  const isApproved = approvalStatus === PRODUCT_APPROVAL_APPROVED;
+  const isRejected = approvalStatus === PRODUCT_APPROVAL_REJECTED;
+  const nextInspectionPayload = {
+    ...(existingInspection || {}),
+    imageUrls: yoloImageUrls,
+    datasetBucket: isApproved
+      ? "approved"
+      : isRejected
+        ? "rejected"
+        : String(existingInspection?.datasetBucket ?? "inspection").trim() || "inspection",
+    requestedAt: existingInspection?.requestedAt || now,
+    updatedAt: now,
+  };
+
+  if (isApproved) {
+    const approvedEvidenceImageUrls = normalizeProductImageUrls(
+      [
+        ...(Array.isArray(existingInspection?.approvedEvidence?.imageUrls)
+          ? existingInspection.approvedEvidence.imageUrls
+          : []),
+        ...yoloImageUrls,
+      ],
+      mainImageUrl,
+    );
+    nextInspectionPayload.status = "clear";
+    nextInspectionPayload.flagged = false;
+    nextInspectionPayload.approvedEvidence = buildApprovedYoloTrainingEvidence(
+      productForEvidence,
+      approvedEvidenceImageUrls,
+      {
+        approvedAt:
+          productForEvidence.approvedAt ||
+          productForEvidence.approvalUpdatedAt ||
+          productForEvidence.updatedAt ||
+          now,
+        approvedBy: productForEvidence.approvedBy || SUPER_ADMIN_USERNAME,
+        updatedAt: now,
+        source: "super-admin-uploaded-image",
+        reason: "Super Admin uploaded extra product image evidence for YOLO training.",
+      },
+    );
+    nextInspectionPayload.revisionEvidence = null;
+    nextInspectionPayload.archivedAt = existingInspection?.archivedAt || now;
+    nextInspectionPayload.autoReject = false;
+  }
+
+  if (isRejected) {
+    nextInspectionPayload.rejectedEvidenceImageUrls = normalizeProductImageUrls(
+      [
+        ...getProductRejectedEvidenceImageUrls(productForEvidence),
+        ...normalizedUploadedImageUrls,
+      ],
+      mainImageUrl,
+    );
+    nextInspectionPayload.status = existingInspection?.status || "queued";
+    nextInspectionPayload.archivedAt = existingInspection?.archivedAt || now;
+    nextInspectionPayload.autoReject = false;
+  }
+
+  return {
+    ...productForEvidence,
+    imageUrl: mainImageUrl,
+    mainImageUrl,
+    imageUrls: nextImageUrls,
+    mainImageIndex,
+    yoloInspection: normalizeYoloInspection(nextInspectionPayload, yoloImageUrls),
+    superAdminUploadedImageUrls,
+    superAdminImageUploadedAt: now,
+    superAdminImageUploadedBy: SUPER_ADMIN_USERNAME,
+    updatedAt: now,
+  };
+}
+
+async function handleSuperAdminProductImagesApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "PATCH" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const target = parseApprovedTrainingDisplayProductId(productId);
+  if (!target.sourceProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const uploadedImageUrls = normalizeProductImageUrls(
+      payload?.imageUrls ??
+        payload?.uploadedImageUrls ??
+        payload?.superAdminUploadedImageUrls ??
+        [],
+    );
+    if (!uploadedImageUrls.length) {
+      sendJson(response, 400, { message: "Upload at least one image before saving." });
+      return;
+    }
+
+    const targetIds = new Set([
+      target.rawProductId,
+      target.sourceProductId,
+    ].map((value) => String(value || "").trim()).filter(Boolean));
+    const now = new Date().toISOString();
+    const [products, approvedTrainingRecords] = await Promise.all([
+      readProducts(),
+      readApprovedProductTrainingRecords(),
+    ]);
+    const nextProducts = [...products];
+    let changedProduct = null;
+    let changedApprovedRecord = null;
+    let didUpdateProduct = false;
+    let didUpdateApprovedRecord = false;
+
+    for (let index = 0; index < nextProducts.length; index += 1) {
+      const product = nextProducts[index];
+      const storedProductId = String(product?.id ?? "").trim();
+      if (!targetIds.has(storedProductId)) {
+        continue;
+      }
+
+      const updatedProduct = await syncProductVisualSearchFingerprint(
+        appendSuperAdminUploadedProductImages(product, uploadedImageUrls, now),
+        product,
+      );
+      if (JSON.stringify(product) !== JSON.stringify(updatedProduct)) {
+        didUpdateProduct = true;
+        changedProduct = updatedProduct;
+        nextProducts[index] = updatedProduct;
+      }
+    }
+
+    let nextApprovedTrainingRecords = approvedTrainingRecords.map((record) => {
+      const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(record);
+      const recordKey = normalizedRecord ? getApprovedProductTrainingArchiveKey(normalizedRecord) : "";
+      if (!normalizedRecord || !targetIds.has(recordKey)) {
+        return record;
+      }
+
+      const updatedRecord = appendSuperAdminUploadedProductImages(
+        normalizedRecord,
+        uploadedImageUrls,
+        now,
+      );
+      if (JSON.stringify(normalizedRecord) !== JSON.stringify(updatedRecord)) {
+        didUpdateApprovedRecord = true;
+        changedApprovedRecord = updatedRecord;
+      }
+      return updatedRecord;
+    });
+
+    if (changedProduct && isApprovedProductYoloTrainingRecord(changedProduct)) {
+      const normalizedChangedRecord = normalizeApprovedProductTrainingArchiveRecord(changedProduct);
+      const changedRecordKey = normalizedChangedRecord
+        ? getApprovedProductTrainingArchiveKey(normalizedChangedRecord)
+        : "";
+      if (normalizedChangedRecord && changedRecordKey) {
+        const mergedApprovedTrainingRecords = mergeApprovedProductTrainingArchiveRecords(
+          nextApprovedTrainingRecords,
+          [normalizedChangedRecord],
+        );
+        if (
+          JSON.stringify(nextApprovedTrainingRecords) !==
+          JSON.stringify(mergedApprovedTrainingRecords)
+        ) {
+          didUpdateApprovedRecord = true;
+          changedApprovedRecord = normalizedChangedRecord;
+          nextApprovedTrainingRecords = mergedApprovedTrainingRecords;
+        }
+      }
+    }
+
+    if (!didUpdateProduct && !didUpdateApprovedRecord) {
+      sendJson(response, 404, { message: "Product record not found." });
+      return;
+    }
+
+    if (didUpdateProduct) {
+      await writeProducts(nextProducts);
+      if (changedProduct) {
+        await logActivitySafely(
+          createProductActivityEntry(
+            "updated",
+            changedProduct,
+            SUPER_ADMIN_USERNAME,
+            products.find((product) =>
+              String(product?.id ?? "").trim() === String(changedProduct?.id ?? "").trim()
+            ),
+            { superAdminUploadedImageUrls: uploadedImageUrls },
+          ),
+        );
+      }
+    }
+    if (didUpdateApprovedRecord) {
+      await writeApprovedProductTrainingRecords(nextApprovedTrainingRecords);
+    }
+
+    const responseProduct = changedProduct || changedApprovedRecord;
+    const normalizedResponseProduct = responseProduct
+      ? normalizeStoredProductRecord(responseProduct)
+      : null;
+    const uploadCount = uploadedImageUrls.length;
+    const responseStatus = String(normalizedResponseProduct?.approvalStatus || "").trim().toLowerCase();
+    sendJson(response, 200, {
+      product: normalizedResponseProduct,
+      imageUrls: uploadedImageUrls,
+      message: responseStatus === PRODUCT_APPROVAL_REJECTED
+        ? `${uploadCount} image${uploadCount === 1 ? "" : "s"} uploaded and saved as rejected YOLO evidence.`
+        : `${uploadCount} image${uploadCount === 1 ? "" : "s"} uploaded and saved for approved YOLO training.`,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to save uploaded product images.",
     });
   }
 }
@@ -12119,19 +26594,62 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
     }
 
     const previousProduct = products[productIndex];
+    if (!isProductPendingApproval(previousProduct)) {
+      sendJson(response, 409, { message: "Only products in review can be approved." });
+      return;
+    }
     const now = new Date().toISOString();
-    const approvedProduct = {
+    let approvedProduct = {
       ...previousProduct,
       approvalStatus: PRODUCT_APPROVAL_APPROVED,
       submittedAt: previousProduct.submittedAt || previousProduct.createdAt || now,
       approvedAt: now,
       approvedBy: SUPER_ADMIN_USERNAME,
+      rejectedAt: "",
+      rejectedBy: "",
+      rejectionReason: "",
+      yoloRevision: null,
+      revisionStatus: "",
+      revisionRequestedAt: "",
+      revisionRequestedBy: "",
+      revisionReason: "",
+      revisionMessage: "",
       approvalUpdatedAt: now,
       updatedAt: now,
+    };
+    const approvedTrainingRecords = await readApprovedProductTrainingRecords();
+    const isFullyTrained = await isApprovedProductFullyTrained(
+      approvedProduct,
+      [
+        ...approvedTrainingRecords,
+        ...products.filter((product, index) => index !== productIndex),
+      ],
+    );
+    if (isFullyTrained) {
+      approvedProduct = clearApprovedProductYoloTrainingEvidence(approvedProduct, {
+        updatedAt: now,
+      });
+    } else {
+      approvedProduct = await applyApprovedProductYoloTrainingEvidence(
+        approvedProduct,
+        previousProduct,
+        {
+          approvedAt: now,
+          approvedBy: SUPER_ADMIN_USERNAME,
+          updatedAt: now,
+        },
+      );
+    }
+    approvedProduct = {
+      ...approvedProduct,
+      ...normalizeProductListingInsightHistory(approvedProduct),
     };
 
     products[productIndex] = approvedProduct;
     await writeProducts(products);
+    if (!isFullyTrained) {
+      await syncApprovedProductTrainingArchive([approvedProduct]);
+    }
 
     const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
     sendJson(response, 200, {
@@ -12139,7 +26657,9 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
         normalizeStoredProductRecord(approvedProduct),
         companyMetadataByAdminId,
       ),
-      message: "Product request approved.",
+      message: isFullyTrained
+        ? "Product request approved. YOLO is already 100% trained for this listing, so no duplicate approved training record was saved."
+        : "Product request approved.",
     });
   } catch (error) {
     sendJson(response, 500, {
@@ -12147,6 +26667,282 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
         error instanceof Error
           ? error.message
           : "Unable to approve product request.",
+    });
+  }
+}
+
+async function handleSuperAdminProductRevisionApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "PATCH" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedProductId = String(productId ?? "").trim();
+  if (!normalizedProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const [products, accounts] = await Promise.all([
+      readProducts(),
+      readAccounts(),
+    ]);
+    const productIndex = products.findIndex((product) =>
+      String(product?.id ?? "").trim() === normalizedProductId
+    );
+
+    if (productIndex === -1) {
+      sendJson(response, 404, { message: "Product request not found." });
+      return;
+    }
+
+    const previousProduct = products[productIndex];
+    if (!isProductPendingApproval(previousProduct)) {
+      sendJson(response, 409, { message: "Only products in review can be sent for revision." });
+      return;
+    }
+
+    const normalizedAdminId = normalizeAdminTenantId(
+      getRecordAdminId(previousProduct),
+      "",
+    );
+    const accountIndex = accounts.findIndex((account) =>
+      isAdminAccount(account) &&
+      normalizeAdminTenantId(getRecordAdminId(account, account.id), "") === normalizedAdminId
+    );
+
+    if (accountIndex === -1) {
+      sendJson(response, 404, { message: "Seller account not found for this product." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existingRevision =
+      resolveProductRevisionSignal(previousProduct) ||
+      null;
+    const productName = String(previousProduct?.name || "product").trim();
+    const categoryLabel =
+      getProductCategoryList(previousProduct).join(", ") ||
+      String(previousProduct?.category ?? "").trim() ||
+      "selected category";
+    const revisionFieldLabels = new Map([
+      ["image", "Images"],
+      ["name", "Product name"],
+      ["category", "Category / Tags"],
+      ["price", "Price"],
+      ["description", "Description"],
+      ["stock", "Stock / Variants"],
+      ["other", "Other details"],
+    ]);
+    const rawRevisionFields = Array.isArray(payload?.revisionFields)
+      ? payload.revisionFields
+      : Array.isArray(payload?.fields)
+        ? payload.fields
+        : [];
+    const revisionFields = [...new Set(rawRevisionFields
+      .map((entry) => String(entry ?? "").trim().toLowerCase())
+      .filter((entry) => revisionFieldLabels.has(entry)))];
+    const revisionFieldLabelText = revisionFields
+      .map((entry) => revisionFieldLabels.get(entry))
+      .filter(Boolean)
+      .join(", ");
+    const defaultRevisionReason = revisionFieldLabelText
+      ? `Needs revision: ${revisionFieldLabelText}`
+      : existingRevision?.reason || "Product needs revision.";
+    const revisionReason = String(
+      payload?.reason ??
+        payload?.revisionReason ??
+        existingRevision?.reason ??
+        defaultRevisionReason,
+    ).trim() || defaultRevisionReason;
+    const revisionNote = String(payload?.revisionNote ?? "").trim();
+    const defaultRevisionMessage = revisionNote ||
+      (revisionFieldLabelText
+        ? `Please revise ${productName}. Update the following: ${revisionFieldLabelText}.`
+        : existingRevision?.message ||
+          `Please edit ${productName}. The product image/details may not match the selected category: ${categoryLabel}.`);
+    const revisionMessage = String(
+      payload?.message ??
+        payload?.revisionMessage ??
+        defaultRevisionMessage,
+    ).trim();
+    const nextYoloRevision = existingRevision
+      ? normalizeProductRevisionSignal({
+          ...existingRevision,
+          status: "requested",
+          flagged: true,
+          reason: revisionReason,
+          message: revisionMessage,
+          fields: revisionFields,
+          categoryLabel: existingRevision.categoryLabel || categoryLabel,
+          requestedAt: now,
+          requestedBy: SUPER_ADMIN_USERNAME,
+          updatedAt: now,
+        })
+      : null;
+    let revisedProduct = {
+      ...previousProduct,
+      yoloRevision: nextYoloRevision,
+      revisionStatus: "requested",
+      revisionRequestedAt: now,
+      revisionRequestedBy: SUPER_ADMIN_USERNAME,
+      revisionReason,
+      revisionMessage,
+      revisionFields,
+      revisionSource: nextYoloRevision ? "yolo-revision" : "manual-super-admin-revision",
+      approvalUpdatedAt: now,
+      updatedAt: now,
+    };
+
+    const previousAccount = accounts[accountIndex];
+    const updatedAccount = { ...previousAccount };
+    const notifyResult = applySuperAdminSellerNotifyAction(
+      updatedAccount,
+      previousAccount,
+      {
+        notificationType: "notice",
+        notificationTitle: "Product Revision Required",
+        notificationReason: revisionReason,
+        notificationMessage: revisionMessage,
+      },
+      now,
+    );
+
+    products[productIndex] = revisedProduct;
+    accounts[accountIndex] = updatedAccount;
+    await Promise.all([
+      writeProducts(products),
+      writeAccounts(accounts),
+      logActivitySafely({
+        id: createActivityLogId(),
+        type: "product-revision",
+        source: "super_admin",
+        targetPermission: "products",
+        adminId: normalizedAdminId,
+        productId: normalizedProductId,
+        action: "revision-requested",
+        title: "Product revision requested",
+        description: revisionMessage,
+        notificationAudience: "admin",
+        targetUrl: createProductActivityTargetUrl(revisedProduct),
+        actor: {
+          role: "admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+      }),
+    ]);
+
+    const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
+    sendJson(response, 200, {
+      product: attachProductCompanyMetadata(
+        normalizeStoredProductRecord(revisedProduct),
+        companyMetadataByAdminId,
+      ),
+      notification: notifyResult.notification,
+      message: "Revision notice sent to seller. Product remains in review.",
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to request product revision.",
+    });
+  }
+}
+
+async function handleSuperAdminProductUnrejectApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "PATCH" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedProductId = String(productId ?? "").trim();
+  if (!normalizedProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    const [products, accounts] = await Promise.all([
+      readProducts(),
+      readAccounts(),
+    ]);
+    const productIndex = products.findIndex((product) =>
+      String(product?.id ?? "").trim() === normalizedProductId
+    );
+
+    if (productIndex === -1) {
+      sendJson(response, 404, { message: "Rejected product not found." });
+      return;
+    }
+
+    const previousProduct = products[productIndex];
+    if (!isProductRejected(previousProduct)) {
+      sendJson(response, 409, { message: "Only rejected products can be returned to review." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const imageUrls = getProductYoloInspectionImageUrls(previousProduct);
+    const existingInspection = normalizeYoloInspection(
+      previousProduct?.yoloInspection,
+      imageUrls,
+    );
+    const detectorFlagged = hasYoloDetectorFlag(existingInspection);
+    const restoredProduct = {
+      ...previousProduct,
+      approvalStatus: PRODUCT_APPROVAL_PENDING,
+      submittedAt: previousProduct.submittedAt || previousProduct.createdAt || now,
+      approvedAt: "",
+      approvedBy: "",
+      rejectedAt: "",
+      rejectedBy: "",
+      rejectionReason: "",
+      approvalUpdatedAt: now,
+      updatedAt: now,
+      yoloInspection: normalizeYoloInspection({
+        ...(existingInspection || {}),
+        status: detectorFlagged ? "flagged" : existingInspection?.inspectedAt ? "clear" : "queued",
+        flagged: detectorFlagged,
+        datasetBucket: "inspection",
+        imageUrls,
+        updatedAt: now,
+        archivedAt: "",
+        rejectedEvidenceMatch: null,
+        autoReject: false,
+      }, imageUrls),
+    };
+
+    products[productIndex] = restoredProduct;
+    await writeProducts(products);
+
+    const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
+    sendJson(response, 200, {
+      product: attachProductCompanyMetadata(
+        normalizeStoredProductRecord(restoredProduct),
+        companyMetadataByAdminId,
+      ),
+      message: "Product returned to In Review.",
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to return product to review.",
     });
   }
 }
@@ -12168,7 +26964,8 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
   }
 
   try {
-    const products = await readProducts();
+    const payload = await parseRequestBody(request);
+    let products = await readProducts();
     const productIndex = products.findIndex((product) =>
       String(product?.id ?? "").trim() === normalizedProductId
     );
@@ -12178,18 +26975,66 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
       return;
     }
 
-    const cancelledProduct = products[productIndex];
-    if (!isProductPendingApproval(cancelledProduct)) {
+    const previousProduct = products[productIndex];
+    if (!isProductPendingApproval(previousProduct)) {
       sendJson(response, 409, { message: "Only products in review can be cancelled." });
       return;
     }
 
-    products.splice(productIndex, 1);
+    const now = new Date().toISOString();
+    const existingInspection = normalizeYoloInspection(
+      previousProduct?.yoloInspection,
+      getProductYoloInspectionImageUrls(previousProduct),
+    );
+    const selectedRejectedEvidence = resolveSelectedRejectedEvidenceImageUrls(
+      previousProduct,
+      payload,
+    );
+    if (
+      selectedRejectedEvidence.usedExplicitSelection &&
+      !selectedRejectedEvidence.imageUrls.length
+    ) {
+      sendJson(response, 400, {
+        message: "Select at least one valid product image to save as rejected YOLO evidence.",
+      });
+      return;
+    }
+    const allInspectionImageUrls = getProductYoloInspectionImageUrls(previousProduct);
+    let rejectedProduct = {
+      ...previousProduct,
+      approvalStatus: PRODUCT_APPROVAL_REJECTED,
+      rejectedAt: now,
+      rejectedBy: SUPER_ADMIN_USERNAME,
+      rejectionReason: String(previousProduct?.rejectionReason || "Rejected during manual product inspection.").trim(),
+      approvalUpdatedAt: now,
+      updatedAt: now,
+      yoloInspection: normalizeYoloInspection({
+        ...(existingInspection || {}),
+        status: existingInspection?.status || "queued",
+        datasetBucket: "rejected",
+        imageUrls: allInspectionImageUrls,
+        rejectedEvidenceImageUrls: selectedRejectedEvidence.imageUrls,
+        requestedAt: existingInspection?.requestedAt || now,
+        updatedAt: now,
+        archivedAt: now,
+        autoReject: false,
+      }, allInspectionImageUrls),
+    };
+    rejectedProduct = await syncProductVisualSearchFingerprint(
+      rejectedProduct,
+      previousProduct,
+    );
+    products[productIndex] = rejectedProduct;
     await writeProducts(products);
 
     sendJson(response, 200, {
-      product: normalizeStoredProductRecord(cancelledProduct),
-      message: "Product request cancelled.",
+      product: normalizeStoredProductRecord(rejectedProduct),
+      rejectedEvidenceImageUrls: selectedRejectedEvidence.imageUrls,
+      message: !allInspectionImageUrls.length
+        ? "Product request rejected."
+        : selectedRejectedEvidence.imageUrls.length === allInspectionImageUrls.length
+          ? "Product request rejected and archived for YOLO inspection evidence."
+          : `Product request rejected. ${selectedRejectedEvidence.imageUrls.length} selected image(s) were archived for YOLO rejection evidence.`,
     });
   } catch (error) {
     sendJson(response, 500, {
@@ -12197,6 +27042,118 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
         error instanceof Error
           ? error.message
           : "Unable to cancel product request.",
+    });
+  }
+}
+
+async function handleSuperAdminProductInspectionApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedProductId = String(productId ?? "").trim();
+  if (!normalizedProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    let [products, accounts] = await Promise.all([
+      readProducts(),
+      readAccounts(),
+    ]);
+    const productIndex = products.findIndex((product) =>
+      String(product?.id ?? "").trim() === normalizedProductId
+    );
+    if (productIndex === -1) {
+      sendJson(response, 404, { message: "Product request not found." });
+      return;
+    }
+
+    const previousProduct = products[productIndex];
+    if (!isProductPendingApproval(previousProduct) && !isProductRejected(previousProduct)) {
+      sendJson(response, 409, {
+        message: "Only products in review or the rejected archive can be inspected.",
+      });
+      return;
+    }
+
+    const inspection = await runYoloProductInspection(previousProduct);
+    const now = new Date().toISOString();
+    let inspectedProduct = {
+      ...previousProduct,
+      yoloInspection: normalizeYoloInspection({
+        ...(inspection || {}),
+        datasetBucket: isProductRejected(previousProduct) ? "rejected" : "inspection",
+        updatedAt: now,
+        autoReject: false,
+      }, getProductYoloInspectionImageUrls(previousProduct)),
+      updatedAt: now,
+    };
+    let autoApprovalMatch = null;
+    if (isProductPendingApproval(inspectedProduct)) {
+      const evidenceMatch = await applyRejectedProductEvidenceMatch(
+        inspectedProduct,
+        products,
+      );
+      inspectedProduct = evidenceMatch.product;
+      products = evidenceMatch.products;
+      const autoApproval = await applyApprovedProductEvidenceAutoApproval(
+        inspectedProduct,
+        products,
+      );
+      inspectedProduct = autoApproval.product;
+      products = autoApproval.products;
+      autoApprovalMatch = autoApproval.match;
+      if (!autoApprovalMatch) {
+        const approvedEvidenceMatch = await applyApprovedProductEvidenceCategoryMatch(
+          inspectedProduct,
+          products,
+        );
+        inspectedProduct = approvedEvidenceMatch.product;
+        products = approvedEvidenceMatch.products;
+        inspectedProduct = applyProductRevisionSignal(inspectedProduct);
+      }
+    }
+    products[productIndex] = inspectedProduct;
+    await writeProducts(products);
+    if (isApprovedProductYoloTrainingRecord(inspectedProduct)) {
+      await syncApprovedProductTrainingArchive([inspectedProduct]);
+    }
+
+    const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
+    const normalizedProduct = attachProductCompanyMetadata(
+      normalizeStoredProductRecord(inspectedProduct),
+      companyMetadataByAdminId,
+    );
+    const inspectionStatus = normalizedProduct?.yoloInspection?.status || "queued";
+    const message = autoApprovalMatch
+      ? "YOLO auto-approved this product from the approved database."
+      : !YOLO_INSPECTION_ENDPOINT
+      ? "Images saved in the YOLO inspection queue. Final approval remains manual."
+      : inspectionStatus === "flagged"
+        ? "YOLO flagged image evidence for manual review. The product was not auto-rejected."
+        : inspectionStatus === "clear"
+          ? "YOLO inspection completed with no policy flag. Final approval remains manual."
+          : "YOLO inspection evidence saved for manual review.";
+
+    sendJson(response, 200, {
+      product: normalizedProduct,
+      inspection: normalizedProduct?.yoloInspection || null,
+      autoRejected: false,
+      message,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to run product image inspection.",
     });
   }
 }
@@ -12232,12 +27189,19 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
       writeProducts(sources.products.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
       writeOrders(sources.orders.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
       writeChatThreads(sources.chatThreads.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
-      writeDeliveryPartners(sources.deliveryPartners.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
-      writePaymentPartners(sources.paymentPartners.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
+      runPartnerMutation("delivery", async () => {
+        const partners = await readDeliveryPartners();
+        await writeDeliveryPartners(
+          partners.filter((record) => !isRecordInAdminScope(record, normalizedAdminId)),
+        );
+      }),
+      runPartnerMutation("payment", async () => {
+        const partners = await readPaymentPartners();
+        await writePaymentPartners(
+          partners.filter((record) => !isRecordInAdminScope(record, normalizedAdminId)),
+        );
+      }),
       writeActivityLog((await readActivityLog()).filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
-      writeCategories(
-        sources.categories.filter((record) => !isCategoryRecordInAdminScope(record, normalizedAdminId)),
-      ),
       writeAccounts(
         sources.accounts.filter((record) =>
           isAdminAccount(record) || !isRecordInAdminScope(record, normalizedAdminId),
@@ -12260,23 +27224,25 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
   }
 }
 
-async function handleSuperAdminCategoriesApi(request, response, requestUrl) {
+async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
   if (!requireSuperAdmin(request, response)) {
     return;
   }
 
   if (request.method === "GET") {
     try {
-      const [storedCategories, products] = await Promise.all([
-        readCategories(),
-        readProducts(),
+      const [storedPlatforms, storedStoreTypes] = await Promise.all([
+        readPlatforms(),
+        readStoreTypes(),
       ]);
+      const platformDetails = getPlatformDetails(storedPlatforms, storedStoreTypes);
       sendJson(response, 200, {
-        categories: getGlobalCategoryList(storedCategories, products),
+        platforms: platformDetails.map((platform) => platform.id),
+        platformDetails,
       });
     } catch (error) {
       sendJson(response, 500, {
-        message: error instanceof Error ? error.message : "Unable to load categories.",
+        message: error instanceof Error ? error.message : "Unable to load platforms.",
       });
     }
     return;
@@ -12285,39 +27251,72 @@ async function handleSuperAdminCategoriesApi(request, response, requestUrl) {
   if (request.method === "POST") {
     try {
       const payload = await parseRequestBody(request);
-      const categoryName = normalizeCategoryName(payload.name ?? payload.category);
-
-      if (categoryName.length < 2) {
-        throw new Error("Category name must be at least 2 characters long.");
+      const platformName = normalizePlatformName(payload.name ?? payload.label);
+      if (platformName.length < 2) {
+        throw new Error("Platform name must be at least 2 characters long.");
       }
 
-      const [storedCategories, products] = await Promise.all([
-        readCategories(),
-        readProducts(),
+      const [storedPlatforms, storedStoreTypes] = await Promise.all([
+        readPlatforms(),
+        readStoreTypes(),
       ]);
-      const existingCategories = getGlobalCategoryList(storedCategories, products);
-      const alreadyExists = existingCategories.some(
-        (category) => category.toLowerCase() === categoryName.toLowerCase(),
+      const existing = getPlatformDetails(storedPlatforms, storedStoreTypes);
+      const requestedId = normalizePlatformId(payload.id ?? payload.platformId ?? payload.slug)
+        || slugifyPlatformId(platformName);
+      const idExists = existing.some((platform) => platform.id === requestedId);
+      if (idExists) {
+        throw new Error("Platform id already exists.");
+      }
+      const nameExists = existing.some(
+        (platform) => platform.name.toLowerCase() === platformName.toLowerCase(),
       );
-
-      if (alreadyExists) {
-        throw new Error("Category already exists.");
+      if (nameExists) {
+        throw new Error("Platform name already exists.");
       }
 
-      const persistedCategories = [
-        ...storedCategories,
-        normalizeCategoryRecord({ name: categoryName }, DEFAULT_ADMIN_ID),
-      ].filter(Boolean);
+      const maxSortOrder = existing.reduce(
+        (max, platform) => Math.max(max, Number(platform.sortOrder) || 0),
+        0,
+      );
+      const nextPlatform = normalizePlatformRecord({
+        id: requestedId,
+        name: platformName,
+        status: payload.status,
+        sortOrder: payload.sortOrder === undefined ? maxSortOrder + 1 : payload.sortOrder,
+        iconName: payload.iconName ?? payload.lucideIconName,
+        comingSoon: true,
+        heroImageUrl: payload.heroImageUrl ?? payload.imageUrl,
+        iconImageUrl: payload.iconImageUrl ?? payload.iconUrl,
+        primaryColor: payload.primaryColor ?? payload.color ?? payload.accentColor,
+        secondaryColor: payload.secondaryColor ?? payload.secondaryAccent,
+      }, { fallbackSortOrder: maxSortOrder + 1 });
 
-      await writeCategories(persistedCategories);
+      if (!nextPlatform) {
+        throw new Error("Unable to create platform.");
+      }
+      if (!nextPlatform.heroImageUrl) {
+        throw new Error("Platform image is required.");
+      }
+      if (!nextPlatform.iconImageUrl) {
+        throw new Error("Platform 3D art is required.");
+      }
+
+      const nextPlatforms = [
+        ...existing.map(({ businessTypeCount, ...platform }) => platform),
+        nextPlatform,
+      ];
+      await writePlatforms(nextPlatforms);
+      const platformDetails = getPlatformDetails(nextPlatforms, storedStoreTypes);
       sendJson(response, 201, {
-        category: categoryName,
-        categories: getGlobalCategoryList(persistedCategories, products),
-        message: "Category added.",
+        platform: nextPlatform.id,
+        platformRecord: platformDetails.find((platform) => platform.id === nextPlatform.id),
+        platforms: platformDetails.map((platform) => platform.id),
+        platformDetails,
+        message: "Platform added.",
       });
     } catch (error) {
       sendJson(response, 400, {
-        message: error instanceof Error ? error.message : "Unable to add category.",
+        message: error instanceof Error ? error.message : "Unable to add platform.",
       });
     }
     return;
@@ -12326,92 +27325,135 @@ async function handleSuperAdminCategoriesApi(request, response, requestUrl) {
   if (request.method === "PUT") {
     try {
       const payload = await parseRequestBody(request);
-      const previousCategoryName = normalizeCategoryName(
-        payload.oldName ?? payload.currentName ?? payload.previousCategory,
+      const previousPlatformId = normalizePlatformId(
+        payload.oldId ?? payload.currentId ?? payload.previousPlatformId ?? payload.id,
       );
-      const nextCategoryName = normalizeCategoryName(payload.name ?? payload.category);
-
-      if (!previousCategoryName) {
-        throw new Error("Current category name is required.");
+      if (!previousPlatformId) {
+        throw new Error("Current platform id is required.");
       }
 
-      if (nextCategoryName.length < 2) {
-        throw new Error("Category name must be at least 2 characters long.");
-      }
-
-      const [storedCategories, products] = await Promise.all([
-        readCategories(),
-        readProducts(),
+      const [storedPlatforms, storedStoreTypes] = await Promise.all([
+        readPlatforms(),
+        readStoreTypes(),
       ]);
-      const allCategories = getGlobalCategoryList(storedCategories, products);
-      const previousCategoryKey = previousCategoryName.toLowerCase();
-      const nextCategoryKey = nextCategoryName.toLowerCase();
+      const existing = getPlatformDetails(storedPlatforms, storedStoreTypes);
+      const previousIndex = existing.findIndex((platform) => platform.id === previousPlatformId);
+      if (previousIndex < 0) {
+        throw new Error("Platform not found.");
+      }
 
-      const categoryExists = allCategories.some(
-        (category) => category.toLowerCase() === previousCategoryKey,
+      const previousPlatform = existing[previousIndex];
+      const platformBusinessTypeCount = getPlatformUsageSummary(
+        previousPlatformId,
+        storedStoreTypes,
+      ).businessTypeCount;
+      const nextPlatformName = normalizePlatformName(
+        payload.name === undefined ? previousPlatform.name : payload.name,
       );
-
-      if (!categoryExists) {
-        throw new Error("Category not found.");
+      if (nextPlatformName.length < 2) {
+        throw new Error("Platform name must be at least 2 characters long.");
       }
 
-      const alreadyExists = allCategories.some((category) => {
-        const categoryKey = category.toLowerCase();
-        return categoryKey === nextCategoryKey && categoryKey !== previousCategoryKey;
-      });
-
-      if (alreadyExists) {
-        throw new Error("Category already exists.");
-      }
-
-      const nextStoredCategories = [
-        ...storedCategories.filter(
-          (category) => getCategoryRecordName(category).toLowerCase() !== previousCategoryKey,
+      const nextPlatformId = normalizePlatformId(
+        payload.newId ?? payload.nextId ?? (
+          payload.id !== undefined && normalizePlatformId(payload.id) !== previousPlatformId
+            ? payload.id
+            : previousPlatformId
         ),
-        normalizeCategoryRecord({ name: nextCategoryName }, DEFAULT_ADMIN_ID),
-      ].filter(Boolean);
+      ) || previousPlatformId;
 
-      let updatedProducts = 0;
-      const nextProducts = products.map((product) => {
-        const productCategories = getProductCategoryList(product);
-        if (
-          !productCategories.some(
-            (category) => category.toLowerCase() === previousCategoryKey,
-          )
-        ) {
-          return product;
+      const idConflict = existing.some(
+        (platform) => platform.id === nextPlatformId && platform.id !== previousPlatformId,
+      );
+      if (idConflict) {
+        throw new Error("Platform id already exists.");
+      }
+      const nameConflict = existing.some(
+        (platform) =>
+          platform.name.toLowerCase() === nextPlatformName.toLowerCase()
+          && platform.id !== previousPlatformId,
+      );
+      if (nameConflict) {
+        throw new Error("Platform name already exists.");
+      }
+
+      const nextPlatform = normalizePlatformRecord({
+        ...previousPlatform,
+        id: nextPlatformId,
+        name: nextPlatformName,
+        status: payload.status === undefined ? previousPlatform.status : payload.status,
+        sortOrder: payload.sortOrder === undefined ? previousPlatform.sortOrder : payload.sortOrder,
+        iconName:
+          payload.iconName === undefined && payload.lucideIconName === undefined
+            ? previousPlatform.iconName
+            : payload.iconName ?? payload.lucideIconName,
+        comingSoon:
+          platformBusinessTypeCount === 0
+            ? true
+            : (payload.comingSoon === undefined ? previousPlatform.comingSoon : payload.comingSoon),
+        heroImageUrl:
+          payload.heroImageUrl === undefined && payload.imageUrl === undefined
+            ? previousPlatform.heroImageUrl
+            : payload.heroImageUrl ?? payload.imageUrl,
+        iconImageUrl:
+          payload.iconImageUrl === undefined && payload.iconUrl === undefined
+            ? previousPlatform.iconImageUrl
+            : payload.iconImageUrl ?? payload.iconUrl,
+        primaryColor:
+          payload.primaryColor === undefined
+            && payload.color === undefined
+            && payload.accentColor === undefined
+            ? previousPlatform.primaryColor
+            : payload.primaryColor ?? payload.color ?? payload.accentColor,
+        secondaryColor:
+          payload.secondaryColor === undefined && payload.secondaryAccent === undefined
+            ? previousPlatform.secondaryColor
+            : payload.secondaryColor ?? payload.secondaryAccent,
+      }, { fallbackSortOrder: previousPlatform.sortOrder });
+
+      let updatedStoreTypes = 0;
+      let nextStoreTypes = storedStoreTypes;
+      if (nextPlatformId !== previousPlatformId) {
+        nextStoreTypes = storedStoreTypes.map((value) => {
+          const storeType = normalizeStoreTypeRecord(value);
+          if (!storeType || storeType.platformId !== previousPlatformId) {
+            return value;
+          }
+          updatedStoreTypes += 1;
+          return {
+            ...(value && typeof value === "object" ? value : {}),
+            ...storeType,
+            platformId: nextPlatformId,
+          };
+        });
+      }
+
+      const nextPlatforms = existing.map((platform, index) => {
+        if (index !== previousIndex) {
+          const { businessTypeCount, ...rest } = platform;
+          return rest;
         }
-
-        const nextProductCategories = normalizeProductCategoryValues(
-          productCategories.map((category) =>
-            category.toLowerCase() === previousCategoryKey
-              ? nextCategoryName
-              : category,
-          ),
-        );
-        updatedProducts += 1;
-        return {
-          ...product,
-          category: nextProductCategories[0] ?? nextCategoryName,
-          categories: nextProductCategories,
-          adminId: getRecordAdminId(product, DEFAULT_ADMIN_ID),
-        };
+        return nextPlatform;
       });
 
       await Promise.all([
-        writeCategories(nextStoredCategories),
-        writeProducts(nextProducts),
+        writePlatforms(nextPlatforms),
+        updatedStoreTypes > 0 ? writeStoreTypes(nextStoreTypes) : Promise.resolve(),
       ]);
+
+      const platformDetails = getPlatformDetails(nextPlatforms, nextStoreTypes);
       sendJson(response, 200, {
-        category: nextCategoryName,
-        previousCategory: previousCategoryName,
-        updatedProducts,
-        categories: getGlobalCategoryList(nextStoredCategories, nextProducts),
-        message: "Category updated.",
+        platform: nextPlatformId,
+        platformRecord: platformDetails.find((platform) => platform.id === nextPlatformId),
+        previousPlatformId,
+        updatedStoreTypes,
+        platforms: platformDetails.map((platform) => platform.id),
+        platformDetails,
+        message: "Platform updated.",
       });
     } catch (error) {
       sendJson(response, 400, {
-        message: error instanceof Error ? error.message : "Unable to update category.",
+        message: error instanceof Error ? error.message : "Unable to update platform.",
       });
     }
     return;
@@ -12419,76 +27461,73 @@ async function handleSuperAdminCategoriesApi(request, response, requestUrl) {
 
   if (request.method === "DELETE") {
     try {
-      const categoryName = normalizeCategoryName(requestUrl?.searchParams.get("name"));
-
-      if (!categoryName) {
-        throw new Error("Category name is required.");
+      const platformId = normalizePlatformId(requestUrl?.searchParams.get("id"));
+      if (!platformId) {
+        throw new Error("Platform id is required.");
       }
 
-      const [storedCategories, products] = await Promise.all([
-        readCategories(),
-        readProducts(),
+      const [storedPlatforms, storedStoreTypes] = await Promise.all([
+        readPlatforms(),
+        readStoreTypes(),
       ]);
-      const allCategories = getGlobalCategoryList(storedCategories, products);
-      const categoryKey = categoryName.toLowerCase();
-      const categoryExists = allCategories.some(
-        (category) => category.toLowerCase() === categoryKey,
-      );
-
-      if (!categoryExists) {
-        throw new Error("Category not found.");
+      const existing = getPlatformDetails(storedPlatforms, storedStoreTypes);
+      const target = existing.find((platform) => platform.id === platformId);
+      if (!target) {
+        throw new Error("Platform not found.");
       }
-
-      const nextCategories = storedCategories.filter(
-        (category) => getCategoryRecordName(category).toLowerCase() !== categoryKey,
-      );
-      const reassignedCategory =
-        categoryKey === "general" ? "Uncategorized" : "General";
-      let reassignedProducts = 0;
-      const nextProducts = products.map((product) => {
-        const productCategories = getProductCategoryList(product);
-        if (
-          !productCategories.some((category) => category.toLowerCase() === categoryKey)
-        ) {
-          return product;
-        }
-
-        const nextProductCategories = normalizeProductCategoryValues(
-          productCategories.filter(
-            (category) => category.toLowerCase() !== categoryKey,
-          ),
+      if (Number(target.businessTypeCount) > 0) {
+        throw new Error(
+          `Cannot delete platform "${target.name}" while ${target.businessTypeCount} business type(s) are assigned. Reassign or deactivate them first.`,
         );
-        if (!nextProductCategories.length) {
-          nextProductCategories.push(reassignedCategory);
-        }
-        reassignedProducts += 1;
-        return {
-          ...product,
-          category: nextProductCategories[0] ?? reassignedCategory,
-          categories: nextProductCategories,
-          adminId: getRecordAdminId(product, DEFAULT_ADMIN_ID),
-        };
-      });
+      }
+      if (existing.length <= 1) {
+        throw new Error("At least one buyer platform is required.");
+      }
 
-      await Promise.all([
-        writeCategories(nextCategories),
-        writeProducts(nextProducts),
-      ]);
+      const nextPlatforms = existing
+        .filter((platform) => platform.id !== platformId)
+        .map(({ businessTypeCount, ...platform }) => platform);
+      await writePlatforms(nextPlatforms);
+      const platformDetails = getPlatformDetails(nextPlatforms, storedStoreTypes);
       sendJson(response, 200, {
-        categories: getGlobalCategoryList(nextCategories, nextProducts),
-        reassignedProducts,
-        reassignedCategory,
-        message: "Category deleted.",
+        platforms: platformDetails.map((platform) => platform.id),
+        platformDetails,
+        message: "Platform deleted.",
       });
     } catch (error) {
       sendJson(response, 400, {
-        message: error instanceof Error ? error.message : "Unable to delete category.",
+        message: error instanceof Error ? error.message : "Unable to delete platform.",
       });
     }
     return;
   }
 
   sendJson(response, 405, { message: "Method not allowed." });
+}
+
+async function handlePlatformsApi(request, response) {
+  if (request.method === "GET") {
+    try {
+      const [storedPlatforms, storedStoreTypes] = await Promise.all([
+        readPlatforms(),
+        readStoreTypes(),
+      ]);
+      const platformDetails = getPlatformDetails(storedPlatforms, storedStoreTypes);
+      sendJson(response, 200, {
+        platforms: platformDetails.map((platform) => platform.id),
+        platformDetails,
+      });
+    } catch (error) {
+      sendJson(response, 500, {
+        message: error instanceof Error ? error.message : "Unable to load platforms.",
+      });
+    }
+    return;
+  }
+
+  sendJson(response, 403, {
+    message: "Platform management is available in Super Admin only.",
+  });
 }
 
 async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
@@ -12498,13 +27537,19 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
 
   if (request.method === "GET") {
     try {
-      const storedStoreTypes = await readStoreTypes();
+      const [storedStoreTypes, accounts, products] = await Promise.all([
+        readStoreTypes(),
+        readAccounts(),
+        readProducts(),
+      ]);
+      const storeTypeDetails = getGlobalStoreTypeDetails(storedStoreTypes, accounts, products);
       sendJson(response, 200, {
-        storeTypes: getGlobalStoreTypeList(storedStoreTypes),
+        storeTypes: storeTypeDetails.map((storeType) => storeType.name),
+        storeTypeDetails,
       });
     } catch (error) {
       sendJson(response, 500, {
-        message: error instanceof Error ? error.message : "Unable to load store types.",
+        message: error instanceof Error ? error.message : "Unable to load business types.",
       });
     }
     return;
@@ -12516,7 +27561,7 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       const storeTypeName = normalizeStoreTypeName(payload.name ?? payload.storeType);
 
       if (storeTypeName.length < 2) {
-        throw new Error("Store type name must be at least 2 characters long.");
+        throw new Error("Business type name must be at least 2 characters long.");
       }
 
       const storedStoreTypes = await readStoreTypes();
@@ -12526,23 +27571,40 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       );
 
       if (alreadyExists) {
-        throw new Error("Store type already exists.");
+        throw new Error("Business type already exists.");
       }
 
       const persistedStoreTypes = [
         ...storedStoreTypes,
-        normalizeStoreTypeRecord({ name: storeTypeName }),
+        normalizeStoreTypeRecord({
+          name: storeTypeName,
+          platformId: payload.platformId ?? payload.platform ?? payload.buyerPlatform,
+          categories: payload.categories,
+          status: payload.status,
+          commissionRate: payload.commissionRate,
+          serviceFee: payload.serviceFee,
+          heroImageUrl: payload.heroImageUrl ?? payload.imageUrl,
+          iconImageUrl: payload.iconImageUrl ?? payload.iconUrl,
+          iconName: payload.iconName ?? payload.lucideIconName,
+          categoryDetails: payload.categoryDetails ?? payload.categoryStats,
+        }),
       ].filter(Boolean);
 
       await writeStoreTypes(persistedStoreTypes);
+      const [accounts, products] = await Promise.all([readAccounts(), readProducts()]);
+      const storeTypeDetails = getGlobalStoreTypeDetails(persistedStoreTypes, accounts, products);
       sendJson(response, 201, {
         storeType: storeTypeName,
-        storeTypes: getGlobalStoreTypeList(persistedStoreTypes),
-        message: "Store type added.",
+        storeTypeRecord: storeTypeDetails.find(
+          (storeType) => storeType.name.toLowerCase() === storeTypeName.toLowerCase(),
+        ),
+        storeTypes: storeTypeDetails.map((storeType) => storeType.name),
+        storeTypeDetails,
+        message: "Business type added.",
       });
     } catch (error) {
       sendJson(response, 400, {
-        message: error instanceof Error ? error.message : "Unable to add store type.",
+        message: error instanceof Error ? error.message : "Unable to add business type.",
       });
     }
     return;
@@ -12557,11 +27619,11 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       const nextStoreTypeName = normalizeStoreTypeName(payload.name ?? payload.storeType);
 
       if (!previousStoreTypeName) {
-        throw new Error("Current store type name is required.");
+        throw new Error("Current business type name is required.");
       }
 
       if (nextStoreTypeName.length < 2) {
-        throw new Error("Store type name must be at least 2 characters long.");
+        throw new Error("Business type name must be at least 2 characters long.");
       }
 
       const [storedStoreTypes, accounts] = await Promise.all([
@@ -12577,7 +27639,7 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       );
 
       if (!storeTypeExists) {
-        throw new Error("Store type not found.");
+        throw new Error("Business type not found.");
       }
 
       const alreadyExists = allStoreTypes.some((storeType) => {
@@ -12586,14 +27648,64 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       });
 
       if (alreadyExists) {
-        throw new Error("Store type already exists.");
+        throw new Error("Business type already exists.");
       }
 
+      const previousStoreTypeRecord =
+        storedStoreTypes.find(
+          (storeType) => getStoreTypeRecordName(storeType).toLowerCase() === previousStoreTypeKey,
+        ) || {};
+      const nextStoreTypeRecord = normalizeStoreTypeRecord({
+        ...(
+          previousStoreTypeRecord && typeof previousStoreTypeRecord === "object"
+            ? previousStoreTypeRecord
+            : {}
+        ),
+        name: nextStoreTypeName,
+        platformId:
+          payload.platformId === undefined
+            && payload.platform === undefined
+            && payload.buyerPlatform === undefined
+            ? previousStoreTypeRecord?.platformId
+            : payload.platformId ?? payload.platform ?? payload.buyerPlatform,
+        categories:
+          payload.categories === undefined
+            ? previousStoreTypeRecord?.categories
+            : payload.categories,
+        status:
+          payload.status === undefined
+            ? previousStoreTypeRecord?.status
+            : payload.status,
+        commissionRate:
+          payload.commissionRate === undefined
+            ? previousStoreTypeRecord?.commissionRate
+            : payload.commissionRate,
+        serviceFee:
+          payload.serviceFee === undefined
+            ? previousStoreTypeRecord?.serviceFee
+            : payload.serviceFee,
+        heroImageUrl:
+          payload.heroImageUrl === undefined && payload.imageUrl === undefined
+            ? previousStoreTypeRecord?.heroImageUrl
+            : payload.heroImageUrl ?? payload.imageUrl,
+        iconImageUrl:
+          payload.iconImageUrl === undefined && payload.iconUrl === undefined
+            ? previousStoreTypeRecord?.iconImageUrl
+            : payload.iconImageUrl ?? payload.iconUrl,
+        iconName:
+          payload.iconName === undefined && payload.lucideIconName === undefined
+            ? previousStoreTypeRecord?.iconName
+            : payload.iconName ?? payload.lucideIconName,
+        categoryDetails:
+          payload.categoryDetails === undefined && payload.categoryStats === undefined
+            ? previousStoreTypeRecord?.categoryDetails ?? previousStoreTypeRecord?.categoryStats
+            : payload.categoryDetails ?? payload.categoryStats,
+      });
       const nextStoredStoreTypes = [
         ...storedStoreTypes.filter(
           (storeType) => getStoreTypeRecordName(storeType).toLowerCase() !== previousStoreTypeKey,
         ),
-        normalizeStoreTypeRecord({ name: nextStoreTypeName }),
+        nextStoreTypeRecord,
       ].filter(Boolean);
 
       let updatedAdmins = 0;
@@ -12618,16 +27730,22 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
         writeStoreTypes(nextStoredStoreTypes),
         writeAccounts(nextAccounts),
       ]);
+      let products = await readProducts();
+      const storeTypeDetails = getGlobalStoreTypeDetails(nextStoredStoreTypes, nextAccounts, products);
       sendJson(response, 200, {
         storeType: nextStoreTypeName,
+        storeTypeRecord: storeTypeDetails.find(
+          (storeType) => storeType.name.toLowerCase() === nextStoreTypeKey,
+        ),
         previousStoreType: previousStoreTypeName,
         updatedAdmins,
-        storeTypes: getGlobalStoreTypeList(nextStoredStoreTypes),
-        message: "Store type updated.",
+        storeTypes: storeTypeDetails.map((storeType) => storeType.name),
+        storeTypeDetails,
+        message: "Business type updated.",
       });
     } catch (error) {
       sendJson(response, 400, {
-        message: error instanceof Error ? error.message : "Unable to update store type.",
+        message: error instanceof Error ? error.message : "Unable to update business type.",
       });
     }
     return;
@@ -12638,7 +27756,7 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       const storeTypeName = normalizeStoreTypeName(requestUrl?.searchParams.get("name"));
 
       if (!storeTypeName) {
-        throw new Error("Store type name is required.");
+        throw new Error("Business type name is required.");
       }
 
       const [storedStoreTypes, accounts] = await Promise.all([
@@ -12652,7 +27770,7 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       );
 
       if (!storeTypeExists) {
-        throw new Error("Store type not found.");
+        throw new Error("Business type not found.");
       }
 
       const nextStoreTypes = storedStoreTypes.filter(
@@ -12680,14 +27798,17 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
         writeStoreTypes(nextStoreTypes),
         writeAccounts(nextAccounts),
       ]);
+      const products = await readProducts();
+      const storeTypeDetails = getGlobalStoreTypeDetails(nextStoreTypes, nextAccounts, products);
       sendJson(response, 200, {
-        storeTypes: getGlobalStoreTypeList(nextStoreTypes),
+        storeTypes: storeTypeDetails.map((storeType) => storeType.name),
+        storeTypeDetails,
         clearedAdmins,
-        message: "Store type deleted.",
+        message: "Business type deleted.",
       });
     } catch (error) {
       sendJson(response, 400, {
-        message: error instanceof Error ? error.message : "Unable to delete store type.",
+        message: error instanceof Error ? error.message : "Unable to delete business type.",
       });
     }
     return;
@@ -12700,19 +27821,24 @@ async function handleStoreTypesApi(request, response) {
   if (request.method === "GET") {
     try {
       const storedStoreTypes = await readStoreTypes();
+      const storeTypeDetails = getGlobalStoreTypeDetails(storedStoreTypes)
+        .filter((storeType) => storeType.status !== "inactive")
+        .map(hideInactiveStoreTypeCategoriesFromStoreType)
+        .filter(Boolean);
       sendJson(response, 200, {
-        storeTypes: getGlobalStoreTypeList(storedStoreTypes),
+        storeTypes: storeTypeDetails.map((storeType) => storeType.name),
+        storeTypeDetails,
       });
     } catch (error) {
       sendJson(response, 500, {
-        message: error instanceof Error ? error.message : "Unable to load store types.",
+        message: error instanceof Error ? error.message : "Unable to load business types.",
       });
     }
     return;
   }
 
   sendJson(response, 403, {
-    message: "Store type management is available in Super Admin only.",
+    message: "Business type management is available in Super Admin only.",
   });
 }
 
@@ -12734,6 +27860,32 @@ async function handleEmployeeLoginApi(request, response) {
       return;
     }
 
+    if (await isEmployeePostgresReady()) {
+      const pgLogin = await loginEmployee({ employeeId, password });
+      if (pgLogin.ok) {
+        const faceAttendanceData = await readFaceAttendanceData();
+        const serializedAccount = serializeEmployeeAccount(
+          stripEmployeeInternalFields(pgLogin.account),
+          faceAttendanceData,
+        );
+        const dashboardPath = getEmployeeDashboardPath(serializedAccount);
+        sendJson(response, 200, {
+          account: serializedAccount,
+          adminId: serializedAccount.adminId,
+          dashboardPath,
+          redirectPath: "/main.html",
+          message: "Employee login verified.",
+          authStore: "postgres",
+        });
+        return;
+      }
+
+      sendJson(response, 401, {
+        message: "Employee ID or password is incorrect.",
+      });
+      return;
+    }
+
     const accounts = await readAccounts();
     const account = findEmployeeLoginAccountWithPassword(accounts, employeeId, password);
 
@@ -12746,11 +27898,14 @@ async function handleEmployeeLoginApi(request, response) {
 
     const faceAttendanceData = await readFaceAttendanceData();
     const serializedAccount = serializeEmployeeAccount(account, faceAttendanceData);
+    const dashboardPath = getEmployeeDashboardPath(serializedAccount);
     sendJson(response, 200, {
       account: serializedAccount,
       adminId: serializedAccount.adminId,
-      redirectPath: getEmployeeDashboardPath(serializedAccount),
+      dashboardPath,
+      redirectPath: "/main.html",
       message: "Employee login verified.",
+      authStore: "json",
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -12777,8 +27932,14 @@ async function handleEmployeeLookupApi(request, response) {
       return;
     }
 
-    const accounts = await readAccounts();
-    const account = findEmployeeLoginAccount(accounts, employeeId);
+    let account = null;
+    if (await isEmployeePostgresReady()) {
+      account = await findEmployeeLoginCandidate(employeeId);
+    }
+    if (!account) {
+      const accounts = await readAccounts();
+      account = findEmployeeLoginAccount(accounts, employeeId);
+    }
 
     if (!account) {
       sendJson(response, 404, { message: "Invalid Employee ID" });
@@ -12806,7 +27967,9 @@ async function handleAccountsApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
   const requestIsSuperAdmin = isSuperAdminAuthorized(request);
+  const requestHasAdminScope = hasRequestAdminScope(request, requestUrl);
   const requestShouldUseAdminScope = !requestIsSuperAdmin;
+  const shouldApplyAdminRestriction = !requestIsSuperAdmin && requestHasAdminScope;
   const getAccountRequestId = (payload = {}) =>
     String(
       payload.id
@@ -12859,6 +28022,80 @@ async function handleAccountsApi(request, response) {
   if (request.method === "POST") {
     try {
       const payload = await parseRequestBody(request);
+      const isAppUserRegistration =
+        String(payload.source ?? "").trim().toLowerCase() === "app";
+
+      if (
+        !isAppUserRegistration &&
+        shouldApplyAdminRestriction &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "manage_employees",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
+      // Customer (Flutter app) registration → PostgreSQL when configured.
+      if (isAppUserRegistration && (await isCustomerPostgresReady())) {
+        const pgAccount = await createCustomerAccount({
+          ...payload,
+          adminId: payload.adminId ?? requestAdminId ?? DEFAULT_ADMIN_ID,
+          googleProfile: payload.googleProfile,
+          verificationToken: payload.verificationToken,
+          verificationChannel: payload.verificationChannel ?? "email",
+        });
+
+        const accountActivityActor = createEmployeeRequestActivityActor(payload, pgAccount);
+        await logActivitySafely(accountActivityActor && {
+          title: "New user registered",
+          actor: accountActivityActor,
+          adminId: requestAdminId,
+          targetPermission: "employee-data",
+          description:
+            `${pgAccount.firstName} ${pgAccount.lastName} created an account from the app.`,
+          createdAt: new Date().toISOString(),
+        }, request);
+
+        sendJson(response, 201, {
+          account: serializeAccountForList(stripInternalFields(pgAccount)),
+          message: "User account created.",
+          authStore: "postgres",
+        });
+        return;
+      }
+
+      // Employee (web) registration → PostgreSQL when configured.
+      if (!isAppUserRegistration && (await isEmployeePostgresReady())) {
+        const normalizedAccount = applyAdminId(normalizeAccountRecord({
+          ...payload,
+          adminId: payload.adminId ?? requestAdminId,
+        }), requestAdminId);
+
+        const pgEmployee = await createEmployeeAccount(normalizedAccount);
+
+        const accountActivityActor = createEmployeeRequestActivityActor(payload, pgEmployee);
+        await logActivitySafely(accountActivityActor && {
+          title: "Employee account created",
+          actor: accountActivityActor,
+          adminId: requestAdminId,
+          targetPermission: "employee-data",
+          description:
+            `${pgEmployee.firstName} ${pgEmployee.lastName} was registered as an employee account.`,
+          createdAt: new Date().toISOString(),
+        }, request);
+
+        sendJson(response, 201, {
+          account: serializeAccountForList(stripEmployeeInternalFields(pgEmployee)),
+          message: "Employee account created.",
+          authStore: "postgres",
+        });
+        return;
+      }
+
       const accounts = await readAccounts();
       const normalizedAccount = applyAdminId(normalizeAccountRecord({
         ...payload,
@@ -12927,13 +28164,14 @@ async function handleAccountsApi(request, response) {
             ? `${normalizedAccount.firstName} ${normalizedAccount.lastName} created an account from the app.`
             : `${normalizedAccount.firstName} ${normalizedAccount.lastName} was registered as an employee account.`,
         createdAt: new Date().toISOString(),
-      });
+      }, request);
       sendJson(response, 201, {
         account: serializeAccountForList(normalizedAccount),
         message:
           normalizedAccount.source === "app"
             ? "User account created."
             : "Employee account created.",
+        authStore: "json",
       });
     } catch (error) {
       sendJson(response, 400, {
@@ -12945,6 +28183,19 @@ async function handleAccountsApi(request, response) {
 
   if (request.method === "PUT") {
     try {
+      if (
+        shouldApplyAdminRestriction &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "manage_employees",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       const accounts = await readAccounts();
       const accountId = getAccountRequestId(payload);
@@ -13055,7 +28306,7 @@ async function handleAccountsApi(request, response) {
           ? `${accountDisplayName} updated their profile picture.`
           : `${accountDisplayName} employee account was updated.`,
         createdAt: new Date().toISOString(),
-      });
+      }, request);
       sendJson(response, 200, {
         account: serializeAccountForList(normalizedAccount),
         message: "Employee account updated.",
@@ -13070,6 +28321,19 @@ async function handleAccountsApi(request, response) {
 
   if (request.method === "DELETE") {
     try {
+      if (
+        shouldApplyAdminRestriction &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "manage_employees",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request).catch(() => ({}));
       const accounts = await readAccounts();
       const accountId = getAccountRequestId(payload);
@@ -13099,7 +28363,7 @@ async function handleAccountsApi(request, response) {
         targetPermission: "employee-data",
         description: `${deletedAccount.firstName ?? ""} ${deletedAccount.lastName ?? ""} employee account was deleted.`.trim(),
         createdAt: new Date().toISOString(),
-      });
+      }, request);
       sendJson(response, 200, {
         account: serializeAccountForList(deletedAccount),
         faceAttendanceProfileRemoved: Boolean(faceAttendanceCleanup.removed),
@@ -13117,16 +28381,20 @@ async function handleAccountsApi(request, response) {
 }
 
 async function handleCategoriesApi(request, response, requestUrl) {
-  const requestAdminId = getRequestAdminId(request, requestUrl);
+  const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
 
   if (request.method === "GET") {
     try {
-      const [storedCategories, products] = await Promise.all([
-        readCategories(),
-        readProducts(),
+      const [accounts, storedStoreTypes] = await Promise.all([
+        readAccounts(),
+        readStoreTypes(),
       ]);
-      const categories = getAdminCategoryList(storedCategories, products, requestAdminId);
-      sendJson(response, 200, { categories });
+      const scope = getAdminBusinessTypeCategoryScope(
+        accounts,
+        storedStoreTypes,
+        requestAdminId,
+      );
+      sendJson(response, 200, scope);
     } catch (error) {
       sendJson(response, 500, {
         message: error instanceof Error ? error.message : "Unable to load categories.",
@@ -13141,63 +28409,396 @@ async function handleCategoriesApi(request, response, requestUrl) {
   return;
 }
 
+function getListingInsightOverallRankingKey(record, productId = "") {
+  const adminId = getRecordAdminId(record, "");
+  const normalizedProductId = String(
+    productId || record?.productId || record?.productID || record?.itemProductId || record?.id || "",
+  ).trim();
+  return adminId && normalizedProductId ? `${adminId}::${normalizedProductId}` : "";
+}
+
+function isListingInsightOverallRankingOrder(order) {
+  if (!order || typeof order !== "object") {
+    return false;
+  }
+
+  const productId = String(
+    order.productId ?? order.productID ?? order.itemProductId ?? "",
+  ).trim();
+  const accountId = String(
+    order.accountId
+      ?? order.customerAccountId
+      ?? order.userAccountId
+      ?? order.userId
+      ?? order.uid
+      ?? order.accountEmail
+      ?? order.userEmail
+      ?? order.email
+      ?? "",
+  ).trim();
+  if (!productId || !isRealOrderAccountId(accountId)) {
+    return false;
+  }
+
+  const stage = String(order.stage ?? order.status ?? "").trim().toLowerCase();
+  const cancelStatus = String(order.cancelRequestStatus ?? "").trim().toLowerCase();
+  return stage !== "cancelled" && cancelStatus !== "accepted";
+}
+
+function getListingInsightOverallRankingOrderIncome(order, quantity) {
+  const normalizedQuantity = Math.max(0, Math.trunc(parseFiniteNumber(quantity, 0)));
+  const unitPrice = parseFiniteNumber(
+    order?.unitPrice ?? order?.productUnitPrice ?? order?.itemPrice,
+    0,
+  );
+  if (unitPrice > 0 && normalizedQuantity > 0) {
+    return unitPrice * normalizedQuantity;
+  }
+
+  const directSubtotal = parseFiniteNumber(
+    order?.productSubtotalAmount
+      ?? order?.lineTotalAmount
+      ?? order?.itemTotalAmount
+      ?? order?.productTotalAmount
+      ?? order?.subtotalAmount,
+    0,
+  );
+  if (directSubtotal > 0) {
+    return directSubtotal;
+  }
+
+  const grandTotal = parseFiniteNumber(
+    order?.grandTotalAmount ?? order?.amount ?? order?.total ?? order?.price,
+    0,
+  );
+  const shippingFee = parseFiniteNumber(
+    order?.shippingFeeAmount ?? order?.deliveryFeeAmount,
+    0,
+  );
+  return Math.max(0, grandTotal - Math.max(0, shippingFee));
+}
+
+function buildListingInsightOverallRankingMetrics(orders = []) {
+  const metricsByProduct = new Map();
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    if (!isListingInsightOverallRankingOrder(order)) {
+      continue;
+    }
+
+    const productId = String(
+      order.productId ?? order.productID ?? order.itemProductId ?? "",
+    ).trim();
+    const rankingKey = getListingInsightOverallRankingKey(order, productId);
+    const quantity = Math.max(
+      0,
+      Math.trunc(parseFiniteNumber(order.quantity ?? order.count ?? order.qty, 0)),
+    );
+    if (!rankingKey || quantity <= 0) {
+      continue;
+    }
+
+    const current = metricsByProduct.get(rankingKey) ?? { unitsSold: 0, income: 0 };
+    current.unitsSold += quantity;
+    current.income += getListingInsightOverallRankingOrderIncome(order, quantity);
+    metricsByProduct.set(rankingKey, current);
+  }
+
+  return metricsByProduct;
+}
+
+function getListingInsightOverallRankingImageUrl(product = {}) {
+  const imageCandidates = [
+    product.imageUrl,
+    product.thumbnailUrl,
+    product.photoUrl,
+    ...(Array.isArray(product.images) ? product.images : []),
+  ];
+  for (const candidate of imageCandidates) {
+    const imageUrl = String(
+      candidate && typeof candidate === "object"
+        ? candidate.url ?? candidate.imageUrl ?? candidate.src ?? ""
+        : candidate ?? "",
+    ).trim();
+    if (imageUrl) {
+      return imageUrl;
+    }
+  }
+  return "";
+}
+
+async function handleListingInsightOverallRankingApi(request, response, requestUrl) {
+  const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  if (!isUsableProductAdminScope(requestAdminId)) {
+    sendProductAdminScopeRequired(response);
+    return;
+  }
+
+  const requestedCategory = normalizeCategoryName(requestUrl.searchParams.get("category"));
+  const selectedProductId = String(requestUrl.searchParams.get("productId") ?? "").trim();
+  if (!requestedCategory) {
+    sendJson(response, 400, { message: "Category is required for overall ranking." });
+    return;
+  }
+
+  try {
+    const [storedProducts, accounts, orders, storedStoreTypes] = await Promise.all([
+      readProducts(),
+      readAccounts(),
+      readOrders(),
+      readStoreTypes(),
+    ]);
+    const categoryScope = getAdminBusinessTypeCategoryScope(
+      accounts,
+      storedStoreTypes,
+      requestAdminId,
+    );
+    const visibleProducts = hideInactiveStoreTypeCategoriesFromProducts(
+      (Array.isArray(storedProducts) ? storedProducts : []).map(normalizeStoredProductRecord),
+      accounts,
+      storedStoreTypes,
+    );
+    const sellerListingCategories = Array.from(new Set(
+      visibleProducts
+        .filter((product) => isRecordInAdminScope(product, requestAdminId))
+        .flatMap((product) => getProductCategoryList(product))
+        .map(normalizeCategoryName)
+        .filter(Boolean),
+    ));
+    const allowedCategories = categoryScope.categories.length
+      ? categoryScope.categories
+      : sellerListingCategories;
+    const category = allowedCategories.find(
+      (value) => normalizeCategoryName(value).toLowerCase() === requestedCategory.toLowerCase(),
+    );
+    if (!category) {
+      sendJson(response, 403, {
+        message: "The selected category is outside this seller's Business Type.",
+      });
+      return;
+    }
+
+    const orderMetrics = buildListingInsightOverallRankingMetrics(orders);
+    const reviewAggregates = buildProductReviewAggregates(orders, null);
+    const categoryKey = category.toLowerCase();
+    const products = visibleProducts
+      .filter((product) =>
+        isProductApprovedForApp(product)
+        && !isProductListingRestrictedForCustomers(product)
+        && getProductCategoryList(product).some(
+          (value) => normalizeCategoryName(value).toLowerCase() === categoryKey,
+        )
+      )
+      .map((product) => applyProductReviewAggregate(product, reviewAggregates));
+    const productsWithCompany = attachProductsCompanyMetadata(products, accounts);
+    const rankedRows = productsWithCompany
+      .map((product) => {
+        const productId = String(product.id ?? product.productId ?? "").trim();
+        const adminId = getRecordAdminId(product, "");
+        const metrics = orderMetrics.get(
+          getListingInsightOverallRankingKey(product, productId),
+        ) ?? { unitsSold: 0, income: 0 };
+        const isOwnSeller = adminId === requestAdminId;
+        const sellerName = String(
+          product.companyName ?? product.storeName ?? product.businessName ?? "Seller",
+        ).trim() || "Seller";
+        return {
+          productId,
+          productName: String(product.name ?? product.productName ?? "Unnamed Product").trim(),
+          imageUrl: getListingInsightOverallRankingImageUrl(product),
+          category,
+          sellerName,
+          sellerLogoUrl: String(product.companyPictureUrl ?? "").trim(),
+          unitsSold: Math.max(0, Math.trunc(parseFiniteNumber(metrics.unitsSold, 0))),
+          income: Math.max(0, parseFiniteNumber(metrics.income, 0)),
+          rating: Math.max(0, Math.min(5, parseFiniteNumber(product.rating, 0))),
+          ratingCount: Math.max(
+            0,
+            Math.trunc(parseFiniteNumber(product.ratingCount ?? product.ratingsCount, 0)),
+          ),
+          isOwnSeller,
+          isSelectedProduct: isOwnSeller && productId === selectedProductId,
+          sellerKey: adminId,
+        };
+      })
+      .sort((left, right) =>
+        right.unitsSold - left.unitsSold
+        || right.income - left.income
+        || right.rating - left.rating
+        || left.productName.localeCompare(right.productName, undefined, { sensitivity: "base" })
+        || left.sellerName.localeCompare(right.sellerName, undefined, { sensitivity: "base" })
+      )
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+
+    const selectedRow = rankedRows.find((row) => row.isSelectedProduct) ?? null;
+    const visibleRows = rankedRows.slice(0, 100);
+    if (selectedRow && !visibleRows.some((row) => row.isSelectedProduct)) {
+      visibleRows.push(selectedRow);
+    }
+    const sellerKeys = new Set(rankedRows.map((row) => row.sellerKey).filter(Boolean));
+    const sellerRefsByKey = new Map();
+    const sellers = [];
+    for (const row of rankedRows) {
+      const sellerProfileKey = String(row.sellerKey ?? "").trim()
+        || `name:${String(row.sellerName ?? "Seller").trim().toLowerCase()}`;
+      if (sellerRefsByKey.has(sellerProfileKey)) {
+        continue;
+      }
+      const sellerRef = `seller-${sellers.length + 1}`;
+      sellerRefsByKey.set(sellerProfileKey, sellerRef);
+      sellers.push({
+        ref: sellerRef,
+        name: row.sellerName,
+        logoUrl: row.sellerLogoUrl,
+      });
+    }
+    const responseRows = visibleRows.map(({ sellerKey, sellerLogoUrl, ...row }) => {
+      const sellerProfileKey = String(sellerKey ?? "").trim()
+        || `name:${String(row.sellerName ?? "Seller").trim().toLowerCase()}`;
+      return {
+        ...row,
+        sellerRef: sellerRefsByKey.get(sellerProfileKey) ?? "",
+      };
+    });
+
+    sendJson(response, 200, {
+      businessType: categoryScope.businessType,
+      category,
+      totalProducts: rankedRows.length,
+      totalSellers: sellerKeys.size,
+      competitorSellers: Math.max(0, sellerKeys.size - (sellerKeys.has(requestAdminId) ? 1 : 0)),
+      selectedProductRank: selectedRow?.rank ?? null,
+      sellers,
+      rows: responseRows,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load overall ranking.",
+    });
+  }
+}
+
 async function handlePaymentPartnersApi(request, response) {
-  const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
-  const requestAdminId = getRequestAdminId(request, requestUrl);
-  const requestIsSuperAdmin = isSuperAdminAuthorized(request);
-  const requestShouldUseAdminScope = !requestIsSuperAdmin && hasRequestAdminScope(request, requestUrl);
+  await handlePartnerCollectionApi(request, response, "payment");
+}
 
-  if (request.method === "GET") {
-    try {
-      const storedPartners = await readPaymentPartners();
-      const partners = requestShouldUseAdminScope
-        ? filterRecordsByAdminId(storedPartners, requestAdminId)
-        : storedPartners;
-      sendJson(response, 200, { partners });
-    } catch (error) {
-      sendJson(response, 500, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to load payment partners.",
-      });
+function getFirstOrderAssetUrl(...values) {
+  for (const value of values.flat()) {
+    const assetUrl = String(value ?? "").trim();
+    if (assetUrl) {
+      return assetUrl;
     }
-    return;
   }
+  return "";
+}
 
-  if (request.method === "POST") {
-    try {
-      const payload = await parseRequestBody(request);
-      const partner = requestIsSuperAdmin
-        ? normalizePaymentPartnerRecord(payload)
-        : applyAdminId(normalizePaymentPartnerRecord(payload), requestAdminId);
-      const partners = await readPaymentPartners();
-      partners.unshift(partner);
-      await writePaymentPartners(partners);
-      sendJson(response, 201, {
-        partner,
-        message: "Payment partner saved.",
-      });
-    } catch (error) {
-      sendJson(response, 400, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to save payment partner.",
-      });
-    }
-    return;
-  }
+function getOrderListingImageUrl(order, product) {
+  return getFirstOrderAssetUrl(
+    product?.cardImageUrl,
+    product?.mainImageUrl,
+    product?.imageUrl,
+    product?.imageUrls,
+    product?.buyModalImageUrl,
+    order?.productImageUrl,
+    order?.productCardImageUrl,
+    order?.cardImageUrl,
+    order?.mainImageUrl,
+    order?.imageUrl,
+    order?.imageUrls,
+  );
+}
 
-  sendJson(response, 405, { message: "Method not allowed." });
+function getOrderBuyerProfileImageUrl(order, account) {
+  return getFirstOrderAssetUrl(
+    order?.customerProfileImageUrl,
+    order?.customerAvatarUrl,
+    order?.customerImageUrl,
+    order?.profileImageUrl,
+    order?.avatarUrl,
+    account?.profileImageUrl,
+    account?.avatarUrl,
+    account?.photoUrl,
+    account?.profilePhotoUrl,
+    account?.pictureUrl,
+    account?.imageUrl,
+  );
+}
+
+function getOrderBuyerDisplayName(order, account) {
+  const accountName = [account?.firstName, account?.middleName, account?.lastName, account?.suffix]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return String(
+    accountName ||
+      account?.displayName ||
+      account?.fullName ||
+      order?.customerName ||
+      order?.clientName ||
+      order?.customer ||
+      account?.email ||
+      "",
+  ).trim();
+}
+
+function enrichOrdersWithListingAndBuyerData(orders, products, accounts, deliveryPartners = []) {
+  const productsById = new Map(
+    (Array.isArray(products) ? products : [])
+      .map((product) => [String(product?.id ?? product?.productId ?? "").trim(), product])
+      .filter(([productId]) => productId),
+  );
+  const accountsById = new Map();
+  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
+    [account?.id, account?.accountId, account?.userId, account?.uid, account?.email]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .forEach((accountId) => accountsById.set(accountId, account));
+  });
+  const partnersByBranch = buildDeliveryPartnersByBranchMap(deliveryPartners);
+
+  return (Array.isArray(orders) ? orders : []).map((order) => {
+    const product = productsById.get(String(order?.productId ?? "").trim());
+    const account = accountsById.get(String(order?.accountId ?? order?.customerId ?? "").trim());
+    const productImageUrl = getOrderListingImageUrl(order, product);
+    const customerProfileImageUrl = getOrderBuyerProfileImageUrl(order, account);
+    const customerName = getOrderBuyerDisplayName(order, account);
+    const resolvedNeedsWaybill = resolveOrderNeedsWaybill(order, partnersByBranch);
+    const waybillPrintedAtEpochMs = Math.trunc(
+      parseFiniteNumber(order?.waybillPrintedAtEpochMs, 0),
+    );
+    const gatedOrder = applyWaybillStageGate({
+      ...order,
+      needsWaybill: resolvedNeedsWaybill,
+      waybillPrintedAtEpochMs,
+    });
+    const stage = String(gatedOrder?.stage ?? gatedOrder?.status ?? "").trim();
+    return {
+      ...gatedOrder,
+      productImageUrl,
+      customerProfileImageUrl,
+      customerName: customerName || String(order?.customerName ?? "").trim(),
+      needsWaybill: resolvedNeedsWaybill,
+      waybillPrintedAtEpochMs,
+      waybillPrinted: waybillPrintedAtEpochMs > 0,
+      canPrintWaybill: resolvedNeedsWaybill
+        && (waybillPrintedAtEpochMs > 0
+          || stage === "awaitingWaybill"
+          || stage === "toPrepare"),
+    };
+  });
 }
 
 async function handleOrdersApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
+  const requestIsSuperAdmin = isSuperAdminAuthorized(request);
   const requestIsAdminScoped = hasRequestAdminScope(request, requestUrl);
   const requestAccountId = getRequestAccountIdentifier(request, requestUrl).id;
-  const requestShouldUseAdminScope = requestIsAdminScoped && !requestAccountId;
+  const requestShouldUseAdminScope = !requestIsSuperAdmin && requestIsAdminScoped && !requestAccountId;
   const incomingAdminScopeId = requestShouldUseAdminScope ? requestAdminId : "";
 
   if (request.method === "GET") {
@@ -13212,10 +28813,22 @@ async function handleOrdersApi(request, response) {
           (order) =>
             String(order?.accountId ?? "").trim() === requestAccountId,
         );
-      } else if (!requestShouldUseAdminScope) {
+      } else if (!requestIsSuperAdmin && !requestShouldUseAdminScope) {
         orders = filterRecordsByAdminId(orders, requestAdminId);
       }
-      sendJson(response, 200, { orders });
+      const [products, accounts, deliveryPartners] = await Promise.all([
+        readProducts(),
+        readAccounts(),
+        readDeliveryPartners(),
+      ]);
+      sendJson(response, 200, {
+        orders: enrichOrdersWithListingAndBuyerData(
+          orders,
+          products,
+          accounts,
+          deliveryPartners,
+        ),
+      });
     } catch (error) {
       sendJson(response, 500, {
         message: error instanceof Error ? error.message : "Unable to load orders.",
@@ -13226,8 +28839,32 @@ async function handleOrdersApi(request, response) {
 
   if (request.method === "PUT") {
     try {
+      if (
+        requestShouldUseAdminScope &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "process_orders",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       const orders = normalizeOrderEntriesPayload(payload, incomingAdminScopeId);
+      try {
+        await flashDealsApi.convertReservationsFromOrders(orders);
+      } catch (flashError) {
+        sendJson(response, flashError?.statusCode || 409, {
+          message:
+            flashError instanceof Error
+              ? flashError.message
+              : "Unable to convert Flash Deal reservations.",
+        });
+        return;
+      }
       const existingOrders = await readOrders();
       const nextOrders = requestShouldUseAdminScope
         ? sortStoredOrderEntries([
@@ -13255,8 +28892,32 @@ async function handleOrdersApi(request, response) {
 
   if (request.method === "POST") {
     try {
+      if (
+        requestShouldUseAdminScope &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "process_orders",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       const incomingOrders = normalizeOrderEntriesPayload(payload, incomingAdminScopeId);
+      try {
+        await flashDealsApi.convertReservationsFromOrders(incomingOrders);
+      } catch (flashError) {
+        sendJson(response, flashError?.statusCode || 409, {
+          message:
+            flashError instanceof Error
+              ? flashError.message
+              : "Unable to convert Flash Deal reservations.",
+        });
+        return;
+      }
       const existingOrders = await readOrders();
       const existingScopedOrders = requestShouldUseAdminScope
         ? filterRecordsByAdminId(existingOrders, requestAdminId)
@@ -13302,6 +28963,18 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
   const normalizedCreatedAtEpochMs = Math.trunc(parseFiniteNumber(createdAtEpochMs, NaN));
   if (!Number.isFinite(normalizedCreatedAtEpochMs)) {
     sendJson(response, 400, { message: "Invalid order group id." });
+    return;
+  }
+
+  if (
+    !(await requireAdminRestrictionAllowed(
+      request,
+      response,
+      requestUrl,
+      "process_orders",
+      requestAdminId,
+    ))
+  ) {
     return;
   }
 
@@ -13421,6 +29094,18 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
     return;
   }
 
+  if (
+    !(await requireAdminRestrictionAllowed(
+      request,
+      response,
+      requestUrl,
+      "process_orders",
+      requestAdminId,
+    ))
+  ) {
+    return;
+  }
+
   try {
     const orders = await readOrders();
     const salesByProductId = new Map();
@@ -13534,6 +29219,18 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
     return;
   }
 
+  if (
+    !(await requireAdminRestrictionAllowed(
+      request,
+      response,
+      requestUrl,
+      "process_orders",
+      requestAdminId,
+    ))
+  ) {
+    return;
+  }
+
   try {
     const orders = await readOrders();
     const targetEntries = orders.filter(
@@ -13642,6 +29339,18 @@ async function handleCancelOrderRequestDecisionApi(
     return;
   }
 
+  if (
+    !(await requireAdminRestrictionAllowed(
+      request,
+      response,
+      requestUrl,
+      "process_orders",
+      requestAdminId,
+    ))
+  ) {
+    return;
+  }
+
   try {
     const orders = await readOrders();
     const targetEntries = orders.filter(
@@ -13737,10 +29446,19 @@ async function handleCancelOrderRequestDecisionApi(
 }
 
 async function handleActivityApi(request, response, requestUrl) {
-  const requestAdminId = getRequestAdminId(request, requestUrl);
+  const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
 
   if (request.method !== "GET") {
     sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (!requestAdminId) {
+    sendJson(response, 200, {
+      activities: [],
+      total: 0,
+      message: "Logged-in account scope is required to load notifications.",
+    });
     return;
   }
 
@@ -13748,7 +29466,7 @@ async function handleActivityApi(request, response, requestUrl) {
     const requestedLimit = Number(requestUrl.searchParams.get("limit"));
     const limit =
       Number.isFinite(requestedLimit) && requestedLimit > 0
-        ? Math.min(Math.trunc(requestedLimit), 50)
+        ? Math.min(Math.trunc(requestedLimit), 200)
         : 6;
     const requestViewer = normalizeActivityViewerFromRequestUrl(requestUrl);
     const [activityLog, accounts] = await Promise.all([
@@ -13756,7 +29474,43 @@ async function handleActivityApi(request, response, requestUrl) {
       readAccounts(),
     ]);
     const viewer = enrichActivityViewerFromAccounts(requestViewer, accounts);
-    const visibleActivities = filterRecordsByAdminId(activityLog, requestAdminId)
+    const persistedInboxActivities = [];
+    if (viewer.role === "admin") {
+      const viewerAccount = findAdminAccountByScopeId(accounts, requestAdminId);
+      const sellerNotifications = Array.isArray(viewerAccount?.sellerNotifications)
+        ? viewerAccount.sellerNotifications
+        : [];
+      for (const notification of sellerNotifications) {
+        const notificationAdminId = normalizeAdminTenantId(
+          notification?.adminId || requestAdminId,
+          "",
+        );
+        // Only surface inbox items owned by this seller tenant.
+        if (notificationAdminId && notificationAdminId !== requestAdminId) {
+          continue;
+        }
+        const activity = createActivityFromSellerNotification(notification, requestAdminId);
+        if (activity) {
+          persistedInboxActivities.push(activity);
+        }
+      }
+    }
+    const seenActivityIds = new Set();
+    const scopedActivityLog = (Array.isArray(activityLog) ? activityLog : []).filter((activity) => {
+      const activityAdminId = normalizeAdminTenantId(activity?.adminId, "");
+      return Boolean(activityAdminId) && activityAdminId === requestAdminId;
+    });
+    const visibleActivities = [...persistedInboxActivities, ...scopedActivityLog]
+      .filter((activity) => {
+        const activityId = String(activity?.id || "").trim();
+        if (activityId && seenActivityIds.has(activityId)) {
+          return false;
+        }
+        if (activityId) {
+          seenActivityIds.add(activityId);
+        }
+        return true;
+      })
       .map((activity) =>
         formatActivityForViewer(enrichActivityActorFromAccounts(activity, accounts), viewer)
       )
@@ -13781,24 +29535,33 @@ async function handleUploadApi(request, response, options = {}) {
 
   try {
     const isReviewUpload = options?.reviewMedia === true;
+    const allowDocuments = options?.allowDocuments === true;
     await ensureStoragePaths();
     const contentType = String(request.headers["content-type"] ?? "").toLowerCase();
     const sourceFilename = String(request.headers["x-file-name"] ?? "product-image");
+    const preserveSourceFormat = String(
+      request.headers["x-preserve-file-format"] ?? "",
+    ).trim() === "1";
     const extension = getUploadExtension(sourceFilename, contentType);
+    const documentExtension = allowDocuments ? getDocumentUploadExtension(sourceFilename, contentType) : "";
     const isImageUpload = isImageUploadType(contentType, extension);
     const isModelUpload = isModelUploadType(contentType, extension);
     const isVideoUpload = contentType.startsWith("video/");
     const isRecognizedMediaExtension = Boolean(extension);
+    const isDocumentUpload = Boolean(documentExtension) && !isRecognizedMediaExtension;
 
     const isSupportedMediaType =
       contentType.startsWith("image/") ||
       contentType.startsWith("video/") ||
       isModelUpload ||
-      isRecognizedMediaExtension;
-    if (!isSupportedMediaType || !extension) {
-      throw new Error("Please upload a valid photo, video, or 3D model file.");
+      isRecognizedMediaExtension ||
+      isDocumentUpload;
+    if (!isSupportedMediaType || (!extension && !documentExtension)) {
+      throw new Error(allowDocuments
+        ? "Please upload a valid photo, video, PDF, DOC, or DOCX file."
+        : "Please upload a valid photo, video, or 3D model file.");
     }
-    if (isReviewUpload && !isImageUpload && !isVideoUpload) {
+    if (isReviewUpload && !allowDocuments && !isImageUpload && !isVideoUpload) {
       throw new Error("Please upload a valid review photo or video.");
     }
 
@@ -13819,20 +29582,50 @@ async function handleUploadApi(request, response, options = {}) {
         413,
       );
     }
+    const shouldPreserveSvg = shouldStoreUploadedImageAsSvg(
+      contentType,
+      extension,
+      fileBuffer,
+    );
+    if (!isReviewUpload && isImageUpload && !shouldPreserveSvg) {
+      const safety = await inspectSellerImageBufferIllegalContent(fileBuffer, {
+        sourceFilename,
+      });
+      if (safety.action === "auto-reject") {
+        const safetyError = createHttpError(
+          "This content is illegal and cannot be listed.",
+          422,
+        );
+        safetyError.code = "PRODUCT_ILLEGAL_CONTENT_AUTO_REJECTED";
+        safetyError.yoloSafety = safety;
+        throw safetyError;
+      }
+    }
 
+    const storedDocumentExtension = isDocumentUpload ? documentExtension : "";
     const shouldPreservePng =
       isImageUpload && shouldStoreUploadedImageAsPng(contentType, extension);
-    const storedBuffer = isImageUpload && !shouldPreservePng
+    const shouldPreserveOriginal =
+      shouldPreservePng ||
+      shouldPreserveSvg ||
+      (isImageUpload && preserveSourceFormat) ||
+      (isImageUpload &&
+        shouldPreserveUploadedImageFormat(contentType, extension, fileBuffer));
+    const storedBuffer = isImageUpload && !shouldPreserveOriginal
       ? await convertUploadedImageToWebp(fileBuffer)
       : fileBuffer;
-    const storedExtension = shouldPreservePng
-      ? ".png"
-      : isImageUpload
-        ? ".webp"
-        : extension;
+    const storedExtension = shouldPreserveSvg
+      ? ".svg"
+      : shouldPreservePng
+        ? ".png"
+        : isImageUpload && preserveSourceFormat
+          ? extension
+          : isImageUpload
+            ? ".webp"
+            : storedDocumentExtension || extension;
     const safeStem =
-      sanitizeFileStem(path.basename(sourceFilename, extension)) ||
-      (isModelUpload ? "product-model" : "product-image");
+      sanitizeFileStem(path.basename(sourceFilename, storedDocumentExtension || extension)) ||
+      (isDocumentUpload ? "chat-file" : isModelUpload ? "product-model" : "product-image");
     const fileName = `${safeStem}-${Date.now()}${storedExtension}`;
     const filePath = path.join(UPLOADS_DIR, fileName);
     const uploadUrl = `/uploads/${fileName}`;
@@ -13842,18 +29635,31 @@ async function handleUploadApi(request, response, options = {}) {
     sendJson(response, 201, {
       imageUrl: uploadUrl,
       mediaUrl: uploadUrl,
-      type: isVideoUpload ? "video" : "image",
+      documentUrl: isDocumentUpload ? uploadUrl : "",
+      type: isDocumentUpload ? "file" : isVideoUpload ? "video" : "image",
       modelUrl: isModelUpload ? uploadUrl : "",
       fileName,
-      contentType: isImageUpload && !shouldPreservePng ? "image/webp" : contentType,
+      contentType: isDocumentUpload
+        ? (MIME_TYPES[storedDocumentExtension] || contentType || "application/octet-stream")
+        : isImageUpload && !shouldPreserveOriginal
+          ? "image/webp"
+          : shouldPreserveSvg
+            ? "image/svg+xml"
+            : contentType,
       sizeBytes: storedBuffer.length,
       message: isImageUpload
-        ? shouldPreservePng
-          ? "PNG image uploaded."
-          : "Image uploaded as WebP."
-        : isModelUpload
-          ? "3D model uploaded."
-          : "File uploaded.",
+        ? shouldPreserveSvg
+          ? "SVG image uploaded."
+          : shouldPreservePng
+            ? "PNG image uploaded."
+            : preserveSourceFormat
+              ? "Image uploaded in its original format."
+              : "Image uploaded as WebP."
+        : isDocumentUpload
+          ? "Document uploaded."
+          : isModelUpload
+            ? "3D model uploaded."
+            : "File uploaded.",
     });
   } catch (error) {
     const statusCode =
@@ -13861,6 +29667,8 @@ async function handleUploadApi(request, response, options = {}) {
         ? error.statusCode
         : 400;
     sendJson(response, statusCode, {
+      code: error?.code || "",
+      yoloSafety: error?.yoloSafety || null,
       message: error instanceof Error ? error.message : "Unable to upload file.",
     });
   }
@@ -13984,6 +29792,18 @@ async function handleSingleProductApi(request, response, productId) {
 
   if (request.method === "DELETE") {
     try {
+      if (
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "edit_products",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       const products = await readProducts();
       const targetProduct = products.find((product) =>
@@ -13999,7 +29819,7 @@ async function handleSingleProductApi(request, response, productId) {
         !(product.id === productId && isRecordInAdminScope(product, requestAdminId)),
       );
       await writeProducts(nextProducts);
-      await logActivitySafely(createProductActivityEntry("deleted", targetProduct, payload?.__activityActor));
+      await logActivitySafely(createProductActivityEntry("deleted", targetProduct, payload?.__activityActor), request);
       sendJson(response, 200, {
         message: "Product deleted.",
         deletedId: productId,
@@ -14015,7 +29835,7 @@ async function handleSingleProductApi(request, response, productId) {
   if (request.method === "PUT") {
     try {
       const payload = await parseRequestBody(request);
-      const products = await readProducts();
+      let products = await readProducts();
       const productIndex = products.findIndex((product) =>
         product.id === productId && isRecordInAdminScope(product, requestAdminId)
       );
@@ -14026,11 +29846,101 @@ async function handleSingleProductApi(request, response, productId) {
       }
 
       const previousProduct = products[productIndex];
+      const isInventoryAction = isProductInventoryActionPayload(payload);
+      if (isInventoryAction && !isProductApprovedForApp(previousProduct)) {
+        sendJson(response, 409, {
+          code: "PRODUCT_NOT_APPROVED_FOR_INVENTORY",
+          message: isProductRejected(previousProduct)
+            ? "Rejected products cannot be saved in inventory."
+            : "This product must be approved before it can be saved in inventory.",
+        });
+        return;
+      }
+      const changesInventory = doesProductPayloadChangeInventory(payload, previousProduct);
+      const changesPromotion = doesProductPayloadChangePromotion(payload, previousProduct);
+      if (isInventoryAction) {
+        if (
+          !(await requireAdminRestrictionAllowed(
+            request,
+            response,
+            requestUrl,
+            "manage_inventory",
+            requestAdminId,
+          ))
+        ) {
+          return;
+        }
+      } else {
+        if (
+          !(await requireAdminRestrictionAllowed(
+            request,
+            response,
+            requestUrl,
+            "edit_products",
+            requestAdminId,
+          ))
+        ) {
+          return;
+        }
+
+        if (
+          changesInventory &&
+          !(await requireAdminRestrictionAllowed(
+            request,
+            response,
+            requestUrl,
+            "manage_inventory",
+            requestAdminId,
+          ))
+        ) {
+          return;
+        }
+      }
+
+      if (
+        changesPromotion &&
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "create_promos",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       let updatedProduct = applyAdminId(normalizeProduct({
         ...payload,
         adminId: getRecordAdminId(previousProduct, requestAdminId),
       }, previousProduct), requestAdminId);
-      updatedProduct = await validateProductPartnerSelections(updatedProduct);
+      if (isInventoryAction) {
+        updatedProduct = {
+          ...updatedProduct,
+          approvalStatus: PRODUCT_APPROVAL_APPROVED,
+          submittedAt: normalizeOptionalProductDateTime(previousProduct?.submittedAt),
+          approvedAt: normalizeOptionalProductDateTime(previousProduct?.approvedAt),
+          approvedBy: String(previousProduct?.approvedBy ?? "").trim(),
+          rejectedAt: "",
+          rejectedBy: "",
+          rejectionReason: "",
+          approvalUpdatedAt: normalizeOptionalProductDateTime(
+            previousProduct?.approvalUpdatedAt,
+          ),
+        };
+      }
+      if (!isInventoryAction) {
+        updatedProduct = await applyAdminBusinessTypeCategoryScope(
+          updatedProduct,
+          requestAdminId,
+        );
+      }
+      updatedProduct = await validateProductPartnerSelections(updatedProduct, requestAdminId);
+      updatedProduct = syncProductVariantAddOnsWithInventory(
+        updatedProduct,
+        products,
+        requestAdminId,
+      );
 
       // Check for duplicate barcode (excluding current product being edited)
       const barcodeValue = String(updatedProduct.barcode ?? "").trim();
@@ -14049,8 +29959,81 @@ async function handleSingleProductApi(request, response, productId) {
         updatedProduct,
         previousProduct,
       );
+      let illegalContentGate = {
+        product: updatedProduct,
+        products,
+        safety: createSellerProductIllegalContentSafety(),
+      };
+      if (!isInventoryAction) {
+        illegalContentGate = await inspectSellerProductIllegalContent(
+          updatedProduct,
+          products,
+        );
+        updatedProduct = illegalContentGate.product;
+        products = illegalContentGate.products;
+        if (illegalContentGate.safety.action === "auto-reject") {
+          updatedProduct = await applySellerIllegalContentAutoReject(
+            updatedProduct,
+            illegalContentGate.safety,
+          );
+          products[productIndex] = updatedProduct;
+          await writeProducts(products);
+          await logActivitySafely(
+          createProductActivityEntry(
+            "updated",
+            updatedProduct,
+            payload?.__activityActor,
+            previousProduct,
+            payload,
+          ),
+          request,
+        );
+          const reviewAggregates = buildProductReviewAggregates(
+            await readOrders(),
+            requestAdminId,
+          );
+          sendJson(response, 422, {
+            code: "PRODUCT_ILLEGAL_CONTENT_AUTO_REJECTED",
+            product: applyProductReviewAggregate(
+              normalizeStoredProductRecord(updatedProduct),
+              reviewAggregates,
+            ),
+            yoloSafety: illegalContentGate.safety,
+            message: "This content is illegal and cannot be listed.",
+          });
+          return;
+        }
+      }
+      const evidenceMatch = await applyRejectedProductEvidenceMatch(
+        updatedProduct,
+        products,
+      );
+      updatedProduct = evidenceMatch.product;
+      products = evidenceMatch.products;
+      const autoApproval = await applyApprovedProductEvidenceAutoApproval(
+        updatedProduct,
+        products,
+      );
+      updatedProduct = autoApproval.product;
+      products = autoApproval.products;
+      if (!autoApproval.match) {
+        const approvedEvidenceMatch = await applyApprovedProductEvidenceCategoryMatch(
+          updatedProduct,
+          products,
+        );
+        updatedProduct = approvedEvidenceMatch.product;
+        products = approvedEvidenceMatch.products;
+        updatedProduct = applyProductRevisionSignal(updatedProduct);
+      }
+      updatedProduct = {
+        ...updatedProduct,
+        ...normalizeProductListingInsightHistory(updatedProduct),
+      };
       products[productIndex] = updatedProduct;
       await writeProducts(products);
+      if (isApprovedProductYoloTrainingRecord(updatedProduct)) {
+        await syncApprovedProductTrainingArchive([updatedProduct]);
+      }
       await logActivitySafely(
         createProductActivityEntry(
           "updated",
@@ -14059,6 +30042,7 @@ async function handleSingleProductApi(request, response, productId) {
           previousProduct,
           payload,
         ),
+        request,
       );
       const reviewAggregates = buildProductReviewAggregates(
         await readOrders(),
@@ -14069,7 +30053,9 @@ async function handleSingleProductApi(request, response, productId) {
           normalizeStoredProductRecord(updatedProduct),
           reviewAggregates,
         ),
-        message: "Product updated.",
+        message: autoApproval.match
+          ? "Product updated and auto-approved from the approved YOLO database."
+          : "Product updated.",
       });
     } catch (error) {
       sendJson(response, 400, {
@@ -14081,6 +30067,18 @@ async function handleSingleProductApi(request, response, productId) {
 
   if (request.method === "PATCH") {
     try {
+      if (
+        !(await requireAdminRestrictionAllowed(
+          request,
+          response,
+          requestUrl,
+          "edit_products",
+          requestAdminId,
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       const products = await readProducts();
       const productIndex = products.findIndex((product) =>
@@ -14111,7 +30109,7 @@ async function handleSingleProductApi(request, response, productId) {
         stock: getNormalizedProductInventoryStock(previousProduct, 0),
         isActive: normalizeProductActiveState(payload?.isActive, true),
       }, previousProduct);
-      const updatedProduct = applyAdminId({
+      let updatedProduct = applyAdminId({
         ...normalizedVisibilityProduct,
         approvalStatus: normalizeProductApprovalStatus(
           previousProduct?.approvalStatus,
@@ -14124,6 +30122,10 @@ async function handleSingleProductApi(request, response, productId) {
           previousProduct?.approvalUpdatedAt,
         ),
       }, requestAdminId);
+      updatedProduct = {
+        ...updatedProduct,
+        ...normalizeProductListingInsightHistory(updatedProduct),
+      };
       products[productIndex] = updatedProduct;
       await writeProducts(products);
       await logActivitySafely(
@@ -14134,6 +30136,7 @@ async function handleSingleProductApi(request, response, productId) {
           previousProduct,
           payload,
         ),
+        request,
       );
       const reviewAggregates = buildProductReviewAggregates(
         await readOrders(),
@@ -14168,6 +30171,21 @@ function hasPartnerActiveStatePayload(payload) {
   ].some((key) => Object.prototype.hasOwnProperty.call(payload ?? {}, key));
 }
 
+function hasPartnerDetailPayload(payload) {
+  return ["branch", "name", "description", "imageUrl", "apiKey"].some((key) =>
+    Object.prototype.hasOwnProperty.call(payload ?? {}, key)
+  );
+}
+
+function hasPartnerArchivePayload(payload) {
+  const status = String(payload?.status ?? "").trim().toLowerCase();
+  return payload?.archive === true || ["archived", "deleted"].includes(status);
+}
+
+function hasPartnerRestorePayload(payload) {
+  return payload?.restore === true;
+}
+
 function getPartnerActiveStateFromPayload(payload) {
   if (Object.prototype.hasOwnProperty.call(payload ?? {}, "disabled")) {
     return !normalizePartnerEnabledState({ enabled: payload.disabled });
@@ -14186,185 +30204,618 @@ function getPartnerActiveStateFromPayload(payload) {
 
 function applyPartnerActiveState(partner, payload) {
   const isActive = getPartnerActiveStateFromPayload(payload);
-  return {
+  const updatedPartner = {
     ...partner,
     isActive,
     enabled: isActive,
     isEnabled: isActive,
     disabled: !isActive,
     status: isActive ? "active" : "inactive",
-    updatedAt: new Date().toISOString(),
+  };
+  delete updatedPartner.archivedAt;
+  delete updatedPartner.archivedBy;
+  delete updatedPartner.archiveReason;
+  return updatedPartner;
+}
+
+function applyPartnerArchiveState(partner, { actorId = "", reason = "" } = {}) {
+  const archiveReason = normalizePartnerDescription(reason);
+  const archivedAt = new Date().toISOString();
+  return {
+    ...partner,
+    isActive: false,
+    enabled: false,
+    isEnabled: false,
+    disabled: true,
+    status: "archived",
+    archivedAt,
+    archivedBy: String(actorId ?? "").trim(),
+    archiveReason,
   };
 }
 
-async function handleSingleDeliveryPartnerApi(request, response, partnerId) {
+function finalizePartnerUpdate(partner, previousPartner, actorId) {
+  return {
+    ...partner,
+    version: getPartnerVersion(previousPartner) + 1,
+    updatedAt: new Date().toISOString(),
+    updatedBy: String(actorId ?? "").trim(),
+  };
+}
+
+function getPartnerExpectedVersion(payload, request) {
+  const rawVersion = payload?.expectedVersion ?? request?.headers?.["if-match"];
+  if (rawVersion == null || String(rawVersion).trim() === "" || String(rawVersion).trim() === "*") {
+    return null;
+  }
+  const normalizedVersion = String(rawVersion)
+    .trim()
+    .replace(/^W\//i, "")
+    .replace(/^"|"$/g, "");
+  if (!/^\d+$/.test(normalizedVersion) || Number(normalizedVersion) < 1) {
+    throw createPartnerApiError(
+      400,
+      "expectedVersion or If-Match must be a positive integer.",
+      "INVALID_PARTNER_VERSION",
+    );
+  }
+  return Number(normalizedVersion);
+}
+
+function assertPartnerVersion(partner, expectedVersion) {
+  if (expectedVersion == null) return;
+  const currentVersion = getPartnerVersion(partner);
+  if (currentVersion !== expectedVersion) {
+    throw createPartnerApiError(
+      409,
+      "This partner was changed by another request. Reload it before saving again.",
+      "PARTNER_VERSION_CONFLICT",
+      {
+        expectedVersion,
+        currentVersion,
+        partner: serializePartnerRecord(partner),
+      },
+    );
+  }
+}
+
+function findPartnerForRequest(partners, partnerId, requestIsSuperAdmin, requestAdminId) {
+  const normalizedPartnerId = String(partnerId ?? "").trim();
+  return (Array.isArray(partners) ? partners : []).find((partner) =>
+    String(partner?.id ?? "").trim() === normalizedPartnerId
+    && (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId))
+  ) || null;
+}
+
+async function getPartnerUsageForRequest(partnerType, partnerId, requestIsSuperAdmin, requestAdminId) {
+  const storedProducts = await readProducts();
+  const products = requestIsSuperAdmin
+    ? storedProducts
+    : filterRecordsByAdminId(storedProducts, requestAdminId);
+  return getPartnerUsage(buildPartnerProductUsageMap(products, partnerType), partnerId);
+}
+
+async function getPartnerAuditHistory(partnerType, partnerId, limit = 50) {
+  const normalizedPartnerId = String(partnerId ?? "").trim();
+  const normalizedType = partnerType === "delivery" ? "delivery" : "payment";
+  const normalizedLimit = Math.min(100, Math.max(1, Math.trunc(Number(limit) || 50)));
+  const entries = await readPartnerAuditLog();
+  return entries
+    .filter((entry) =>
+      entry?.partnerType === normalizedType
+      && normalizePartnerIdList([
+        entry?.partnerId,
+        ...(Array.isArray(entry?.partnerIds) ? entry.partnerIds : []),
+      ])
+        .includes(normalizedPartnerId)
+    )
+    .slice(0, normalizedLimit);
+}
+
+async function handleSinglePartnerApi(request, response, partnerId, partnerType) {
+  const config = getPartnerResourceConfig(partnerType);
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
   const requestIsSuperAdmin = isSuperAdminAuthorized(request);
 
-  if (request.method === "DELETE") {
-    try {
-      const partners = await readDeliveryPartners();
-      const targetPartner = partners.find(
-        (partner) =>
-          String(partner.id ?? "").trim() === partnerId &&
-          (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId)),
-      );
+  try {
+    if (!(await requirePartnerResourcePermission({
+      request,
+      response,
+      requestUrl,
+      config,
+      requestAdminId,
+      requestIsSuperAdmin,
+    }))) return;
 
-      if (!targetPartner) {
-        sendJson(response, 404, { message: "Delivery partner not found." });
-        return;
+    if (request.method === "GET") {
+      const partners = await config.read();
+      const partner = findPartnerForRequest(
+        partners,
+        partnerId,
+        requestIsSuperAdmin,
+        requestAdminId,
+      );
+      if (!partner) {
+        throw createPartnerApiError(404, `${config.label} not found.`, "PARTNER_NOT_FOUND");
       }
-
-      const nextPartners = partners.filter(
-        (partner) =>
-          !(
-            String(partner.id ?? "").trim() === partnerId &&
-            (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId))
-          ),
-      );
-      await writeDeliveryPartners(nextPartners);
+      const [usage, activities] = await Promise.all([
+        getPartnerUsageForRequest(config.type, partnerId, requestIsSuperAdmin, requestAdminId),
+        getPartnerAuditHistory(config.type, partnerId, requestUrl.searchParams.get("auditLimit")),
+      ]);
       sendJson(response, 200, {
-        deletedId: partnerId,
-        message: "Delivery partner deleted.",
+        partner: serializePartnerRecord(partner, usage),
+        usage,
+        activities,
       });
-    } catch (error) {
-      sendJson(response, 500, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to delete delivery partner.",
-      });
+      return;
     }
-    return;
-  }
 
-  if (request.method === "PATCH") {
-    try {
+    if (request.method === "DELETE") {
+      const expectedVersion = getPartnerExpectedVersion(null, request);
+      const actorId = getPartnerMutationActorId(null, requestAdminId, requestIsSuperAdmin);
+      const result = await runPartnerMutation(config.type, async () => {
+        const partners = await config.read();
+        const partnerIndex = partners.findIndex((partner) =>
+          String(partner?.id ?? "").trim() === String(partnerId).trim()
+          && (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId))
+        );
+        if (partnerIndex === -1) {
+          throw createPartnerApiError(404, `${config.label} not found.`, "PARTNER_NOT_FOUND");
+        }
+
+        const previousPartner = partners[partnerIndex];
+        assertPartnerVersion(previousPartner, expectedVersion);
+        const usage = await getPartnerUsageForRequest(
+          config.type,
+          partnerId,
+          requestIsSuperAdmin,
+          requestAdminId,
+        );
+        if (isPartnerArchived(previousPartner)) {
+          return {
+            before: previousPartner,
+            after: previousPartner,
+            usage,
+            changed: false,
+          };
+        }
+        const archivedPartner = finalizePartnerUpdate(
+          applyPartnerArchiveState(previousPartner, {
+            actorId,
+            reason: requestUrl.searchParams.get("reason") ?? "",
+          }),
+          previousPartner,
+          actorId,
+        );
+        partners[partnerIndex] = archivedPartner;
+        await config.write(partners);
+        return {
+          before: previousPartner,
+          after: archivedPartner,
+          usage,
+          changed: true,
+        };
+      });
+
+      if (result.changed) {
+        await logPartnerAuditSafely({
+          partnerType: config.type,
+          action: "archived",
+          before: result.before,
+          after: result.after,
+          request,
+          requestAdminId,
+          requestIsSuperAdmin,
+          metadata: { usage: result.usage },
+        });
+      }
+      sendJson(response, 200, {
+        deletedId: String(partnerId).trim(),
+        archived: true,
+        partner: serializePartnerRecord(result.after, result.usage),
+        usage: result.usage,
+        message: result.changed
+          ? `${config.label} archived.`
+          : `${config.label} was already archived.`,
+      });
+      return;
+    }
+
+    if (request.method === "PATCH") {
       const payload = await parseRequestBody(request);
-      if (!hasPartnerActiveStatePayload(payload)) {
-        sendJson(response, 400, { message: "Delivery partner active state is required." });
-        return;
+      const hasActiveState = hasPartnerActiveStatePayload(payload);
+      const hasDetails = hasPartnerDetailPayload(payload);
+      const hasArchive = hasPartnerArchivePayload(payload);
+      const hasRestore = hasPartnerRestorePayload(payload);
+      if (!hasActiveState && !hasDetails && !hasArchive && !hasRestore) {
+        throw createPartnerApiError(
+          400,
+          `${config.label} changes are required.`,
+          "PARTNER_CHANGES_REQUIRED",
+        );
       }
 
-      const partners = await readDeliveryPartners();
-      const partnerIndex = partners.findIndex(
-        (partner) =>
-          String(partner.id ?? "").trim() === partnerId &&
-          (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId)),
-      );
+      const expectedVersion = getPartnerExpectedVersion(payload, request);
+      const actorId = getPartnerMutationActorId(payload, requestAdminId, requestIsSuperAdmin);
+      const result = await runPartnerMutation(config.type, async () => {
+        const partners = await config.read();
+        const partnerIndex = partners.findIndex((partner) =>
+          String(partner?.id ?? "").trim() === String(partnerId).trim()
+          && (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId))
+        );
+        if (partnerIndex === -1) {
+          throw createPartnerApiError(404, `${config.label} not found.`, "PARTNER_NOT_FOUND");
+        }
 
-      if (partnerIndex === -1) {
-        sendJson(response, 404, { message: "Delivery partner not found." });
-        return;
-      }
+        const previousPartner = partners[partnerIndex];
+        assertPartnerVersion(previousPartner, expectedVersion);
+        let updatedPartner = previousPartner;
+        if (hasDetails) {
+          updatedPartner = config.normalize({
+            ...previousPartner,
+            ...payload,
+            id: previousPartner.id,
+            adminId: previousPartner.adminId,
+          }, previousPartner);
+        }
+        let action = hasDetails ? "details-updated" : "status-updated";
+        if (hasArchive) {
+          updatedPartner = applyPartnerArchiveState(updatedPartner, {
+            actorId,
+            reason: payload?.archiveReason ?? payload?.reason ?? "",
+          });
+          action = "archived";
+        } else if (hasRestore) {
+          updatedPartner = applyPartnerActiveState(
+            updatedPartner,
+            hasActiveState ? payload : { isActive: true },
+          );
+          action = "restored";
+        } else if (hasActiveState) {
+          updatedPartner = applyPartnerActiveState(updatedPartner, payload);
+          action = isPartnerArchived(previousPartner) ? "restored" : "status-updated";
+        }
 
-      const updatedPartner = applyPartnerActiveState(partners[partnerIndex], payload);
-      partners[partnerIndex] = updatedPartner;
-      await writeDeliveryPartners(partners);
+        if (hasDuplicatePartnerInScope(partners, updatedPartner, partnerId)) {
+          throw createPartnerApiError(
+            409,
+            `A ${config.label.toLowerCase()} with this name already exists in this scope.`,
+            "PARTNER_NAME_CONFLICT",
+          );
+        }
+        updatedPartner = finalizePartnerUpdate(updatedPartner, previousPartner, actorId);
+        partners[partnerIndex] = updatedPartner;
+        await config.write(partners);
+        return { action, before: previousPartner, after: updatedPartner };
+      });
+
+      await logPartnerAuditSafely({
+        partnerType: config.type,
+        action: result.action,
+        before: result.before,
+        after: result.after,
+        payload,
+        request,
+        requestAdminId,
+        requestIsSuperAdmin,
+      });
       sendJson(response, 200, {
-        partner: updatedPartner,
-        message: `Delivery partner ${updatedPartner.isActive ? "activated" : "deactivated"}.`,
+        partner: serializePartnerRecord(result.after),
+        message: result.action === "archived"
+          ? `${config.label} archived.`
+          : result.action === "restored"
+            ? `${config.label} restored.`
+            : hasDetails
+              ? `${config.label} details updated.`
+              : `${config.label} ${result.after.isActive ? "activated" : "deactivated"}.`,
       });
-    } catch (error) {
-      sendJson(response, 400, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to update delivery partner status.",
-      });
+      return;
     }
-    return;
-  }
 
-  sendJson(response, 405, { message: "Method not allowed." });
+    sendJson(response, 405, { message: "Method not allowed." });
+  } catch (error) {
+    sendPartnerApiError(response, error, `Unable to manage ${config.label.toLowerCase()}.`);
+  }
+}
+
+async function handleSingleDeliveryPartnerApi(request, response, partnerId) {
+  await handleSinglePartnerApi(request, response, partnerId, "delivery");
 }
 
 async function handleSinglePaymentPartnerApi(request, response, partnerId) {
+  await handleSinglePartnerApi(request, response, partnerId, "payment");
+}
+
+function normalizePartnerBulkAction(value) {
+  const normalizedAction = String(value ?? "").trim().toLowerCase();
+  const aliases = new Map([
+    ["activate", "activate"],
+    ["enable", "activate"],
+    ["deactivate", "deactivate"],
+    ["disable", "deactivate"],
+    ["archive", "archive"],
+    ["remove", "archive"],
+    ["restore", "restore"],
+  ]);
+  return aliases.get(normalizedAction) || "";
+}
+
+async function handlePartnerBulkApi(request, response, partnerType) {
+  const config = getPartnerResourceConfig(partnerType);
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
   const requestIsSuperAdmin = isSuperAdminAuthorized(request);
 
-  if (request.method === "DELETE") {
-    try {
-      const partners = await readPaymentPartners();
-      const targetPartner = partners.find(
-        (partner) =>
-          String(partner.id ?? "").trim() === partnerId &&
-          (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId)),
-      );
-
-      if (!targetPartner) {
-        sendJson(response, 404, { message: "Payment partner not found." });
-        return;
-      }
-
-      const nextPartners = partners.filter(
-        (partner) =>
-          !(
-            String(partner.id ?? "").trim() === partnerId &&
-            (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId))
-          ),
-      );
-      await writePaymentPartners(nextPartners);
-      sendJson(response, 200, {
-        deletedId: partnerId,
-        message: "Payment partner deleted.",
-      });
-    } catch (error) {
-      sendJson(response, 500, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to delete payment partner.",
-      });
-    }
+  if (!["PATCH", "POST"].includes(String(request.method || "").toUpperCase())) {
+    sendJson(response, 405, { message: "Method not allowed." });
     return;
   }
 
-  if (request.method === "PATCH") {
-    try {
-      const payload = await parseRequestBody(request);
-      if (!hasPartnerActiveStatePayload(payload)) {
-        sendJson(response, 400, { message: "Payment partner active state is required." });
-        return;
-      }
+  try {
+    if (!(await requirePartnerResourcePermission({
+      request,
+      response,
+      requestUrl,
+      config,
+      requestAdminId,
+      requestIsSuperAdmin,
+    }))) return;
 
-      const partners = await readPaymentPartners();
-      const partnerIndex = partners.findIndex(
-        (partner) =>
-          String(partner.id ?? "").trim() === partnerId &&
-          (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId)),
+    const payload = await parseRequestBody(request);
+    const partnerIds = normalizePartnerIdList(payload?.ids ?? payload?.partnerIds);
+    if (!partnerIds.length) {
+      throw createPartnerApiError(
+        400,
+        "Select at least one partner.",
+        "PARTNER_IDS_REQUIRED",
       );
+    }
+    if (partnerIds.length > MAX_PARTNER_BULK_IDS) {
+      throw createPartnerApiError(
+        400,
+        `A bulk request can update at most ${MAX_PARTNER_BULK_IDS} partners.`,
+        "PARTNER_BULK_LIMIT_EXCEEDED",
+      );
+    }
+    const action = normalizePartnerBulkAction(payload?.action);
+    if (!action) {
+      throw createPartnerApiError(
+        400,
+        "Bulk action must be activate, deactivate, archive, or restore.",
+        "INVALID_PARTNER_BULK_ACTION",
+      );
+    }
+    const expectedVersions = payload?.expectedVersions && typeof payload.expectedVersions === "object"
+      ? payload.expectedVersions
+      : {};
+    const actorId = getPartnerMutationActorId(payload, requestAdminId, requestIsSuperAdmin);
 
-      if (partnerIndex === -1) {
-        sendJson(response, 404, { message: "Payment partner not found." });
-        return;
+    const result = await runPartnerMutation(config.type, async () => {
+      const partners = await config.read();
+      const partnerIndexes = new Map();
+      for (let index = 0; index < partners.length; index += 1) {
+        const partner = partners[index];
+        const id = String(partner?.id ?? "").trim();
+        if (
+          id
+          && partnerIds.includes(id)
+          && (requestIsSuperAdmin || isRecordInAdminScope(partner, requestAdminId))
+        ) {
+          partnerIndexes.set(id, index);
+        }
+      }
+      const missingIds = partnerIds.filter((id) => !partnerIndexes.has(id));
+      if (missingIds.length) {
+        throw createPartnerApiError(
+          404,
+          "One or more partners were not found in the current scope.",
+          "PARTNER_BULK_NOT_FOUND",
+          { missingIds },
+        );
       }
 
-      const updatedPartner = applyPartnerActiveState(partners[partnerIndex], payload);
-      partners[partnerIndex] = updatedPartner;
-      await writePaymentPartners(partners);
-      sendJson(response, 200, {
-        partner: updatedPartner,
-        message: `Payment partner ${updatedPartner.isActive ? "activated" : "deactivated"}.`,
-      });
-    } catch (error) {
-      sendJson(response, 400, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to update payment partner status.",
+      const beforePartners = [];
+      const updatedPartners = [];
+      const skippedIds = [];
+      for (const partnerId of partnerIds) {
+        const partnerIndex = partnerIndexes.get(partnerId);
+        const previousPartner = partners[partnerIndex];
+        const expectedVersionValue = Object.prototype.hasOwnProperty.call(expectedVersions, partnerId)
+          ? expectedVersions[partnerId]
+          : payload?.expectedVersion;
+        if (expectedVersionValue != null && String(expectedVersionValue).trim() !== "") {
+          const expectedVersion = getPartnerExpectedVersion(
+            { expectedVersion: expectedVersionValue },
+            null,
+          );
+          assertPartnerVersion(previousPartner, expectedVersion);
+        }
+
+        let updatedPartner = previousPartner;
+        if (action === "archive") {
+          if (isPartnerArchived(previousPartner)) {
+            skippedIds.push(partnerId);
+            continue;
+          }
+          updatedPartner = applyPartnerArchiveState(previousPartner, {
+            actorId,
+            reason: payload?.archiveReason ?? payload?.reason ?? "",
+          });
+        } else if (action === "restore") {
+          updatedPartner = applyPartnerActiveState(
+            previousPartner,
+            hasPartnerActiveStatePayload(payload) ? payload : { isActive: true },
+          );
+        } else if (action === "activate") {
+          updatedPartner = applyPartnerActiveState(previousPartner, { isActive: true });
+        } else if (isPartnerArchived(previousPartner)) {
+          skippedIds.push(partnerId);
+          continue;
+        } else {
+          updatedPartner = applyPartnerActiveState(previousPartner, { isActive: false });
+        }
+
+        if (hasDuplicatePartnerInScope(partners, updatedPartner, partnerId)) {
+          throw createPartnerApiError(
+            409,
+            `Restoring ${String(updatedPartner.branch ?? "this partner")} would duplicate an existing partner in the same scope.`,
+            "PARTNER_NAME_CONFLICT",
+            { partnerId },
+          );
+        }
+        updatedPartner = finalizePartnerUpdate(updatedPartner, previousPartner, actorId);
+        partners[partnerIndex] = updatedPartner;
+        beforePartners.push(previousPartner);
+        updatedPartners.push(updatedPartner);
+      }
+
+      if (updatedPartners.length) {
+        await config.write(partners);
+      }
+      return { beforePartners, updatedPartners, skippedIds };
+    });
+
+    if (result.updatedPartners.length) {
+      await logPartnerAuditSafely({
+        partnerType: config.type,
+        action: `bulk-${action}`,
+        before: result.beforePartners[0] || null,
+        after: result.updatedPartners[0] || null,
+        partnerIds: result.updatedPartners.map((partner) => partner.id),
+        payload,
+        request,
+        requestAdminId,
+        requestIsSuperAdmin,
+        metadata: {
+          count: result.updatedPartners.length,
+          skippedIds: result.skippedIds,
+        },
       });
     }
+    sendJson(response, 200, {
+      action,
+      updatedCount: result.updatedPartners.length,
+      skippedIds: result.skippedIds,
+      partners: result.updatedPartners.map((partner) => serializePartnerRecord(partner)),
+      message: `${result.updatedPartners.length} ${config.pluralLabel} updated.`,
+    });
+  } catch (error) {
+    sendPartnerApiError(response, error, `Unable to update ${config.pluralLabel}.`);
+  }
+}
+
+async function handlePartnerAuditApi(request, response) {
+  if (!requireSuperAdmin(request, response)) return;
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
     return;
   }
 
-  sendJson(response, 405, { message: "Method not allowed." });
+  try {
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const partnerType = String(requestUrl.searchParams.get("partnerType") ?? "")
+      .trim()
+      .toLowerCase();
+    const partnerId = String(requestUrl.searchParams.get("partnerId") ?? "").trim();
+    const action = String(requestUrl.searchParams.get("action") ?? "").trim().toLowerCase();
+    const adminId = normalizeAdminTenantId(requestUrl.searchParams.get("scopeAdminId"), "");
+    const pageSize = Math.min(
+      MAX_PARTNER_PAGE_SIZE,
+      Math.max(1, Math.trunc(Number(requestUrl.searchParams.get("pageSize")) || 50)),
+    );
+    const requestedPage = Math.max(1, Math.trunc(Number(requestUrl.searchParams.get("page")) || 1));
+    let entries = await readPartnerAuditLog();
+    if (["delivery", "payment"].includes(partnerType)) {
+      entries = entries.filter((entry) => entry?.partnerType === partnerType);
+    }
+    if (partnerId) {
+      entries = entries.filter((entry) => {
+        const ids = normalizePartnerIdList([
+          entry?.partnerId,
+          ...(Array.isArray(entry?.partnerIds) ? entry.partnerIds : []),
+        ]);
+        return ids.includes(partnerId);
+      });
+    }
+    if (action) {
+      entries = entries.filter((entry) => String(entry?.action ?? "").trim().toLowerCase() === action);
+    }
+    if (adminId) {
+      entries = entries.filter((entry) => normalizeAdminTenantId(entry?.adminId, "") === adminId);
+    }
+    entries.sort((left, right) =>
+      getPartnerDateValue(right, "createdAt") - getPartnerDateValue(left, "createdAt")
+    );
+    const total = entries.length;
+    const totalPages = total ? Math.ceil(total / pageSize) : 0;
+    const page = totalPages ? Math.min(requestedPage, totalPages) : 0;
+    const start = page ? (page - 1) * pageSize : 0;
+    sendJson(response, 200, {
+      activities: entries.slice(start, start + pageSize),
+      pagination: {
+        page,
+        pageSize: total ? pageSize : 0,
+        total,
+        totalPages,
+        hasPrevious: page > 1,
+        hasNext: page > 0 && page < totalPages,
+      },
+    });
+  } catch (error) {
+    sendPartnerApiError(response, error, "Unable to load partner audit history.");
+  }
+}
+
+function shouldServeAdminSpaShell(request, requestPath) {
+  const requestMethod = String(request.method || "GET").trim().toUpperCase();
+  if (requestMethod !== "GET" && requestMethod !== "HEAD") {
+    return false;
+  }
+
+  const normalizedPath = String(requestPath || "").trim().toLowerCase();
+  if (!ADMIN_SPA_DOCUMENT_PATHS.has(normalizedPath)) {
+    return false;
+  }
+
+  let requestUrl;
+  try {
+    requestUrl = new URL(request.url || requestPath, `http://${request.headers.host || "localhost"}`);
+  } catch (error) {
+    return false;
+  }
+
+  if (requestUrl.searchParams.get(ADMIN_SPA_FRAME_QUERY_KEY) === "1") {
+    return false;
+  }
+
+  const fetchDestination = String(request.headers["sec-fetch-dest"] || "")
+    .trim()
+    .toLowerCase();
+  if (fetchDestination === "iframe") {
+    return false;
+  }
+  if (fetchDestination === "document") {
+    return true;
+  }
+
+  const fetchMode = String(request.headers["sec-fetch-mode"] || "").trim().toLowerCase();
+  if (fetchMode === "navigate") {
+    return true;
+  }
+
+  const acceptHeader = String(request.headers.accept || "").toLowerCase();
+  return acceptHeader.includes("text/html");
 }
 
 async function serveStaticFile(request, requestPath, response) {
-  const decodedPath = decodeURIComponent(requestPath);
+  const resolvedRequestPath = shouldServeAdminSpaShell(request, requestPath)
+    ? ADMIN_SPA_SHELL_PATH
+    : requestPath;
+  const requestFilePathAlias = resolvedRequestPath === "/product_insight.html"
+    ? "/listing_insight.html"
+    : resolvedRequestPath;
+  const decodedPath = decodeURIComponent(requestFilePathAlias);
   const safePath = decodedPath === "/" ? "/index.html" : decodedPath;
   const normalizedPath = path.normalize(safePath).replace(/^(\.\.[/\\])+/, "");
   const relativePath = normalizedPath.replace(/^[/\\]+/, "");
@@ -14432,6 +30883,132 @@ async function serveStaticFile(request, requestPath, response) {
   }
 }
 
+const platformFeedbackApi = createPlatformFeedbackApi({
+  DATA_DIR,
+  UPLOADS_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  readAccounts,
+  findAdminAccountByScopeId,
+  requireSuperAdmin,
+  sendJson,
+  parseRequestBody,
+  parseBinaryRequestBody,
+  getUploadExtension,
+  sanitizeFileStem,
+  SUPER_ADMIN_USERNAME,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_SIZE_LABEL,
+  MAX_REVIEW_VIDEO_BYTES,
+  MAX_REVIEW_VIDEO_SIZE_LABEL,
+});
+
+const trendingSearchesApi = createTrendingSearchesApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  requireSuperAdmin,
+  sendJson,
+  parseRequestBody,
+});
+
+const mapsPlacesApi = createMapsPlacesApi({
+  sendJson,
+});
+
+const vouchersApi = createVouchersApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  requireSuperAdmin,
+  getRequestAdminId,
+  getExplicitRequestAdminId,
+  normalizeAdminTenantId,
+  isUsableProductAdminScope,
+  readAccounts,
+  findAdminAccountByScopeId,
+  requireAdminRestrictionAllowed,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  logActivitySafely,
+  sendJson,
+  parseRequestBody,
+});
+
+const flashDealsApi = createFlashDealsApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  getExplicitRequestAdminId,
+  normalizeAdminTenantId,
+  isUsableProductAdminScope,
+  requireSuperAdmin,
+  getRequestAdminId,
+  getRequestAccountIdentifier,
+  enqueueSerializedMutation,
+  readAccounts,
+  findAdminAccountByScopeId,
+  requireAdminRestrictionAllowed,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  logActivitySafely,
+  assignSellerAdminNotification,
+  writeAccounts,
+  notifySellerAdminInboxByAdminId,
+  readProducts,
+  isRecordInAdminScope,
+  sendJson,
+  parseRequestBody,
+});
+
+accountDevicesApi = createAccountDevicesApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  sendJson,
+  parseRequestBody,
+});
+
+const buyerDeliveryAddressesApi = createBuyerDeliveryAddressesApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  sendJson,
+  parseRequestBody,
+});
+
+const restoredSaApis = createRestoreMissingSaApis({
+  DATA_DIR,
+  UPLOADS_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  enqueueSerializedMutation,
+  requireSuperAdmin,
+  sendJson,
+  parseRequestBody,
+  createHttpError,
+  normalizeAdminTenantId,
+  readWorkspaceSettings,
+  writeWorkspaceSettings,
+  setCorsHeaders,
+  biometricFirmwareCompile,
+});
+
+const ordersWaybillApi = createOrdersWaybillApi({
+  PORT,
+  getRequestAdminId,
+  requireAdminRestrictionAllowed,
+  parseRequestBody,
+  sendJson,
+  readOrders,
+  writeOrders,
+  readDeliveryPartners,
+  readProducts,
+  isRecordInAdminScope,
+  parseFiniteNumber,
+  normalizeStoredOrderEntry,
+});
+
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
@@ -14445,8 +31022,13 @@ const server = http.createServer(async (request, response) => {
   if (requestUrl.pathname === "/health") {
     sendJson(response, 200, {
       status: "ok",
-      message: "GMS Shopping backend is running.",
+      message: "Switch backend is running.",
     });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/workspace-theme") {
+    await handleWorkspaceThemeApi(request, response);
     return;
   }
 
@@ -14455,8 +31037,138 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/admin-lookup") {
+    await handleAdminLookupApi(request, response);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/admin-presence") {
     await handleAdminPresenceApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/verification/send") {
+    await handleAuthVerificationSendApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/verification/verify") {
+    await handleAuthVerificationVerifyApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/password-reset") {
+    await handleAuthPasswordResetApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/session") {
+    await handleUnifiedAuthSessionApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/switch-role") {
+    await handleUnifiedAuthSwitchRoleApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/roles") {
+    await handleUnifiedAccountRolesApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/profile-image") {
+    await handleUnifiedAccountProfileImageApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/delete") {
+    await handleBuyerAccountDeletionApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/change-password") {
+    await handleBuyerChangePasswordApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/become-seller/start") {
+    await handleBecomeSellerStartApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/seller-plans") {
+    await handleSellerPlansApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/become-seller/checkout-intent") {
+    await handleBecomeSellerCheckoutIntentApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/payments/paymongo/seller-webhook") {
+    await handlePaymongoSellerWebhookApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/become-seller/confirm-payment") {
+    await handleBecomeSellerConfirmApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/become-seller/mark-verified") {
+    await handleBecomeSellerMarkVerifiedApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/seller-switch-pin/status") {
+    await handleSellerSwitchPinApi(request, response, "status");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/seller-switch-pin/set") {
+    await handleSellerSwitchPinApi(request, response, "set");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/seller-switch-pin/verify") {
+    await handleSellerSwitchPinApi(request, response, "verify");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/seller-switch-pin/check-unlock") {
+    await handleSellerSwitchPinApi(request, response, "check-unlock");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/become-seller/open-workspace") {
+    await handleBecomeSellerOpenWorkspaceApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/unified-accounts") {
+    await handleUnifiedAccountsApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/google/config") {
+    await handleAuthGoogleConfigApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/google/profile") {
+    await handleAuthGoogleProfileApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/google/login") {
+    await handleAuthGoogleLoginApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/auth/google/seller-login") {
+    await handleAuthGoogleSellerLoginApi(request, response);
     return;
   }
 
@@ -14465,8 +31177,26 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/accounts/preferred-language") {
+    await handlePreferredLanguageApi(request, response);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/admin-account") {
     await handleAdminAccountApi(request, response);
+    return;
+  }
+
+  if (
+    requestUrl.pathname === "/api/admin-account/deletion" ||
+    requestUrl.pathname === "/api/admin-account/deletion/cancel"
+  ) {
+    await handleAdminAccountDeletionApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/admin-signup-availability") {
+    await handleAdminSignupAvailabilityApi(request, response, requestUrl);
     return;
   }
 
@@ -14485,18 +31215,31 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/super-admin/categories") {
-    await handleSuperAdminCategoriesApi(request, response, requestUrl);
-    return;
-  }
-
   if (requestUrl.pathname === "/api/super-admin/store-types") {
     await handleSuperAdminStoreTypesApi(request, response, requestUrl);
     return;
   }
 
+  if (requestUrl.pathname === "/api/super-admin/platforms") {
+    await handleSuperAdminPlatformsApi(request, response, requestUrl);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/super-admin/product-requests") {
     await handleSuperAdminProductRequestsApi(request, response);
+    return;
+  }
+
+  const superAdminAdminActivityMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/admins\/([^/]+)\/activity$/,
+  );
+  if (superAdminAdminActivityMatch) {
+    await handleSuperAdminCompanyActivityApi(
+      request,
+      response,
+      decodeURIComponent(superAdminAdminActivityMatch[1] ?? ""),
+      requestUrl,
+    );
     return;
   }
 
@@ -14512,6 +31255,79 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  const superAdminAdminPasswordMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/admins\/([^/]+)\/password$/,
+  );
+  if (superAdminAdminPasswordMatch) {
+    await handleSuperAdminAdminPasswordResetApi(
+      request,
+      response,
+      decodeURIComponent(superAdminAdminPasswordMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminAdminResetPasswordMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/admins\/([^/]+)\/reset-password$/,
+  );
+  if (superAdminAdminResetPasswordMatch) {
+    await handleSuperAdminAdminPasswordResetApi(
+      request,
+      response,
+      decodeURIComponent(superAdminAdminResetPasswordMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminBuyerActivityMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/buyers\/([^/]+)\/activity$/,
+  );
+  if (superAdminBuyerActivityMatch) {
+    await handleSuperAdminBuyerActivityApi(
+      request,
+      response,
+      decodeURIComponent(superAdminBuyerActivityMatch[1] ?? ""),
+      requestUrl,
+    );
+    return;
+  }
+
+  const superAdminBuyerActionMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/buyers\/([^/]+)\/action$/,
+  );
+  if (superAdminBuyerActionMatch) {
+    await handleSuperAdminBuyerActionApi(
+      request,
+      response,
+      decodeURIComponent(superAdminBuyerActionMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminBuyerPasswordMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/buyers\/([^/]+)\/password$/,
+  );
+  if (superAdminBuyerPasswordMatch) {
+    await handleSuperAdminBuyerPasswordResetApi(
+      request,
+      response,
+      decodeURIComponent(superAdminBuyerPasswordMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminBuyerResetPasswordMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/buyers\/([^/]+)\/reset-password$/,
+  );
+  if (superAdminBuyerResetPasswordMatch) {
+    await handleSuperAdminBuyerPasswordResetApi(
+      request,
+      response,
+      decodeURIComponent(superAdminBuyerResetPasswordMatch[1] ?? ""),
+    );
+    return;
+  }
+
   const superAdminProductApproveMatch = requestUrl.pathname.match(
     /^\/api\/super-admin\/products\/([^/]+)\/approve$/,
   );
@@ -14520,6 +31336,78 @@ const server = http.createServer(async (request, response) => {
       request,
       response,
       decodeURIComponent(superAdminProductApproveMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminProductListingRestrictionMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/restrict-listing$/,
+  );
+  if (superAdminProductListingRestrictionMatch) {
+    await handleSuperAdminProductListingRestrictionApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductListingRestrictionMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminProductDetectionLabelMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/detection-label$/,
+  );
+  if (superAdminProductDetectionLabelMatch) {
+    await handleSuperAdminProductDetectionLabelApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductDetectionLabelMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminProductImagesMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/images$/,
+  );
+  if (superAdminProductImagesMatch) {
+    await handleSuperAdminProductImagesApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductImagesMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminProductRevisionMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/revision$/,
+  );
+  if (superAdminProductRevisionMatch) {
+    await handleSuperAdminProductRevisionApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductRevisionMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminProductUnrejectMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/unreject$/,
+  );
+  if (superAdminProductUnrejectMatch) {
+    await handleSuperAdminProductUnrejectApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductUnrejectMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminProductInspectionMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/inspect$/,
+  );
+  if (superAdminProductInspectionMatch) {
+    await handleSuperAdminProductInspectionApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductInspectionMatch[1] ?? ""),
     );
     return;
   }
@@ -14550,6 +31438,11 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/products") {
     await handleProductsApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/products/illegal-content-check") {
+    await handleProductIllegalContentCheckApi(request, response);
     return;
   }
 
@@ -14625,8 +31518,33 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/payment-partners/api-key") {
+    await handlePaymentPartnerApiKeyApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/delivery-partners/bulk") {
+    await handlePartnerBulkApi(request, response, "delivery");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/payment-partners/bulk") {
+    await handlePartnerBulkApi(request, response, "payment");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/partner-audit") {
+    await handlePartnerAuditApi(request, response);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/orders") {
     await handleOrdersApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/orders/waybills/print") {
+    await ordersWaybillApi.handlePrintWaybillsApi(request, response);
     return;
   }
 
@@ -14650,15 +31568,29 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/listing-insight/overall-ranking") {
+    await handleListingInsightOverallRankingApi(request, response, requestUrl);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/store-types") {
     await handleStoreTypesApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/platforms") {
+    await handlePlatformsApi(request, response);
     return;
   }
 
   // Super admin: get products by company (adminId)
   const superAdminProductsMatch = requestUrl.pathname.match(/^\/api\/super-admin\/products\/([^/]+)$/);
   if (superAdminProductsMatch) {
-    await handleSuperAdminProductsApi(request, response, superAdminProductsMatch[1]);
+    await handleSuperAdminProductsApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductsMatch[1] ?? ""),
+    );
     return;
   }
 
@@ -14672,8 +31604,75 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (
+    await platformFeedbackApi.tryHandlePlatformFeedbackRoutes(
+      request,
+      response,
+      requestUrl,
+    )
+  ) {
+    return;
+  }
+
+  if (
+    await trendingSearchesApi.tryHandleTrendingSearchRoutes(
+      request,
+      response,
+      requestUrl,
+    )
+  ) {
+    return;
+  }
+
+  if (
+    await mapsPlacesApi.tryHandleMapsPlacesRoutes(
+      request,
+      response,
+      requestUrl,
+    )
+  ) {
+    return;
+  }
+
+  if (await vouchersApi.tryHandleVoucherRoutes(request, response, requestUrl)) {
+    return;
+  }
+
+  if (await flashDealsApi.tryHandleFlashDealRoutes(request, response, requestUrl)) {
+    return;
+  }
+
+  if (
+    await accountDevicesApi.tryHandleAccountDeviceRoutes(
+      request,
+      response,
+      requestUrl,
+    )
+  ) {
+    return;
+  }
+
+  if (
+    await buyerDeliveryAddressesApi.tryHandleBuyerDeliveryAddressRoutes(
+      request,
+      response,
+      requestUrl,
+    )
+  ) {
+    return;
+  }
+
+  if (await restoredSaApis.tryHandleRestoredRoutes(request, response, requestUrl)) {
+    return;
+  }
+
   if (requestUrl.pathname === "/api/uploads") {
     await handleUploadApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/chat-uploads") {
+    await handleUploadApi(request, response, { reviewMedia: true, allowDocuments: true });
     return;
   }
 
@@ -14704,17 +31703,17 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname.startsWith("/api/delivery-partners/")) {
-    const partnerId = requestUrl.pathname
+    const partnerId = decodeURIComponent(requestUrl.pathname
       .replace("/api/delivery-partners/", "")
-      .trim();
+      .trim());
     await handleSingleDeliveryPartnerApi(request, response, partnerId);
     return;
   }
 
   if (requestUrl.pathname.startsWith("/api/payment-partners/")) {
-    const partnerId = requestUrl.pathname
+    const partnerId = decodeURIComponent(requestUrl.pathname
       .replace("/api/payment-partners/", "")
-      .trim();
+      .trim());
     await handleSinglePaymentPartnerApi(request, response, partnerId);
     return;
   }
@@ -14759,6 +31758,16 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (
+    ["GET", "HEAD"].includes(String(request.method || "GET").toUpperCase())
+    && requestUrl.pathname.toLowerCase() === "/live_chat.html"
+  ) {
+    response.statusCode = 302;
+    response.setHeader("Location", `/main.html${requestUrl.search}#live-chat`);
+    response.end();
+    return;
+  }
+
   await serveStaticFile(request, requestUrl.pathname, response);
 });
 
@@ -14775,13 +31784,44 @@ ensureStoragePaths()
     } else {
       console.log(`Chat AI enabled with model: ${CHAT_AI_MODEL}`);
     }
+
+    if (isPostgresConfigured()) {
+      const postgresReady = await isAccountsPostgresReady();
+      console.log(
+        postgresReady
+          ? "PostgreSQL accounts store: enabled (JSON accounts disabled)"
+          : "PostgreSQL accounts: configured but unreachable (falling back to JSON)",
+      );
+    } else {
+      console.log("PostgreSQL accounts: disabled (set DATABASE_URL to enable)");
+    }
   })
   .then(() => {
     server.listen(PORT, () => {
+      writeFlutterLocalApiLanUrls();
       console.log("GMS Shopping backend running at:");
       for (const url of getServerUrls()) {
         console.log(`- ${url}`);
       }
+      void processDueSellerAccountDeletions();
+      setInterval(() => {
+        void processDueSellerAccountDeletions();
+      }, SELLER_ACCOUNT_DELETION_SWEEP_MS).unref?.();
+      const FLASH_DEAL_LIFECYCLE_MS = 60 * 1000;
+      void flashDealsApi.tickFlashDealLifecycle().catch((error) => {
+        console.warn(
+          "Flash deal lifecycle tick failed:",
+          error?.message || error,
+        );
+      });
+      setInterval(() => {
+        void flashDealsApi.tickFlashDealLifecycle().catch((error) => {
+          console.warn(
+            "Flash deal lifecycle tick failed:",
+            error?.message || error,
+          );
+        });
+      }, FLASH_DEAL_LIFECYCLE_MS).unref?.();
     });
   })
   .catch((error) => {

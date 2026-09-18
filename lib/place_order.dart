@@ -11,10 +11,14 @@ import 'package:gms_shopping/order_tab_navigation.dart';
 import 'package:gms_shopping/order_store.dart';
 import 'package:gms_shopping/services/delivery_partner_repository.dart';
 import 'package:gms_shopping/services/payment_partner_repository.dart';
+import 'package:gms_shopping/services/vouchers_service.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 import 'package:gms_shopping/user_details.dart';
 import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:gms_shopping/utils/own_listing.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -28,19 +32,49 @@ Future<BookingPageAction?> openBookingPage(
   BuildContext context, {
   required List<BookingLineItem> items,
   required BookingFlowSource source,
-}) {
+  String platformId = '',
+}) async {
   final normalizedItems = items
       .where((item) => item.productId.trim().isNotEmpty && item.quantity > 0)
       .toList(growable: false);
   if (normalizedItems.isEmpty) {
-    return Future<BookingPageAction?>.value(null);
+    return null;
+  }
+
+  final scope = await loadOwnListingScope();
+  final purchasableItems = normalizedItems
+      .where(
+        (item) => !listingBelongsToOwnCompany(
+          scope: scope,
+          adminId: item.adminId,
+          companyName: item.companyName,
+        ),
+      )
+      .toList(growable: false);
+  if (!context.mounted) {
+    return null;
+  }
+  if (purchasableItems.isEmpty) {
+    AppSnackBar.showError(
+      context,
+      message: "You can't check out your own company listing.",
+    );
+    return null;
+  }
+  if (purchasableItems.length < normalizedItems.length) {
+    AppSnackBar.showInfo(
+      context,
+      message:
+          'Your company listings were skipped. Checkout continues for the other items.',
+    );
   }
 
   return Navigator.of(context).push<BookingPageAction>(
     MaterialPageRoute<BookingPageAction>(
       builder: (_) => BookingPage(
-        items: normalizedItems,
+        items: purchasableItems,
         source: source,
+        platformId: platformId,
       ),
     ),
   );
@@ -65,6 +99,10 @@ class BookingLineItem {
     this.productRating = 0,
     this.showsTopBrand = false,
     this.availableStock = 0,
+    this.companyName = '',
+    this.flashDealId = '',
+    this.flashReservationId = '',
+    this.reservationExpiresAt = '',
   });
 
   factory BookingLineItem.fromProduct({
@@ -75,7 +113,8 @@ class BookingLineItem {
     bool showsTopBrand = false,
   }) {
     final variant = selectedVariant;
-    final unitPrice = variant?.displayPrice ??
+    final unitPrice =
+        variant?.displayPrice ??
         ((product.salesPrice != null &&
                 product.salesPrice! >= 0 &&
                 product.salesPrice! < product.originalPrice)
@@ -105,6 +144,7 @@ class BookingLineItem {
       productRating: product.rating,
       showsTopBrand: showsTopBrand,
       availableStock: availableStock,
+      companyName: product.companyName.trim(),
     );
   }
 
@@ -125,9 +165,15 @@ class BookingLineItem {
   final double productRating;
   final bool showsTopBrand;
   final int availableStock;
+  final String companyName;
+  final String flashDealId;
+  final String flashReservationId;
+  final String reservationExpiresAt;
 
   bool get hasVariant => variantName.trim().isNotEmpty;
   bool get hasStock => availableStock > 0;
+  bool get hasFlashLock =>
+      flashDealId.trim().isNotEmpty && flashReservationId.trim().isNotEmpty;
 
   bool get hasDiscount =>
       unitPrice >= 0 && originalUnitPrice > 0 && unitPrice < originalUnitPrice;
@@ -166,6 +212,10 @@ class BookingLineItem {
     double? productRating,
     bool? showsTopBrand,
     int? availableStock,
+    String? companyName,
+    String? flashDealId,
+    String? flashReservationId,
+    String? reservationExpiresAt,
   }) {
     return BookingLineItem(
       referenceKey: referenceKey ?? this.referenceKey,
@@ -185,6 +235,11 @@ class BookingLineItem {
       productRating: productRating ?? this.productRating,
       showsTopBrand: showsTopBrand ?? this.showsTopBrand,
       availableStock: availableStock ?? this.availableStock,
+      companyName: companyName ?? this.companyName,
+      flashDealId: flashDealId ?? this.flashDealId,
+      flashReservationId: flashReservationId ?? this.flashReservationId,
+      reservationExpiresAt:
+          reservationExpiresAt ?? this.reservationExpiresAt,
     );
   }
 }
@@ -246,10 +301,12 @@ class BookingPage extends StatefulWidget {
     super.key,
     required this.items,
     required this.source,
+    this.platformId = '',
   });
 
   final List<BookingLineItem> items;
   final BookingFlowSource source;
+  final String platformId;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -292,6 +349,14 @@ class _BookingPageState extends State<BookingPage> {
   String _selectedPaymentPartnerId = '';
   bool _isSubmittingOrder = false;
   BookingPaymentCollectionOption? _selectedPaymentOption;
+  List<BuyerVoucherItem> _vouchers = const <BuyerVoucherItem>[];
+  bool _vouchersLoading = false;
+
+  String get _checkoutPlatformId {
+    final explicit = widget.platformId.trim().toLowerCase();
+    if (explicit.isNotEmpty && explicit != 'none') return explicit;
+    return 'all';
+  }
 
   @override
   void initState() {
@@ -309,6 +374,7 @@ class _BookingPageState extends State<BookingPage> {
     _enteredAmountController = TextEditingController()
       ..addListener(_handleEnteredAmountChanged);
     unawaited(_loadRecentBookingPreferences());
+    unawaited(_loadCheckoutVouchers());
   }
 
   @override
@@ -373,7 +439,7 @@ class _BookingPageState extends State<BookingPage> {
   }) async {
     final partners = _filterActiveDeliveryPartners(
       await _deliveryPartnerRepository.fetchDeliveryPartners(
-      forceRefresh: forceRefresh,
+        forceRefresh: forceRefresh,
       ),
     );
     if (!mounted) {
@@ -384,7 +450,8 @@ class _BookingPageState extends State<BookingPage> {
       _deliveryPartners = partners;
       if (_selectedDeliveryPartnerId.isNotEmpty &&
           !partners.any(
-            (partner) => _isSamePartnerId(partner.id, _selectedDeliveryPartnerId),
+            (partner) =>
+                _isSamePartnerId(partner.id, _selectedDeliveryPartnerId),
           )) {
         _selectedDeliveryPartnerId = '';
       }
@@ -398,7 +465,7 @@ class _BookingPageState extends State<BookingPage> {
   }) async {
     final partners = _filterActivePaymentPartners(
       await _paymentPartnerRepository.fetchPaymentPartners(
-      forceRefresh: forceRefresh,
+        forceRefresh: forceRefresh,
       ),
     );
     if (!mounted) {
@@ -409,7 +476,8 @@ class _BookingPageState extends State<BookingPage> {
       _paymentPartners = partners;
       if (_selectedPaymentPartnerId.isNotEmpty &&
           !partners.any(
-            (partner) => _isSamePartnerId(partner.id, _selectedPaymentPartnerId),
+            (partner) =>
+                _isSamePartnerId(partner.id, _selectedPaymentPartnerId),
           )) {
         _selectedPaymentPartnerId = '';
       }
@@ -586,8 +654,8 @@ class _BookingPageState extends State<BookingPage> {
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: theme.inputDecorationTheme.fillColor ??
-          theme.colorScheme.surface,
+      backgroundColor:
+          theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -637,8 +705,10 @@ class _BookingPageState extends State<BookingPage> {
                         const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final partner = partners[index];
-                      final isSelected =
-                          _isSamePartnerId(partner.id, selectedPartnerId);
+                      final isSelected = _isSamePartnerId(
+                        partner.id,
+                        selectedPartnerId,
+                      );
 
                       return Material(
                         color: Colors.transparent,
@@ -673,17 +743,17 @@ class _BookingPageState extends State<BookingPage> {
                                         partner.branchLabel,
                                         style: theme.textTheme.titleSmall
                                             ?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                        ),
+                                              fontWeight: FontWeight.w800,
+                                            ),
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
                                         partner.descriptionLabel,
                                         style: theme.textTheme.bodySmall
                                             ?.copyWith(
-                                          color: secondaryColor,
-                                          height: 1.35,
-                                        ),
+                                              color: secondaryColor,
+                                              height: 1.35,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -795,8 +865,10 @@ class _BookingPageState extends State<BookingPage> {
                         const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final partner = partners[index];
-                      final isSelected =
-                          _isSamePartnerId(partner.id, selectedPartnerId);
+                      final isSelected = _isSamePartnerId(
+                        partner.id,
+                        selectedPartnerId,
+                      );
 
                       return Material(
                         color: Colors.transparent,
@@ -937,21 +1009,19 @@ class _BookingPageState extends State<BookingPage> {
     return null;
   }
 
-  List<DeliveryPartner> get _availableDeliveryPartners =>
-      _deliveryPartners;
+  List<DeliveryPartner> get _availableDeliveryPartners => _deliveryPartners;
 
-  List<PaymentPartner> get _availablePaymentPartners =>
-      _paymentPartners;
+  List<PaymentPartner> get _availablePaymentPartners => _paymentPartners;
 
   DeliveryPartner? get _selectedDeliveryPartner => _findSelectedDeliveryPartner(
-        _availableDeliveryPartners,
-        _selectedDeliveryPartnerId,
-      );
+    _availableDeliveryPartners,
+    _selectedDeliveryPartnerId,
+  );
 
   PaymentPartner? get _selectedPaymentPartner => _findSelectedPaymentPartner(
-        _availablePaymentPartners,
-        _selectedPaymentPartnerId,
-      );
+    _availablePaymentPartners,
+    _selectedPaymentPartnerId,
+  );
 
   String? _validatePlaceOrder({
     required bool isCodPlacement,
@@ -1044,8 +1114,7 @@ class _BookingPageState extends State<BookingPage> {
           productImageUrl: _items[index].productImageUrl,
           variantId: _items[index].variantId,
           variantName: _items[index].variantName,
-          addOns: _items[index]
-              .variantAddOns
+          addOns: _items[index].variantAddOns
               .map(
                 (addOn) => OrderItemAddOn(
                   id: addOn.id.trim(),
@@ -1055,12 +1124,13 @@ class _BookingPageState extends State<BookingPage> {
               )
               .where(
                 (addOn) =>
-                    addOn.id.trim().isNotEmpty &&
-                    addOn.name.trim().isNotEmpty,
+                    addOn.id.trim().isNotEmpty && addOn.name.trim().isNotEmpty,
               )
               .toList(growable: false),
           quantity: _items[index].quantity,
           unitPrice: _items[index].unitPrice,
+          flashDealId: _items[index].flashDealId,
+          flashReservationId: _items[index].flashReservationId,
           stage: nextOrderStage,
           createdAtEpochMs: createdAtEpochMs,
           grandTotalAmount: _grandTotal,
@@ -1076,7 +1146,7 @@ class _BookingPageState extends State<BookingPage> {
           clientName: _clientNameLabel,
           clientContactNumber: _clientContactLabel,
           clientAddress: _clientAddressLabel,
-      ),
+        ),
     ];
   }
 
@@ -1144,9 +1214,9 @@ class _BookingPageState extends State<BookingPage> {
         final decoded = jsonDecode(rawSavedEntries);
         if (decoded is List<dynamic>) {
           savedEntries.addAll(
-            decoded
-                .whereType<Map<String, dynamic>>()
-                .map((entry) => Map<String, dynamic>.from(entry)),
+            decoded.whereType<Map<String, dynamic>>().map(
+              (entry) => Map<String, dynamic>.from(entry),
+            ),
           );
         }
       } catch (_) {}
@@ -1175,10 +1245,7 @@ class _BookingPageState extends State<BookingPage> {
     };
 
     savedEntries.insert(0, entryToInsert);
-    await preferences.setString(
-      entriesKey,
-      jsonEncode(savedEntries),
-    );
+    await preferences.setString(entriesKey, jsonEncode(savedEntries));
   }
 
   void _openPlacedOrderTab(OrderStageKey nextOrderStage) {
@@ -1280,19 +1347,119 @@ class _BookingPageState extends State<BookingPage> {
   double get _subtotal =>
       _items.fold<double>(0, (total, item) => total + item.totalPrice);
 
-  double get _originalSubtotal => _items.fold<double>(
-        0,
-        (total, item) => total + item.totalOriginalPrice,
+  double get _originalSubtotal =>
+      _items.fold<double>(0, (total, item) => total + item.totalOriginalPrice);
+
+  String get _checkoutSellerAdminId {
+    for (final item in _items) {
+      final adminId = item.adminId.trim().toLowerCase();
+      if (adminId.isNotEmpty && adminId != 'admin') {
+        return adminId;
+      }
+    }
+    return '';
+  }
+
+  List<BuyerVoucherItem> get _platformVouchers => _vouchers
+      .where(
+        (voucher) =>
+            voucher.appliesToPlatform(_checkoutPlatformId) &&
+            voucher.appliesToSeller(_checkoutSellerAdminId),
+      )
+      .toList(growable: false);
+
+  List<BuyerVoucherItem> get _passiveVouchers => _platformVouchers
+      .where((voucher) => voucher.passive && voucher.isActive)
+      .toList(growable: false);
+
+  List<BuyerVoucherItem> get _availableUnusedVouchers => _platformVouchers
+      .where((voucher) {
+        if (!voucher.isActive || voucher.isUsed) return false;
+        if (voucher.passive) {
+          return voucher.isUnlockedForSpend(_subtotal);
+        }
+        return true;
+      })
+      .toList(growable: false);
+
+  int get _unlockedPassiveCount => _passiveVouchers
+      .where((voucher) => voucher.isUnlockedForSpend(_subtotal))
+      .length;
+
+  bool get _hasUnlockedFreeShippingVoucher => _platformVouchers.any(
+    (voucher) =>
+        voucher.isActive &&
+        !voucher.isUsed &&
+        voucher.freeShipping &&
+        voucher.isUnlockedForSpend(_subtotal),
+  );
+
+  Future<void> _loadCheckoutVouchers() async {
+    if (!mounted) return;
+    setState(() => _vouchersLoading = true);
+    try {
+      final vouchers = await fetchBuyerVouchers(
+        platformId: _checkoutPlatformId,
+        sellerAdminId: _checkoutSellerAdminId,
       );
+      if (!mounted) return;
+      setState(() {
+        _vouchers = vouchers;
+        _vouchersLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _vouchers = const <BuyerVoucherItem>[];
+        _vouchersLoading = false;
+      });
+    }
+  }
+
+  Future<void> _openCheckoutVouchersSheet() async {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final secondaryColor =
+        theme.textTheme.bodyMedium?.color?.withOpacity(0.68) ??
+        theme.colorScheme.onSurface.withOpacity(0.68);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.72,
+          minChildSize: 0.45,
+          maxChildSize: 0.94,
+          builder: (context, scrollController) {
+            return _CheckoutVouchersSheet(
+              scrollController: scrollController,
+              subtotal: _subtotal,
+              passiveVouchers: _passiveVouchers,
+              availableVouchers: _availableUnusedVouchers,
+              isLoading: _vouchersLoading,
+              primaryColor: primaryColor,
+              secondaryColor: secondaryColor,
+              onRefresh: _loadCheckoutVouchers,
+            );
+          },
+        );
+      },
+    );
+  }
 
   double get _shippingFee {
+    if (_hasUnlockedFreeShippingVoucher) return 0;
     return _itemCount >= 3 ? 0 : 59;
   }
 
-  double get _depositAmount => math.min(
-        _grandTotal,
-        math.max(_grandTotal * 0.10, _minimumCodDeposit),
-      );
+  double get _depositAmount =>
+      math.min(_grandTotal, math.max(_grandTotal * 0.10, _minimumCodDeposit));
 
   double get _remainingAmount => math.max(_grandTotal - _enteredAmount, 0);
 
@@ -1443,8 +1610,10 @@ class _BookingPageState extends State<BookingPage> {
       _isSubmittingOrder = true;
     });
 
-    final double remainingBalanceAmount =
-        math.max(_grandTotal - enteredAmount, 0.0);
+    final double remainingBalanceAmount = math.max(
+      _grandTotal - enteredAmount,
+      0.0,
+    );
     const nextOrderStage = OrderStageKey.toPrepare;
     const amountToPayAmount = 0.0;
     final createdAtEpochMs = DateTime.now().millisecondsSinceEpoch;
@@ -1460,7 +1629,10 @@ class _BookingPageState extends State<BookingPage> {
       await OrderStore.instance.addOrders(orderEntries);
     } catch (error) {
       if (mounted) {
-        _showBookingMessage('Unable to save this order right now.');
+        final message = error.toString().contains('Flash Deal')
+            ? error.toString().replaceFirst('Exception: ', '')
+            : 'Unable to save this order right now.';
+        _showBookingMessage(message);
       }
       return;
     } finally {
@@ -1512,10 +1684,7 @@ class _BookingPageState extends State<BookingPage> {
   }
 
   void _showBookingMessage(String message) {
-    AppSnackBar.showError(
-      context,
-      message: message,
-    );
+    AppSnackBar.showError(context, message: message);
   }
 
   @override
@@ -1540,14 +1709,15 @@ class _BookingPageState extends State<BookingPage> {
     final bottomPadding = mediaPadding.bottom;
     final footerTargetHeight = mediaPadding.top + kToolbarHeight;
     final minimumHeight = bottomPadding + 64.0;
-    final resolvedFooterHeight =
-        footerTargetHeight > minimumHeight ? footerTargetHeight : minimumHeight;
+    final resolvedFooterHeight = footerTargetHeight > minimumHeight
+        ? footerTargetHeight
+        : minimumHeight;
     final footerContentHeight = resolvedFooterHeight - bottomPadding;
     final footerControlHeight = footerContentHeight <= 52
         ? 52.0
         : footerContentHeight >= 56
-            ? 56.0
-            : footerContentHeight;
+        ? 56.0
+        : footerContentHeight;
     final footerButtonHeight = footerControlHeight - 8;
 
     return Scaffold(
@@ -1651,7 +1821,9 @@ class _BookingPageState extends State<BookingPage> {
                       width: 126,
                       height: footerButtonHeight,
                       child: FilledButton(
-                        onPressed: _isSubmittingOrder ? null : _handlePlaceOrder,
+                        onPressed: _isSubmittingOrder
+                            ? null
+                            : _handlePlaceOrder,
                         style: FilledButton.styleFrom(
                           foregroundColor: placeOrderTextColor,
                           textStyle: theme.textTheme.titleSmall?.copyWith(
@@ -1665,16 +1837,11 @@ class _BookingPageState extends State<BookingPage> {
                         child: AnimatedSwitcher(
                           duration: appMotionFrames(11),
                           child: _isSubmittingOrder
-                              ? SizedBox(
-                                  key: const ValueKey('place-order-loading'),
+                              ? const SizedBox(
+                                  key: ValueKey('place-order-loading'),
                                   width: 20,
                                   height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      placeOrderTextColor,
-                                    ),
-                                  ),
+                                  child: SkeletonCircle(size: 20),
                                 )
                               : Text(
                                   'Place Order',
@@ -1741,472 +1908,521 @@ class _BookingPageState extends State<BookingPage> {
                 onDecreaseQuantity: () {
                   _updateItemQuantity(index, _items[index].quantity - 1);
                 },
-                onIncreaseQuantity: _items[index].hasStock &&
+                onIncreaseQuantity:
+                    _items[index].hasStock &&
                         _items[index].quantity < _items[index].availableStock
                     ? () {
-                        _updateItemQuantity(
-                          index,
-                          _items[index].quantity + 1,
-                        );
+                        _updateItemQuantity(index, _items[index].quantity + 1);
                       }
                     : null,
               ),
               if (index != _items.length - 1) const SizedBox(height: 12),
             ],
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _BookingSectionTitle(
-              icon: Icons.local_shipping_outlined,
-              title: 'Delivery Method',
-            ),
-          ),
-          const SizedBox(height: 12),
-          FutureBuilder<List<DeliveryPartner>>(
-            future: _deliveryPartnersFuture,
-            builder: (context, snapshot) {
-              final partners = _resolveDeliveryPartners(snapshot);
-              final selectedPartnerId =
-                  _resolveSelectedDeliveryPartnerId(partners);
-              final selectedPartner = _findSelectedDeliveryPartner(
-                partners,
-                selectedPartnerId,
-              );
-              final partnerLoadMessage = snapshot.hasError
-                  ? 'Unable to load delivery partners.'
-                  : partners.isEmpty
-                      ? 'No active delivery partner is available.'
-                      : '';
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (partnerLoadMessage.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Text(
-                        partnerLoadMessage,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: secondaryColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  _BookingSectionCard(
-                    borderRadius: BorderRadius.zero,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: partners.isEmpty
-                            ? null
-                            : () {
-                                _openDeliveryPartnerSelector(partners);
-                              },
-                        borderRadius: BorderRadius.circular(18),
-                      child: Ink(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          child: selectedPartner == null
-                              ? Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        partners.isEmpty
-                                            ? 'No Courier Available'
-                                            : 'Select Courier',
-                                        style: theme.textTheme.bodyLarge
-                                            ?.copyWith(
-                                          color: secondaryColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: partners.isEmpty
-                                          ? secondaryColor.withOpacity(0.45)
-                                          : secondaryColor,
-                                    ),
-                                  ],
-                                )
-                              : Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _BookingDeliveryPartnerAvatar(
-                                      imageUrl: selectedPartner.imageUrl,
-                                      primaryColor: primaryColor,
-                                      icon: Icons.local_shipping_outlined,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            selectedPartner.branchLabel,
-                                            style: theme.textTheme.titleSmall
-                                                ?.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            selectedPartner.descriptionLabel,
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                              color: secondaryColor,
-                                              height: 1.35,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: secondaryColor,
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _BookingSectionTitle(
-              icon: Icons.account_balance_wallet_outlined,
-              title: 'Payment Method',
-            ),
-          ),
-          const SizedBox(height: 12),
-          FutureBuilder<List<PaymentPartner>>(
-            future: _paymentPartnersFuture,
-            builder: (context, snapshot) {
-              final partners = _resolvePaymentPartners(snapshot);
-              final selectedPartnerId =
-                  _resolveSelectedPaymentPartnerId(partners);
-              final selectedPartner = _findSelectedPaymentPartner(
-                partners,
-                selectedPartnerId,
-              );
-              final partnerLoadMessage = snapshot.hasError
-                  ? 'Unable to load payment partners.'
-                  : partners.isEmpty
-                      ? 'No active payment partner is available.'
-                      : '';
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (partnerLoadMessage.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Text(
-                        partnerLoadMessage,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: secondaryColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  _BookingSectionCard(
-                    borderRadius: BorderRadius.zero,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: partners.isEmpty
-                            ? null
-                            : () {
-                                _openPaymentPartnerSelector(partners);
-                              },
-                        borderRadius: BorderRadius.circular(18),
-                        child: Ink(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          child: selectedPartner == null
-                              ? Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        partners.isEmpty
-                                            ? 'No Payment Method Available'
-                                            : 'Select Payment Method',
-                                        style: theme.textTheme.bodyLarge
-                                            ?.copyWith(
-                                          color: secondaryColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: partners.isEmpty
-                                          ? secondaryColor.withOpacity(0.45)
-                                          : secondaryColor,
-                                    ),
-                                  ],
-                                )
-                              : Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    _BookingDeliveryPartnerAvatar(
-                                      imageUrl: selectedPartner.imageUrl,
-                                      primaryColor: primaryColor,
-                                      icon: Icons.account_balance_wallet_outlined,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        selectedPartner.branchLabel,
-                                        style: theme.textTheme.titleSmall
-                                            ?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: secondaryColor,
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _BookingSectionTitle(
-              icon: Icons.payments_outlined,
-              title: 'Payment',
-            ),
-          ),
-          const SizedBox(height: 12),
-          _BookingSectionCard(
-            borderRadius: BorderRadius.zero,
-            child: Column(
-              children: [
-                _BookingPaymentOptionTile(
-                  title: 'COD',
-                  subtitle:
-                      'Select COD, pay the required downpayment today, and this order will proceed to To Prepare. The remaining balance will be settled upon delivery.',
-                  trailing: _BookingPriceText(
-                    amount: _depositAmount,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: primaryColor,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  isSelected:
-                      _selectedPaymentOption ==
-                      BookingPaymentCollectionOption.codDeposit,
-                  onTap: () => _selectPaymentOption(
-                    BookingPaymentCollectionOption.codDeposit,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _BookingPaymentOptionTile(
-                  title: 'Full Payment',
-                  subtitle:
-                      'Pay the full grand total now using the selected method so this order can proceed to To Prepare.',
-                  trailing: _BookingPriceText(
-                    amount: _grandTotal,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: primaryColor,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  isSelected:
-                      _selectedPaymentOption ==
-                      BookingPaymentCollectionOption.fullPayment,
-                  onTap: () => _selectPaymentOption(
-                    BookingPaymentCollectionOption.fullPayment,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _BookingSectionTitle(
-              icon: Icons.notes_outlined,
-              title: 'Order Notes (Optional)',
-            ),
-          ),
-          const SizedBox(height: 12),
-          _BookingSectionCard(
-            borderRadius: BorderRadius.zero,
-            child: TextField(
-              controller: _noteController,
-              maxLines: 3,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                hintText:
-                    'Optional: add rider notes, landmark, or packing request here',
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _BookingSectionTitle(
+                icon: Icons.local_shipping_outlined,
+                title: 'Delivery Method',
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _BookingSectionTitle(
-              icon: Icons.receipt_long_outlined,
-              title: 'Payment Summary',
-            ),
-          ),
-          const SizedBox(height: 12),
-          _BookingSectionCard(
-            borderRadius: BorderRadius.zero,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _BookingSummaryRow(
-                  label: 'Selected Option',
-                  value: _selectedPaymentOptionLabel,
-                ),
-                const SizedBox(height: 10),
-                _BookingSummaryRow(
-                  label: 'Items ($_itemCount)',
-                  amount: _subtotal,
-                ),
-                if (hasDiscountedTotal)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Before discount',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: secondaryColor,
-                              fontWeight: FontWeight.w600,
-                            ),
+            const SizedBox(height: 12),
+            FutureBuilder<List<DeliveryPartner>>(
+              future: _deliveryPartnersFuture,
+              builder: (context, snapshot) {
+                final partners = _resolveDeliveryPartners(snapshot);
+                final selectedPartnerId = _resolveSelectedDeliveryPartnerId(
+                  partners,
+                );
+                final selectedPartner = _findSelectedDeliveryPartner(
+                  partners,
+                  selectedPartnerId,
+                );
+                final partnerLoadMessage = snapshot.hasError
+                    ? 'Unable to load delivery partners.'
+                    : partners.isEmpty
+                    ? 'No active delivery partner is available.'
+                    : '';
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (partnerLoadMessage.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Text(
+                          partnerLoadMessage,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: secondaryColor,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _BookingDiscountSummaryBadge(
-                              label: '-$discountPercent%',
+                      ),
+                    _BookingSectionCard(
+                      borderRadius: BorderRadius.zero,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: partners.isEmpty
+                              ? null
+                              : () {
+                                  _openDeliveryPartnerSelector(partners);
+                                },
+                          borderRadius: BorderRadius.circular(18),
+                          child: Ink(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
                             ),
-                            const SizedBox(width: 6),
-                            _BookingPriceText(
-                              amount: _originalSubtotal,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                decoration: TextDecoration.lineThrough,
+                            child: selectedPartner == null
+                                ? Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          partners.isEmpty
+                                              ? 'No Courier Available'
+                                              : 'Select Courier',
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                                color: secondaryColor,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: partners.isEmpty
+                                            ? secondaryColor.withOpacity(0.45)
+                                            : secondaryColor,
+                                      ),
+                                    ],
+                                  )
+                                : Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _BookingDeliveryPartnerAvatar(
+                                        imageUrl: selectedPartner.imageUrl,
+                                        primaryColor: primaryColor,
+                                        icon: Icons.local_shipping_outlined,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              selectedPartner.branchLabel,
+                                              style: theme.textTheme.titleSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              selectedPartner.descriptionLabel,
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: secondaryColor,
+                                                    height: 1.35,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: secondaryColor,
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _BookingSectionTitle(
+                icon: Icons.account_balance_wallet_outlined,
+                title: 'Payment Method',
+              ),
+            ),
+            const SizedBox(height: 12),
+            FutureBuilder<List<PaymentPartner>>(
+              future: _paymentPartnersFuture,
+              builder: (context, snapshot) {
+                final partners = _resolvePaymentPartners(snapshot);
+                final selectedPartnerId = _resolveSelectedPaymentPartnerId(
+                  partners,
+                );
+                final selectedPartner = _findSelectedPaymentPartner(
+                  partners,
+                  selectedPartnerId,
+                );
+                final partnerLoadMessage = snapshot.hasError
+                    ? 'Unable to load payment partners.'
+                    : partners.isEmpty
+                    ? 'No active payment partner is available.'
+                    : '';
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (partnerLoadMessage.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Text(
+                          partnerLoadMessage,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: secondaryColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    _BookingSectionCard(
+                      borderRadius: BorderRadius.zero,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: partners.isEmpty
+                              ? null
+                              : () {
+                                  _openPaymentPartnerSelector(partners);
+                                },
+                          borderRadius: BorderRadius.circular(18),
+                          child: Ink(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            child: selectedPartner == null
+                                ? Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          partners.isEmpty
+                                              ? 'No Payment Method Available'
+                                              : 'Select Payment Method',
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                                color: secondaryColor,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: partners.isEmpty
+                                            ? secondaryColor.withOpacity(0.45)
+                                            : secondaryColor,
+                                      ),
+                                    ],
+                                  )
+                                : Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      _BookingDeliveryPartnerAvatar(
+                                        imageUrl: selectedPartner.imageUrl,
+                                        primaryColor: primaryColor,
+                                        icon: Icons
+                                            .account_balance_wallet_outlined,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          selectedPartner.branchLabel,
+                                          style: theme.textTheme.titleSmall
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: secondaryColor,
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _BookingSectionTitle(
+                icon: Icons.payments_outlined,
+                title: 'Payment',
+              ),
+            ),
+            const SizedBox(height: 12),
+            _BookingSectionCard(
+              borderRadius: BorderRadius.zero,
+              child: Column(
+                children: [
+                  _BookingPaymentOptionTile(
+                    title: 'COD',
+                    subtitle:
+                        'Select COD, pay the required downpayment today, and this order will proceed to To Prepare. The remaining balance will be settled upon delivery.',
+                    trailing: _BookingPriceText(
+                      amount: _depositAmount,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    isSelected:
+                        _selectedPaymentOption ==
+                        BookingPaymentCollectionOption.codDeposit,
+                    onTap: () => _selectPaymentOption(
+                      BookingPaymentCollectionOption.codDeposit,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _BookingPaymentOptionTile(
+                    title: 'Full Payment',
+                    subtitle:
+                        'Pay the full grand total now using the selected method so this order can proceed to To Prepare.',
+                    trailing: _BookingPriceText(
+                      amount: _grandTotal,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    isSelected:
+                        _selectedPaymentOption ==
+                        BookingPaymentCollectionOption.fullPayment,
+                    onTap: () => _selectPaymentOption(
+                      BookingPaymentCollectionOption.fullPayment,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _BookingSectionTitle(
+                icon: Icons.notes_outlined,
+                title: 'Order Notes (Optional)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            _BookingSectionCard(
+              borderRadius: BorderRadius.zero,
+              child: TextField(
+                controller: _noteController,
+                maxLines: 3,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _BookingSectionTitle(
+                icon: Icons.receipt_long_outlined,
+                title: 'Payment Summary',
+              ),
+            ),
+            const SizedBox(height: 12),
+            _BookingSectionCard(
+              borderRadius: BorderRadius.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _BookingSummaryRow(
+                    label: 'Selected Option',
+                    value: _selectedPaymentOptionLabel,
+                  ),
+                  const SizedBox(height: 10),
+                  _BookingSummaryRow(
+                    label: 'Items ($_itemCount)',
+                    amount: _subtotal,
+                  ),
+                  const SizedBox(height: 10),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _openCheckoutVouchersSheet,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.local_offer_outlined,
+                              size: 18,
+                              color: primaryColor,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'See vouchers',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: primaryColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
+                            ),
+                            Text(
+                              _vouchersLoading
+                                  ? 'Loading…'
+                                  : _unlockedPassiveCount > 0
+                                  ? '$_unlockedPassiveCount unlocked'
+                                  : '${_availableUnusedVouchers.length} available',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: secondaryColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: secondaryColor,
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                _BookingSummaryRow(
-                  label: 'Shipping fee',
-                  value: 'Buyer Charge',
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Divider(height: 1),
-                ),
-                _BookingSummaryRow(
-                  label: 'Grand total',
-                  amount: _grandTotal,
-                  emphasizesValue: true,
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Divider(height: 1),
-                ),
-                Text(
-                  'Enter amount',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Builder(
-                  builder: (context) {
-                    final enteredAmountTextStyle =
-                        theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    );
-                    final enteredAmountPrefixStyle =
-                        enteredAmountTextStyle?.copyWith(
-                      fontSize:
-                          (enteredAmountTextStyle.fontSize ?? 16) * 0.75,
-                    );
-
-                    return TextField(
-                      controller: _enteredAmountController,
-                      style: enteredAmountTextStyle,
-                      readOnly:
-                          _selectedPaymentOption == null ||
-                          _selectedPaymentOption ==
-                              BookingPaymentCollectionOption.codDeposit ||
-                          _selectedPaymentOption ==
-                          BookingPaymentCollectionOption.fullPayment,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                  if (hasDiscountedTotal)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Before discount',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: secondaryColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _BookingDiscountSummaryBadge(
+                                label: '-$discountPercent%',
+                              ),
+                              const SizedBox(width: 6),
+                              _BookingPriceText(
+                                amount: _originalSubtotal,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      textInputAction: TextInputAction.done,
-                      inputFormatters: <TextInputFormatter>[
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                      ],
+                    ),
+                  _hasUnlockedFreeShippingVoucher
+                      ? const _BookingSummaryRow(
+                          label: 'Shipping fee',
+                          amount: 0,
+                        )
+                      : const _BookingSummaryRow(
+                          label: 'Shipping fee',
+                          value: 'Buyer Charge',
+                        ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Divider(height: 1),
+                  ),
+                  _BookingSummaryRow(
+                    label: 'Grand total',
+                    amount: _grandTotal,
+                    emphasizesValue: true,
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Divider(height: 1),
+                  ),
+                  Text(
+                    'Enter amount',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Builder(
+                    builder: (context) {
+                      final enteredAmountTextStyle = theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700);
+                      final enteredAmountPrefixStyle = enteredAmountTextStyle
+                          ?.copyWith(
+                            fontSize:
+                                (enteredAmountTextStyle.fontSize ?? 16) * 0.75,
+                          );
+
+                      return TextField(
+                        controller: _enteredAmountController,
+                        style: enteredAmountTextStyle,
+                        readOnly:
+                            _selectedPaymentOption == null ||
+                            _selectedPaymentOption ==
+                                BookingPaymentCollectionOption.codDeposit ||
+                            _selectedPaymentOption ==
+                                BookingPaymentCollectionOption.fullPayment,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        textInputAction: TextInputAction.done,
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                        ],
                         decoration: InputDecoration(
-                          hintText: 'Enter amount',
                           prefixText: '\u20B1',
                           prefixStyle: enteredAmountPrefixStyle,
                           helperText:
                               _selectedPaymentOption ==
-                                      BookingPaymentCollectionOption.codDeposit
-                                  ? 'COD downpayment:\n$_enteredAmountHelperText'
-                                  : _enteredAmountHelperText,
+                                  BookingPaymentCollectionOption.codDeposit
+                              ? 'COD downpayment:\n$_enteredAmountHelperText'
+                              : _enteredAmountHelperText,
                           helperMaxLines: 3,
                         ),
                       );
                     },
                   ),
-                const SizedBox(height: 10),
-                _BookingSummaryRow(
-                  label: 'Remaining balance',
-                  amount: _remainingAmount,
-                  emphasizesValue: _hasOutstandingBalance,
-                ),
-                if (_orderPlacementBalanceMessage != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _orderPlacementBalanceMessage!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: secondaryColor,
-                      height: 1.4,
-                    ),
+                  const SizedBox(height: 10),
+                  _BookingSummaryRow(
+                    label: 'Remaining balance',
+                    amount: _remainingAmount,
+                    emphasizesValue: _hasOutstandingBalance,
                   ),
+                  if (_orderPlacementBalanceMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _orderPlacementBalanceMessage!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: secondaryColor,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -2273,10 +2489,7 @@ class _BookingClientSummaryCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Icon(
-          Icons.chevron_right_rounded,
-          color: secondaryColor,
-        ),
+        Icon(Icons.chevron_right_rounded, color: secondaryColor),
       ],
     );
   }
@@ -2300,11 +2513,7 @@ class _BookingAddAddressPlaceholder extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.add_rounded,
-              size: 22,
-              color: secondaryColor,
-            ),
+            Icon(Icons.add_rounded, size: 22, color: secondaryColor),
             const SizedBox(width: 6),
             Text(
               'User Details',
@@ -2357,10 +2566,7 @@ class _BookingSectionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (showsAirmailBorder) const _BookingAirmailBorderStrip(),
-          Padding(
-            padding: padding,
-            child: child,
-          ),
+          Padding(padding: padding, child: child),
           if (showsAirmailBorder) const _BookingAirmailBorderStrip(),
         ],
       ),
@@ -2389,9 +2595,7 @@ class _BookingAirmailBorderStrip extends StatelessWidget {
 }
 
 class _BookingAirmailBorderPainter extends CustomPainter {
-  const _BookingAirmailBorderPainter({
-    required this.backgroundColor,
-  });
+  const _BookingAirmailBorderPainter({required this.backgroundColor});
 
   static const Color _red = Color(0xFFD84C5A);
   static const Color _blue = Color(0xFF4F7FEA);
@@ -2408,7 +2612,11 @@ class _BookingAirmailBorderPainter extends CustomPainter {
     final stripePaint = Paint()..style = PaintingStyle.fill;
 
     var stripeIndex = 0;
-    for (double x = -stripeWidth; x < size.width + stripeWidth; x += stripeWidth + stripeGap) {
+    for (
+      double x = -stripeWidth;
+      x < size.width + stripeWidth;
+      x += stripeWidth + stripeGap
+    ) {
       stripePaint.color = stripeIndex.isEven ? _red : _blue;
       final path = Path()
         ..moveTo(x, 1)
@@ -2427,10 +2635,7 @@ class _BookingAirmailBorderPainter extends CustomPainter {
 }
 
 class _BookingSectionTitle extends StatelessWidget {
-  const _BookingSectionTitle({
-    required this.icon,
-    required this.title,
-  });
+  const _BookingSectionTitle({required this.icon, required this.title});
 
   final IconData icon;
   final String title;
@@ -2442,11 +2647,7 @@ class _BookingSectionTitle extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 20,
-          color: primaryColor,
-        ),
+        Icon(icon, size: 20, color: primaryColor),
         const SizedBox(width: 8),
         Text(
           title,
@@ -2467,6 +2668,9 @@ class _BookingSelectableTile extends StatelessWidget {
     required this.icon,
     required this.isSelected,
     required this.onTap,
+    this.imageUrl = '',
+    this.showsOutline = true,
+    this.showsSelectedBackground = true,
   });
 
   final String title;
@@ -2518,29 +2722,26 @@ class _BookingSelectableTile extends StatelessWidget {
                   width: 42,
                   height: 42,
                   child: showsImage
-                      ? Image.network(
-                          normalizedImageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: primaryColor.withOpacity(0.12),
-                              ),
-                              child: Icon(
-                                icon,
-                                color: primaryColor,
-                              ),
-                            );
-                          },
+                      ? ColoredBox(
+                          color: Colors.white,
+                          child: Image.network(
+                            normalizedImageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withOpacity(0.12),
+                                ),
+                                child: Icon(icon, color: primaryColor),
+                              );
+                            },
+                          ),
                         )
                       : DecoratedBox(
                           decoration: BoxDecoration(
                             color: primaryColor.withOpacity(0.12),
                           ),
-                          child: Icon(
-                            icon,
-                            color: primaryColor,
-                          ),
+                          child: Icon(icon, color: primaryColor),
                         ),
                 ),
               ),
@@ -2713,11 +2914,7 @@ class _BookingItemTile extends StatelessWidget {
     final stockSection = item.availableStock > 0
         ? Row(
             children: [
-              Icon(
-                Icons.inventory_2_outlined,
-                size: 14,
-                color: secondaryColor,
-              ),
+              Icon(Icons.inventory_2_outlined, size: 14, color: secondaryColor),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
@@ -2742,10 +2939,7 @@ class _BookingItemTile extends StatelessWidget {
             ),
           );
     final quantitySection = Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 5,
-        vertical: 4,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
       decoration: BoxDecoration(
         color: quantityBackgroundColor,
         borderRadius: BorderRadius.circular(8),
@@ -2778,9 +2972,7 @@ class _BookingItemTile extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: itemContainerColor,
-      ),
+      decoration: BoxDecoration(color: itemContainerColor),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2794,15 +2986,18 @@ class _BookingItemTile extends StatelessWidget {
                       primaryColor: primaryColor,
                       initial: item.productName[0].toUpperCase(),
                     )
-                  : Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return _BookingImageFallback(
-                          primaryColor: primaryColor,
-                          initial: item.productName[0].toUpperCase(),
-                        );
-                      },
+                  : ColoredBox(
+                      color: Colors.white,
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _BookingImageFallback(
+                            primaryColor: primaryColor,
+                            initial: item.productName[0].toUpperCase(),
+                          );
+                        },
+                      ),
                     ),
             ),
           ),
@@ -2845,8 +3040,8 @@ class _BookingItemTile extends StatelessWidget {
                                   horizontal: 10,
                                   vertical: 6,
                                 ),
-                                labelStyle:
-                                    theme.textTheme.labelSmall?.copyWith(
+                                labelStyle: theme.textTheme.labelSmall
+                                    ?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 9,
@@ -2860,16 +3055,20 @@ class _BookingItemTile extends StatelessWidget {
                                 label: 'Top Selling',
                                 color: const Color.fromARGB(255, 15, 194, 176),
                                 icon: Icons.workspace_premium_outlined,
-                                backgroundColor:
-                                    const Color.fromARGB(255, 15, 194, 176),
+                                backgroundColor: const Color.fromARGB(
+                                  255,
+                                  15,
+                                  194,
+                                  176,
+                                ),
                                 labelColor: Colors.white,
                                 iconColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
                                   vertical: 6,
                                 ),
-                                labelStyle:
-                                    theme.textTheme.labelSmall?.copyWith(
+                                labelStyle: theme.textTheme.labelSmall
+                                    ?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 9,
@@ -2891,8 +3090,8 @@ class _BookingItemTile extends StatelessWidget {
                                   horizontal: 10,
                                   vertical: 6,
                                 ),
-                                labelStyle:
-                                    theme.textTheme.labelSmall?.copyWith(
+                                labelStyle: theme.textTheme.labelSmall
+                                    ?.copyWith(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 9,
@@ -2954,9 +3153,7 @@ class _BookingItemTile extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Expanded(
-                      child: stockSection,
-                    ),
+                    Expanded(child: stockSection),
                     const SizedBox(width: 12),
                     quantitySection,
                   ],
@@ -2971,10 +3168,7 @@ class _BookingItemTile extends StatelessWidget {
 }
 
 class _BookingQuantityButton extends StatelessWidget {
-  const _BookingQuantityButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _BookingQuantityButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback? onTap;
@@ -3032,7 +3226,8 @@ class _BookingItemChip extends StatelessWidget {
     final resolvedIconColor = iconColor ?? resolvedLabelColor;
 
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: resolvedBackgroundColor,
         borderRadius: BorderRadius.circular(8),
@@ -3041,11 +3236,7 @@ class _BookingItemChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: 12,
-              color: resolvedIconColor,
-            ),
+            Icon(icon, size: 12, color: resolvedIconColor),
             const SizedBox(width: 4),
           ],
           Text(
@@ -3073,6 +3264,7 @@ class _BookingSummaryRow extends StatelessWidget {
     required this.label,
     this.value,
     this.amount,
+    this.isStrikethrough = false,
     this.emphasizesValue = false,
   }) : assert(
          (value == null) != (amount == null),
@@ -3111,15 +3303,9 @@ class _BookingSummaryRow extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           if (amount != null)
-            _BookingPriceText(
-              amount: amount!,
-              style: valueStyle,
-            )
+            _BookingPriceText(amount: amount!, style: valueStyle)
           else
-            Text(
-              value!,
-              style: valueStyle,
-            ),
+            Text(value!, style: valueStyle),
         ],
       ),
     );
@@ -3127,19 +3313,14 @@ class _BookingSummaryRow extends StatelessWidget {
 }
 
 class _BookingDiscountSummaryBadge extends StatelessWidget {
-  const _BookingDiscountSummaryBadge({
-    required this.label,
-  });
+  const _BookingDiscountSummaryBadge({required this.label});
 
   final String label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFD32F2F),
         borderRadius: BorderRadius.circular(8),
@@ -3147,42 +3328,23 @@ class _BookingDiscountSummaryBadge extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
 }
 
 class _BookingPriceText extends StatelessWidget {
-  const _BookingPriceText({
-    required this.amount,
-    this.style,
-  });
+  const _BookingPriceText({required this.amount, this.style});
 
   final double amount;
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedStyle = DefaultTextStyle.of(context).style.merge(style);
-    final symbolFontSize = (resolvedStyle.fontSize ?? 14) * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: resolvedStyle.copyWith(fontSize: symbolFontSize),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: resolvedStyle,
-          ),
-        ],
-      ),
-    );
+    return AppPriceText(amount: amount, style: style);
   }
 }
 
@@ -3198,16 +3360,14 @@ class _BookingImageFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: primaryColor.withOpacity(0.12),
-      ),
+      decoration: BoxDecoration(color: primaryColor.withOpacity(0.12)),
       child: Center(
         child: Text(
           initial,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: primaryColor,
-                fontWeight: FontWeight.w800,
-              ),
+            color: primaryColor,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -3235,41 +3395,362 @@ class _BookingDeliveryPartnerAvatar extends StatelessWidget {
         width: 60,
         height: 60,
         child: normalizedImageUrl.isNotEmpty
-            ? Image.network(
-                normalizedImageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: primaryColor.withOpacity(0.12),
-                    ),
-                    child: Icon(
-                      icon,
-                      color: primaryColor,
-                      size: 18,
-                    ),
-                  );
-                },
+            ? ColoredBox(
+                color: Colors.white,
+                child: Image.network(
+                  normalizedImageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: primaryColor.withOpacity(0.12),
+                      ),
+                      child: Icon(icon, color: primaryColor, size: 18),
+                    );
+                  },
+                ),
               )
             : DecoratedBox(
                 decoration: BoxDecoration(
                   color: primaryColor.withOpacity(0.12),
                 ),
-                child: Icon(
-                  icon,
-                  color: primaryColor,
-                  size: 18,
-                ),
+                child: Icon(icon, color: primaryColor, size: 18),
               ),
       ),
     );
   }
 }
 
-int _normalizeBookingQuantity(
-  int quantity, {
-  required int availableStock,
-}) {
+class _CheckoutVouchersSheet extends StatelessWidget {
+  const _CheckoutVouchersSheet({
+    required this.scrollController,
+    required this.subtotal,
+    required this.passiveVouchers,
+    required this.availableVouchers,
+    required this.isLoading,
+    required this.primaryColor,
+    required this.secondaryColor,
+    required this.onRefresh,
+  });
+
+  final ScrollController scrollController;
+  final double subtotal;
+  final List<BuyerVoucherItem> passiveVouchers;
+  final List<BuyerVoucherItem> availableVouchers;
+  final bool isLoading;
+  final Color primaryColor;
+  final Color secondaryColor;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return SafeArea(
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(
+            width: 42,
+            height: 4,
+            decoration: BoxDecoration(
+              color: secondaryColor.withOpacity(0.28),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Vouchers',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Passive vouchers unlock at min. spend. Available vouchers are ready to use.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: secondaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: isLoading
+                ? const SkeletonListRows(count: 5)
+                : RefreshIndicator(
+                    onRefresh: onRefresh,
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                      children: [
+                        _CheckoutVoucherSectionTitle(
+                          title: 'Passive vouchers',
+                          count: passiveVouchers.length,
+                          primaryColor: primaryColor,
+                        ),
+                        const SizedBox(height: 10),
+                        if (passiveVouchers.isEmpty)
+                          _CheckoutVoucherEmptyState(
+                            message:
+                                'No passive vouchers for this platform yet.',
+                            secondaryColor: secondaryColor,
+                          )
+                        else
+                          for (final voucher in passiveVouchers) ...[
+                            _CheckoutVoucherCard(
+                              voucher: voucher,
+                              unlocked: voucher.isUnlockedForSpend(subtotal),
+                              showPassiveState: true,
+                              subtotal: subtotal,
+                              primaryColor: primaryColor,
+                              secondaryColor: secondaryColor,
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                        const SizedBox(height: 12),
+                        _CheckoutVoucherSectionTitle(
+                          title: 'Available vouchers',
+                          count: availableVouchers.length,
+                          primaryColor: primaryColor,
+                        ),
+                        const SizedBox(height: 10),
+                        if (availableVouchers.isEmpty)
+                          _CheckoutVoucherEmptyState(
+                            message:
+                                'No unused available vouchers right now.',
+                            secondaryColor: secondaryColor,
+                          )
+                        else
+                          for (final voucher in availableVouchers) ...[
+                            _CheckoutVoucherCard(
+                              voucher: voucher,
+                              unlocked: true,
+                              showPassiveState: voucher.passive,
+                              subtotal: subtotal,
+                              primaryColor: primaryColor,
+                              secondaryColor: secondaryColor,
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckoutVoucherSectionTitle extends StatelessWidget {
+  const _CheckoutVoucherSectionTitle({
+    required this.title,
+    required this.count,
+    required this.primaryColor,
+  });
+
+  final String title;
+  final int count;
+  final Color primaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        Text(
+          '$count',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: primaryColor,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CheckoutVoucherEmptyState extends StatelessWidget {
+  const _CheckoutVoucherEmptyState({
+    required this.message,
+    required this.secondaryColor,
+  });
+
+  final String message;
+  final Color secondaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: secondaryColor.withOpacity(0.18)),
+      ),
+      child: Text(
+        message,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: secondaryColor,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckoutVoucherCard extends StatelessWidget {
+  const _CheckoutVoucherCard({
+    required this.voucher,
+    required this.unlocked,
+    required this.showPassiveState,
+    required this.subtotal,
+    required this.primaryColor,
+    required this.secondaryColor,
+  });
+
+  final BuyerVoucherItem voucher;
+  final bool unlocked;
+  final bool showPassiveState;
+  final double subtotal;
+  final Color primaryColor;
+  final Color secondaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final remaining = math.max(voucher.minimumSpendAmount - subtotal, 0).ceil();
+    final statusLabel = showPassiveState
+        ? (unlocked ? 'Unlocked' : 'Spend ₱$remaining more')
+        : 'Available';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: unlocked
+              ? primaryColor.withOpacity(0.28)
+              : secondaryColor.withOpacity(0.18),
+        ),
+        color: unlocked ? primaryColor.withOpacity(0.05) : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: primaryColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(voucher.icon, color: primaryColor, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        voucher.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: unlocked
+                            ? const Color(0xFFECFDF5)
+                            : const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        statusLabel,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: unlocked
+                              ? const Color(0xFF047857)
+                              : const Color(0xFFC2410C),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  voucher.subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: secondaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    'Min. spend ${voucher.minimumSpend}',
+                    voucher.code,
+                    voucher.platformLabel,
+                    if (voucher.passive) 'Passive',
+                    if (voucher.freeShipping) 'Free shipping',
+                  ].join(' · '),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: secondaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  voucher.dateLabel,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: secondaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+int _normalizeBookingQuantity(int quantity, {required int availableStock}) {
   final normalizedQuantity = quantity.clamp(1, 999).toInt();
   if (availableStock > 0 && normalizedQuantity > availableStock) {
     return availableStock;

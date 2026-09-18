@@ -1,0 +1,9 @@
+{
+  "name": "Double Confirm",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 880, "duration": 85 },
+    { "frequency": 0, "duration": 45 },
+    { "frequency": 1175, "duration": 190 }
+  ]
+}

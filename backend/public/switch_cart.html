@@ -1,0 +1,91 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Switch Ã— Cart</title>
+    <script>
+      (function () {
+        try {
+          var raw = String(localStorage.getItem("gms-workspace-color") || "").trim().toLowerCase();
+          var match = raw.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+          if (!match) return;
+          var r = parseInt(match[1], 16);
+          var g = parseInt(match[2], 16);
+          var b = parseInt(match[3], 16);
+          var hr = Math.round(r * 0.82);
+          var hg = Math.round(g * 0.82);
+          var hb = Math.round(b * 0.82);
+          var root = document.documentElement;
+          root.style.setProperty("--accent", "rgb(" + r + ", " + g + ", " + b + ")");
+          root.style.setProperty("--accent-rgb", r + ", " + g + ", " + b);
+          root.style.setProperty("--accent-strong", "rgb(" + hr + ", " + hg + ", " + hb + ")");
+          root.style.setProperty("--accent-text", "rgb(" + hr + ", " + hg + ", " + hb + ")");
+          root.style.setProperty("--accent-button-bg", "rgb(" + r + ", " + g + ", " + b + ")");
+          root.style.setProperty("--accent-button-hover-bg", "rgb(" + hr + ", " + hg + ", " + hb + ")");
+          root.style.setProperty("--md-accent", "rgb(" + r + ", " + g + ", " + b + ")");
+          root.style.setProperty("--md-accent-soft", "rgba(" + r + ", " + g + ", " + b + ", 0.12)");
+          var yiq = (r * 299 + g * 587 + b * 114) / 1000;
+          root.style.setProperty("--accent-contrast", yiq >= 160 ? "#111827" : "#ffffff");
+        } catch (e) {}
+      })();
+    </script>
+    <script src="/buyer_platform_theme.js?v=buyer-platform-theme-1"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/main_dart.css?v=main-dart-invite-1" />
+    <link rel="stylesheet" href="/switch_shop.css?v=switch-shop-7" />
+    <link rel="stylesheet" href="/select_address_page.css?v=select-address-1" />
+  </head>
+  <body class="md-app ss-app">
+    <header class="login-site-header" aria-label="Switch Cart header">
+      <div class="login-site-header__inner">
+        <a class="login-site-header__brand ss-brand" href="/main_dart.html" aria-label="Switch">
+          <span class="ss-brand__text">
+            <span>Switch</span>
+            <span class="ss-brand__x" aria-hidden="true">Ã—</span>
+            <span class="ss-brand__platform">Cart</span>
+          </span>
+        </a>
+      </div>
+    </header>
+
+    <main class="ss-main">
+      <section class="ss-listings">
+        <div class="ss-listings__head">
+          <h1 class="ss-listings__title">Your cart</h1>
+        </div>
+        <div class="md-empty">
+          <p>Your cart is empty. Browse Shop to add listings.</p>
+          <p style="margin-top:12px">
+            <a
+              class="md-primary-btn"
+              href="/switch_shop.html?platform=shop"
+              style="display:inline-flex;padding:10px 16px;border-radius:999px;text-decoration:none"
+            >
+              Back to Shop
+            </a>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // Ensure Shop cart chrome is available before buyer auth mounts.
+      (function () {
+        var url = new URL(window.location.href);
+        if (!url.searchParams.get("platform")) {
+          url.searchParams.set("platform", "shop");
+          window.history.replaceState({}, "", url);
+        }
+      })();
+    </script>
+    <script src="/switch_buyer_auth.js?v=switch-buyer-saved-location-1"></script>
+    <script src="/select_address_page.js?v=select-address-1"></script>
+    <script src="/switch_site_footer.js?v=switch-footer-embed-1"></script>
+  </body>
+</html>

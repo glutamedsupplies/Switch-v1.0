@@ -4,12 +4,8 @@ import 'dart:io';
 
 import 'package:gms_shopping/services/admin_scope.dart';
 import 'package:gms_shopping/services/category_repository_base.dart';
+import 'package:gms_shopping/services/local_api_base_urls.dart';
 
-const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
-const _defaultDesktopBaseUrl = 'http://127.0.0.1:8080';
-const _defaultAndroidEmulatorBaseUrl = 'http://10.0.2.2:8080';
-const _defaultAndroidUsbBaseUrl = 'http://127.0.0.1:8080';
-const _defaultCurrentWifiBaseUrl = 'http://192.168.100.225:8080';
 const _requestTimeout = Duration(seconds: 3);
 const _memoryCacheLifetime = Duration(seconds: 15);
 String? _preferredBaseUrl;
@@ -21,30 +17,10 @@ CategoryRepository createCategoryRepository({String? baseUrl}) {
 }
 
 List<String> _buildBaseUrls({String? baseUrl}) {
-  final urls = <String>[];
-
-  void addUrl(String? value) {
-    final trimmed = value?.trim() ?? '';
-    if (trimmed.isEmpty || urls.contains(trimmed)) {
-      return;
-    }
-    urls.add(trimmed);
-  }
-
-  addUrl(baseUrl);
-  addUrl(_environmentBaseUrl);
-
-  if (Platform.isAndroid) {
-    addUrl(_defaultAndroidEmulatorBaseUrl);
-    addUrl(_defaultAndroidUsbBaseUrl);
-    addUrl(_defaultCurrentWifiBaseUrl);
-    addUrl('http://localhost:8080');
-  } else {
-    addUrl(_defaultDesktopBaseUrl);
-    addUrl('http://localhost:8080');
-  }
-
-  return urls;
+  return buildLocalApiBaseUrls(
+    baseUrl: baseUrl,
+    isAndroid: Platform.isAndroid,
+  );
 }
 
 class _HttpCategoryRepository implements CategoryRepository {

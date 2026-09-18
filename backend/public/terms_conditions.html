@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Switch Terms &amp; Conditions</title>
+    <style>
+      :root {
+        --accent: #0a9297;
+        --text: #10213e;
+        --muted: #64748b;
+        --surface: #ffffff;
+        --bg: #f2f2f2;
+        --border: #dbe4f0;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+
+      .terms-shell {
+        width: min(100%, 900px);
+        margin: 0 auto;
+        padding: 28px 18px 42px;
+      }
+
+      .terms-back,
+      .terms-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 16px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .terms-header {
+        margin-top: 18px;
+        padding: 28px;
+        border-radius: 28px;
+        background: linear-gradient(135deg, #0b263f 0%, #0a9297 100%);
+        color: #ffffff;
+      }
+
+      .terms-header h1 {
+        margin: 14px 0 10px;
+        font-size: clamp(30px, 5vw, 42px);
+      }
+
+      .terms-header p {
+        margin: 0;
+        max-width: 640px;
+        color: rgba(255, 255, 255, 0.85);
+        line-height: 1.7;
+      }
+
+      .terms-content {
+        margin-top: 20px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .terms-card {
+        padding: 22px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--surface);
+      }
+
+      .terms-card h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+
+      .terms-card p,
+      .terms-card li {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+        font-size: 14px;
+      }
+
+      .terms-card ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+      }
+
+      @media (max-width: 520px) {
+        .terms-shell {
+          padding: 18px 12px 28px;
+        }
+
+        .terms-header,
+        .terms-card {
+          padding: 18px;
+          border-radius: 20px;
+        }
+
+        .terms-back {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="terms-shell">
+      <a class="terms-back" href="/login.html">Back to Login</a>
+
+      <section class="terms-header">
+        <span class="terms-chip">Example Page</span>
+        <h1>Terms &amp; Conditions</h1>
+        <p>
+          This is a basic sample terms page for Switch. Replace these example sections with your
+          official legal terms before launch.
+        </p>
+      </section>
+
+      <section class="terms-content">
+        <article class="terms-card">
+          <h2>Platform Access</h2>
+          <p>
+            Users are responsible for keeping their login details secure and for using the platform
+            according to authorized account permissions.
+          </p>
+        </article>
+
+        <article class="terms-card">
+          <h2>Acceptable Use</h2>
+          <ul>
+            <li>Do not share account credentials with unauthorized users.</li>
+            <li>Do not misuse marketplace, employee, or admin features.</li>
+            <li>Follow all applicable platform policies and review actions.</li>
+          </ul>
+        </article>
+
+        <article class="terms-card">
+          <h2>Support</h2>
+          <p>
+            For account or policy concerns, contact
+            <a href="mailto:support@gmsshopping.com">support@gmsshopping.com</a>.
+          </p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

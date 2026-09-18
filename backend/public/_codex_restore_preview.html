@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Restore preview</title></head>
+  <body>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const target = params.get("target") || "dashboard";
+      const session = {
+        role: "admin",
+        id: "admin-gluta-store-1784000465595",
+        adminId: "admin-gluta-store-1784000465595",
+        companyName: "Gluta Store",
+        email: "preview@example.invalid",
+        dashboardPath: "/main.html#dashboard"
+      };
+      sessionStorage.setItem("gms-admin-session", JSON.stringify(session));
+      localStorage.setItem("gms-admin-id", session.adminId);
+      if (params.get("route") === "listing") {
+        window.location.replace("/product_panel.html");
+      } else if (params.get("route") === "add") {
+        window.location.replace("/main.html?composer=add#listing");
+      } else if (params.get("modal") === "1") {
+        document.body.style.margin = "0";
+        document.body.style.overflow = "hidden";
+        const frame = document.createElement("iframe");
+        frame.title = "Restore modal preview";
+        frame.src = `/main.html#${encodeURIComponent(target)}`;
+        frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0;background:#fff";
+        frame.addEventListener("load", () => {
+          window.setTimeout(async () => {
+            const frameDocument = frame.contentDocument;
+            frameDocument?.getElementById("open-product-composer-button")?.click();
+            if (params.get("calendar") !== "1" && params.get("smoke") !== "1") {
+              return;
+            }
+
+            await new Promise((resolve) => window.setTimeout(resolve, 350));
+            frameDocument?.getElementById("product-expiry-date-trigger")?.click();
+            if (params.get("smoke") !== "1") {
+              return;
+            }
+
+            await new Promise((resolve) => window.setTimeout(resolve, 180));
+            const calendar = frameDocument?.getElementById("product-expiry-date-calendar");
+            const nativeInput = frameDocument?.getElementById("product-expiry-date-input");
+            const smokeResult = {
+              modalOpened: frameDocument?.getElementById("product-composer-modal")?.hidden === false,
+              calendarOpened: calendar?.hidden === false,
+              nativeInputHidden: nativeInput
+                ? frame.contentWindow.getComputedStyle(nativeInput).opacity === "0"
+                : false,
+            };
+            calendar?.querySelector("[data-product-expiry-calendar-today]")?.click();
+            await new Promise((resolve) => window.setTimeout(resolve, 120));
+            smokeResult.dateSelected = Boolean(nativeInput?.value);
+            smokeResult.calendarClosedAfterSelection = calendar?.hidden === true;
+            frameDocument?.getElementById("close-product-composer-button")?.click();
+            await new Promise((resolve) => window.setTimeout(resolve, 260));
+            smokeResult.modalClosed = frameDocument?.getElementById("product-composer-modal")?.hidden === true;
+            document.body.dataset.smokeResult = JSON.stringify(smokeResult);
+          }, 3500);
+        });
+        document.body.appendChild(frame);
+      } else {
+        window.location.replace(`/main.html#${encodeURIComponent(target)}`);
+      }
+    </script>
+  </body>
+</html>

@@ -1,6 +1,10 @@
 ﻿(function () {
   const storageKey = "gms-web-theme";
   const dashboardBackgroundStorageKey = "gms-dashboard-background";
+  const workspaceColorStorageKey = "gms-workspace-color";
+  const workspaceThemeEndpoint = "/api/workspace-theme";
+  const platformSettingsStorageKey = "gms-super-admin-platform-settings";
+  const platformSettingsEndpoint = "/api/platform-settings";
   const adminSessionStorageKey = "gms-admin-session";
   const employeeSessionStorageKey = "gms-employee-session";
   const superAdminSessionStorageKey = "gms-super-admin-session";
@@ -11,7 +15,49 @@
   const defaultGradientOpacity = Object.freeze({ start: 1, middle: 1, end: 1 });
   const defaultGradientMiddlePosition = 0.5;
   const defaultGradientPrimaryStop = "start";
+  const platformSettingDefaults = Object.freeze({
+    appMaintenance: false,
+    sellerMaintenance: false,
+    buyerMaintenance: false,
+    performanceMode: true,
+    sellerSignups: true,
+    sellerLoginAccess: true,
+    sellerProductSubmissions: true,
+    sellerProductEditing: true,
+    sellerPayoutRequests: true,
+    buyerRegistration: true,
+    buyerLoginAccess: true,
+    buyerCheckout: true,
+    buyerBookings: true,
+    buyerReviews: true,
+    onlinePayments: true,
+    cashOnDelivery: true,
+    deliveryAssignment: true,
+    refundCenter: true,
+    promosAndDiscounts: true,
+    requireSellerVerification: true,
+    requireBuyerVerification: false,
+    fraudMonitoring: true,
+    auditLogging: true,
+    loginRateLimit: true,
+    liveChat: true,
+    pushNotifications: true,
+    emailNotifications: true,
+    smsNotifications: false,
+    yoloAutoInspection: true,
+    betaFeatures: false,
+    realtimeDataSync: true,
+    notificationSounds: true,
+    reducedMotion: false,
+    compactDataView: false,
+  });
   let currentAppliedThemeConfig = null;
+  let currentWorkspaceColor = "";
+  let workspaceColorSyncPromise = null;
+  let workspaceColorRequestRevision = 0;
+  let currentPlatformSettings = null;
+  let platformSettingsSyncPromise = null;
+  let platformSettingsRequestRevision = 0;
 
   function readSessionStorageJson(key) {
     try {
@@ -265,7 +311,7 @@
     const pathname = String(window.location?.pathname ?? "").trim().toLowerCase();
     return Boolean(
       document.body?.classList?.contains("super-admin-page") ||
-        /\/(?:super_admin|superadmin_product|user_data|root_login)\.html$/.test(pathname),
+        /\/(?:super_admin|user_data|root_login)\.html$/.test(pathname),
     );
   }
 
@@ -526,6 +572,293 @@
 
   function hexToTheme(value) {
     return hexToColor(value, defaultTheme);
+  }
+
+  function normalizeWorkspaceColor(value) {
+    const normalizedColor = String(value ?? "").trim().toLowerCase();
+    return /^#[0-9a-f]{6}$/.test(normalizedColor) ? normalizedColor : "";
+  }
+
+  function readCachedWorkspaceColor() {
+    try {
+      return normalizeWorkspaceColor(window.localStorage.getItem(workspaceColorStorageKey));
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function cacheWorkspaceColor(color) {
+    try {
+      window.localStorage.setItem(workspaceColorStorageKey, color);
+    } catch (error) {
+      // The server value still applies for this page when browser storage is unavailable.
+    }
+  }
+
+  function getWorkspaceColor() {
+    return currentWorkspaceColor || readCachedWorkspaceColor();
+  }
+
+  function applyWorkspaceColor(color, options = {}) {
+    const normalizedColor = normalizeWorkspaceColor(color);
+    if (!normalizedColor) {
+      return "";
+    }
+
+    const previousColor = currentWorkspaceColor;
+    currentWorkspaceColor = normalizedColor;
+    if (options.cache !== false) {
+      cacheWorkspaceColor(normalizedColor);
+    }
+
+    applyTheme({
+      mode: "solid",
+      theme: hexToTheme(normalizedColor),
+    });
+
+    if (options.dispatch !== false && previousColor !== normalizedColor) {
+      window.dispatchEvent(
+        new CustomEvent("gms:workspace-color-changed", {
+          detail: {
+            color: normalizedColor,
+            source: String(options.source || "local"),
+          },
+        }),
+      );
+    }
+
+    return normalizedColor;
+  }
+
+  async function syncWorkspaceColor(options = {}) {
+    if (workspaceColorSyncPromise && options.force !== true) {
+      return workspaceColorSyncPromise;
+    }
+    if (typeof window.fetch !== "function") {
+      return "";
+    }
+
+    const requestRevision = ++workspaceColorRequestRevision;
+    const syncPromise = (async () => {
+      try {
+        const response = await window.fetch(workspaceThemeEndpoint, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          return "";
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const sharedColor = normalizeWorkspaceColor(
+          data?.workspaceColor ?? data?.color,
+        );
+        if (requestRevision !== workspaceColorRequestRevision) {
+          return getWorkspaceColor();
+        }
+        if (sharedColor) {
+          applyWorkspaceColor(sharedColor, {
+            source: "server",
+          });
+        }
+        return sharedColor;
+      } catch (error) {
+        return "";
+      }
+    })();
+
+    workspaceColorSyncPromise = syncPromise;
+    try {
+      return await syncPromise;
+    } finally {
+      if (workspaceColorSyncPromise === syncPromise) {
+        workspaceColorSyncPromise = null;
+      }
+    }
+  }
+
+  async function saveWorkspaceColor(color, options = {}) {
+    const normalizedColor = normalizeWorkspaceColor(color);
+    if (!normalizedColor) {
+      throw new TypeError("Workspace color must use a six-digit hex value.");
+    }
+    if (typeof window.fetch !== "function") {
+      throw new Error("Workspace theme service is unavailable.");
+    }
+
+    const requestRevision = ++workspaceColorRequestRevision;
+    const headers = new Headers(options.headers || undefined);
+    headers.set("Accept", "application/json");
+    headers.set("Content-Type", "application/json");
+    const response = await window.fetch(workspaceThemeEndpoint, {
+      method: "PUT",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({ workspaceColor: normalizedColor }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.message || "Unable to save workspace color.");
+    }
+
+    const savedColor = normalizeWorkspaceColor(
+      data?.workspaceColor ?? data?.color,
+    ) || normalizedColor;
+    if (requestRevision === workspaceColorRequestRevision) {
+      applyWorkspaceColor(savedColor, {
+        source: "super-admin",
+      });
+    }
+    return savedColor;
+  }
+
+  function normalizePlatformSettings(source) {
+    const input = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+    return Object.fromEntries(
+      Object.entries(platformSettingDefaults).map(([key, fallback]) => [
+        key,
+        Object.prototype.hasOwnProperty.call(input, key) ? Boolean(input[key]) : fallback,
+      ]),
+    );
+  }
+
+  function readCachedPlatformSettings() {
+    try {
+      return normalizePlatformSettings(
+        JSON.parse(window.localStorage.getItem(platformSettingsStorageKey) || "{}"),
+      );
+    } catch (error) {
+      return normalizePlatformSettings(null);
+    }
+  }
+
+  function cachePlatformSettings(settings) {
+    try {
+      window.localStorage.setItem(platformSettingsStorageKey, JSON.stringify(settings));
+    } catch (error) {
+      // The current page can still use the server settings when storage is unavailable.
+    }
+  }
+
+  function getPlatformSettings() {
+    return { ...(currentPlatformSettings || readCachedPlatformSettings()) };
+  }
+
+  function ensurePlatformSettingsStyles() {
+    if (document.getElementById("gms-platform-settings-styles")) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = "gms-platform-settings-styles";
+    style.textContent = `
+      html.gms-reduced-motion,
+      html.gms-reduced-motion:focus-within { scroll-behavior: auto !important; }
+      html.gms-reduced-motion *,
+      html.gms-reduced-motion *::before,
+      html.gms-reduced-motion *::after {
+        animation-delay: 0ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-delay: 0ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function applyPlatformSettings(settings, options = {}) {
+    ensurePlatformSettingsStyles();
+    const normalized = normalizePlatformSettings(settings);
+    const previous = currentPlatformSettings;
+    const changed = !previous || Object.keys(normalized).some((key) => previous[key] !== normalized[key]);
+    currentPlatformSettings = normalized;
+    window.GMSPlatformSettings = Object.freeze({ ...normalized });
+    document.documentElement.classList.toggle("gms-reduced-motion", normalized.reducedMotion);
+    document.documentElement.classList.toggle("gms-compact-data-view", normalized.compactDataView);
+    document.body?.classList.toggle("gms-reduced-motion", normalized.reducedMotion);
+    document.body?.classList.toggle("gms-compact-data-view", normalized.compactDataView);
+    if (options.cache !== false) {
+      cachePlatformSettings(normalized);
+    }
+    if (changed && options.dispatch !== false) {
+      window.dispatchEvent(new CustomEvent("gms:platform-settings-changed", {
+        detail: {
+          settings: { ...normalized },
+          source: String(options.source || "local"),
+        },
+      }));
+    }
+    return { ...normalized };
+  }
+
+  async function syncPlatformSettings(options = {}) {
+    if (platformSettingsSyncPromise && options.force !== true) {
+      return platformSettingsSyncPromise;
+    }
+    if (typeof window.fetch !== "function") {
+      return getPlatformSettings();
+    }
+
+    const requestRevision = ++platformSettingsRequestRevision;
+    const syncPromise = (async () => {
+      try {
+        const response = await window.fetch(platformSettingsEndpoint, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          return getPlatformSettings();
+        }
+        const data = await response.json().catch(() => ({}));
+        if (requestRevision !== platformSettingsRequestRevision) {
+          return getPlatformSettings();
+        }
+        if (data?.configured === false) {
+          return getPlatformSettings();
+        }
+        return applyPlatformSettings(data?.settings, { source: "server" });
+      } catch (error) {
+        return getPlatformSettings();
+      }
+    })();
+
+    platformSettingsSyncPromise = syncPromise;
+    try {
+      return await syncPromise;
+    } finally {
+      if (platformSettingsSyncPromise === syncPromise) {
+        platformSettingsSyncPromise = null;
+      }
+    }
+  }
+
+  async function savePlatformSettings(settings, options = {}) {
+    if (typeof window.fetch !== "function") {
+      throw new Error("Platform settings service is unavailable.");
+    }
+    const normalized = normalizePlatformSettings(settings);
+    const requestRevision = ++platformSettingsRequestRevision;
+    const headers = new Headers(options.headers || undefined);
+    headers.set("Accept", "application/json");
+    headers.set("Content-Type", "application/json");
+    const response = await window.fetch(platformSettingsEndpoint, {
+      method: "PUT",
+      headers,
+      cache: "no-store",
+      body: JSON.stringify({ settings: normalized }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.message || "Unable to save platform settings.");
+    }
+    const savedSettings = normalizePlatformSettings(data?.settings || normalized);
+    if (requestRevision === platformSettingsRequestRevision) {
+      return applyPlatformSettings(savedSettings, { source: "super-admin" });
+    }
+    return savedSettings;
   }
 
   function hexToDashboardBackground(value) {
@@ -1132,6 +1465,16 @@
     const dashboardBackgroundConfig = loadDashboardBackgroundConfig();
 
     applyTheme(themeConfig);
+    const workspaceColor = applyWorkspaceColor(readCachedWorkspaceColor(), {
+      cache: false,
+      dispatch: false,
+      source: "cache",
+    });
+    const platformSettings = applyPlatformSettings(readCachedPlatformSettings(), {
+      cache: false,
+      dispatch: false,
+      source: "cache",
+    });
     applyDashboardBackground(dashboardBackgroundConfig);
     prepareDashboardNavTooltips(document);
     applyFontAwesomeIcons(document);
@@ -1139,6 +1482,8 @@
     return {
       themeConfig,
       dashboardBackgroundConfig,
+      workspaceColor,
+      platformSettings,
       scope: getActiveThemeStorageScope(),
     };
   }
@@ -1615,10 +1960,12 @@
     return signatureParts.join("-");
   }
 
+  const sellerAdminSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
+
   const fontAwesomeRules = [
     {
       selector:
-        '.dashboard-nav__item[data-nav-tooltip="Dashboard" i] .dashboard-nav__icon, .dashboard-nav__item[data-nav-tooltip="Store Overview" i] .dashboard-nav__icon',
+        '.dashboard-nav__item[data-nav-tooltip="Dashboard" i]:not([data-super-admin-dashboard-nav]) .dashboard-nav__icon, .dashboard-nav__item[data-nav-tooltip="Store Overview" i] .dashboard-nav__icon',
       markup: (element) => {
         const navItem = element.closest(".dashboard-nav__item");
         const isActive = Boolean(navItem?.classList.contains("is-active"));
@@ -1844,7 +2191,7 @@
       className: "fa-solid fa-box-open",
     },
     {
-      selector: '.theme-link[href="/admin_dashboard.html"] .theme-link__icon',
+      selector: '.theme-link[href="/main.html#dashboard"] .theme-link__icon',
       className: "fa-solid fa-house",
     },
     {
@@ -1853,7 +2200,7 @@
     },
     {
       selector: ".product-panel-toolbar__search-icon",
-      className: "fa-solid fa-magnifying-glass",
+      markup: () => '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search-icon lucide-search" aria-hidden="true"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>',
     },
     {
       selector: ".product-panel-toolbar__icon-button, .dashboard-tool-button__icon",
@@ -1924,20 +2271,22 @@
     },
     {
       selector: ".validation-modal__icon--delete",
-      className: "fa-solid fa-trash-can",
+      iconSVG: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
     },
     {
       selector: ".description-button",
-      className: "fa-regular fa-file-lines",
+      iconSVG: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-pen-icon lucide-clipboard-pen"><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M21.34 15.664a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><path d="M8 22H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
     },
     {
       selector: ".edit-button, .category-chip__edit",
-      className: "fa-regular fa-pen-to-square",
+      markup: () => isSuperAdminThemePage()
+        ? '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>'
+        : sellerAdminSquarePenIconMarkup,
     },
     {
       selector:
         ".delete-button, .category-chip__delete, .product-image-input-row__remove, .product-variant-row__remove",
-      className: "fa-regular fa-trash-can",
+      iconSVG: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
     },
     {
       selector: ".scroll-top-button",
@@ -2315,6 +2664,26 @@
   window.addEventListener("gms-employee-session-updated", refreshActiveThemeStorageScope);
   window.addEventListener("gms-admin-session-updated", refreshActiveThemeStorageScope);
   window.addEventListener("storage", (event) => {
+    if (event.key === workspaceColorStorageKey) {
+      applyWorkspaceColor(event.newValue, {
+        cache: false,
+        source: "storage",
+      });
+      return;
+    }
+    if (event.key === platformSettingsStorageKey) {
+      let storedSettings = null;
+      try {
+        storedSettings = JSON.parse(event.newValue || "{}");
+      } catch (error) {
+        storedSettings = null;
+      }
+      applyPlatformSettings(storedSettings, {
+        cache: false,
+        source: "storage",
+      });
+      return;
+    }
     if (
       event.key === employeeSessionStorageKey ||
       event.key === adminSessionStorageKey
@@ -2323,9 +2692,18 @@
     }
   });
 
+  window.addEventListener("gms:realtime-change", (event) => {
+    const topics = Array.isArray(event?.detail?.topics) ? event.detail.topics : [];
+    if (topics.includes("settings") || topics.includes("all")) {
+      void syncPlatformSettings({ force: true });
+    }
+  });
+
   window.WebTheme = {
     storageKey,
     dashboardBackgroundStorageKey,
+    workspaceColorStorageKey,
+    platformSettingsStorageKey,
     defaultTheme: { ...defaultTheme },
     defaultIndicatorRange: { ...defaultIndicatorRange },
     defaultGradientAngle,
@@ -2345,6 +2723,15 @@
     resetDashboardBackground,
     refreshActiveThemeStorageScope,
     applyTheme,
+    getWorkspaceColor,
+    applyWorkspaceColor,
+    syncWorkspaceColor,
+    saveWorkspaceColor,
+    platformSettingDefaults: { ...platformSettingDefaults },
+    getPlatformSettings,
+    applyPlatformSettings,
+    syncPlatformSettings,
+    savePlatformSettings,
     applyDashboardBackground,
     normalizeTheme,
     normalizeThemeConfig,
@@ -2365,8 +2752,99 @@
     getDashboardBackgroundStorageKey: () => getScopedStorageKey(dashboardBackgroundStorageKey),
   };
 
+  void syncWorkspaceColor();
+  void syncPlatformSettings();
+
   window.GMSAdminSuccessModal = {
     show: showAdminSuccessModal,
     close: closeAdminSuccessModal,
   };
+
+  const popupModalOverlaySelector = [
+    ".validation-modal-overlay:not([hidden])",
+    ".seller-feedback-modal-overlay:not([hidden])",
+    ".product-gallery-modal-overlay:not([hidden])",
+    ".product-description-modal-overlay:not([hidden])",
+    ".seller-listing-detail-drawer-overlay:not([hidden])",
+    ".super-admin-ban-modal-overlay:not([hidden])",
+    ".super-admin-notify-modal-overlay:not([hidden])",
+    ".product-composer-modal-overlay:not([hidden])",
+    "[class*='-modal-overlay']:not([hidden])",
+  ].join(",");
+
+  const ignoredBodyModalClasses = new Set([
+    "seller-admin-notification-open",
+    "notification-drawer-open",
+  ]);
+
+  function bodyIndicatesPopupModalOpen() {
+    const body = document.body;
+    if (!body) {
+      return false;
+    }
+    if (body.classList.contains("modal-open")) {
+      return true;
+    }
+    for (const className of body.classList) {
+      if (className.endsWith("-modal-open") && !ignoredBodyModalClasses.has(className)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isPopupModalOpen() {
+    return bodyIndicatesPopupModalOpen() || Boolean(document.querySelector(popupModalOverlaySelector));
+  }
+
+  let popupModalWasOpen = false;
+  let popupModalSyncFrame = 0;
+
+  function syncNotificationDropdownsWithPopupModals() {
+    popupModalSyncFrame = 0;
+    const modalOpen = isPopupModalOpen();
+    if (modalOpen && !popupModalWasOpen) {
+      window.dispatchEvent(new CustomEvent("gms:close-notification-dropdowns"));
+    }
+    popupModalWasOpen = modalOpen;
+  }
+
+  function scheduleNotificationDropdownModalSync() {
+    if (popupModalSyncFrame) {
+      return;
+    }
+    popupModalSyncFrame = window.requestAnimationFrame(syncNotificationDropdownsWithPopupModals);
+  }
+
+  function watchPopupModalsForNotificationDropdownClose() {
+    if (!document.body || typeof MutationObserver === "undefined") {
+      return;
+    }
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (
+          mutation.type === "attributes"
+          && (mutation.attributeName === "hidden" || mutation.attributeName === "class")
+        ) {
+          scheduleNotificationDropdownModalSync();
+          return;
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class", "hidden"],
+      subtree: true,
+    });
+
+    scheduleNotificationDropdownModalSync();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", watchPopupModalsForNotificationDropdownClose, { once: true });
+  } else {
+    watchPopupModalsForNotificationDropdownClose();
+  }
 })();

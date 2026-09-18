@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inventory workspace</title>
+    <link rel="stylesheet" href="/styles.css?v=inventory-priority-no-refresh-1" />
+    <link rel="stylesheet" href="/standalone-svg-icon-sizes.css?v=clipboard-pen-size-1" />
+    <link rel="stylesheet" href="/main.css?v=admin-seller-table-headers-main-only-1" data-main-owned-styles="true" />
+    <script src="/lazy-loading.js?v=global-lazy-1"></script>
+  </head>
+  <body class="stock-monitor-shell stock-main-inventory-embedded stock-inventory-table-view stock-record-modal-surface main-inventory-embedded">
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav stock-monitor-shell">
+      <div class="dashboard-layout">
+        <div class="dashboard-content">
+          <section class="stock-summary-grid" aria-label="Inventory stock summary">
+            <button
+              type="button"
+              class="stock-summary-card stock-summary-card--all is-active"
+              data-stock-priority-filter="all"
+              aria-pressed="true"
+            >
+              <span class="stock-summary-card__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-archive-icon lucide-archive stock-summary-card__icon--all" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+              </span>
+              <span class="stock-summary-card__copy">
+                <span class="stock-summary-card__label">All</span>
+                <strong id="stock-total-products">0</strong>
+                <span>Total Items</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="stock-summary-card stock-summary-card--new"
+              data-stock-priority-filter="new-stock"
+              aria-pressed="false"
+            >
+              <span class="stock-summary-card__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-icon lucide-arrow-up stock-summary-card__icon--new-stock" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </span>
+              <span class="stock-summary-card__copy">
+                <span class="stock-summary-card__label">New Stock</span>
+                <strong id="stock-new-count">0</strong>
+                <span>Items</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="stock-summary-card stock-summary-card--low"
+              data-stock-priority-filter="low-stock"
+              aria-pressed="false"
+            >
+              <span class="stock-summary-card__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-down-icon lucide-arrow-down stock-summary-card__icon--low-stock" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+              </span>
+              <span class="stock-summary-card__copy">
+                <span class="stock-summary-card__label">Low Stock</span>
+                <strong id="stock-low-count">0</strong>
+                <span>Items</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="stock-summary-card stock-summary-card--out"
+              data-stock-priority-filter="out-of-stock"
+              aria-pressed="false"
+            >
+              <span class="stock-summary-card__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-archive-x-icon lucide-archive-x stock-summary-card__icon--out-of-stock" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="m9.5 17 5-5"/><path d="m9.5 12 5 5"/></svg>
+              </span>
+              <span class="stock-summary-card__copy">
+                <span class="stock-summary-card__label">Out of Stock</span>
+                <strong id="stock-empty-count">0</strong>
+                <span>Items</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="stock-summary-card stock-summary-card--near"
+              data-stock-priority-filter="near-expiry"
+              aria-pressed="false"
+            >
+              <span class="stock-summary-card__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-clock-icon lucide-calendar-clock stock-summary-card__icon--near-expiry" aria-hidden="true"><path d="M16 14v2.2l1.6 1"/><path d="M16 2v3"/><path d="M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338"/><path d="M3 9h5.859"/><path d="M8 2v3"/><circle cx="16" cy="16" r="6"/></svg>
+              </span>
+              <span class="stock-summary-card__copy">
+                <span class="stock-summary-card__label">Near Expiry</span>
+                <strong id="stock-near-expiry-count">0</strong>
+                <span>Items</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="stock-summary-card stock-summary-card--expired"
+              data-stock-priority-filter="expired-product"
+              aria-pressed="false"
+            >
+              <span class="stock-summary-card__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-x2-icon lucide-calendar-x-2 stock-summary-card__icon--expired" aria-hidden="true"><path d="M16 2v3"/><path d="m17 16 5 5"/><path d="m17 21 5-5"/><path d="M21 12V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h8"/><path d="M3 9h18"/><path d="M8 2v3"/></svg>
+              </span>
+              <span class="stock-summary-card__copy">
+                <span class="stock-summary-card__label">Expired</span>
+                <strong id="stock-expired-count">0</strong>
+                <span>Items</span>
+              </span>
+            </button>
+          </section>
+
+          <section class="dashboard-main-grid stock-main-grid">
+            <section class="panel dashboard-panel stock-list-shell">
+              <input
+                id="stock-search-input"
+                class="stock-monitor-hidden-search"
+                type="search"
+                aria-label="Search stock products"
+                tabindex="-1"
+                hidden
+              />
+              <div class="stock-inventory-table-head" role="row" aria-label="Inventory columns">
+                <span role="columnheader">Product</span>
+                <span role="columnheader">Stock</span>
+                <span role="columnheader">Stocked</span>
+                <span role="columnheader">Expiry</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Actions</span>
+              </div>
+              <div class="stock-product-list" id="stock-product-list">
+                <div class="stock-inventory-empty-row table-row-no-hover" role="row">
+                  <div class="stock-inventory-empty-cell" role="cell" aria-colspan="6">
+                    <div
+                      class="stock-inventory-empty-state admin-empty-state-lottie"
+                      data-gms-admin-empty-state-lottie="true"
+                      data-empty-state-label="No saved products available yet."
+                      data-empty-state-copy="Inventory records will appear here once products are available."
+                    ></div>
+                  </div>
+                </div>
+              </div>
+              <footer class="stock-inventory-pagination" data-stock-inventory-pagination></footer>
+            </section>
+
+            <button
+              type="button"
+              class="stock-record-drawer-backdrop"
+              aria-label="Close stock records"
+              data-stock-record-drawer-close
+              hidden
+            ></button>
+
+            <section
+              class="panel dashboard-panel stock-detail-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="stock-record-modal-title"
+              aria-hidden="true"
+            >
+              <div class="stock-record-drawer-titlebar">
+                <div class="stock-record-drawer-titlebar__identity">
+                  <span class="stock-record-drawer-titlebar__icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-pen-icon lucide-clipboard-pen">
+                      <path d="M16 4h2a2 2 0 0 1 2 2v2"/>
+                      <path d="M21.34 15.664a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>
+                      <path d="M8 22H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                      <rect x="8" y="2" width="8" height="4" rx="1"/>
+                    </svg>
+                  </span>
+                  <div>
+                    <p class="stock-record-drawer-titlebar__eyebrow">Inventory</p>
+                    <h2
+                      class="stock-record-drawer-titlebar__title"
+                      id="stock-record-modal-title"
+                      data-stock-record-drawer-title
+                    >
+                      Stock Records
+                    </h2>
+                    <p class="stock-record-drawer-titlebar__copy" data-stock-record-drawer-subtitle>
+                      Select a product to review its stock history.
+                    </p>
+                  </div>
+                </div>
+                <div class="stock-record-drawer-titlebar__actions">
+                  <div
+                    class="stock-record-batch-filter"
+                    data-stock-record-batch-filter
+                    hidden
+                  ></div>
+                  <button
+                    type="button"
+                    class="stock-record-drawer-titlebar__close"
+                    aria-label="Close stock records"
+                    title="Close stock records"
+                    data-stock-record-drawer-close
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="stock-record-headings-shell">
+                <div class="stock-record-headings" aria-hidden="true">
+                  <span class="stock-record-headings__item">Stocks</span>
+                  <span class="stock-record-headings__item">Quantity</span>
+                  <span class="stock-record-headings__item">Modified</span>
+                  <span class="stock-record-headings__item">Expire Date</span>
+                  <span class="stock-record-headings__item">Reason</span>
+                  <span class="stock-record-headings__item">Condition</span>
+                </div>
+              </div>
+
+              <div class="stock-detail-panel__header" hidden>
+                <h3 class="stock-detail-panel__title" id="stock-detail-title"></h3>
+                <p class="stock-detail-panel__copy" id="stock-detail-subtitle"></p>
+              </div>
+
+              <div class="stock-record-body-shell">
+                <div class="dashboard-info-list stock-detail-panel__list" id="stock-detail-list">
+                  <div
+                    class="empty-state admin-empty-state-lottie"
+                    data-gms-admin-empty-state-lottie="true"
+                    data-empty-state-label="Select a product to view stock details."
+                    data-empty-state-copy="Choose a stock item to inspect its details and history."
+                  ></div>
+                </div>
+              </div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+    <script src="/theme.js?v=platform-workspace-settings-1"></script>
+    <script src="/admin-search-not-found.js?v=admin-search-not-found-1"></script>
+    <script src="/admin-empty-state-lottie.js?v=admin-seller-empty-data-1"></script>
+    <script src="/stock.js?v=inventory-summary-static-1"></script>
+  </body>
+</html>

@@ -6,13 +6,9 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/services/admin_scope.dart';
+import 'package:gms_shopping/services/local_api_base_urls.dart';
 import 'package:gms_shopping/services/product_repository_base.dart';
 
-const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
-const _defaultDesktopBaseUrl = 'http://127.0.0.1:8080';
-const _defaultAndroidEmulatorBaseUrl = 'http://10.0.2.2:8080';
-const _defaultAndroidUsbBaseUrl = 'http://127.0.0.1:8080';
-const _defaultCurrentWifiBaseUrl = 'http://192.168.100.225:8080';
 const _requestTimeout = Duration(seconds: 3);
 const _memoryCacheLifetime = Duration.zero;
 String? _preferredBaseUrl;
@@ -38,30 +34,10 @@ ProductRepository createProductRepository({String? baseUrl}) {
 }
 
 List<String> _buildBaseUrls({String? baseUrl}) {
-  final urls = <String>[];
-
-  void addUrl(String? value) {
-    final trimmed = value?.trim() ?? '';
-    if (trimmed.isEmpty || urls.contains(trimmed)) {
-      return;
-    }
-    urls.add(trimmed);
-  }
-
-  addUrl(baseUrl);
-  addUrl(_environmentBaseUrl);
-
-  if (Platform.isAndroid) {
-    addUrl(_defaultAndroidEmulatorBaseUrl);
-    addUrl(_defaultAndroidUsbBaseUrl);
-    addUrl(_defaultCurrentWifiBaseUrl);
-    addUrl('http://localhost:8080');
-  } else {
-    addUrl(_defaultDesktopBaseUrl);
-    addUrl('http://localhost:8080');
-  }
-
-  return urls;
+  return buildLocalApiBaseUrls(
+    baseUrl: baseUrl,
+    isAndroid: Platform.isAndroid,
+  );
 }
 
 class _HttpProductRepository implements ProductRepository {
@@ -91,6 +67,10 @@ class _HttpProductRepository implements ProductRepository {
 
   Product _resolveProductImageUrl(Product product, String baseUrl) {
     final resolvedGalleryImageUrls = product.galleryImageUrls
+        .map((imageUrl) => _resolveImageUrl(imageUrl, baseUrl))
+        .where((imageUrl) => imageUrl.isNotEmpty)
+        .toList(growable: false);
+    final resolvedDescriptionImageUrls = product.descriptionImageUrls
         .map((imageUrl) => _resolveImageUrl(imageUrl, baseUrl))
         .where((imageUrl) => imageUrl.isNotEmpty)
         .toList(growable: false);
@@ -147,6 +127,7 @@ class _HttpProductRepository implements ProductRepository {
     return product.copyWith(
       imageUrl: resolvedMainImageUrl,
       imageUrls: resolvedGalleryImageUrls,
+      descriptionImageUrls: resolvedDescriptionImageUrls,
       cardImageUrl: resolvedCardImageUrl,
       cardImageSourceUrl: resolvedCardImageSourceUrl,
       detailsVideoSourceUrl: resolvedDetailsVideoSourceUrl,
@@ -174,17 +155,9 @@ class _HttpProductRepository implements ProductRepository {
   Future<List<Product>> _fetchProductsFromBaseUrl(String baseUrl) async {
     try {
       final request = await _client
-          .getUrl(
-            withAdminScopeUri(
-              Uri.parse('$baseUrl/api/products?approvalStatus=approved'),
-            ),
-          )
+          .getUrl(Uri.parse('$baseUrl/api/products?approvalStatus=approved'))
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      final adminId = activeAdminId;
-      if (adminId.isNotEmpty) {
-        request.headers.set('X-GMS-Admin-ID', adminId);
-      }
 
       final response = await request.close().timeout(_requestTimeout);
       final responseBody = await response

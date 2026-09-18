@@ -5,14 +5,27 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 // Input formatting utilities (digit-only filter, length limiter)
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 // Navigates to the Change Password screen after successful verification
 import 'package:gms_shopping/change_password.dart';
+import 'package:gms_shopping/guest_session.dart';
+import 'package:gms_shopping/login_redirect.dart';
+import 'package:gms_shopping/models/registration_draft.dart';
+import 'package:gms_shopping/services/account_registration.dart';
+import 'package:gms_shopping/services/app_language_preference.dart';
+import 'package:gms_shopping/services/verification_service.dart';
 // Custom snackbar helper for showing success/error messages
 import 'package:gms_shopping/theme/app_snack_bar.dart';
 // App-wide theme constants (colors, gradients, motion durations)
 import 'package:gms_shopping/theme/app_theme.dart';
 // Full-screen loading overlay shown during API calls
 import 'package:gms_shopping/theme/loadingscreen.dart';
+import 'package:gms_shopping/utils/motion_60fps.dart';
+
+enum VerifyCodePurpose {
+  passwordReset,
+  registration,
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -29,9 +42,14 @@ const Duration _resendCooldown = Duration(seconds: 60);
 class _VerifyCodeSession {
   _VerifyCodeSession({
     DateTime? resendAvailableAt,
+    int? resendCooldownSeconds,
     List<String>? digits,
-  }) : resendAvailableAt =
-           resendAvailableAt ?? DateTime.now().add(_resendCooldown),
+  }) : resendAvailableAt = resendAvailableAt ??
+           DateTime.now().add(
+             Duration(
+               seconds: resendCooldownSeconds ?? _resendCooldown.inSeconds,
+             ),
+           ),
        digits = digits ?? List.filled(_verifyCodeLength, '');
 
   /// Timestamp after which the "Resend code" button becomes active
@@ -49,10 +67,24 @@ class VerifyCodePage extends StatefulWidget {
   const VerifyCodePage({
     super.key,
     required this.email,
+    this.purpose = VerifyCodePurpose.passwordReset,
+    this.registrationDraft,
+    this.themeModeNotifier,
+    this.resendAvailableAt,
+    this.resendCooldownSeconds,
   });
 
   /// The email address the verification code was sent to
   final String email;
+  final VerifyCodePurpose purpose;
+  final RegistrationDraft? registrationDraft;
+  final ValueNotifier<ThemeMode>? themeModeNotifier;
+
+  /// Absolute time when resend becomes available (from a prior send response).
+  final DateTime? resendAvailableAt;
+
+  /// Cooldown seconds when creating a new session without [resendAvailableAt].
+  final int? resendCooldownSeconds;
 
   @override
   State<VerifyCodePage> createState() => _VerifyCodePageState();
@@ -89,8 +121,8 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
   /// Color used for the resend countdown label text
   late Color _resendCountdownColor;
 
-  /// Gradient background colors for the page (adapts to light/dark mode)
-  late List<Color> _backgroundColors;
+  late TextStyle? _headerTitleStyle;
+  late TextStyle? _headerBodyStyle;
 
   /// Whether to show validation error styling on empty digit fields
   final ValueNotifier<bool> _showCodeErrorNotifier = ValueNotifier(false);
@@ -103,6 +135,14 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
 
   /// Guard flag to prevent duplicate verification requests
   bool _isVerifyingCode = false;
+
+  late final VerificationService _verificationService;
+  late final AccountRegistrationService _accountRegistrationService;
+
+  String get _verificationPurpose =>
+      widget.purpose == VerifyCodePurpose.registration
+          ? 'registration'
+          : 'password_reset';
 
   /// Returns a normalized session key from the user's email (lowercased, trimmed)
   String get _sessionKey => widget.email.trim().toLowerCase();
@@ -124,20 +164,27 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
     _resendCountdownColor =
         _theme.textTheme.bodyMedium?.color ??
         (isDark ? Colors.white : Colors.black87);
-    _backgroundColors = appLoginBackgroundColors(
-      theme: _theme,
-      isDark: isDark,
+    _headerTitleStyle = _theme.textTheme.headlineSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+    _headerBodyStyle = _theme.textTheme.bodyMedium?.copyWith(
+      color: _secondaryTextColor,
     );
   }
 
   @override
   void initState() {
     super.initState();
+    _verificationService = createVerificationService();
+    _accountRegistrationService = createAccountRegistrationService();
 
     // Restore existing session or create a new one for this email
     _session = _sessions.putIfAbsent(
       _sessionKey,
-      () => _VerifyCodeSession(),
+      () => _VerifyCodeSession(
+        resendAvailableAt: widget.resendAvailableAt,
+        resendCooldownSeconds: widget.resendCooldownSeconds,
+      ),
     );
 
     // Create 6 text controllers and focus nodes (one per digit)
@@ -324,8 +371,64 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
     _isVerifyingCode = true;
 
     try {
-      // Show loading spinner while the API call runs
-      await LoadingScreen.showWhile(context, () async {});
+      if (widget.purpose == VerifyCodePurpose.registration) {
+        final draft = widget.registrationDraft;
+        if (draft == null) {
+          throw const VerificationException(
+            'Registration details are missing. Go back and try again.',
+          );
+        }
+
+        await LoadingScreen.showWhile(context, () async {
+          final verifyResult = await _verificationService.verifyVerificationCode(
+            purpose: _verificationPurpose,
+            channel: 'email',
+            email: widget.email,
+            code: _verificationCode,
+          );
+
+          await _accountRegistrationService.registerAppAccount(
+            firstName: draft.firstName,
+            lastName: draft.lastName,
+            countryCode: draft.countryCode,
+            mobileNumber: draft.mobileNumber,
+            email: draft.email,
+            password: draft.password,
+            verificationToken: verifyResult.verificationToken,
+            verificationChannel: verifyResult.channel,
+            preferredLanguage: await AppLanguagePreference.getGuestLanguage(),
+            googleProfile: draft.googleProfile,
+          );
+          await GuestSession.clear();
+        });
+      } else {
+        await LoadingScreen.showWhile(context, () async {
+          await _verificationService.verifyVerificationCode(
+            purpose: _verificationPurpose,
+            channel: 'email',
+            email: widget.email,
+            code: _verificationCode,
+          );
+        });
+      }
+    } on VerificationException catch (error) {
+      if (mounted) {
+        AppSnackBar.showError(context, message: error.message);
+      }
+      return;
+    } on AccountRegistrationException catch (error) {
+      if (mounted) {
+        AppSnackBar.showError(context, message: error.message);
+      }
+      return;
+    } catch (error) {
+      if (mounted) {
+        AppSnackBar.showError(
+          context,
+          message: error.toString(),
+        );
+      }
+      return;
     } finally {
       _isVerifyingCode = false;
     }
@@ -336,6 +439,27 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
 
     // Remove session from cache so a fresh code is required next time
     _sessions.remove(_sessionKey);
+
+    if (widget.purpose == VerifyCodePurpose.registration) {
+      AppSnackBar.showSuccess(
+        context,
+        message: 'Account created!',
+      );
+
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      if (!mounted) {
+        return;
+      }
+
+      final themeModeNotifier = widget.themeModeNotifier;
+      if (themeModeNotifier != null) {
+        redirectGuestToLogin(context, themeModeNotifier: themeModeNotifier);
+      } else {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+      return;
+    }
 
     // Navigate to the change password screen, replacing this page
     Navigator.of(context).pushReplacement(
@@ -356,15 +480,42 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
     }
 
     _dismissKeyboard();
-    await LoadingScreen.showWhile(context, () async {});
 
-    // Reset the cooldown: user must wait another 60 seconds
-    _session.resendAvailableAt = DateTime.now().add(_resendCooldown);
-    _startCountdownTicker();
+    late final VerificationSendResult result;
+    try {
+      result = await LoadingScreen.showWhile(context, () async {
+        return await _verificationService.sendVerificationCode(
+          purpose: _verificationPurpose,
+          channel: 'email',
+          email: widget.email,
+        );
+      });
+    } on VerificationException catch (error) {
+      if (mounted) {
+        AppSnackBar.showError(context, message: error.message);
+      }
+      return;
+    }
 
     if (!mounted) {
       return;
     }
+
+    if (result.debugCode != null && result.debugCode!.isNotEmpty) {
+      AppSnackBar.showSuccess(
+        context,
+        message: 'Dev code: ${result.debugCode}',
+      );
+    }
+
+    // Prefer server-provided resend window; fall back to cooldown / 60s
+    _session.resendAvailableAt = result.resendAvailableAt ??
+        DateTime.now().add(
+          Duration(
+            seconds: result.resendCooldownSeconds ?? _resendCooldown.inSeconds,
+          ),
+        );
+    _startCountdownTicker();
 
     AppSnackBar.showSuccess(
       context,
@@ -374,274 +525,137 @@ class _VerifyCodePageState extends State<VerifyCodePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = _theme.brightness == Brightness.dark;
+    final scaffoldColor = isDark ? appDarkScaffoldColor : Colors.white;
+    final iconColor = appIconColorForBrightness(_theme.brightness);
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          // Full-screen gradient background (adapts to light/dark mode)
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: _backgroundColors,
-          ),
-        ),
-        child: SafeArea(
-          child: _VerifyCodeViewport(
-            theme: _theme,
-            email: widget.email,
-            secondaryTextColor: _secondaryTextColor,
-            resendCountdownColor: _resendCountdownColor,
-            controllers: _controllers,
-            focusNodes: _focusNodes,
-            showCodeErrorNotifier: _showCodeErrorNotifier,
-            remainingSecondsNotifier: _remainingSecondsNotifier,
-            onBack: () {
-              _dismissKeyboard();
-              Navigator.of(context).pop();
-            },
-            onSelectDigit: _selectDigit,
-            onCodeChanged: _handleCodeChanged,
-            onVerifyCode: _handleVerifyCode,
-            onResendCode: _handleResendCode,
+      backgroundColor: scaffoldColor,
+      appBar: AppBar(
+        backgroundColor: scaffoldColor,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          onPressed: () {
+            _dismissKeyboard();
+            Navigator.of(context).pop();
+          },
+          tooltip: 'Back',
+          icon: SvgPicture.asset(
+            'assets/icons/arrow-left.svg',
+            width: 24,
+            height: 24,
+            colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
           ),
         ),
       ),
-    );
-  }
-}
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 650),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Verification code',
+                      style: _headerTitleStyle,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter the 6-digit code sent to ${widget.email}.',
+                      style: _headerBodyStyle,
+                    ),
+                    const SizedBox(height: 24),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        const gap = 8.0;
+                        final boxSize =
+                            (constraints.maxWidth - gap * (_verifyCodeLength - 1)) /
+                                _verifyCodeLength;
+                        final borderColor = isDark
+                            ? const Color(0xFF9AA0A6)
+                            : const Color.fromARGB(255, 204, 204, 204);
+                        final focusedColor =
+                            isDark ? Colors.white : Colors.black;
+                        final valueColor =
+                            isDark ? Colors.white : Colors.black;
 
-// ─── Viewport (Scrollable Layout) ────────────────────────────────────────────
-
-/// Stateless layout widget that arranges the verification code UI
-/// inside a scrollable container. Handles responsive constraints
-/// so the content is centered and scrollable on small screens.
-class _VerifyCodeViewport extends StatelessWidget {
-  const _VerifyCodeViewport({
-    required this.theme,
-    required this.email,
-    required this.secondaryTextColor,
-    required this.resendCountdownColor,
-    required this.controllers,
-    required this.focusNodes,
-    required this.showCodeErrorNotifier,
-    required this.remainingSecondsNotifier,
-    required this.onBack,
-    required this.onSelectDigit,
-    required this.onCodeChanged,
-    required this.onVerifyCode,
-    required this.onResendCode,
-  });
-
-  final ThemeData theme;
-  final String email;
-  final Color secondaryTextColor;
-  final Color resendCountdownColor;
-  final List<TextEditingController> controllers;
-  final List<FocusNode> focusNodes;
-  final ValueNotifier<bool> showCodeErrorNotifier;
-  final ValueNotifier<int> remainingSecondsNotifier;
-  final VoidCallback onBack;
-  final ValueChanged<int> onSelectDigit;
-  final void Function(int, String) onCodeChanged;
-  final Future<void> Function({bool showIncompleteError}) onVerifyCode;
-  final Future<void> Function() onResendCode;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
-          child: ConstrainedBox(
-            // Ensure the content fills at least the full viewport height
-            constraints: BoxConstraints(
-              minHeight: constraints.maxHeight,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header section: back button, icon, title, and email hint
-                _VerifyCodeIntro(
-                  theme: theme,
-                  email: email,
-                  secondaryTextColor: secondaryTextColor,
-                  onBack: onBack,
-                ),
-                const SizedBox(height: 36),
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    // Limit the input area width for readability on wide screens
-                    constraints: const BoxConstraints(maxWidth: 360),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Row of 6 individual digit input fields
-                          Row(
-                            children: [
-                              for (var index = 0;
-                                  index < _verifyCodeLength;
-                                  index++) ...[
-                                Expanded(
-                                  child: _VerifyCodeDigitField(
-                                    theme: theme,
-                                    index: index,
-                                    controller: controllers[index],
-                                    focusNode: focusNodes[index],
-                                    showCodeErrorListenable:
-                                        showCodeErrorNotifier,
-                                    onTap: () => onSelectDigit(index),
-                                    onChanged: (value) =>
-                                        onCodeChanged(index, value),
-                                    onSubmitted: (_) {
-                                      // Submit when user presses "done" on the last field
-                                      if (index == _verifyCodeLength - 1) {
-                                        onVerifyCode();
-                                      }
-                                    },
-                                  ),
+                        return Row(
+                          children: [
+                            for (var index = 0;
+                                index < _verifyCodeLength;
+                                index++) ...[
+                              _VerifyCodeDigitBox(
+                                size: boxSize,
+                                index: index,
+                                controller: _controllers[index],
+                                focusNode: _focusNodes[index],
+                                borderColor: borderColor,
+                                focusedColor: focusedColor,
+                                valueColor: valueColor,
+                                showCodeErrorListenable: _showCodeErrorNotifier,
+                                textStyle: _theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  height: 1,
                                 ),
-                                if (index != _verifyCodeLength - 1)
-                                  const SizedBox(width: 8),
-                              ],
+                                onTap: () => _selectDigit(index),
+                                onChanged: (value) =>
+                                    _handleCodeChanged(index, value),
+                                onSubmitted: (_) {
+                                  if (index == _verifyCodeLength - 1) {
+                                    _handleVerifyCode();
+                                  }
+                                },
+                              ),
+                              if (index != _verifyCodeLength - 1)
+                                const SizedBox(width: gap),
                             ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Resend code button with countdown
-                          _VerifyCodeResendButton(
-                            remainingSecondsListenable: remainingSecondsNotifier,
-                            primaryColor: theme.colorScheme.primary,
-                            disabledForegroundColor: resendCountdownColor,
-                            textStyle: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
-                            onPressed: onResendCode,
-                          ),
-                        ],
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Text(
+                        'Did not receive the code?',
+                        textAlign: TextAlign.center,
+                        style: _headerBodyStyle,
                       ),
                     ),
-                  ),
+                    Center(
+                      child: _VerifyCodeResendButton(
+                        remainingSecondsListenable: _remainingSecondsNotifier,
+                        primaryColor: _theme.colorScheme.primary,
+                        disabledForegroundColor: _resendCountdownColor,
+                        textStyle: _theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                        onPressed: _handleResendCode,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        );
-      },
-    );
-  }
-}
-
-// ─── Header Section ──────────────────────────────────────────────────────────
-
-/// Displays the back button, verification icon, title, and email hint
-/// at the top of the verification code screen.
-class _VerifyCodeIntro extends StatelessWidget {
-  const _VerifyCodeIntro({
-    required this.theme,
-    required this.email,
-    required this.secondaryTextColor,
-    required this.onBack,
-  });
-
-  final ThemeData theme;
-  final String email;
-  final Color secondaryTextColor;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Back navigation arrow
-          IconButton(
-            onPressed: onBack,
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
-          const SizedBox(height: 12),
-          // Shield/verified icon in the primary theme color
-          Icon(
-            Icons.verified_user_outlined,
-            color: theme.colorScheme.primary,
-            size: 72,
-          ),
-          const SizedBox(height: 20),
-          // Page title
-          Text(
-            'Verification code',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Instruction text showing which email the code was sent to
-          Text(
-            'Enter the 6-digit code sent to $email.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: secondaryTextColor,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
-}
-
-// ─── Helper: Input Decoration Builder ────────────────────────────────────────
-
-/// Builds the [InputDecoration] for a single digit field.
-/// Applies error border styling when [hasError] is true.
-InputDecoration _buildCodeDecoration(ThemeData theme, bool hasError) {
-  final isDark = theme.brightness == Brightness.dark;
-  final fillColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFAFAFA);
-
-  return InputDecoration(
-    counterText: '', // Hide the character counter
-    filled: true,
-    fillColor: fillColor,
-    contentPadding: const EdgeInsets.symmetric(
-      horizontal: 0,
-      vertical: 18,
-    ),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: BorderSide.none,
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: hasError
-          ? const BorderSide(
-              color: appInputErrorColor,
-              width: 1.35,
-            )
-          : BorderSide.none,
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: hasError
-          ? const BorderSide(
-              color: appInputErrorColor,
-              width: 1.55,
-            )
-          : BorderSide.none,
-    ),
-  );
 }
 
 // ─── Helper: Resend Label Formatter ──────────────────────────────────────────
 
 /// Formats the resend button label based on remaining seconds.
-/// Returns "Resend code" when ready, or "Resend code in MM:SS" during cooldown.
+/// Returns "Resend code" when ready, or "Resend code (MM:SS)" during cooldown.
 String _resendLabelFromSeconds(int remainingSeconds) {
   if (remainingSeconds == 0) {
     return 'Resend code';
@@ -650,33 +664,37 @@ String _resendLabelFromSeconds(int remainingSeconds) {
   final minutes = (remainingSeconds ~/ 60).toString().padLeft(2, '0');
   final seconds = (remainingSeconds % 60).toString().padLeft(2, '0');
 
-  return 'Resend code in $minutes:$seconds';
+  return 'Resend code ($minutes:$seconds)';
 }
 
 // ─── Digit Input Field ───────────────────────────────────────────────────────
 
-/// A single digit input field in the 6-digit verification code row.
-/// - Accepts only numeric input (0-9)
-/// - Limited to 1 character
-/// - Shows error styling when validation fails
-/// - Auto-selects all text on tap for easy overwrite
-class _VerifyCodeDigitField extends StatelessWidget {
-  const _VerifyCodeDigitField({
-    required this.theme,
+/// A single square digit box matching the register OTP pattern.
+class _VerifyCodeDigitBox extends StatelessWidget {
+  const _VerifyCodeDigitBox({
+    required this.size,
     required this.index,
     required this.controller,
     required this.focusNode,
+    required this.borderColor,
+    required this.focusedColor,
+    required this.valueColor,
     required this.showCodeErrorListenable,
+    required this.textStyle,
     required this.onTap,
     required this.onChanged,
     required this.onSubmitted,
   });
 
-  final ThemeData theme;
+  final double size;
   final int index;
   final TextEditingController controller;
   final FocusNode focusNode;
+  final Color borderColor;
+  final Color focusedColor;
+  final Color valueColor;
   final ValueNotifier<bool> showCodeErrorListenable;
+  final TextStyle? textStyle;
   final VoidCallback onTap;
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
@@ -685,38 +703,79 @@ class _VerifyCodeDigitField extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
       valueListenable: showCodeErrorListenable,
-      builder: (context, showCodeError, child) {
+      builder: (context, showCodeError, _) {
         return ValueListenableBuilder<TextEditingValue>(
           valueListenable: controller,
-          builder: (context, value, child) {
-            // Show error border only when validation is active AND the field is empty
+          builder: (context, value, _) {
             final hasError = showCodeError && value.text.trim().isEmpty;
 
-            return SizedBox(
-              height: 58,
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                textAlignVertical: TextAlignVertical.center,
-                // "Done" action on the last field, "Next" on all others
-                textInputAction: index == _verifyCodeLength - 1
-                    ? TextInputAction.done
-                    : TextInputAction.next,
-                maxLength: 1,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly, // Only allow 0-9
-                  LengthLimitingTextInputFormatter(1), // Max 1 character
-                ],
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-                onTap: onTap,
-                onChanged: onChanged,
-                onSubmitted: onSubmitted,
-                decoration: _buildCodeDecoration(theme, hasError),
-              ),
+            return ListenableBuilder(
+              listenable: focusNode,
+              builder: (context, _) {
+                final focused = focusNode.hasFocus;
+                final Color activeBorderColor;
+                final double borderWidth;
+                if (hasError) {
+                  activeBorderColor = appInputErrorColor;
+                  borderWidth = focused ? 1.2 : 1.05;
+                } else if (focused) {
+                  activeBorderColor = focusedColor;
+                  borderWidth = 1.05;
+                } else {
+                  activeBorderColor = borderColor;
+                  borderWidth = 0.85;
+                }
+
+                return AnimatedContainer(
+                  duration: appMotionFrames(10),
+                  curve: Curves.easeOutCubic,
+                  width: size,
+                  height: size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: activeBorderColor,
+                      width: borderWidth,
+                    ),
+                  ),
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    textAlign: TextAlign.center,
+                    textAlignVertical: TextAlignVertical.center,
+                    keyboardType: TextInputType.number,
+                    textInputAction: index == _verifyCodeLength - 1
+                        ? TextInputAction.done
+                        : TextInputAction.next,
+                    maxLength: 1,
+                    style: textStyle?.copyWith(
+                      color: hasError ? appInputErrorColor : valueColor,
+                    ),
+                    cursorHeight: (textStyle?.fontSize ?? 22) * 1.1,
+                    cursorColor: hasError ? appInputErrorColor : focusedColor,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(1),
+                    ],
+                    onTap: onTap,
+                    onChanged: onChanged,
+                    onSubmitted: onSubmitted,
+                    decoration: const InputDecoration(
+                      counterText: '',
+                      isDense: true,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      filled: false,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
@@ -750,17 +809,19 @@ class _VerifyCodeResendButton extends StatelessWidget {
     return ValueListenableBuilder<int>(
       valueListenable: remainingSecondsListenable,
       builder: (context, remainingSeconds, child) {
-        return Center(
-          child: TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: primaryColor,
-              disabledForegroundColor: disabledForegroundColor,
-              textStyle: textStyle,
-            ),
-            // Disabled (null) while countdown is active; enabled when 0
-            onPressed: remainingSeconds == 0 ? onPressed : null,
-            child: Text(_resendLabelFromSeconds(remainingSeconds)),
+        return TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: primaryColor,
+            disabledForegroundColor: disabledForegroundColor,
+            textStyle: textStyle,
+            padding: EdgeInsets.zero,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
           ),
+          // Disabled (null) while countdown is active; enabled when 0
+          onPressed: remainingSeconds == 0 ? onPressed : null,
+          child: Text(_resendLabelFromSeconds(remainingSeconds)),
         );
       },
     );

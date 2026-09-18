@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
 import 'package:gms_shopping/utils/session_image_cache.dart';
-import 'package:gms_shopping/widgets/bouncing_dots_loader.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 import 'package:gms_shopping/widgets/product_company_identity.dart';
 import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
 
@@ -43,7 +43,8 @@ class ProductCard extends StatelessWidget {
 
   bool get _showsTopRatedBadge => p.rating >= 4.5 && p.rating <= 5;
 
-  bool get _showsFavoriteButton => showFavoriteButton || onFavoriteToggle != null;
+  bool get _showsFavoriteButton =>
+      showFavoriteButton || onFavoriteToggle != null;
 
   bool get _showsNewBadge {
     if (p.createdAt.millisecondsSinceEpoch <= 0) {
@@ -59,14 +60,12 @@ class ProductCard extends StatelessWidget {
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 0,
           height: 1,
         ) ??
         const TextStyle(
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 0,
           height: 1,
         );
   }
@@ -82,10 +81,7 @@ class ProductCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        label,
-        style: _inlineBadgeTextStyle(context),
-      ),
+      child: Text(label, style: _inlineBadgeTextStyle(context)),
     );
   }
 
@@ -100,15 +96,8 @@ class ProductCard extends StatelessWidget {
         width: 15,
         height: 15,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          size: 11,
-          color: Colors.white,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, size: 11, color: Colors.white),
       ),
     );
   }
@@ -142,15 +131,8 @@ class ProductCard extends StatelessWidget {
         width: 14,
         height: 14,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          size: 9,
-          color: Colors.white,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Icon(icon, size: 9, color: Colors.white),
       ),
     );
   }
@@ -224,9 +206,7 @@ class ProductCard extends StatelessWidget {
     return false;
   }
 
-  Widget _buildProductMedia({
-    required Color primaryColor,
-  }) {
+  Widget _buildProductMedia({required Color primaryColor}) {
     return Stack(
       children: [
         _ProductCardImage(
@@ -235,11 +215,7 @@ class ProductCard extends StatelessWidget {
           height: _imageHeight,
         ),
         if (_showsNewBadge)
-          Positioned(
-            top: 0,
-            right: 0,
-            child: const _NewBadge(),
-          ),
+          Positioned(top: 0, right: 0, child: const _NewBadge()),
       ],
     );
   }
@@ -251,12 +227,11 @@ class ProductCard extends StatelessWidget {
     required double maxWidth,
   }) {
     final productNameStyle = Theme.of(context).textTheme.titleSmall?.copyWith(
-          fontSize: 15,
-          color: titleColor,
-          fontWeight: FontWeight.w500,
-          letterSpacing: 0,
-          height: 1,
-        );
+      fontSize: 15,
+      color: titleColor,
+      fontWeight: FontWeight.w500,
+      height: 1,
+    );
     final useCompactTopBadges = _shouldUseCompactTopBadges(
       context,
       style: productNameStyle ?? const TextStyle(),
@@ -318,7 +293,8 @@ class ProductCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: productNameStyle,
           );
-    final showsCompactBadgeRow = useCompactTopBadges &&
+    final showsCompactBadgeRow =
+        useCompactTopBadges &&
         (showTopSellerBadge ||
             _discountPercentValue != null ||
             _showsTopRatedBadge);
@@ -386,11 +362,10 @@ class ProductCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: primaryColor,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                    height: 1.15,
-                  ),
+                color: primaryColor,
+                fontWeight: FontWeight.w700,
+                height: 1.15,
+              ),
             ),
             if (_showsFavoriteButton)
               Row(
@@ -403,8 +378,9 @@ class ProductCard extends StatelessWidget {
                     height: 28,
                     child: IconButton(
                       onPressed: onFavoriteToggle,
-                      tooltip:
-                          isFavorite ? 'Remove from favorites' : 'Add to favorites',
+                      tooltip: isFavorite
+                          ? 'Remove from favorites'
+                          : 'Add to favorites',
                       padding: EdgeInsets.zero,
                       splashRadius: 18,
                       icon: Icon(
@@ -431,21 +407,19 @@ class ProductCard extends StatelessWidget {
                 _PriceText(
                   amount: _displayPrice,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 16,
-                        color: primaryColor,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0,
-                      ),
+                    fontSize: 16,
+                    color: primaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (_showsOriginalPrice)
                   _PriceText(
                     amount: p.originalPrice,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: secondaryColor.withOpacity(0.72),
-                          decoration: TextDecoration.lineThrough,
-                          letterSpacing: 0,
-                        ),
+                      fontSize: 11,
+                      color: secondaryColor.withOpacity(0.72),
+                      decoration: TextDecoration.lineThrough,
+                    ),
                   ),
               ],
             ),
@@ -454,11 +428,10 @@ class ProductCard extends StatelessWidget {
               product: p,
               iconColor: const Color(0xFFF9A825),
               textStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: secondaryColor,
-                    fontWeight: FontWeight.w200,
-                    letterSpacing: 0,
-                    height: 1,
-                  ),
+                color: secondaryColor,
+                fontWeight: FontWeight.w200,
+                height: 1,
+              ),
             ),
             if (showCompanyIdentity && p.hasCompanyIdentity) ...[
               const SizedBox(height: 4),
@@ -484,7 +457,8 @@ class ProductCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final titleColor =
         Theme.of(context).textTheme.titleSmall?.color ?? colorScheme.onSurface;
-    final secondaryColor = Theme.of(context).textTheme.bodySmall?.color ??
+    final secondaryColor =
+        Theme.of(context).textTheme.bodySmall?.color ??
         colorScheme.onSurface.withOpacity(0.68);
     final primaryColor = colorScheme.primary;
     final surfaceColor = colorScheme.surface;
@@ -555,38 +529,36 @@ class _ProductCardImage extends StatelessWidget {
       height: height,
       width: double.infinity,
       child: hasImage
-          ? Image.network(
-              displayImageUrl,
-              fit: BoxFit.cover,
-              alignment: product.hasSavedCardImageCrop
-                  ? Alignment.center
-                  : Alignment(
-                      product.cardImageAlignmentX,
-                      product.cardImageAlignmentY,
-                    ),
-              errorBuilder: (context, error, stackTrace) {
-                return _ProductImageFallback(
-                  initial: _initial,
-                  primaryColor: primaryColor,
-                );
-              },
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) {
-                  SessionImageCache.markLoaded(displayImageUrl);
-                  return child;
-                }
+          ? ColoredBox(
+              color: Colors.white,
+              child: Image.network(
+                displayImageUrl,
+                fit: BoxFit.cover,
+                alignment: product.hasSavedCardImageCrop
+                    ? Alignment.center
+                    : Alignment(
+                        product.cardImageAlignmentX,
+                        product.cardImageAlignmentY,
+                      ),
+                errorBuilder: (context, error, stackTrace) {
+                  return _ProductImageFallback(
+                    initial: _initial,
+                    primaryColor: primaryColor,
+                  );
+                },
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) {
+                    SessionImageCache.markLoaded(displayImageUrl);
+                    return child;
+                  }
 
-                if (SessionImageCache.wasLoaded(displayImageUrl)) {
-                  return child;
-                }
+                  if (SessionImageCache.wasLoaded(displayImageUrl)) {
+                    return child;
+                  }
 
-                return Center(
-                  child: BouncingDotsLoader(
-                    activeColor: primaryColor,
-                    inactiveColor: primaryColor.withOpacity(0.24),
-                  ),
-                );
-              },
+                  return const SkeletonShimmer(baseColor: kSkeletonBaseColor);
+                },
+              ),
             )
           : _ProductImageFallback(
               initial: _initial,
@@ -611,9 +583,9 @@ class _ProductImageFallback extends StatelessWidget {
       child: Text(
         initial,
         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: primaryColor,
-              fontWeight: FontWeight.w800,
-            ),
+          color: primaryColor,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -628,16 +600,14 @@ class _NewBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: const BoxDecoration(
         color: Color(0xFF1976D2),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(8),
-        ),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(8)),
       ),
       child: Text(
         'New',
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -662,11 +632,7 @@ class _ProductStatsRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          Icons.star_rounded,
-          size: 16,
-          color: iconColor,
-        ),
+        Icon(Icons.star_rounded, size: 16, color: iconColor),
         const SizedBox(width: 4),
         Text(
           _formatProductRating(product.rating),
@@ -675,11 +641,7 @@ class _ProductStatsRow extends StatelessWidget {
           style: textStyle,
         ),
         const SizedBox(width: 10),
-        Icon(
-          Icons.mode_comment_outlined,
-          size: 15,
-          color: commentIconColor,
-        ),
+        Icon(Icons.mode_comment_outlined, size: 15, color: commentIconColor),
         const SizedBox(width: 4),
         Flexible(
           child: Text(
@@ -695,37 +657,14 @@ class _ProductStatsRow extends StatelessWidget {
 }
 
 class _PriceText extends StatelessWidget {
-  const _PriceText({
-    required this.amount,
-    this.style,
-  });
+  const _PriceText({required this.amount, this.style});
 
   final double amount;
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedStyle =
-        DefaultTextStyle.of(context).style.merge(style).copyWith(
-              letterSpacing: 0,
-              height: 1,
-            );
-    final symbolFontSize = (resolvedStyle.fontSize ?? 14) * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: resolvedStyle.copyWith(fontSize: symbolFontSize),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: resolvedStyle,
-          ),
-        ],
-      ),
-    );
+    return AppPriceText(amount: amount, style: style);
   }
 }
 

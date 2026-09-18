@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GMS Shopping | Admin Inventory System</title>
+    <title>Switch | Admin Inventory System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -8429,7 +8429,7 @@
   <body>
     <div class="page">
       <header class="top-nav">
-        <a href="#top" class="brand" aria-label="GMS Shopping home">
+        <a href="#top" class="brand" aria-label="Switch home">
           <span class="brand-title">Logo here</span>
           <span class="brand-credit">Create by Jethro</span>
         </a>
@@ -8437,14 +8437,14 @@
           <a href="#canvas">Product</a>
           <a href="#publish">Teams</a>
           <a href="#features">Resources</a>
-          <a href="/admin_signup.html">Community</a>
-          <a href="/admin_signup.html">Support</a>
-          <a href="/admin_signup.html">Enterprise</a>
-          <a href="/admin_signup.html">Pricing</a>
+          <a href="/login.html?intent=seller-upgrade">Community</a>
+          <a href="/login.html?intent=seller-upgrade">Support</a>
+          <a href="/login.html?intent=seller-upgrade">Enterprise</a>
+          <a href="/login.html?intent=seller-upgrade">Pricing</a>
         </nav>
         <div class="nav-actions">
           <a class="login-link" href="/login.html">Log in</a>
-          <a class="nav-button magnetic" href="/admin_signup.html">Sign up</a>
+          <a class="nav-button magnetic" href="/login.html?intent=seller-upgrade">Sign up</a>
         </div>
       </header>
 
@@ -8460,11 +8460,11 @@
               platform. No clutter, no stress—just growth.
             </p>
             <div class="hero-actions">
-              <a class="primary-button seller-cta-button magnetic" href="/admin_signup.html">Become a Seller</a>
+              <a class="primary-button seller-cta-button magnetic" href="/login.html?intent=seller-upgrade">Become a Seller</a>
               <a class="secondary-button magnetic" href="#canvas">View Features</a>
             </div>
 
-            <div class="hero-stage" aria-label="GMS Shopping dashboard preview">
+            <div class="hero-stage" aria-label="Switch dashboard preview">
               <figure class="product-showcase tilt" data-preview-motion>
                 <div class="product-showcase__bar">
                   <span class="product-showcase__chrome-left" aria-hidden="true">
@@ -10961,48 +10961,13 @@
 
       async function submitAdminSignup(event) {
         event.preventDefault();
-        const payload = getAdminSignupPayload(adminSignupForm);
-        const validationMessage = validateAdminSignupPayload(payload);
-        if (validationMessage) {
-          setAdminSignupFeedback(validationMessage, "error");
-          return;
-        }
-
-        const submitButton = adminSignupForm.querySelector("button[type='submit']");
-        if (submitButton) {
-          submitButton.disabled = true;
-        }
-        setAdminSignupFeedback("Creating admin account...");
-
-        try {
-          const response = await fetch("/api/admin-register", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(data.message || "Unable to create admin account.");
-          }
-
-          adminSignupForm.reset();
-          setAdminSignupFeedback("Admin created. Redirecting to login...", "success");
-          window.setTimeout(() => {
-            window.location.href = data.redirectPath || "/login.html?role=admin";
-          }, 900);
-        } catch (error) {
-          setAdminSignupFeedback(
-            error instanceof Error ? error.message : "Unable to create admin account.",
-            "error",
-          );
-        } finally {
-          if (submitButton) {
-            submitButton.disabled = false;
-          }
-        }
+        setAdminSignupFeedback(
+          "Direct seller registration is closed. Create a buyer account, then use Be Part of Switch / Start upgrade.",
+          "error",
+        );
+        window.setTimeout(() => {
+          window.location.href = "/login.html?intent=seller-upgrade";
+        }, 1200);
       }
 
       window.addEventListener("mousemove", (event) => {

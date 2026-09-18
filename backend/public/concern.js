@@ -12,6 +12,7 @@
     returnGroups: [],
     processingIds: new Set(),
   };
+  let concernRealtimeRefreshTimer = 0;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -394,6 +395,37 @@
     }
   }
 
+  function scheduleConcernRealtimeRefresh(delay = 180) {
+    window.clearTimeout(concernRealtimeRefreshTimer);
+    concernRealtimeRefreshTimer = window.setTimeout(() => {
+      concernRealtimeRefreshTimer = 0;
+      if (state.processingIds.size > 0) {
+        scheduleConcernRealtimeRefresh(240);
+        return;
+      }
+      void loadConcernRequests();
+    }, delay);
+  }
+
+  function handleConcernRealtimeChange(event) {
+    const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+    if (detail.type === "ready") {
+      if (detail.reconnected !== true) {
+        return;
+      }
+    } else if (detail.type === "data-change") {
+      const topics = Array.isArray(detail.topics)
+        ? detail.topics.map((topic) => String(topic || "").trim().toLowerCase())
+        : [];
+      if (!topics.includes("all") && !topics.includes("orders")) {
+        return;
+      }
+    } else {
+      return;
+    }
+    scheduleConcernRealtimeRefresh();
+  }
+
   async function handleCancelDecision(createdAtEpochMs, action) {
     const normalizedId = String(createdAtEpochMs || "").trim();
     const normalizedAction = String(action || "").trim().toLowerCase();
@@ -453,6 +485,7 @@
   });
 
   render();
+  window.addEventListener("gms:realtime-change", handleConcernRealtimeChange);
   void loadConcernRequests();
   window.setInterval(loadConcernRequests, CONCERN_REFRESH_INTERVAL_MS);
 })();

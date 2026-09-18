@@ -15,9 +15,12 @@ import 'package:gms_shopping/chat_support.dart';
 import 'package:gms_shopping/guest_session.dart';
 import 'package:gms_shopping/login_redirect.dart';
 import 'package:gms_shopping/models/product.dart';
+import 'package:gms_shopping/services/local_api_base_urls.dart';
 import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:gms_shopping/utils/own_listing.dart';
 import 'package:gms_shopping/product_details.dart';
 import 'package:gms_shopping/widgets/product_card.dart';
 
@@ -58,6 +61,9 @@ class _SellerPageState extends State<SellerPage> {
 
   // Whether the current user is following this seller
   bool _isFollowing = false;
+  // True when this seller dashboard belongs to the signed-in user's company.
+  bool _isOwnCompany = false;
+  bool _ownCompanyResolved = false;
   // URL or base64-encoded image data for the seller's profile picture
   String _sellerPicture = '';
   // Average rating of the seller based on their products
@@ -83,12 +89,42 @@ class _SellerPageState extends State<SellerPage> {
     super.initState();
     // Load products from this seller
     _productsFuture = _loadSellerProducts();
-    // Load locally cached follow preference
-    _loadPrefs();
     // Fetch seller profile from API
     _loadSellerProfile();
-    // Check if user is following this seller
-    _loadFollowState();
+    // Own-company check first so Follow/Message never flash for self-view.
+    _resolveOwnCompany();
+  }
+
+  Future<void> _resolveOwnCompany() async {
+    if (_isGuestMode) {
+      if (!mounted) return;
+      setState(() {
+        _isOwnCompany = false;
+        _ownCompanyResolved = true;
+      });
+      return;
+    }
+
+    final scope = await loadOwnListingScope();
+    if (!mounted) return;
+
+    final isOwn = listingBelongsToOwnCompany(
+      scope: scope,
+      adminId: widget.adminId,
+      companyName: widget.initialName ?? _sellerNameCached,
+    );
+    setState(() {
+      _isOwnCompany = isOwn;
+      _ownCompanyResolved = true;
+    });
+
+    if (isOwn) {
+      return;
+    }
+
+    // Only load follow state for other companies.
+    await _loadPrefs();
+    await _loadFollowState();
   }
 
   // =============================================================================
@@ -171,10 +207,7 @@ class _SellerPageState extends State<SellerPage> {
   // Android uses the local network IP, other platforms use localhost.
   // =============================================================================
   String _getBaseUrl() {
-    if (Platform.isAndroid) {
-      return 'http://192.168.100.225:8080';
-    }
-    return 'http://127.0.0.1:8080';
+    return buildLocalApiBaseUrls(isAndroid: Platform.isAndroid).first;
   }
 
   // =============================================================================
@@ -382,6 +415,9 @@ class _SellerPageState extends State<SellerPage> {
   // Updates both server and local storage.
   // =============================================================================
   Future<void> _toggleFollow() async {
+    if (_isOwnCompany) {
+      return;
+    }
     try {
       final accountId = (await _getAccountId())?.trim() ?? '';
       final accountEmail = (await _getAccountEmail())?.trim() ?? '';
@@ -464,6 +500,9 @@ class _SellerPageState extends State<SellerPage> {
   // Uses the first product from the seller to establish the chat context.
   // =============================================================================
   Future<void> _handleMessageTap() async {
+    if (_isOwnCompany) {
+      return;
+    }
     // Redirect guests to login
     if (_isGuestMode) {
       await redirectGuestToLogin(context);
@@ -707,58 +746,59 @@ class _SellerPageState extends State<SellerPage> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  // Action Buttons - Follow and Message
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Follow/Unfollow button
-                      SizedBox(
-                        width: 132,
-                        child: ElevatedButton.icon(
-                          onPressed: _toggleFollow,
-                          icon: Icon(
-                            _isFollowing ? Icons.check : Icons.add,
-                            size: 18,
-                          ),
-                          label: Text(
-                            _isFollowing ? 'Following' : 'Follow',
-                            style: const TextStyle(height: 1),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isFollowing
-                                ? Colors.grey[300]
-                                : theme.colorScheme.primary,
-                            foregroundColor: _isFollowing
-                                ? Colors.black87
-                                : Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                  // Follow / Message only for other companies — never for own.
+                  if (_ownCompanyResolved && !_isOwnCompany)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Follow/Unfollow button
+                        SizedBox(
+                          width: 132,
+                          child: ElevatedButton.icon(
+                            onPressed: _toggleFollow,
+                            icon: Icon(
+                              _isFollowing ? Icons.check : Icons.add,
+                              size: 18,
+                            ),
+                            label: Text(
+                              _isFollowing ? 'Following' : 'Follow',
+                              style: const TextStyle(height: 1),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _isFollowing
+                                  ? Colors.grey[300]
+                                  : theme.colorScheme.primary,
+                              foregroundColor: _isFollowing
+                                  ? Colors.black87
+                                  : Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Message seller button
-                      SizedBox(
-                        width: 132,
-                        child: OutlinedButton.icon(
-                          onPressed: _handleMessageTap,
-                          icon: const Icon(Icons.message_rounded, size: 18),
-                          label: const Text(
-                            'Message',
-                            style: TextStyle(height: 1),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                        const SizedBox(width: 12),
+                        // Message seller button
+                        SizedBox(
+                          width: 132,
+                          child: OutlinedButton.icon(
+                            onPressed: _handleMessageTap,
+                            icon: const Icon(Icons.message_rounded, size: 18),
+                            label: const Text(
+                              'Message',
+                              style: TextStyle(height: 1),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -797,7 +837,7 @@ class _SellerPageState extends State<SellerPage> {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Padding(
                         padding: EdgeInsets.all(40),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: const SkeletonProductGrid(count: 6),
                       );
                     }
 

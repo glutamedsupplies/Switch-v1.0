@@ -81,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen>
       width: 138,
       height: 138,
       child: Image.asset(
-        'assets/images/gmslogo.png',
+        'assets/images/switch-logo.png',
         fit: BoxFit.contain,
       ),
     );

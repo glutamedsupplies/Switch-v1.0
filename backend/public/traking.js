@@ -147,6 +147,7 @@
     lastMapSignature: "",
   };
   let trackingSearchTimer = 0;
+  let trackingRealtimeRefreshTimer = 0;
 
   const moneyFormatter = new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -301,6 +302,26 @@
     return `GMS-${String(index + 1).padStart(4, "0")}`;
   }
 
+  function getTrackingProductImageUrl(order) {
+    const listing = order?.product || order?.listing || order?.productSnapshot || {};
+    return [
+      order?.productImageUrl,
+      order?.productCardImageUrl,
+      order?.cardImageUrl,
+      order?.mainImageUrl,
+      order?.imageUrl,
+      order?.imageUrls,
+      listing?.cardImageUrl,
+      listing?.mainImageUrl,
+      listing?.imageUrl,
+      listing?.imageUrls,
+      listing?.buyModalImageUrl,
+    ]
+      .flat()
+      .map((value) => String(value || "").trim())
+      .find(Boolean) || "";
+  }
+
   function normalizeOrderEntry(order, index) {
     const createdAtEpochMs = Math.trunc(Number(order?.createdAtEpochMs) || 0);
     const quantity = Math.max(1, Math.trunc(Number(order?.quantity || order?.items || 1)) || 1);
@@ -326,6 +347,7 @@
         ? `created-${createdAtEpochMs}`
         : `entry-${String(order?.id || index).trim()}`,
       productName: String(order?.productName || "Ordered item").trim(),
+      productImageUrl: getTrackingProductImageUrl(order),
       variantName: String(order?.variantName || "").trim(),
       quantity,
       createdAtEpochMs,
@@ -376,6 +398,7 @@
           amount: entry.amount,
           quantity: entry.quantity,
           products: [entry.productName],
+          productImageUrl: entry.productImageUrl,
         });
         return;
       }
@@ -384,6 +407,7 @@
       existingGroup.quantity += entry.quantity;
       existingGroup.amount = Math.max(existingGroup.amount, entry.amount);
       existingGroup.products.push(entry.productName);
+      existingGroup.productImageUrl ||= entry.productImageUrl;
       existingGroup.address ||= entry.address;
       existingGroup.city ||= entry.city;
       existingGroup.courier = existingGroup.courier || entry.courier;
@@ -839,6 +863,30 @@
     });
   }
 
+  function createTrackingProductMedia(group) {
+    const media = document.createElement("span");
+    media.className = "tracking-order-item__product-media";
+    const fallback = String(group?.products?.[0] || "Item").trim().charAt(0).toUpperCase() || "I";
+    const imageUrl = String(group?.productImageUrl || "").trim();
+    if (!imageUrl) {
+      media.textContent = fallback;
+      return media;
+    }
+
+    const image = document.createElement("img");
+    image.src = imageUrl;
+    image.alt = "";
+    image.loading = "lazy";
+    image.addEventListener("error", function () {
+      image.remove();
+      media.classList.remove("has-image");
+      media.textContent = fallback;
+    }, { once: true });
+    media.classList.add("has-image");
+    media.appendChild(image);
+    return media;
+  }
+
   function renderOrderList(filteredGroups) {
     if (!orderListEl) {
       return;
@@ -862,7 +910,9 @@
       button.type = "button";
       button.className = `tracking-order-item${isActive ? " is-active" : ""}`;
       button.dataset.trackingGroupKey = group.key;
-      button.innerHTML = `
+      const copy = document.createElement("span");
+      copy.className = "tracking-order-item__copy";
+      copy.innerHTML = `
         <span class="tracking-order-item__topline">
           <strong>${escapeHtml(group.displayId)}</strong>
           <span class="tracking-order-item__status tracking-status-pill tracking-status-pill--${group.statusMeta.tone}">
@@ -875,6 +925,7 @@
         </span>
         <span class="tracking-order-item__address">${escapeHtml(group.address || group.destination.name)}</span>
       `;
+      button.append(createTrackingProductMedia(group), copy);
       orderListEl.appendChild(button);
     });
   }
@@ -1232,6 +1283,37 @@
     }
   }
 
+  function scheduleTrackingRealtimeRefresh(delay = 180) {
+    window.clearTimeout(trackingRealtimeRefreshTimer);
+    trackingRealtimeRefreshTimer = window.setTimeout(() => {
+      trackingRealtimeRefreshTimer = 0;
+      if (state.isLoading) {
+        scheduleTrackingRealtimeRefresh(240);
+        return;
+      }
+      void loadOrders();
+    }, delay);
+  }
+
+  function handleTrackingRealtimeChange(event) {
+    const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+    if (detail.type === "ready") {
+      if (detail.reconnected !== true) {
+        return;
+      }
+    } else if (detail.type === "data-change") {
+      const topics = Array.isArray(detail.topics)
+        ? detail.topics.map((topic) => String(topic || "").trim().toLowerCase())
+        : [];
+      if (!topics.some((topic) => ["all", "orders", "products", "inventory"].includes(topic))) {
+        return;
+      }
+    } else {
+      return;
+    }
+    scheduleTrackingRealtimeRefresh();
+  }
+
   orderListEl?.addEventListener("click", function (event) {
     const item = event.target.closest("[data-tracking-group-key]");
     if (!item) {
@@ -1276,6 +1358,7 @@
   });
 
   renderEmptyMap("Loading route");
-  loadOrders();
+  window.addEventListener("gms:realtime-change", handleTrackingRealtimeChange);
+  void loadOrders();
   window.setInterval(loadOrders, REFRESH_INTERVAL_MS);
 })();

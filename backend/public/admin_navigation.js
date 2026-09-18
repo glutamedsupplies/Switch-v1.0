@@ -1,19 +1,103 @@
 ﻿(async function () {
-  const normalizedPath = String(window.location.pathname || "").trim().toLowerCase();
+  const browserPath = String(window.location.pathname || "").trim().toLowerCase();
+  const isAdminSpaShellDocument = document.documentElement.hasAttribute("data-admin-spa-shell");
+
+  function isInsideAdminSpaFrame() {
+    if (window.self === window.top) {
+      return false;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get("__gms_admin_spa_frame") === "1") {
+      return true;
+    }
+
+    try {
+      return window.top.document.documentElement.hasAttribute("data-admin-spa-shell");
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function getAdminMainHashForPath(pathname) {
+    const hashByPath = Object.freeze({
+      "/admin_dashboard.html": "dashboard",
+      "/main.html": "dashboard",
+      "/concern.html": "dashboard",
+      "/main_orders_embed.html": "orders",
+      "/main_listing_insight_embed.html": "listing-insight",
+      "/product_panel.html": "listing",
+      "/edit_products.html": "listing",
+      "/main_inventory_embed.html": "inventory",
+      "/stock.html": "inventory",
+      "/payment_partners.html": "dashboard",
+      "/delivery_partners.html": "dashboard",
+      "/employee_data.html": "employees",
+      "/register.html": "employees",
+      "/face_verfication.html": "employees",
+      "/packing_dashboard.html": "packing",
+      "/traking.html": "packing",
+    });
+    return hashByPath[String(pathname || "").trim().toLowerCase()] || "dashboard";
+  }
+
+  function buildMainShellRedirectUrl(rawRoute) {
+    let routeUrl;
+    try {
+      routeUrl = new URL(String(rawRoute || ""), window.location.origin);
+    } catch (error) {
+      routeUrl = new URL("/main.html#dashboard", window.location.origin);
+    }
+
+    const redirectUrl = new URL("/main.html", window.location.origin);
+    redirectUrl.hash = getAdminMainHashForPath(routeUrl.pathname);
+    routeUrl.searchParams.forEach((value, key) => {
+      if (key !== "__gms_admin_spa_frame") {
+        redirectUrl.searchParams.set(key, value);
+      }
+    });
+    return redirectUrl.href;
+  }
+
+  function getNavigationRouteUrl() {
+    const rawRoute = window.location.href;
+
+    try {
+      const routeUrl = new URL(rawRoute, window.location.origin);
+      if (routeUrl.origin === window.location.origin) {
+        return routeUrl;
+      }
+    } catch (error) {
+      // Fall through to the dashboard route.
+    }
+
+    return new URL("/main.html#dashboard", window.location.origin);
+  }
+
+  function getNavigationPath(routeUrl) {
+    return String(routeUrl?.pathname || "/main.html").trim().toLowerCase();
+  }
+
+  const navigationRouteUrl = getNavigationRouteUrl();
+  const normalizedPath = getNavigationPath(navigationRouteUrl);
+  const isAdminSpaFrame = isInsideAdminSpaFrame();
 
   const pageKeyByPath = Object.freeze({
+    "/main.html": "dashboard",
     "/admin_dashboard.html": "dashboard",
     "/live_chat.html": "live-chat",
     "/concern.html": "concern",
-    "/insight.html": "insight",
-    "/product_insight.html": "product-insight",
     "/product_panel.html": "products",
+    "/edit_products.html": "products",
+    "/main_inventory_embed.html": "stock",
     "/stock.html": "stock",
     "/payment_partners.html": "payment-partners",
     "/delivery_partners.html": "delivery-partners",
     "/employee_data.html": "employee-data",
     "/register.html": "register",
+    "/face_verfication.html": "register",
     "/packing_dashboard.html": "packing-dashboard",
+    "/traking.html": "packing-dashboard",
   });
 
   const permissionKeyByNavKey = Object.freeze({
@@ -21,8 +105,6 @@
     "employee-dashboard": "employee-dashboard",
     "live-chat": "live-chat",
     concern: "concern",
-    insight: "insight",
-    "product-insight": "product-insight",
     products: "products",
     stock: "admin-inventory",
     "payment-partners": "payment-partners",
@@ -38,13 +120,31 @@
     return;
   }
 
+  if (
+    !isAdminSpaShellDocument
+    && !isAdminSpaFrame
+    && window.self === window.top
+    && /^https?:$/i.test(window.location.protocol)
+  ) {
+    const requestedRoute = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.replace(buildMainShellRedirectUrl(requestedRoute));
+    return;
+  }
+
   const employeeLeaveRequestsStorageKey = "gms-employee-leave-requests";
   const employeeLeaveRequestsChangedEventName = "gms-employee-leave-requests-changed";
   const liveChatNavBadgeRefreshIntervalMs = 5000;
+  const adminPresenceHeartbeatIntervalMs = 20000;
   let liveChatUnreadCount = 0;
   let liveChatNavBadgeRefreshInFlight = false;
   let liveChatNavBadgeRefreshQueued = false;
   let liveChatNavBadgeSyncScheduled = false;
+  let adminPresenceHeartbeatTimer = 0;
+  let adminRealtimeRefreshTimer = 0;
+  let adminRealtimeRefreshInFlight = false;
+  let adminRealtimeChatPending = false;
+  let adminRealtimeProfilePending = false;
+  let adminRealtimeThemePending = false;
   const dashboardNavIconOutline = `
     <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
       <path d="M510-600v-210q0-12.75 8.63-21.38Q527.25-840 540-840h270q12.75 0 21.38 8.62Q840-822.75 840-810v210q0 12.75-8.62 21.37Q822.75-570 810-570H540q-12.75 0-21.37-8.63Q510-587.25 510-600ZM120-480v-330q0-12.75 8.63-21.38Q137.25-840 150-840h270q12.75 0 21.38 8.62Q450-822.75 450-810v330q0 12.75-8.62 21.37Q432.75-450 420-450H150q-12.75 0-21.37-8.63Q120-467.25 120-480Zm390 330v-330q0-12.75 8.63-21.38Q527.25-510 540-510h270q12.75 0 21.38 8.62Q840-492.75 840-480v330q0 12.75-8.62 21.37Q822.75-120 810-120H540q-12.75 0-21.37-8.63Q510-137.25 510-150Zm-390 0v-210q0-12.75 8.63-21.38Q137.25-390 150-390h270q12.75 0 21.38 8.62Q450-372.75 450-360v210q0 12.75-8.62 21.37Q432.75-120 420-120H150q-12.75 0-21.37-8.63Q120-137.25 120-150Zm60-360h210v-270H180v270Zm390 330h210v-270H570v270Zm0-450h210v-150H570v150ZM180-180h210v-150H180v150Zm210-330Zm180-120Zm0 180ZM390-330Z" fill="currentColor"></path>
@@ -60,6 +160,10 @@
   const storeNavIconFilled = `
     <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
       <path d="M179-120q-24 0-42-18t-18-42v-339q-28-24-37-59t2-70l43-135q8-27 28-42t46-15h553q28 0 49 15.5t29 41.5l44 135q11 35 1.5 70T840-519v339q0 24-18 42t-42 18H179Zm391-430q29 0 49-19t16-46l-25-165H510v165q0 26 17 45.5t43 19.5Zm-187 0q28 0 47.5-19t19.5-46v-165H350l-25 165q-4 26 14 45.5t44 19.5Zm-182 0q24 0 41.5-16.5T263-607l26-173H189l-46 146q-10 31 8 57.5t50 26.5Zm557 0q32 0 50.5-26t8.5-58l-46-146H671l26 173q3 24 20.5 40.5T758-550Z" fill="currentColor"></path>
+    </svg>`;
+  const companyBuilding2IconMarkup = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-building2-icon lucide-building-2" aria-hidden="true">
+      <path d="M10 12h4"></path><path d="M10 8h4"></path><path d="M14 21v-3a2 2 0 0 0-4 0v3"></path><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"></path><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"></path>
     </svg>`;
   const employeeDashboardNavIconOutline = `
     <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
@@ -119,6 +223,11 @@
   const concernNavIconFilled = `
     <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
       <path d="M508.5-291.5Q520-303 520-320t-11.5-28.5Q497-360 480-360t-28.5 11.5Q440-337 440-320t11.5 28.5Q463-280 480-280t28.5-11.5ZM440-440h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z" fill="currentColor"></path>
+    </svg>`;
+  const feedbackNavIconOutline = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="m8.5 10.5 1.5 1.5 3.5-4" />
     </svg>`;
   const packingDashboardNavIconOutline = `
     <svg viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
@@ -403,22 +512,12 @@
   const navItems = Object.freeze([
     {
       key: "dashboard",
-      href: "/admin_dashboard.html",
+      href: "/main.html#dashboard",
       label: "Dashboard",
       title: "Store Overview",
       stockKey: "dashboard",
       icon: storeNavIconOutline,
       activeIcon: storeNavIconFilled,
-    },
-    {
-      key: "live-chat",
-      href: "/live_chat.html",
-      label: "Live Chat",
-      title: "Live chat",
-      stockKey: "live-chat",
-      icon: liveChatNavIconOutline,
-      activeIcon: liveChatNavIconFilled,
-      iconClassName: "dashboard-nav__icon--live-chat",
     },
     {
       key: "concern",
@@ -430,23 +529,13 @@
       activeIcon: concernNavIconFilled,
     },
     {
-      key: "insight",
-      href: "/insight.html",
-      label: "Insight",
-      title: "Insight",
-      stockKey: "insight",
-      icon: orderNavIconOutline,
-    },
-    {
-      key: "product-insight",
-      href: "/product_insight.html",
-      label: "Product Insight",
-      title: "Product Insight",
-      stockKey: "product-insight",
-      icon: `
-        <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
-          <path d="m363-390 117-71 117 71-31-133 104-90-137-11-53-126-53 126-137 11 104 90-31 133ZM80-80v-740q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H240L80-80Zm134-220h606v-520H140v600l74-80Zm-74 0v-520 520Z" fill="currentColor"></path>
-        </svg>`,
+      key: "feedback",
+      href: "#",
+      label: "Feedback",
+      title: "Send concern to Super Admin",
+      stockKey: "feedback",
+      icon: feedbackNavIconOutline,
+      modalOnly: true,
     },
     {
       key: "products",
@@ -461,7 +550,7 @@
     },
     {
       key: "stock",
-      href: "/stock.html?role=admin",
+      href: "/main.html#inventory",
       label: "Inventory",
       title: "Inventory",
       stockKey: "stock",
@@ -564,9 +653,6 @@
     </svg>`;
   const employeeNavigationItems = Object.freeze([
     employeeDashboardNavItem,
-    navItemByKey["live-chat"],
-    navItemByKey.insight,
-    navItemByKey["product-insight"],
     navItemByKey.products,
     navItemByKey.dashboard,
     navItemByKey.stock,
@@ -576,8 +662,8 @@
     navItemByKey["packing-dashboard"],
   ].filter(Boolean));
 
-  function buildNavItemMarkup(item) {
-    const isActive = item.key === currentPageKey;
+  function buildNavItemMarkup(item, activePageKey = currentPageKey) {
+    const isActive = item.key === activePageKey;
     const extraClassName = item.className ? ` ${item.className}` : "";
     const iconClassName = item.iconClassName ? ` ${item.iconClassName}` : "";
     const iconMarkup = isActive && item.activeIcon ? item.activeIcon : item.icon;
@@ -590,12 +676,13 @@
     return `
       <a
         class="dashboard-nav__item${isActive ? " is-active" : ""}${extraClassName}"
-        href="${item.href}"
+        href="${item.modalOnly ? "#" : item.href}"
         ${isActive ? 'aria-current="page"' : ""}
         aria-label="${item.title}"
         title="${item.title}"
         data-nav-tooltip="${item.title}"
         data-stock-nav-item="${item.stockKey}"
+        ${item.modalOnly ? 'data-seller-feedback-open="true"' : ""}
         ${employeeSignOutAttr}
         ${employeeAccessPermissionAttr}
       >
@@ -674,18 +761,27 @@
         </svg>`,
     },
     {
-      key: "payment-partners",
-      href: "/payment_partners.html",
-      label: "Payment Partners",
-      title: "Payment Partners",
-      icon: paymentPartnersNavIconOutline,
-    },
-    {
-      key: "delivery-partners",
-      href: "/delivery_partners.html",
-      label: "Delivery Partners",
-      title: "Delivery Partners",
-      icon: deliveryPartnersNavIconOutline,
+      key: "services",
+      label: "Services",
+      title: "Services",
+      icon: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" />
+        </svg>`,
+      children: [
+        {
+          key: "payment-partners",
+          href: "/payment_partners.html",
+          label: "Payment Partners",
+          title: "Payment Partners",
+        },
+        {
+          key: "delivery-partners",
+          href: "/delivery_partners.html",
+          label: "Delivery Partners",
+          title: "Delivery Partners",
+        },
+      ],
     },
     {
       key: "super-user-data",
@@ -708,8 +804,40 @@
     },
   ]);
 
-  function buildSuperAdminNavItemMarkup(item) {
-    const isActive = item.key === currentPageKey;
+  function buildSuperAdminNavItemMarkup(item, activePageKey = currentPageKey) {
+    if (Array.isArray(item.children) && item.children.length) {
+      const isActive = item.children.some((child) => child.key === activePageKey);
+      return `
+        <div class="super-admin-services-nav${isActive ? " is-open" : ""}" data-super-admin-services-nav>
+          <button
+            type="button"
+            class="dashboard-nav__item super-admin-services-nav__toggle${isActive ? " is-active" : ""}"
+            aria-expanded="${isActive ? "true" : "false"}"
+            aria-label="${item.title}"
+            title="${item.title}"
+            data-nav-tooltip="${item.title}"
+            data-super-admin-services-nav-toggle
+          >
+            <span class="dashboard-nav__icon" aria-hidden="true">${item.icon.trim()}</span>
+            <span class="dashboard-nav__label">${item.label}</span>
+          </button>
+          <div class="super-admin-services-nav__subnav" data-super-admin-services-nav-subnav ${isActive ? "" : "hidden"}>
+            ${item.children.map((child) => `
+              <a
+                class="super-admin-services-nav__subitem${child.key === activePageKey ? " is-active" : ""}"
+                href="${child.href}"
+                ${child.key === activePageKey ? 'aria-current="page"' : ""}
+                title="${child.title}"
+                data-stock-nav-item="${child.key}"
+              >
+                <span class="super-admin-services-nav__dot" aria-hidden="true"></span>
+                <span>${child.label}</span>
+              </a>`).join("")}
+          </div>
+        </div>`;
+    }
+
+    const isActive = item.key === activePageKey;
     const signOutAttr = item.signOut ? " data-admin-nav-super-sign-out" : "";
 
     return `
@@ -720,6 +848,7 @@
         aria-label="${item.title}"
         title="${item.title}"
         data-nav-tooltip="${item.title}"
+        data-stock-nav-item="${item.key}"
         ${signOutAttr}
       >
         <span class="dashboard-nav__icon" aria-hidden="true">
@@ -729,7 +858,7 @@
       </a>`;
   }
 
-  function buildSuperAdminSidebarMarkup() {
+  function buildSuperAdminSidebarMarkup(activePageKey = currentPageKey) {
     return `
       <a
         class="dashboard-sidebar__logo"
@@ -746,57 +875,130 @@
       </a>
 
       <nav class="dashboard-nav" aria-label="Super admin navigation">
-        ${superAdminNavItems.map(buildSuperAdminNavItemMarkup).join("")}
+        ${superAdminNavItems
+          .map((item) => buildSuperAdminNavItemMarkup(item, activePageKey))
+          .join("")}
       </nav>`;
   }
 
-  function buildSidebarMarkup() {
+  function buildSidebarMarkup(activePageKey = currentPageKey) {
     if (shouldUseSuperAdminNavigation) {
-      return buildSuperAdminSidebarMarkup();
+      return buildSuperAdminSidebarMarkup(activePageKey);
     }
 
-    const visibleNavItems = hasExplicitEmployeeAccess
-      ? employeeNavigationItems.filter((item) => {
-          const permissionKey = permissionKeyByNavKey[item.key];
-          return (
-            permissionKey === "employee-dashboard"
-            || (permissionKey && hasEmployeeAccessPermission(permissionKey))
-          );
-        })
-      : navItems.filter((item) =>
-          item.key !== "login"
-          && item.key !== "payment-partners"
-          && item.key !== "delivery-partners",
+    if (hasExplicitEmployeeAccess) {
+      const visibleEmployeeNavItems = employeeNavigationItems.filter((item) => {
+        const permissionKey = permissionKeyByNavKey[item.key];
+        return (
+          permissionKey === "employee-dashboard"
+          || (permissionKey && hasEmployeeAccessPermission(permissionKey))
         );
+      });
+      const logoHref = visibleEmployeeNavItems[0]?.href || "/employee_access_pending.html";
+
+      return `
+        <a
+          class="dashboard-sidebar__logo"
+          href="${logoHref}"
+          aria-label="Employee dashboard home"
+          title="Employee dashboard"
+          data-login-logo
+          data-stock-workspace-link
+        >
+          <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
+            <img
+              class="dashboard-sidebar__logo-image"
+              alt="Admin logo"
+              hidden
+              data-logo-image
+            />
+            <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder></span>
+          </span>
+        </a>
+
+        <nav class="dashboard-nav" aria-label="Employee navigation" data-stock-nav>
+          ${visibleEmployeeNavItems.map((item) => buildNavItemMarkup(item, activePageKey)).join("")}
+        </nav>`;
+    }
+
+    const visibleNavItems = navItems.filter((item) =>
+      item.key !== "login"
+      && item.key !== "payment-partners"
+      && item.key !== "delivery-partners"
+      && item.key !== "employee-data",
+    );
     const logoHref = hasExplicitEmployeeAccess
       ? employeeDashboardNavItem.href
       : visibleNavItems[0]?.href || "/employee_access_pending.html";
-    const navigationLabel = hasExplicitEmployeeAccess ? "Employee navigation" : "Admin navigation";
 
     return `
-      <a
-        class="dashboard-sidebar__logo"
-        href="${logoHref}"
-        aria-label="${hasExplicitEmployeeAccess ? "Employee dashboard home" : "Admin dashboard home"}"
-        title="${hasExplicitEmployeeAccess ? "Employee dashboard" : "Admin dashboard"}"
-        data-login-logo
-        data-stock-workspace-link
-      >
-        <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
-          <img
-            class="dashboard-sidebar__logo-image"
-            alt="Admin logo"
-            hidden
-            data-logo-image
-          />
-          <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder></span>
-        </span>
-      </a>
+      <a class="dashboard-sidebar__logo admin-super-drawer-home" href="${logoHref}" aria-label="Admin dashboard home" title="Admin dashboard" data-stock-workspace-link></a>
 
-      <nav class="dashboard-nav" aria-label="${navigationLabel}" data-stock-nav>
-        ${visibleNavItems.map(buildNavItemMarkup).join("")}
+      <div
+        class="super-admin-drawer-header admin-super-drawer-header"
+        aria-label="Company seller workspace"
+      >
+        <span class="super-admin-drawer-header__logo admin-super-drawer-header__logo" aria-hidden="true">
+          <img class="admin-super-drawer-header__image" alt="" hidden data-admin-super-drawer-logo />
+          <span class="admin-super-drawer-header__fallback" data-admin-super-drawer-fallback>${companyBuilding2IconMarkup}</span>
+        </span>
+        <span class="super-admin-drawer-header__copy admin-super-drawer-header__copy">
+          <strong data-admin-super-drawer-name>Company Seller</strong>
+        </span>
+      </div>
+
+      <nav class="dashboard-nav admin-super-drawer-nav" aria-label="Admin navigation" data-stock-nav>
+        ${visibleNavItems.map((item) => buildNavItemMarkup(item, activePageKey)).join("")}
       </nav>`;
   }
+
+  const allNavigationItemsByKey = new Map(
+    [
+      ...navItems,
+      employeeDashboardNavItem,
+      ...superAdminNavItems,
+      ...superAdminNavItems.flatMap((item) => Array.isArray(item.children) ? item.children : []),
+    ]
+      .map((item) => [item.key, item]),
+  );
+
+  function setActiveAdminNavigationPage(pageKey) {
+    const normalizedPageKey = String(pageKey || "").trim().toLowerCase();
+    if (!normalizedPageKey) {
+      return;
+    }
+
+    document.querySelectorAll(".dashboard-nav__item[data-stock-nav-item]").forEach((navItem) => {
+      const itemKey = String(navItem.dataset.stockNavItem || "").trim().toLowerCase();
+      const isActive = itemKey === normalizedPageKey;
+      const itemDefinition = allNavigationItemsByKey.get(itemKey);
+      navItem.classList.toggle("is-active", isActive);
+
+      if (isActive) {
+        navItem.setAttribute("aria-current", "page");
+      } else {
+        navItem.removeAttribute("aria-current");
+      }
+
+      const icon = navItem.querySelector(".dashboard-nav__icon");
+      if (!icon || !itemDefinition) {
+        return;
+      }
+
+      const liveChatBadge = icon.querySelector("[data-live-chat-nav-badge]");
+      const iconMarkup = isActive && itemDefinition.activeIcon
+        ? itemDefinition.activeIcon
+        : itemDefinition.icon;
+      icon.innerHTML = String(iconMarkup || "").trim();
+      if (liveChatBadge) {
+        icon.appendChild(liveChatBadge);
+      }
+    });
+  }
+
+  window.gmsAdminNavigation = Object.assign(window.gmsAdminNavigation || {}, {
+    setActivePage: setActiveAdminNavigationPage,
+  });
 
   function syncToolbarWorkspaceMenus() {
     document.querySelectorAll(".product-panel-toolbar__profile").forEach((profile) => {
@@ -810,6 +1012,253 @@
 
       menu.outerHTML = buildWorkspaceMenuMarkup();
     });
+  }
+
+  const adminSuperHeaderExcludedPageKeys = new Set(["live-chat"]);
+
+  function getAdminSuperHeaderTitle(hero) {
+    const heading = hero?.querySelector("h1, h2");
+    const title = String(heading?.textContent || document.title || "Admin Dashboard").trim();
+    return title || "Admin Dashboard";
+  }
+
+  function getAdminSuperHeaderSearchPlaceholder(title) {
+    const normalizedTitle = String(title || "this page").replace(/\s+/g, " ").trim();
+    return `Search ${normalizedTitle || "this page"}`;
+  }
+
+  function escapeAdminSuperHeaderAttribute(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function getAdminSuperHeaderNavToggleMarkup() {
+    return `
+      <button
+        type="button"
+        class="admin-super-header__nav-toggle"
+        data-admin-super-header-nav-toggle
+        aria-label="Open navigation"
+        aria-expanded="false"
+        title="Open navigation"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 6h16" />
+          <path d="M4 12h16" />
+          <path d="M4 18h16" />
+        </svg>
+      </button>`;
+  }
+
+  function getAdminSuperHeaderWorkspaceMarkup() {
+    return `
+      <div class="universal-main-header__workspace admin-super-header__workspace" aria-label="Admin workspace">
+        <span class="admin-super-header__workspace-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 9h16l-1.2-4.2A1.2 1.2 0 0 0 17.65 4H6.35a1.2 1.2 0 0 0-1.15.8L4 9Z" stroke-linejoin="round" />
+            <path d="M5 9v10h14V9" stroke-linejoin="round" />
+            <path d="M8 13h3v6H8zM14 13h3" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
+        <span class="admin-super-header__status-dot" aria-hidden="true"></span>
+      </div>`;
+  }
+
+  function getAdminSuperHeaderSearchMarkup(title) {
+    const placeholder = getAdminSuperHeaderSearchPlaceholder(title);
+    const escapedPlaceholder = escapeAdminSuperHeaderAttribute(placeholder);
+    return `
+      <label
+        class="product-panel-toolbar__search admin-super-header__search"
+        aria-label="${escapedPlaceholder}"
+        data-admin-super-header-search-shell
+      >
+        <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m21 21-4.34-4.34" />
+            <circle cx="11" cy="11" r="8" />
+          </svg>
+        </span>
+        <input
+          type="search"
+          data-admin-super-header-search
+          placeholder="${escapedPlaceholder}"
+          autocomplete="off"
+        />
+      </label>`;
+  }
+
+  function setAdminSuperHeaderNavigationOpen(isOpen) {
+    document.body.classList.toggle("admin-super-header-nav-open", Boolean(isOpen));
+    document.querySelectorAll("[data-admin-super-header-nav-toggle]").forEach((toggle) => {
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      toggle.setAttribute("title", isOpen ? "Close navigation" : "Open navigation");
+      toggle.setAttribute("aria-label", isOpen ? "Close navigation" : "Open navigation");
+    });
+  }
+
+  function findAdminSuperHeaderSearchMirror(sourceInput) {
+    const header = sourceInput.closest(".admin-super-header");
+    const searchInputs = Array.from(
+      document.querySelectorAll(
+        'input[type="search"]:not([data-admin-super-header-search]), input[data-product-search], input[data-search-input]',
+      ),
+    );
+
+    return searchInputs.find((input) =>
+      input instanceof HTMLInputElement
+      && !input.disabled
+      && !input.readOnly
+      && !header?.contains(input),
+    ) || null;
+  }
+
+  function syncAdminSuperHeaderSearch(sourceInput) {
+    if (!(sourceInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const targetInput = findAdminSuperHeaderSearchMirror(sourceInput);
+    if (!targetInput || targetInput.value === sourceInput.value) {
+      return;
+    }
+
+    targetInput.value = sourceInput.value;
+    targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+    targetInput.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function setupAdminSuperHeaderInteractions() {
+    if (window.__gmsAdminSuperHeaderSetup) {
+      return;
+    }
+    window.__gmsAdminSuperHeaderSetup = true;
+
+    document.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) {
+        return;
+      }
+
+      const navToggle = target.closest("[data-admin-super-header-nav-toggle]");
+      if (navToggle) {
+        event.preventDefault();
+        setAdminSuperHeaderNavigationOpen(!document.body.classList.contains("admin-super-header-nav-open"));
+        return;
+      }
+
+      if (
+        document.body.classList.contains("admin-super-header-nav-open")
+        && !target.closest(".dashboard-sidebar")
+        && !target.closest(".admin-super-header")
+      ) {
+        setAdminSuperHeaderNavigationOpen(false);
+      }
+    });
+
+    document.addEventListener("input", (event) => {
+      const sourceInput = event.target instanceof HTMLInputElement
+        ? event.target.closest("[data-admin-super-header-search]")
+        : null;
+      if (sourceInput instanceof HTMLInputElement) {
+        syncAdminSuperHeaderSearch(sourceInput);
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        setAdminSuperHeaderNavigationOpen(false);
+      }
+    });
+  }
+
+  function createAdminSuperHeaderTitleGroup(title) {
+    const titleGroup = document.createElement("div");
+    const heading = document.createElement("h1");
+    titleGroup.className = "admin-super-header__title-group";
+    heading.textContent = title;
+    titleGroup.appendChild(heading);
+    return titleGroup;
+  }
+
+  function enhanceNativeAdminHeader(hero, heroActions, title) {
+    const controls = heroActions.querySelector(":scope > .universal-main-header__controls");
+    const actions = heroActions.querySelector(":scope > .universal-main-header__actions, :scope > .dashboard-hero-tools");
+    if (!controls) {
+      return false;
+    }
+
+    hero.classList.add("admin-super-header", "admin-super-header--native");
+    heroActions.classList.add("universal-main-header", "admin-super-header__row");
+    controls.classList.add("admin-super-header__controls");
+    actions?.classList.add("admin-super-header__actions");
+
+    if (!controls.querySelector("[data-admin-super-header-nav-toggle]")) {
+      controls.insertAdjacentHTML(
+        "afterbegin",
+        `${getAdminSuperHeaderNavToggleMarkup()}${getAdminSuperHeaderWorkspaceMarkup()}`,
+      );
+    }
+
+    const firstSearch = controls.querySelector(".product-panel-toolbar__search input");
+    if (firstSearch instanceof HTMLInputElement && !firstSearch.placeholder.trim()) {
+      firstSearch.placeholder = getAdminSuperHeaderSearchPlaceholder(title);
+    }
+
+    return true;
+  }
+
+  function enhanceAdminDashboardHeaders() {
+    if (
+      shouldUseSuperAdminNavigation
+      || hasExplicitEmployeeAccess
+      || adminSuperHeaderExcludedPageKeys.has(currentPageKey)
+    ) {
+      return;
+    }
+
+    const hero = document.querySelector(".dashboard-content > .hero");
+    if (!hero || hero.dataset.adminSuperHeaderEnhanced === "true" || hero.classList.contains("live-chat-topbar")) {
+      return;
+    }
+
+    const heroActions = hero.querySelector(":scope > .hero-actions") || hero.querySelector(".hero-actions");
+    if (!heroActions) {
+      return;
+    }
+
+    const title = getAdminSuperHeaderTitle(hero);
+    document.body.classList.add("admin-super-header-enabled", `admin-super-header-${currentPageKey}`);
+    hero.dataset.adminSuperHeaderEnhanced = "true";
+
+    if (enhanceNativeAdminHeader(hero, heroActions, title)) {
+      setupAdminSuperHeaderInteractions();
+      return;
+    }
+
+    const tools = heroActions.querySelector(":scope > .dashboard-hero-tools, .dashboard-hero-tools");
+    const controls = document.createElement("div");
+    const actions = document.createElement("div");
+
+    hero.classList.add("admin-super-header");
+    heroActions.classList.add("universal-main-header", "admin-super-header__row");
+
+    controls.className = "universal-main-header__controls admin-super-header__controls";
+    controls.innerHTML = `${getAdminSuperHeaderNavToggleMarkup()}${getAdminSuperHeaderWorkspaceMarkup()}${getAdminSuperHeaderSearchMarkup(title)}`;
+
+    actions.className = "universal-main-header__actions admin-super-header__actions dashboard-hero-tools";
+    if (tools) {
+      while (tools.firstChild) {
+        actions.appendChild(tools.firstChild);
+      }
+      tools.remove();
+    }
+
+    heroActions.replaceChildren(controls, actions);
+    setupAdminSuperHeaderInteractions();
   }
 
   function applySuperAdminPartnerChrome() {
@@ -1102,7 +1551,7 @@
     }
   }
 
-  function updateAdminPresence(isOnline, session = readAdminSession()) {
+  function updateAdminPresence(isOnline, session = readAdminSession(), options = {}) {
     if (!session || typeof session !== "object") {
       return;
     }
@@ -1113,10 +1562,11 @@
       accountCode: session.accountCode,
       email: session.email,
       isOnline: isOnline === true,
+      presenceEvent: options.presenceEvent || (isOnline === true ? "heartbeat" : "logout"),
     });
 
     try {
-      if (navigator.sendBeacon) {
+      if (options.preferBeacon !== false && navigator.sendBeacon) {
         const body = new Blob([payload], { type: "application/json" });
         if (navigator.sendBeacon("/api/admin-presence", body)) {
           return;
@@ -1138,9 +1588,118 @@
     }
   }
 
+  function sendActiveAdminPresence(options = {}) {
+    const adminSession = readAdminSession();
+    if (!adminSession || typeof adminSession !== "object" || navigator.onLine === false) {
+      return;
+    }
+    updateAdminPresence(true, adminSession, {
+      preferBeacon: false,
+      ...options,
+    });
+  }
+
+  function markActiveAdminOffline() {
+    stopAdminPresenceHeartbeat();
+    const adminSession = readAdminSession();
+    if (!adminSession || typeof adminSession !== "object") {
+      return;
+    }
+    updateAdminPresence(false, adminSession, {
+      preferBeacon: true,
+      presenceEvent: "logout",
+    });
+  }
+
+  function stopAdminPresenceHeartbeat() {
+    window.clearInterval(adminPresenceHeartbeatTimer);
+    adminPresenceHeartbeatTimer = 0;
+  }
+
+  function startAdminPresenceHeartbeat() {
+    stopAdminPresenceHeartbeat();
+    if (!hasActiveAdminSession() || navigator.onLine === false) {
+      return;
+    }
+    sendActiveAdminPresence();
+    adminPresenceHeartbeatTimer = window.setInterval(() => {
+      sendActiveAdminPresence();
+    }, adminPresenceHeartbeatIntervalMs);
+  }
+
   function clearAdminSession() {
     const adminSession = readAdminSession();
-    updateAdminPresence(false, adminSession);
+    if (adminSession && typeof adminSession === "object") {
+      try {
+        const rememberedKey = "gms-remembered-seller-accounts";
+        const email = String(adminSession.email || adminSession.adminEmail || "").trim().toLowerCase();
+        const adminId = String(
+          adminSession.adminId || adminSession.id || adminSession.accountCode || "",
+        ).trim();
+        if (email || adminId) {
+          const displayName = [
+            adminSession.companyName,
+            adminSession.storeName,
+            adminSession.businessName,
+            adminSession.sellerName,
+            adminSession.displayName,
+            adminSession.name,
+            [adminSession.firstName, adminSession.lastName].filter(Boolean).join(" "),
+            email,
+          ]
+            .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
+            .find(Boolean) || "Seller";
+          const profileImageUrl = adminSession.businessLogoSkipped === true
+            ? ""
+            : [
+                adminSession.companyPictureUrl,
+                adminSession.companyProfileImageUrl,
+                adminSession.businessLogoUrl,
+                adminSession.profileImageUrl,
+                adminSession.avatarUrl,
+                adminSession.photoUrl,
+                adminSession.logoUrl,
+              ]
+                .map((value) => String(value ?? "").trim())
+                .find(Boolean) || "";
+          const nextEntry = {
+            adminId,
+            email,
+            displayName,
+            companyName: displayName,
+            businessLogoSkipped: adminSession.businessLogoSkipped === true,
+            companyPictureUrl: profileImageUrl,
+            profileImageUrl,
+            lastUsedAt: new Date().toISOString(),
+          };
+          const raw = window.localStorage.getItem(rememberedKey);
+          const parsed = raw ? JSON.parse(raw) : [];
+          const existing = Array.isArray(parsed) ? parsed : [];
+          const filtered = existing.filter((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return false;
+            }
+            const entryAdminId = String(entry.adminId || "").trim();
+            const entryEmail = String(entry.email || "").trim().toLowerCase();
+            if (adminId && entryAdminId && entryAdminId === adminId) {
+              return false;
+            }
+            if (email && entryEmail && entryEmail === email) {
+              return false;
+            }
+            return Boolean(entryAdminId || entryEmail);
+          });
+          window.localStorage.setItem(
+            rememberedKey,
+            JSON.stringify([nextEntry, ...filtered].slice(0, 8)),
+          );
+        }
+      } catch (error) {
+        console.warn("Unable to remember seller account on sign out.", error);
+      }
+    }
+
+    markActiveAdminOffline();
     try {
       window.sessionStorage.removeItem("gms-admin-session");
       window.sessionStorage.removeItem("gms-employee-session");
@@ -1229,6 +1788,19 @@
         return;
       }
 
+      const servicesToggle = target.closest("[data-super-admin-services-nav-toggle]");
+      if (servicesToggle) {
+        event.preventDefault();
+        const servicesNav = servicesToggle.closest("[data-super-admin-services-nav]");
+        const servicesSubnav = servicesNav?.querySelector("[data-super-admin-services-nav-subnav]");
+        servicesNav?.classList.add("is-open");
+        servicesToggle.setAttribute("aria-expanded", "true");
+        if (servicesSubnav instanceof HTMLElement) {
+          servicesSubnav.hidden = false;
+        }
+        return;
+      }
+
       if (!target.closest("[data-dashboard-workspace-menu]")) {
         closeWorkspaceMenus();
       }
@@ -1282,28 +1854,85 @@
   }
 
   function getAdminWorkspaceFallbackIconMarkup() {
-    return storeNavIconOutline.trim();
+    return companyBuilding2IconMarkup.trim();
+  }
+
+  function normalizeAdminIdentityText(value) {
+    return String(value ?? "").replace(/\s+/g, " ").trim();
+  }
+
+  function getAdminCompanyName(session) {
+    const firstName = normalizeAdminIdentityText(session?.firstName);
+    const lastName = normalizeAdminIdentityText(session?.lastName);
+    const fullName = [firstName, lastName].filter(Boolean).join(" ");
+    const candidates = [
+      session?.companyName,
+      session?.storeName,
+      session?.businessName,
+      session?.sellerName,
+      session?.shopName,
+      session?.company?.companyName,
+      session?.company?.storeName,
+      session?.company?.businessName,
+      session?.company?.name,
+      session?.store?.companyName,
+      session?.store?.storeName,
+      session?.store?.businessName,
+      session?.store?.name,
+      session?.profile?.companyName,
+      session?.profile?.storeName,
+      session?.profile?.businessName,
+      session?.profile?.name,
+      session?.displayName,
+      session?.name,
+      fullName,
+      String(session?.email ?? "").trim().split("@")[0],
+    ];
+
+    return candidates.map(normalizeAdminIdentityText).find(Boolean) || "Company Seller";
+  }
+
+  function getAdminBusinessTypeLabel(session) {
+    const candidates = [
+      session?.businessType,
+      session?.storeType,
+      session?.storeTypeName,
+      session?.businessCategory,
+      session?.categoryName,
+      session?.category,
+      session?.company?.businessType,
+      session?.company?.storeType,
+      session?.company?.storeTypeName,
+      session?.store?.businessType,
+      session?.store?.storeType,
+      session?.store?.storeTypeName,
+      session?.profile?.businessType,
+      session?.profile?.storeType,
+      session?.profile?.storeTypeName,
+    ];
+
+    return candidates.map(normalizeAdminIdentityText).find(Boolean) || "Business Type";
+  }
+
+  function getAdminCompanyInitials(companyName) {
+    const words = normalizeAdminIdentityText(companyName)
+      .split(/\s+/)
+      .filter(Boolean);
+    const initials = words.length > 1
+      ? `${words[0][0] || ""}${words[1][0] || ""}`
+      : String(words[0] || "CS").slice(0, 2);
+    return initials.toUpperCase() || "CS";
   }
 
   function getAdminDisplayName(session) {
-    const firstName = String(session?.firstName ?? "").trim();
-    const lastName = String(session?.lastName ?? "").trim();
-    const fullName = [firstName, lastName].filter(Boolean).join(" ");
-    const companyName = String(
-      session?.companyName ?? session?.storeName ?? session?.businessName ?? "",
-    ).trim();
-    return (
-      companyName
-      || fullName
-      || String(session?.displayName ?? "").trim()
-      || String(session?.name ?? "").trim()
-      || String(session?.email ?? "").trim().split("@")[0]
-      || "Admin"
-    );
+    return getAdminCompanyName(session);
   }
 
   function getAdminProfileImageUrl(session) {
     const candidates = [
+      session?.companyPictureUrl,
+      session?.companyProfileImageUrl,
+      session?.businessLogoUrl,
       session?.profileImageUrl,
       session?.avatarUrl,
       session?.photoUrl,
@@ -1311,11 +1940,103 @@
       session?.pictureUrl,
       session?.imageUrl,
       session?.logoUrl,
+      session?.company?.companyPictureUrl,
+      session?.company?.profileImageUrl,
+      session?.company?.logoUrl,
+      session?.store?.companyPictureUrl,
+      session?.store?.profileImageUrl,
+      session?.store?.logoUrl,
+      session?.profile?.companyPictureUrl,
+      session?.profile?.profileImageUrl,
+      session?.profile?.logoUrl,
     ];
 
     return candidates
       .map((value) => String(value ?? "").trim())
       .find(Boolean) || "";
+  }
+
+  function getAdminCompanyToneIndex(session, companyName = getAdminCompanyName(session)) {
+    const source = String(
+      session?.adminId
+      || session?.id
+      || session?.email
+      || companyName
+      || "Company Seller",
+    );
+    let hash = 0;
+    for (const char of source) {
+      hash = (hash + char.charCodeAt(0)) % 6;
+    }
+    return hash + 1;
+  }
+
+  function getAdminCompanyToneColor(session, companyName) {
+    return ["#111827", "#dc2626", "var(--accent, #0b9897)", "#059669", "#7c3aed", "#c2410c"][
+      getAdminCompanyToneIndex(session, companyName) - 1
+    ];
+  }
+
+  function applyAdminCompanyLogoState(target, session, companyName, hasImage) {
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    target.style.setProperty("--company-logo-background", getAdminCompanyToneColor(session, companyName));
+    target.classList.toggle("has-image", Boolean(hasImage));
+  }
+
+  function applyAdminDrawerIdentity(session = readAdminSession()) {
+    if (shouldUseSuperAdminNavigation || hasExplicitEmployeeAccess) {
+      return;
+    }
+
+    const companyName = getAdminCompanyName(session);
+    const businessType = getAdminBusinessTypeLabel(session);
+    const imageUrl = getAdminProfileImageUrl(session);
+
+    document.querySelectorAll(".admin-super-drawer-header").forEach((header) => {
+      header.setAttribute("aria-label", `${companyName} ${businessType} workspace`);
+
+      const nameElement = header.querySelector("[data-admin-super-drawer-name]");
+      if (nameElement) {
+        nameElement.textContent = companyName;
+      }
+
+      const businessTypeElement = header.querySelector("[data-admin-super-drawer-business-type]");
+      if (businessTypeElement) {
+        businessTypeElement.textContent = businessType;
+      }
+
+      const fallback = header.querySelector("[data-admin-super-drawer-fallback]");
+      const logoContainer = fallback?.parentElement
+        || header.querySelector("[data-admin-super-drawer-logo]")?.parentElement;
+      applyAdminCompanyLogoState(logoContainer, session, companyName, imageUrl);
+      if (fallback) {
+        fallback.innerHTML = getAdminWorkspaceFallbackIconMarkup();
+        fallback.hidden = Boolean(imageUrl);
+      }
+
+      const image = header.querySelector("[data-admin-super-drawer-logo]");
+      if (image instanceof HTMLImageElement) {
+        if (imageUrl) {
+          image.onerror = () => {
+            image.hidden = true;
+            applyAdminCompanyLogoState(logoContainer, session, companyName, false);
+            if (fallback) {
+              fallback.hidden = false;
+            }
+          };
+          image.src = imageUrl;
+          image.alt = `${companyName} logo`;
+          image.hidden = false;
+        } else {
+          image.onerror = null;
+          image.removeAttribute("src");
+          image.alt = "";
+          image.hidden = true;
+        }
+      }
+    });
   }
 
   function applyAdminWorkspaceProfile(session = readAdminSession()) {
@@ -1324,8 +2045,9 @@
     }
 
     const displayName = getAdminDisplayName(session);
-    const planLabel = "Free Plan";
+    const planLabel = getAdminBusinessTypeLabel(session);
     const imageUrl = getAdminProfileImageUrl(session);
+    applyAdminDrawerIdentity(session);
 
     document.querySelectorAll("[data-login-logo]").forEach((target) => {
       if (target.dataset.employeeWorkspaceAvatar === "true") {
@@ -1334,15 +2056,24 @@
 
       target.dataset.adminWorkspaceLogo = "true";
       target.removeAttribute("data-default-logo-src");
+      applyAdminCompanyLogoState(target, session, displayName, imageUrl);
       const image = target.querySelector("[data-logo-image]");
       const placeholder = target.querySelector("[data-logo-placeholder]");
 
       if (image instanceof HTMLImageElement) {
         if (imageUrl) {
+          image.onerror = () => {
+            image.hidden = true;
+            applyAdminCompanyLogoState(target, session, displayName, false);
+            if (placeholder) {
+              placeholder.hidden = false;
+            }
+          };
           image.src = imageUrl;
           image.alt = `${displayName} logo`;
           image.hidden = false;
         } else {
+          image.onerror = null;
           image.removeAttribute("src");
           image.alt = "";
           image.hidden = true;
@@ -1369,14 +2100,23 @@
       if (avatar) {
         avatar.dataset.adminWorkspaceAvatar = "true";
         avatar.removeAttribute("data-default-logo-src");
+        applyAdminCompanyLogoState(avatar, session, displayName, imageUrl);
       }
 
       if (image instanceof HTMLImageElement) {
         if (imageUrl) {
+          image.onerror = () => {
+            image.hidden = true;
+            applyAdminCompanyLogoState(avatar, session, displayName, false);
+            if (placeholder) {
+              placeholder.hidden = false;
+            }
+          };
           image.src = imageUrl;
           image.alt = `${displayName} company picture`;
           image.hidden = false;
         } else {
+          image.onerror = null;
           image.removeAttribute("src");
           image.alt = "";
           image.hidden = true;
@@ -1427,6 +2167,11 @@
         ...admin,
         role: "admin",
         adminId: refreshedAdminId || currentSession.adminId || admin.adminId || admin.id,
+        sessionToken: String(
+          admin.sessionToken
+            ?? currentSession.sessionToken
+            ?? "",
+        ).trim() || currentSession.sessionToken,
         signedInAt: currentSession.signedInAt || new Date().toISOString(),
       };
 
@@ -1444,6 +2189,80 @@
     }
   }
 
+  function scheduleAdminRealtimeRefresh(delay = 180) {
+    window.clearTimeout(adminRealtimeRefreshTimer);
+    adminRealtimeRefreshTimer = window.setTimeout(async () => {
+      adminRealtimeRefreshTimer = 0;
+      if (adminRealtimeRefreshInFlight) {
+        scheduleAdminRealtimeRefresh(120);
+        return;
+      }
+
+      const refreshChat = adminRealtimeChatPending;
+      const refreshProfile = adminRealtimeProfilePending;
+      const refreshTheme = adminRealtimeThemePending;
+      adminRealtimeChatPending = false;
+      adminRealtimeProfilePending = false;
+      adminRealtimeThemePending = false;
+      if (!refreshChat && !refreshProfile && !refreshTheme) {
+        return;
+      }
+
+      adminRealtimeRefreshInFlight = true;
+      try {
+        const refreshTasks = [];
+        if (refreshChat) {
+          refreshTasks.push(refreshLiveChatNavBadge());
+        }
+        if (refreshProfile) {
+          refreshTasks.push(refreshAdminWorkspaceProfileFromServer());
+        }
+        if (refreshTheme && typeof window.WebTheme?.syncWorkspaceColor === "function") {
+          refreshTasks.push(window.WebTheme.syncWorkspaceColor({ force: true }));
+        }
+        await Promise.allSettled(refreshTasks);
+      } finally {
+        adminRealtimeRefreshInFlight = false;
+        if (adminRealtimeChatPending || adminRealtimeProfilePending || adminRealtimeThemePending) {
+          scheduleAdminRealtimeRefresh(120);
+        }
+      }
+    }, delay);
+  }
+
+  function handleAdminRealtimeChange(event) {
+    const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+    if (detail.type === "ready") {
+      if (detail.reconnected !== true) {
+        return;
+      }
+      adminRealtimeChatPending = true;
+      adminRealtimeProfilePending = true;
+      adminRealtimeThemePending = true;
+    } else if (detail.type === "data-change") {
+      const topics = Array.isArray(detail.topics)
+        ? detail.topics.map((topic) => String(topic || "").trim().toLowerCase())
+        : [];
+      const refreshAll = topics.includes("all");
+      const refreshChat = refreshAll || topics.includes("chat");
+      const refreshProfile = refreshAll
+        || topics.includes("accounts")
+        || topics.includes("employees")
+        || (topics.includes("admins") && !topics.includes("presence"));
+      const refreshTheme = refreshAll || topics.includes("settings");
+      if (!refreshChat && !refreshProfile && !refreshTheme) {
+        return;
+      }
+      adminRealtimeChatPending ||= refreshChat;
+      adminRealtimeProfilePending ||= refreshProfile;
+      adminRealtimeThemePending ||= refreshTheme;
+    } else {
+      return;
+    }
+
+    scheduleAdminRealtimeRefresh();
+  }
+
   function ensureEmployeeAccountSettingsScript() {
     if (
       window.gmsEmployeeAccountSettingsLoaded
@@ -1453,7 +2272,7 @@
     }
 
     const scriptElement = document.createElement("script");
-    scriptElement.src = "/employee_account_settings.js?v=employee-profile-notifications-1";
+    scriptElement.src = "/employee_account_settings.js?v=seller-square-pen-1";
     scriptElement.defer = true;
     scriptElement.dataset.employeeAccountSettingsScript = "true";
     const appendScript = () => document.body?.appendChild(scriptElement);
@@ -1473,9 +2292,37 @@
     }
 
     const scriptElement = document.createElement("script");
-    scriptElement.src = "/admin_account_settings.js?v=admin-save-dirty-1";
+    scriptElement.src = "/admin_account_settings.js?v=seller-square-pen-1";
     scriptElement.defer = true;
     scriptElement.dataset.adminAccountSettingsScript = "true";
+    const appendScript = () => document.body?.appendChild(scriptElement);
+    if (document.body) {
+      appendScript();
+    } else {
+      document.addEventListener("DOMContentLoaded", appendScript, { once: true });
+    }
+  }
+
+  function ensureSellerFeedbackModalAssets() {
+    if (!document.querySelector("link[data-seller-feedback-modal-css]")) {
+      const modalStyles = document.createElement("link");
+      modalStyles.rel = "stylesheet";
+      modalStyles.href = "/seller_feedback_modal.css?v=seller-feedback-v14";
+      modalStyles.dataset.sellerFeedbackModalCss = "true";
+      document.head.appendChild(modalStyles);
+    }
+
+    if (
+      window.__gmsSellerFeedbackModalReady
+      || document.querySelector("script[data-seller-feedback-modal-script]")
+    ) {
+      return;
+    }
+
+    const scriptElement = document.createElement("script");
+    scriptElement.src = "/seller_feedback_modal.js?v=seller-feedback-v14";
+    scriptElement.defer = true;
+    scriptElement.dataset.sellerFeedbackModalScript = "true";
     const appendScript = () => document.body?.appendChild(scriptElement);
     if (document.body) {
       appendScript();
@@ -1533,14 +2380,40 @@
     });
   }
 
+  document.body.classList.toggle(
+    "admin-super-sidebar-enabled",
+    !shouldUseSuperAdminNavigation && !hasExplicitEmployeeAccess,
+  );
+
   document.querySelectorAll(".dashboard-sidebar").forEach((sidebar) => {
     sidebar.innerHTML = buildSidebarMarkup();
   });
+  applyAdminDrawerIdentity();
+  if (!shouldUseSuperAdminNavigation) {
+    window.addEventListener("gms:realtime-change", handleAdminRealtimeChange);
+  }
+
+  if (isAdminSpaFrame) {
+    if (shouldUseSuperAdminNavigation) {
+      setupDashboardWorkspaceMenus();
+      applySuperAdminPartnerChrome();
+    } else {
+      enhanceAdminDashboardHeaders();
+      syncToolbarWorkspaceMenus();
+      setupDashboardWorkspaceMenus();
+      applyAdminWorkspaceProfile();
+      void refreshAdminWorkspaceProfileFromServer();
+      window.gmsApplyEmployeeWorkspaceProfile = (session) => applyEmployeeWorkspaceProfile(session);
+      window.gmsApplyAdminWorkspaceProfile = (session) => applyAdminWorkspaceProfile(session);
+    }
+    return;
+  }
 
   if (shouldUseSuperAdminNavigation) {
     setupDashboardWorkspaceMenus();
     applySuperAdminPartnerChrome();
   } else {
+    enhanceAdminDashboardHeaders();
     syncToolbarWorkspaceMenus();
     setupDashboardWorkspaceMenus();
     applyAdminWorkspaceProfile();
@@ -1549,6 +2422,7 @@
     syncLiveChatNavBadge();
     setupEmployeeLeaveNavBadgeObserver();
     setupLiveChatNavBadgeObserver();
+    startAdminPresenceHeartbeat();
 
     window.addEventListener(employeeLeaveRequestsChangedEventName, scheduleEmployeeLeaveNavBadgeSync);
     window.addEventListener("storage", (event) => {
@@ -1562,10 +2436,23 @@
     window.setInterval(refreshLiveChatNavBadge, liveChatNavBadgeRefreshIntervalMs);
     window.addEventListener("focus", () => {
       void refreshLiveChatNavBadge();
+      sendActiveAdminPresence();
+    });
+    window.addEventListener("online", () => {
+      startAdminPresenceHeartbeat();
+    });
+    window.addEventListener("offline", () => {
+      stopAdminPresenceHeartbeat();
+    });
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) {
+        startAdminPresenceHeartbeat();
+      }
     });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
         void refreshLiveChatNavBadge();
+        sendActiveAdminPresence();
       }
     });
 
@@ -1573,12 +2460,16 @@
     window.gmsApplyAdminWorkspaceProfile = (session) => applyAdminWorkspaceProfile(session);
     window.addEventListener("gms-admin-session-updated", (event) => {
       applyAdminWorkspaceProfile(event.detail?.session);
+      startAdminPresenceHeartbeat();
     });
     window.addEventListener("gms-employee-session-updated", (event) => {
       applyEmployeeWorkspaceProfile(event.detail?.session);
     });
     if (hasActiveAdminSession()) {
       ensureAdminAccountSettingsScript();
+    }
+    if (!shouldUseSuperAdminNavigation && !hasExplicitEmployeeAccess) {
+      ensureSellerFeedbackModalAssets();
     }
     if (hasEmployeeWorkspaceSession) {
       ensureEmployeeAccountSettingsScript();

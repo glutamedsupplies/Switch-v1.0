@@ -1,7 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:video_player/video_player.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 
 class CustomerReviewItem {
   const CustomerReviewItem({
@@ -37,7 +39,8 @@ class CustomerReviewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    final secondaryColor = theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
+    final secondaryColor =
+        theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
         theme.colorScheme.onSurface.withOpacity(0.72);
     final title = productName.trim().isEmpty ? 'Product Reviews' : productName;
 
@@ -143,28 +146,25 @@ class CustomerReviewMediaStrip extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (var index = 0; index < media.length; index += 1) ...[
-            if (index > 0) const SizedBox(width: 8),
-            _CustomerReviewMediaTile(
-              media: media[index],
-              size: tileSize,
-            ),
+    return HorizontalEndFade(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(right: 18),
+        child: Row(
+          children: [
+            for (var index = 0; index < media.length; index += 1) ...[
+              if (index > 0) const SizedBox(width: 8),
+              _CustomerReviewMediaTile(media: media[index], size: tileSize),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
 class _CustomerReviewMediaTile extends StatelessWidget {
-  const _CustomerReviewMediaTile({
-    required this.media,
-    required this.size,
-  });
+  const _CustomerReviewMediaTile({required this.media, required this.size});
 
   final ProductReviewMedia media;
   final double size;
@@ -231,9 +231,7 @@ class _CustomerReviewMediaTile extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: theme.dividerColor.withOpacity(0.42),
-            ),
+            border: Border.all(color: theme.dividerColor.withOpacity(0.42)),
           ),
           child: tile,
         ),
@@ -264,14 +262,7 @@ class _CustomerReviewMediaTile extends StatelessWidget {
         return ColoredBox(
           color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
           child: Center(
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: theme.colorScheme.primary,
-              ),
-            ),
+            child: const SkeletonCircle(size: 18),
           ),
         );
       },
@@ -325,7 +316,8 @@ class _CustomerReviewVideoDialog extends StatefulWidget {
       _CustomerReviewVideoDialogState();
 }
 
-class _CustomerReviewVideoDialogState extends State<_CustomerReviewVideoDialog> {
+class _CustomerReviewVideoDialogState
+    extends State<_CustomerReviewVideoDialog> {
   late final VideoPlayerController _controller;
   late final Future<void> _initializeVideo;
 
@@ -386,9 +378,7 @@ class _CustomerReviewVideoDialogState extends State<_CustomerReviewVideoDialog> 
                 return const SizedBox(
                   width: 280,
                   height: 220,
-                  child: Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
+                  child: SkeletonShimmer(baseColor: kSkeletonBaseColor),
                 );
               },
             ),
@@ -444,12 +434,15 @@ class _CustomerReviewSellerReplyBlockState
 
   String get _sellerName {
     return [
-      widget.reply.companyName,
-      widget.reply.author,
-      widget.fallbackCompanyName,
-    ]
+          widget.reply.companyName,
+          widget.reply.author,
+          widget.fallbackCompanyName,
+        ]
         .map((candidate) => candidate.trim())
-        .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => 'Seller');
+        .firstWhere(
+          (candidate) => candidate.isNotEmpty,
+          orElse: () => 'Seller',
+        );
   }
 
   void _showFullReply() {
@@ -465,7 +458,7 @@ class _CustomerReviewSellerReplyBlockState
         final titleColor = theme.colorScheme.onSurface;
         final secondaryColor =
             theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
-                theme.colorScheme.onSurface.withOpacity(0.72);
+            theme.colorScheme.onSurface.withOpacity(0.72);
 
         return AlertDialog(
           title: const Text('Seller Reply'),
@@ -512,14 +505,8 @@ class _CustomerReviewSellerReplyBlockState
   }) {
     return TextSpan(
       children: [
-        TextSpan(
-          text: '$_sellerName: ',
-          style: sellerStyle,
-        ),
-        TextSpan(
-          text: message,
-          style: messageStyle,
-        ),
+        TextSpan(text: '$_sellerName: ', style: sellerStyle),
+        TextSpan(text: message, style: messageStyle),
         if (showReadMore)
           TextSpan(
             text: ' Read more',
@@ -586,30 +573,28 @@ class _CustomerReviewSellerReplyBlockState
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final replyBackgroundColor =
-        isDark ? const Color(0xFF2A2A2A) : const Color(0xFFFAFAFA);
+    final replyBackgroundColor = isDark
+        ? const Color(0xFF2A2A2A)
+        : const Color(0xFFFAFAFA);
     final titleColor = theme.colorScheme.onSurface;
-    final secondaryColor = theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
+    final secondaryColor =
+        theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
         theme.colorScheme.onSurface.withOpacity(0.72);
-    final sellerStyle = theme.textTheme.bodyMedium?.copyWith(
+    final sellerStyle =
+        theme.textTheme.bodyMedium?.copyWith(
           color: titleColor,
           fontWeight: FontWeight.w800,
           height: 1.2,
         ) ??
-        TextStyle(
-          color: titleColor,
-          fontWeight: FontWeight.w800,
-          height: 1.2,
-        );
-    final messageStyle = theme.textTheme.bodyMedium?.copyWith(
+        TextStyle(color: titleColor, fontWeight: FontWeight.w800, height: 1.2);
+    final messageStyle =
+        theme.textTheme.bodyMedium?.copyWith(
           color: secondaryColor,
           height: 1.2,
         ) ??
-        TextStyle(
-          color: secondaryColor,
-          height: 1.2,
-        );
-    final readMoreStyle = theme.textTheme.bodyMedium?.copyWith(
+        TextStyle(color: secondaryColor, height: 1.2);
+    final readMoreStyle =
+        theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.primary,
           fontWeight: FontWeight.w800,
           height: 1.2,
@@ -625,8 +610,8 @@ class _CustomerReviewSellerReplyBlockState
         const horizontalPadding = 24.0;
         final contentMaxWidth = constraints.maxWidth.isFinite
             ? (constraints.maxWidth - horizontalPadding)
-                .clamp(0.0, constraints.maxWidth)
-                .toDouble()
+                  .clamp(0.0, constraints.maxWidth)
+                  .toDouble()
             : constraints.maxWidth;
         final previewMessage = _buildPreviewMessage(
           context: context,
@@ -676,7 +661,8 @@ class _CustomerReviewListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final titleColor = theme.colorScheme.onSurface;
-    final secondaryColor = theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
+    final secondaryColor =
+        theme.textTheme.bodyMedium?.color?.withOpacity(0.72) ??
         theme.colorScheme.onSurface.withOpacity(0.72);
 
     return Column(
@@ -695,9 +681,9 @@ class _CustomerReviewListCard extends StatelessWidget {
               child: Text(
                 review.reviewer.isEmpty ? '?' : review.reviewer[0],
                 style: theme.textTheme.titleSmall?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  color: titleColor,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -710,9 +696,9 @@ class _CustomerReviewListCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
-                          color: titleColor,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: titleColor,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Row(
@@ -738,9 +724,9 @@ class _CustomerReviewListCard extends StatelessWidget {
           Text(
             review.message,
             style: theme.textTheme.bodyMedium?.copyWith(
-                  color: secondaryColor,
-                  height: 1.15,
-                ),
+              color: secondaryColor,
+              height: 1.15,
+            ),
           ),
         ],
         if (review.media.isNotEmpty) ...[

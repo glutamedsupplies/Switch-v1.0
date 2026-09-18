@@ -153,6 +153,8 @@ class OrderEntryData {
     this.addOns = const <OrderItemAddOn>[],
     required this.quantity,
     required this.unitPrice,
+    this.flashDealId = '',
+    this.flashReservationId = '',
     required this.stage,
     required this.createdAtEpochMs,
     this.grandTotalAmount = 0,
@@ -195,6 +197,8 @@ class OrderEntryData {
   final List<OrderItemAddOn> addOns;
   final int quantity;
   final double unitPrice;
+  final String flashDealId;
+  final String flashReservationId;
   final OrderStageKey stage;
   final int createdAtEpochMs;
   final double grandTotalAmount;
@@ -262,6 +266,8 @@ class OrderEntryData {
     List<OrderItemAddOn>? addOns,
     int? quantity,
     double? unitPrice,
+    String? flashDealId,
+    String? flashReservationId,
     OrderStageKey? stage,
     int? createdAtEpochMs,
     double? grandTotalAmount,
@@ -304,6 +310,8 @@ class OrderEntryData {
       addOns: addOns ?? this.addOns,
       quantity: quantity ?? this.quantity,
       unitPrice: unitPrice ?? this.unitPrice,
+      flashDealId: flashDealId ?? this.flashDealId,
+      flashReservationId: flashReservationId ?? this.flashReservationId,
       stage: stage ?? this.stage,
       createdAtEpochMs: createdAtEpochMs ?? this.createdAtEpochMs,
       grandTotalAmount: grandTotalAmount ?? this.grandTotalAmount,
@@ -371,6 +379,8 @@ class OrderEntryData {
       'addOns': addOns.map((addOn) => addOn.toJson()).toList(growable: false),
       'quantity': quantity,
       'unitPrice': unitPrice,
+      'flashDealId': flashDealId,
+      'flashReservationId': flashReservationId,
       'stage': stage.name,
       'createdAtEpochMs': createdAtEpochMs,
       'grandTotalAmount': grandTotalAmount,
@@ -511,6 +521,11 @@ class OrderEntryData {
           .toList(growable: false),
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
+      flashDealId: json['flashDealId']?.toString() ?? '',
+      flashReservationId:
+          json['flashReservationId']?.toString() ??
+          json['reservationId']?.toString() ??
+          '',
       stage: _orderStageKeyFromString(json['stage']?.toString()),
       createdAtEpochMs: (json['createdAtEpochMs'] as num?)?.toInt() ?? 0,
       grandTotalAmount: (json['grandTotalAmount'] as num?)?.toDouble() ?? 0,
@@ -991,9 +1006,12 @@ class OrderStore {
       return;
     }
 
+    final previousOrders = List<OrderEntryData>.unmodifiable(
+      ordersNotifier.value,
+    );
     final nextOrders = <OrderEntryData>[
       ...normalizedEntries,
-      ...ordersNotifier.value,
+      ...previousOrders,
     ];
     final normalizedNextOrders = List<OrderEntryData>.unmodifiable(nextOrders);
     try {
@@ -1005,11 +1023,20 @@ class OrderStore {
     if (!syncToRemote) {
       return;
     }
-    await _pushEntriesToRemote(
-      normalizedEntries,
-      fallbackEntries: normalizedNextOrders,
-      rethrowOnFailure: true,
-    );
+    try {
+      await _pushEntriesToRemote(
+        normalizedEntries,
+        fallbackEntries: normalizedNextOrders,
+        rethrowOnFailure: true,
+      );
+    } catch (_) {
+      try {
+        await _persistLocally(previousOrders);
+      } catch (_) {
+        await _refreshFromRemoteInternal();
+      }
+      rethrow;
+    }
   }
 
   Future<void> removeOrderGroup(int createdAtEpochMs) async {

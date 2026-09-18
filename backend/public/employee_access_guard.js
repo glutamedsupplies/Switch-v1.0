@@ -94,7 +94,8 @@
       html.${pendingNavClass} .dashboard-nav__item[href="/live_chat.html"],
       html.${pendingNavClass} .dashboard-nav__item[href="/employee_order_insight.html"],
       html.${pendingNavClass} .dashboard-nav__item[href="/employee_stock.html"],
-      html.${pendingNavClass} .dashboard-nav__item[href="/stock.html?role=admin"],
+      html.${pendingNavClass} .dashboard-nav__item[href="/main.html#inventory"],
+      html.${pendingNavClass} .dashboard-nav__item[href^="/main.html?"][href*="#inventory"],
       html.${pendingNavClass} .dashboard-nav__item--sign-out {
         display: none !important;
       }
@@ -121,6 +122,7 @@
   }
 
   const permissionKeyByPath = Object.freeze({
+    "/main.html": "admin-dashboard",
     "/admin_dashboard.html": "admin-dashboard",
     "/employee_dashboard.html": "employee-dashboard",
     "/packing_dashboard.html": "packing-dashboard",
@@ -129,8 +131,9 @@
     "/employee_order_insight.html": "employee-order",
     "/employee_stock.html": "employee-inventory",
     "/insight.html": "insight",
-    "/product_insight.html": "product-insight",
+    "/listing_insight.html": "product-insight",
     "/product_panel.html": "products",
+    "/main_inventory_embed.html": "admin-inventory",
     "/stock.html": "admin-inventory",
     "/payment_partners.html": "payment-partners",
     "/delivery_partners.html": "delivery-partners",
@@ -193,8 +196,10 @@
 
   function redirectEmployeeInventoryToMainInventory() {
     const currentUrl = new URL(window.location.href);
-    currentUrl.pathname = "/stock.html";
+    currentUrl.pathname = "/main.html";
+    currentUrl.hash = "inventory";
     currentUrl.searchParams.set("role", "admin");
+    currentUrl.searchParams.set("employee_inventory_table", "1");
     window.location.replace(`${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
   }
 
@@ -223,7 +228,7 @@
     },
     {
       permissionKey: "product-insight",
-      href: "/product_insight.html",
+      href: "/listing_insight.html",
       label: "Product Insight",
       title: "Product Insight",
       stockKey: "product-insight",
@@ -244,18 +249,8 @@
         </svg>`,
     },
     {
-      permissionKey: "live-chat",
-      href: "/live_chat.html",
-      label: "Live Chat",
-      title: "Live chat",
-      stockKey: "live-chat",
-      icon: liveChatNavIconOutline,
-      activeIcon: liveChatNavIconFilled,
-      iconClassName: "dashboard-nav__icon--live-chat",
-    },
-    {
       permissionKey: "admin-dashboard",
-      href: "/admin_dashboard.html",
+      href: "/main.html#dashboard",
       label: "Admin",
       title: "Store Overview",
       stockKey: "dashboard",
@@ -264,7 +259,7 @@
     },
     {
       permissionKey: "admin-inventory",
-      href: "/stock.html?role=admin",
+      href: "/main.html?role=admin&employee_inventory_table=1#inventory",
       label: "Inventory",
       title: "Inventory",
       stockKey: "stock",
@@ -306,7 +301,6 @@
   );
   const employeeNavigationPermissionOrder = Object.freeze([
     "employee-dashboard",
-    "live-chat",
     "insight",
     "product-insight",
     "products",
@@ -531,7 +525,7 @@
     }
 
     const scriptElement = document.createElement("script");
-    scriptElement.src = "/employee_account_settings.js?v=employee-profile-notifications-1";
+    scriptElement.src = "/employee_account_settings.js?v=seller-square-pen-1";
     scriptElement.defer = true;
     scriptElement.dataset.employeeAccountSettingsScript = "true";
     const appendScript = () => document.body?.appendChild(scriptElement);
@@ -1095,6 +1089,10 @@
   function syncEmployeeNavigationItems(accessPermissions) {
     const allowedPermissions = createEmployeeAccessPermissionSet(accessPermissions);
     document.querySelectorAll(".dashboard-nav").forEach((nav) => {
+      nav.querySelectorAll('.dashboard-nav__item[href^="/live_chat.html"]').forEach((item) => {
+        item.remove();
+      });
+
       const signOutItems = Array.from(
         nav.querySelectorAll(".dashboard-nav__item--sign-out"),
       );

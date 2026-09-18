@@ -1,0 +1,182 @@
+/* Super Admin Flash Deal review (Phase 5) */
+
+.sa-flash-deals-heading {
+  align-items: flex-start;
+}
+
+.sa-flash-deals-feedback {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.sa-flash-deals-feedback[data-tone="success"] {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.sa-flash-deals-feedback[data-tone="error"] {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.sa-flash-deals-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sa-flash-deals-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.sa-flash-deals-filter strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sa-flash-deals-filter.is-active {
+  border-color: rgba(8, 145, 178, 0.45);
+  background: rgba(8, 145, 178, 0.1);
+  color: #0e7490;
+}
+
+.sa-flash-deals-list {
+  display: grid;
+  gap: 12px;
+}
+
+.sa-flash-deal-card {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.sa-flash-deal-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sa-flash-deal-card__eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.sa-flash-deal-card__head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.sa-flash-deal-card__seller {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.sa-flash-deal-card__status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.sa-flash-deal-card__status.is-pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.sa-flash-deal-card__status.is-upcoming {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.sa-flash-deal-card__status.is-live {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sa-flash-deal-card__status.is-ended,
+.sa-flash-deal-card__status.is-cancelled {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.sa-flash-deal-card__status.is-rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.sa-flash-deal-card__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+}
+
+.sa-flash-deal-card__stats div {
+  min-width: 0;
+}
+
+.sa-flash-deal-card__stats dt {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.sa-flash-deal-card__stats dd {
+  margin: 2px 0 0;
+  font-size: 0.92rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.sa-flash-deal-card__notes {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.sa-flash-deal-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body.super-admin-flash-deals-active .super-admin-companies-search,
+body.super-admin-flash-deals-active .super-admin-companies-filter-dropdown,
+body.super-admin-flash-deals-active .super-admin-store-type-search,
+body.super-admin-flash-deals-active .super-admin-user-data-filter-dropdown,
+body.super-admin-flash-deals-active .super-admin-integrated-search {
+  display: none;
+}

@@ -1,0 +1,17 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --admin-seller-font: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+html,
+body {
+  font-family: var(--admin-seller-font);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}

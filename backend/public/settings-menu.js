@@ -7,10 +7,10 @@ const employeePositionStorageKey = "gms-employee-positions";
 const loginLogoTargets = document.querySelectorAll("[data-login-logo]");
 const notificationEntries = [];
 const notificationRefreshMs = 10000;
-const notificationFetchLimit = 50;
+const notificationFetchLimit = 200;
 const notificationReadActivityLimit = 300;
 const notificationPreviewLimit = 5;
-const notificationShowMoreStep = 1;
+const sellerNotificationPreviewLimit = 4;
 const notificationChangeHighlightClass = "activity-item__change-highlight";
 const notificationSoundUrl = "/audio/universfield-new-notification-024-370048.mp3";
 const settingsDropdownAnimationMs = 220;
@@ -21,6 +21,7 @@ const recentDashboardBackgroundConfigStorageKey = "gms-recent-dashboard-backgrou
 const maxRecentSpectrumConfigs = 5;
 const defaultCompanyAcronyms = Object.freeze([]);
 const defaultEmployeePositions = Object.freeze(["Packing", "Admin Employee"]);
+const settingsMenuSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
 const themedTooltipSelector = [
   ".dashboard-sidebar__logo",
   ".dashboard-nav__item",
@@ -38,6 +39,14 @@ let seenNotificationState = loadSeenNotificationState();
 let seenNotificationSignature = seenNotificationState.signature;
 let lastNotificationSoundSignature = latestNotificationSignature || seenNotificationSignature || "";
 let notificationAudio = null;
+let notificationRealtimeRefreshTimer = 0;
+let notificationLoadSequence = 0;
+
+function isSellerAdminSettingsIconPage() {
+  const pathname = String(window.location?.pathname || "").trim().toLowerCase();
+  return !document.body?.classList?.contains("super-admin-page")
+    && !/\/(?:super_admin|user_data|root_login)\.html$/.test(pathname);
+}
 
 function resolveThemedTooltipText(element, preferredText = "") {
   if (!element || typeof element.getAttribute !== "function") {
@@ -567,6 +576,10 @@ function playNotificationSound(nextSignature) {
   if (!normalizedSignature || normalizedSignature === lastNotificationSoundSignature) {
     return;
   }
+  if (window.GMSPlatformSettings?.notificationSounds === false) {
+    lastNotificationSoundSignature = normalizedSignature;
+    return;
+  }
 
   lastNotificationSoundSignature = normalizedSignature;
   try {
@@ -757,8 +770,7 @@ function getNotificationAdminScope() {
       adminSession?.tenantId ??
       adminSession?.workspaceId ??
       adminSession?.id ??
-      adminSession?.accountCode ??
-      adminSession?.email,
+      adminSession?.accountCode,
   );
   if (adminScope) {
     return adminScope;
@@ -776,15 +788,17 @@ function getNotificationAdminScope() {
 
 function buildNotificationActivityUrl() {
   const viewer = getNotificationViewer();
+  const adminId = getNotificationAdminScope();
+  if (!adminId) {
+    return "";
+  }
+
   const params = new URLSearchParams({
     limit: String(notificationFetchLimit),
     viewerRole: viewer.role,
     viewerAccountId: viewer.accountId,
+    adminId,
   });
-  const adminId = getNotificationAdminScope();
-  if (adminId) {
-    params.set("adminId", adminId);
-  }
 
   if (viewer.role === "employee" && viewer.accessPermissions.length) {
     params.set(
@@ -1245,11 +1259,23 @@ function getMenuDraftTheme(menu) {
 }
 
 function restoreSavedThemePreview() {
+  const workspaceColor = window.WebTheme?.getWorkspaceColor?.();
+  if (workspaceColor && window.WebTheme?.applyWorkspaceColor) {
+    return window.WebTheme.applyWorkspaceColor(workspaceColor, {
+      cache: false,
+      dispatch: false,
+      source: "settings-close",
+    });
+  }
   return window.WebTheme.applyTheme(window.WebTheme.loadThemeConfig());
 }
 
 function restoreSavedDashboardBackgroundPreview() {
   return window.WebTheme.applyDashboardBackground(window.WebTheme.loadDashboardBackgroundConfig());
+}
+
+function isSellerAdminNotificationEntry(entry) {
+  return Boolean(entry?.root?.classList?.contains("seller-admin-notification-menu"));
 }
 
 function closeNotificationMenu(entry) {
@@ -1309,6 +1335,18 @@ function isNotificationMenuOpen(entry) {
 }
 
 function syncNotificationDrawerScrollLock() {
+  const hasOpenSellerNotification = notificationEntries.some(
+    (entry) => isNotificationMenuOpen(entry) && isSellerAdminNotificationEntry(entry),
+  );
+
+  document.documentElement.classList.toggle(
+    "seller-admin-notification-open",
+    hasOpenSellerNotification,
+  );
+  document.body.classList.toggle(
+    "seller-admin-notification-open",
+    hasOpenSellerNotification,
+  );
   document.documentElement.classList.remove("notification-drawer-open");
   document.body.classList.remove("notification-drawer-open");
 }
@@ -1724,7 +1762,7 @@ function hasEquivalentEmployeeWorkspacePermission(accessPermissions, permission)
 }
 
 function isNotificationInventoryPath(pathname = "") {
-  return /^\/(?:stock|employee_stock)\.html$/i.test(String(pathname || "").trim());
+  return /^\/(?:stock|main_inventory_embed|employee_stock|main)\.html$/i.test(String(pathname || "").trim());
 }
 
 function resolveNotificationInventoryTargetForViewer(targetUrl) {
@@ -1734,7 +1772,8 @@ function resolveNotificationInventoryTargetForViewer(targetUrl) {
 
   const viewer = getNotificationViewer();
   if (viewer.role === "employee") {
-    targetUrl.pathname = "/stock.html";
+    targetUrl.pathname = "/main.html";
+    targetUrl.hash = "inventory";
     targetUrl.searchParams.set("role", "admin");
   }
 
@@ -1744,6 +1783,7 @@ function resolveNotificationInventoryTargetForViewer(targetUrl) {
 function getEmployeeWorkspacePermissionForPath(pathname = window.location.pathname) {
   const normalizedPath = String(pathname || "").trim().toLowerCase();
   const permissionByPath = {
+    "/main.html": "admin-dashboard",
     "/admin_dashboard.html": "admin-dashboard",
     "/employee_dashboard.html": "employee-dashboard",
     "/packing_dashboard.html": "packing-dashboard",
@@ -1752,10 +1792,11 @@ function getEmployeeWorkspacePermissionForPath(pathname = window.location.pathna
     "/employee_order_insight.html": "employee-order",
     "/employee_stock.html": "employee-inventory",
     "/insight.html": "insight",
-    "/product_insight.html": "product-insight",
+    "/listing_insight.html": "product-insight",
     "/product_panel.html": "products",
-    "/add_products.html": "products",
     "/edit_products.html": "products",
+    "/main.html": "admin-dashboard",
+    "/main_inventory_embed.html": "admin-inventory",
     "/stock.html": "admin-inventory",
     "/employee_data.html": "employee-data",
     "/register.html": "register",
@@ -1815,7 +1856,13 @@ function isEmployeeWorkspacePage() {
 function normalizeNotificationActor(activity) {
   const actor = activity?.actor && typeof activity.actor === "object" ? activity.actor : {};
   const rawRole = String(actor.role ?? "").trim().toLowerCase();
-  const role = rawRole === "employee" || rawRole === "admin" ? rawRole : "";
+  const role = ["super_admin", "super-admin", "superadmin", "root"].includes(rawRole)
+    ? "super_admin"
+    : ["user", "buyer", "customer", "app_user", "app-user"].includes(rawRole)
+      ? "user"
+      : rawRole === "employee" || rawRole === "admin"
+        ? rawRole
+        : "";
   const displayName = String(
     actor.displayName ??
       actor.name ??
@@ -1833,7 +1880,17 @@ function normalizeNotificationActor(activity) {
   return {
     role,
     accountId,
-    displayName: displayName || (role === "employee" ? "Employee" : role === "admin" ? "Admin" : ""),
+    displayName: role === "super_admin" ? "Super Admin" : displayName || (
+      role === "super_admin"
+        ? "Super Admin"
+        : role === "employee"
+          ? "Employee"
+          : role === "user"
+            ? "App User"
+            : role === "admin"
+              ? "Admin"
+              : ""
+    ),
     profileImageUrl: getNotificationSessionProfileImageUrl(actor),
   };
 }
@@ -1870,7 +1927,24 @@ function getNotificationActorImageUrl(actor) {
   return "";
 }
 
-function getNotificationProfileFallbackIconMarkup() {
+function getNotificationProfileFallbackIconMarkup(role = "") {
+  if (role === "super_admin") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M12 3.2 19 6v5.2c0 4.5-2.8 7.7-7 9.6-4.2-1.9-7-5.1-7-9.6V6l7-2.8Z" stroke-linejoin="round"></path>
+        <path d="m9.2 12 1.8 1.8 3.9-4" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>`;
+  }
+
+  if (role === "user") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="8.2" r="3.4"></circle>
+        <path d="M5.8 19.2a6.2 6.2 0 0 1 12.4 0" stroke-linecap="round"></path>
+        <path d="M18.6 5.7h2.4M19.8 4.5v2.4" stroke-linecap="round"></path>
+      </svg>`;
+  }
+
   return `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
       <circle cx="12" cy="8.2" r="3.4"></circle>
@@ -1880,9 +1954,72 @@ function getNotificationProfileFallbackIconMarkup() {
 
 function getNotificationActivityBadgeConfig(activity) {
   const action = String(activity?.action ?? "").trim().toLowerCase();
+  const type = String(activity?.type ?? "").trim().toLowerCase();
   const title = String(activity?.title ?? "").trim().toLowerCase();
   const description = String(activity?.description ?? "").trim().toLowerCase();
   const stockAdjustmentMatch = description.match(/\bwas\s+(add|deduct)\s+\d+(?:\.\d+)?\s+stock\b/i);
+
+  if (
+    type === "product-revision"
+    || action === "revision-requested"
+    || action === "product-revision"
+    || title.includes("revision")
+  ) {
+    return {
+      label: "Request revision",
+      modifier: "updated",
+      icon: "fa-pen",
+      iconMarkup: isSellerAdminSettingsIconPage() ? settingsMenuSquarePenIconMarkup : "",
+    };
+  }
+
+  if (type === "product-approved" || action === "approved") {
+    return {
+      label: "Approved",
+      modifier: "created",
+      icon: "fa-check",
+    };
+  }
+
+  if (type === "product-rejected" || action === "rejected") {
+    return {
+      label: "Rejected",
+      modifier: "deleted",
+      icon: "fa-ban",
+    };
+  }
+
+  if (type === "listing-restriction" || type === "seller-restriction" || type === "restriction") {
+    return {
+      label: "Restricted",
+      modifier: "updated",
+      icon: "fa-lock",
+    };
+  }
+
+  if (type === "seller-ban" || action === "ban") {
+    return {
+      label: "Banned",
+      modifier: "deleted",
+      icon: "fa-ban",
+    };
+  }
+
+  if (type === "seller-account-deletion" || action === "deletion-scheduled") {
+    return {
+      label: "Deleting",
+      modifier: "deleted",
+      icon: "fa-trash",
+    };
+  }
+
+  if (type === "seller-account-deletion-canceled" || action === "deletion-canceled") {
+    return {
+      label: "Kept",
+      modifier: "created",
+      icon: "fa-check",
+    };
+  }
 
   if (stockAdjustmentMatch) {
     const stockAction = String(stockAdjustmentMatch[1] ?? "").toLowerCase();
@@ -1914,6 +2051,7 @@ function getNotificationActivityBadgeConfig(activity) {
       label: "Edited",
       modifier: "updated",
       icon: "fa-pen",
+      iconMarkup: isSellerAdminSettingsIconPage() ? settingsMenuSquarePenIconMarkup : "",
     };
   }
 
@@ -1929,7 +2067,8 @@ function createNotificationActivityBadge(activity) {
   const badge = document.createElement("span");
   badge.className = `activity-item__action-badge activity-item__action-badge--${config.modifier}`;
   badge.setAttribute("title", config.label);
-  badge.innerHTML = `<i class="fa-solid ${config.icon}" aria-hidden="true"></i>`;
+  badge.innerHTML = config.iconMarkup
+    || `<i class="fa-solid ${config.icon}" aria-hidden="true"></i>`;
   return badge;
 }
 
@@ -1941,7 +2080,7 @@ function createNotificationAvatar(activity) {
 
   const fallbackIcon = document.createElement("span");
   fallbackIcon.className = "activity-item__avatar-icon";
-  fallbackIcon.innerHTML = getNotificationProfileFallbackIconMarkup();
+  fallbackIcon.innerHTML = getNotificationProfileFallbackIconMarkup(actor.role);
 
   const imageUrl = getNotificationActorImageUrl(actor);
   if (imageUrl) {
@@ -2110,9 +2249,19 @@ function createNotificationDescription(activity) {
   const viewer = getNotificationViewer();
   const shouldHighlightActor =
     (viewer.role === "employee" && actor.role === "admin") ||
-    (viewer.role === "admin" && actor.role === "employee");
+    (viewer.role === "admin" && ["employee", "super_admin", "user"].includes(actor.role));
 
-  const actorLabel = actor.displayName || (actor.role === "admin" ? "Admin" : "");
+  const actorLabel = actor.displayName || (
+    actor.role === "super_admin"
+      ? "Super Admin"
+      : actor.role === "user"
+        ? "App User"
+        : actor.role === "employee"
+          ? "Employee"
+          : actor.role === "admin"
+            ? "Admin"
+            : ""
+  );
   const normalizedText = text.toLowerCase();
   const normalizedActorLabel = actorLabel.toLowerCase();
 
@@ -2188,6 +2337,34 @@ function getNotificationActivityTargetUrl(activity) {
   }
 
   if (!isSingleProductUpdate) {
+    if (
+      (type === "product-revision" || action === "revision-requested" || action === "product-revision")
+      && productId
+    ) {
+      const params = new URLSearchParams({
+        product: productId,
+        notificationFocus: "1",
+      });
+      return `/product_panel.html?${params.toString()}`;
+    }
+    if (
+      ["product-approved", "product-rejected", "product-unrejected", "listing-restriction"].includes(type)
+      && productId
+    ) {
+      const params = new URLSearchParams({
+        product: productId,
+        notificationFocus: "1",
+      });
+      return `/product_panel.html?${params.toString()}`;
+    }
+    if (
+      ["seller-ban", "seller-unban", "seller-deactivate", "seller-unrestrict", "seller-restriction", "restriction", "warning", "notice", "seller-notification", "seller-account-deletion", "seller-account-deletion-canceled"].includes(type)
+    ) {
+      if (type === "seller-account-deletion" || type === "seller-account-deletion-canceled") {
+        return "/main.html#account-settings";
+      }
+      return "/main.html#dashboard";
+    }
     if (type === "product" && productId && (action === "created" || action === "updated")) {
       const params = new URLSearchParams({
         product: productId,
@@ -2305,6 +2482,15 @@ async function activateNotificationTarget(targetUrl) {
       const inventoryTargetUrl = resolveNotificationInventoryTargetForViewer(url);
       resolvedTargetUrl = `${inventoryTargetUrl.pathname}${inventoryTargetUrl.search}${inventoryTargetUrl.hash}`;
     }
+    if (
+      url.origin === window.location.origin &&
+      /\/main\.html$/i.test(url.pathname) &&
+      url.hash.replace(/^#/, "") === "account-settings" &&
+      typeof window.gmsOpenAdminAccountSettings === "function"
+    ) {
+      window.gmsOpenAdminAccountSettings({ tab: "security" });
+      return;
+    }
   } catch (error) {
     // Keep the original target if URL parsing fails.
   }
@@ -2321,11 +2507,13 @@ function createNotificationItem(activity, isNewNotification = false) {
     wrapper.classList.add("activity-item--clickable");
     wrapper.tabIndex = 0;
     wrapper.setAttribute("role", "link");
-    wrapper.setAttribute("aria-label", "Open product change");
+    wrapper.setAttribute("aria-label", "Open notification");
     wrapper.addEventListener("click", (event) => {
       if (event.defaultPrevented || event.target?.closest?.("a, button")) {
         return;
       }
+      event.preventDefault();
+      event.stopPropagation();
       markNotificationActivityRead(activity);
       activateNotificationTarget(targetUrl);
     });
@@ -2342,6 +2530,7 @@ function createNotificationItem(activity, isNewNotification = false) {
       if (event.defaultPrevented || event.target?.closest?.("a, button")) {
         return;
       }
+      event.stopPropagation();
       markNotificationActivityRead(activity);
     });
   }
@@ -2356,7 +2545,12 @@ function createNotificationItem(activity, isNewNotification = false) {
   body.className = "activity-item__body";
   body.append(description, timestamp);
 
-  wrapper.append(createNotificationAvatar(activity), body);
+  const unreadDot = document.createElement("span");
+  unreadDot.className = "dashboard-notification-unread-dot";
+  unreadDot.hidden = !isNewNotification;
+  unreadDot.setAttribute("aria-hidden", "true");
+
+  wrapper.append(createNotificationAvatar(activity), body, unreadDot);
   return wrapper;
 }
 
@@ -2398,6 +2592,44 @@ function getNotificationListViewportLimit(entry) {
   const listTop = entry.list.getBoundingClientRect().top;
   const availableHeight = window.innerHeight - listTop - 24;
   return Math.max(320, Math.floor(availableHeight));
+}
+
+function positionSellerNotificationPanel(entry) {
+  if (
+    !isSellerAdminNotificationEntry(entry) ||
+    !(entry.toggle instanceof HTMLElement) ||
+    !(entry.dropdown instanceof HTMLElement)
+  ) {
+    return;
+  }
+
+  const buttonRect = entry.toggle.getBoundingClientRect();
+  const preferredTop = Math.max(12, Math.ceil(buttonRect.bottom + 8));
+  const panelTop = window.innerHeight - preferredTop >= 320 ? preferredTop : 12;
+  const panelRight = Math.max(12, Math.ceil(window.innerWidth - buttonRect.right));
+
+  entry.dropdown.style.setProperty(
+    "--seller-admin-notification-panel-top",
+    `${panelTop}px`,
+  );
+  entry.dropdown.style.setProperty(
+    "--seller-admin-notification-panel-right",
+    `${panelRight}px`,
+  );
+
+  const availableHeight = Math.max(240, Math.floor(window.innerHeight - panelTop - 20));
+  entry.dropdown.style.setProperty(
+    "--seller-admin-notification-expanded-height",
+    `${availableHeight}px`,
+  );
+}
+
+function repositionOpenNotificationPanels() {
+  for (const entry of notificationEntries) {
+    if (isNotificationMenuOpen(entry)) {
+      positionSellerNotificationPanel(entry);
+    }
+  }
 }
 
 function syncNotificationListVisibleHeight(entry, visibleCardCount = notificationPreviewLimit) {
@@ -2468,20 +2700,37 @@ function renderNotificationActivities(activities, message = "No notification yet
     const emptyMessage = getNotificationEntryFilter(entry) === "unread"
       ? "No unread notification."
       : message;
-    const isExpanded = entry.hasExpandedNotifications === true;
-    const expandedVisibleCardCount = notificationPreviewLimit + notificationShowMoreStep;
-    const visibleCardCount = isExpanded
-      ? Math.min(filteredActivities.length, expandedVisibleCardCount)
-      : Math.min(filteredActivities.length, notificationPreviewLimit);
+    const usesSellerPanel = isSellerAdminNotificationEntry(entry);
+    const previewLimit = usesSellerPanel
+      ? sellerNotificationPreviewLimit
+      : notificationPreviewLimit;
+    const canExpand = filteredActivities.length > previewLimit;
+    if (!canExpand) {
+      entry.hasExpandedNotifications = false;
+    }
+    const isExpanded = canExpand && entry.hasExpandedNotifications === true;
     const visibleActivities = isExpanded
       ? filteredActivities.slice()
-      : filteredActivities.slice(0, notificationPreviewLimit);
+      : filteredActivities.slice(0, previewLimit);
     const shouldUseListScrollbar =
-      isExpanded && filteredActivities.length > notificationPreviewLimit;
+      isExpanded && filteredActivities.length > previewLimit;
+    entry.dropdown?.classList.toggle("is-notification-expanded", isExpanded);
+    entry.dropdown?.classList.toggle("is-notification-scrollable", shouldUseListScrollbar);
+    entry.list.classList.toggle("is-notification-expanded", isExpanded);
+    entry.list.classList.toggle("is-notification-scrollable", shouldUseListScrollbar);
     entry.list.classList.toggle(
       "dashboard-notification-list--scrollable",
       shouldUseListScrollbar,
     );
+    if (entry.footer instanceof HTMLElement) {
+      entry.footer.hidden = !canExpand;
+    }
+    if (entry.showAllButton instanceof HTMLButtonElement) {
+      entry.showAllButton.textContent = isExpanded
+        ? "Show fewer notifications"
+        : "Show all notifications";
+      entry.showAllButton.setAttribute("aria-expanded", String(isExpanded));
+    }
     entry.list.replaceChildren();
 
     if (!filteredActivities.length) {
@@ -2489,7 +2738,14 @@ function renderNotificationActivities(activities, message = "No notification yet
       emptyState.className = "empty-state";
       emptyState.textContent = emptyMessage;
       entry.list.appendChild(emptyState);
-      syncNotificationListVisibleHeight(entry);
+      if (usesSellerPanel) {
+        entry.list.style.removeProperty("max-height");
+      } else {
+        syncNotificationListVisibleHeight(entry);
+      }
+      if (isNotificationMenuOpen(entry)) {
+        positionSellerNotificationPanel(entry);
+      }
       continue;
     }
 
@@ -2501,7 +2757,7 @@ function renderNotificationActivities(activities, message = "No notification yet
       !isExpanded &&
       filteredActivities.length > visibleActivities.length;
 
-    if (hasMoreNotifications) {
+    if (hasMoreNotifications && !(entry.showAllButton instanceof HTMLButtonElement)) {
       const showMoreButton = document.createElement("button");
       showMoreButton.type = "button";
       showMoreButton.className = "dashboard-notification-show-more";
@@ -2518,10 +2774,14 @@ function renderNotificationActivities(activities, message = "No notification yet
       entry.collapsedNotificationListHeight = 0;
     }
 
-    syncNotificationListVisibleHeight(
-      entry,
-      isExpanded ? visibleCardCount : notificationPreviewLimit,
-    );
+    if (usesSellerPanel) {
+      entry.list.style.removeProperty("max-height");
+    } else {
+      syncNotificationListVisibleHeight(entry, isExpanded ? visibleActivities.length : previewLimit);
+    }
+    if (isNotificationMenuOpen(entry)) {
+      positionSellerNotificationPanel(entry);
+    }
   }
 }
 
@@ -2818,6 +3078,10 @@ function setEmployeeSetupStatus(panel, kind, message) {
 
 function createEmployeeSetupIcon(name) {
   if (name === "edit") {
+    if (isSellerAdminSettingsIconPage()) {
+      return settingsMenuSquarePenIconMarkup;
+    }
+
     return `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
         <path d="m4 20 4.2-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z" stroke-linejoin="round" />
@@ -3716,7 +3980,227 @@ function ensureDashboardHeroToolsContainer() {
   return tools;
 }
 
+function isSellerAdminSpaFrameDocument() {
+  return Boolean(
+    document.documentElement?.classList?.contains("admin-spa-frame-document") ||
+    document.body?.classList?.contains("admin-spa-frame-document") ||
+    (
+      window.self !== window.top &&
+      new URLSearchParams(window.location.search).get("__gms_admin_spa_frame") === "1"
+    ),
+  );
+}
+
+function isMainInventoryEmbedDocument() {
+  return /\/main_inventory_embed\.html$/i.test(String(window.location.pathname || "").trim())
+    && (
+      document.body?.classList?.contains("stock-main-inventory-embedded")
+      || new URLSearchParams(window.location.search).get("main_inventory") === "1"
+    );
+}
+
+function shouldUseSellerAdminNotificationOnlyHeader() {
+  if (isMainInventoryEmbedDocument()) {
+    return false;
+  }
+
+  const hasSellerAdminChrome = Boolean(
+    hasNotificationAdminSession() ||
+    document.body?.classList.contains("admin-super-sidebar-enabled") ||
+    document.body?.classList.contains("seller-dashboard-page") ||
+    isSellerAdminSpaFrameDocument(),
+  );
+  return Boolean(
+    hasSellerAdminChrome &&
+    isSellerAdminSettingsIconPage() &&
+    document.querySelector(".dashboard-layout"),
+  );
+}
+
+function getSellerAdminNotificationHost() {
+  return (
+    document.querySelector(
+      ".dashboard-content > .hero.admin-super-header .admin-super-header__actions",
+    ) ||
+    document.querySelector(".dashboard-content .dashboard-hero-tools") ||
+    document.querySelector(".dashboard-content .hero-actions")
+  );
+}
+
+function removeLegacySellerAdminNotifications() {
+  document.querySelectorAll("[data-settings-menu]").forEach((menu) => menu.remove());
+  document.querySelectorAll("[data-notification-menu]").forEach((menu) => {
+    if (menu.hasAttribute("data-seller-admin-notification")) {
+      return;
+    }
+    menu.remove();
+  });
+}
+
+function createSellerAdminNotificationButton() {
+  const root = document.createElement("div");
+  root.className = "seller-admin-notification-menu";
+  root.setAttribute("data-seller-admin-notification", "");
+  root.innerHTML = `
+    <button
+      class="seller-admin-notification-btn"
+      type="button"
+      id="seller-admin-notification-btn"
+      aria-label="Workspace notifications"
+      aria-expanded="false"
+      aria-controls="seller-admin-notification-panel"
+      title="Workspace notifications"
+      data-notification-toggle
+    >
+      <span class="seller-admin-notification-icon seller-admin-notification-icon--outline" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.268 21a2 2 0 0 0 3.464 0"></path>
+          <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path>
+        </svg>
+      </span>
+      <span class="seller-admin-notification-icon seller-admin-notification-icon--filled" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.268 21a2 2 0 0 0 3.464 0" fill="none"></path>
+          <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" fill="currentColor"></path>
+        </svg>
+      </span>
+      <span class="seller-admin-notification-badge" data-notification-badge hidden>0</span>
+    </button>
+  `;
+  return root;
+}
+
+function createSellerAdminNotificationPanel() {
+  const panel = document.createElement("div");
+  panel.className = "seller-admin-notification-panel dashboard-notification-dropdown";
+  panel.id = "seller-admin-notification-panel";
+  panel.hidden = true;
+  panel.setAttribute("data-notification-dropdown", "");
+  panel.innerHTML = `
+    <button
+      type="button"
+      class="dashboard-notification-dropdown__close seller-admin-notification-panel__close"
+      aria-label="Close notification"
+      title="Close notification"
+      data-notification-close
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m18 6-12 12"></path>
+        <path d="m6 6 12 12"></path>
+      </svg>
+    </button>
+    <div class="dashboard-notification-dropdown__header">
+      <div>
+        <h2 class="dashboard-notification-dropdown__title">Notification</h2>
+        <div class="dashboard-notification-filter" role="tablist" aria-label="Notification filter">
+          <button type="button" class="dashboard-notification-filter__button is-active" data-notification-filter="all" role="tab" aria-selected="true">All</button>
+          <button type="button" class="dashboard-notification-filter__button" data-notification-filter="unread" role="tab" aria-selected="false">Unread</button>
+        </div>
+      </div>
+    </div>
+    <div class="activity-list dashboard-notification-list seller-admin-notification-list" aria-live="polite">
+      <div class="empty-state">No notification yet.</div>
+    </div>
+    <div class="seller-admin-notification-panel__footer" data-notification-footer hidden>
+      <button
+        type="button"
+        class="dashboard-notification-show-more seller-admin-notification-panel__show-all"
+        data-notification-show-all
+        aria-expanded="false"
+      >
+        Show all notifications
+      </button>
+    </div>
+  `;
+  return panel;
+}
+
+function mountSellerAdminNotificationChrome() {
+  if (!shouldUseSellerAdminNotificationOnlyHeader()) {
+    return null;
+  }
+
+  document.body?.classList.add("seller-admin-notification-enabled");
+  removeLegacySellerAdminNotifications();
+
+  const existingRoot = document.querySelector("[data-seller-admin-notification]");
+  let existingPanel = document.getElementById("seller-admin-notification-panel");
+  if (existingRoot instanceof HTMLElement) {
+    if (!(existingPanel instanceof HTMLElement)) {
+      existingPanel = createSellerAdminNotificationPanel();
+      document.body.appendChild(existingPanel);
+    }
+    existingRoot._sellerNotificationPanel = existingPanel;
+    return existingRoot;
+  }
+
+  const host = getSellerAdminNotificationHost();
+  if (!(host instanceof HTMLElement)) {
+    return null;
+  }
+
+  const root = createSellerAdminNotificationButton();
+  const panel = createSellerAdminNotificationPanel();
+  root._sellerNotificationPanel = panel;
+  host.appendChild(root);
+  document.body.appendChild(panel);
+  return root;
+}
+
+function ensureSellerAdminNotificationHeaderReady() {
+  if (!isSellerAdminSettingsIconPage() || !document.querySelector(".dashboard-layout")) {
+    return null;
+  }
+
+  if (!shouldUseSellerAdminNotificationOnlyHeader()) {
+    return null;
+  }
+
+  const root = mountSellerAdminNotificationChrome();
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+
+  return ensureNotificationMenu(null, root);
+}
+
+function scheduleSellerAdminNotificationHeaderReady() {
+  if (ensureSellerAdminNotificationHeaderReady()) {
+    return;
+  }
+
+  let attempts = 0;
+  const maxAttempts = 50;
+  const retryTimer = window.setInterval(() => {
+    attempts += 1;
+    if (ensureSellerAdminNotificationHeaderReady() || attempts >= maxAttempts) {
+      window.clearInterval(retryTimer);
+    }
+  }, 80);
+
+  const observer = new MutationObserver(() => {
+    if (ensureSellerAdminNotificationHeaderReady()) {
+      observer.disconnect();
+      window.clearInterval(retryTimer);
+    }
+  });
+
+  if (document.body) {
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+    });
+    window.setTimeout(() => observer.disconnect(), 6000);
+  }
+}
+
 function ensureSettingsMenuForDashboardPage() {
+  if (shouldUseSellerAdminNotificationOnlyHeader()) {
+    return;
+  }
+
   if (document.querySelector("[data-settings-menu]")) {
     registerSettingsMenusFromDom();
     return;
@@ -3738,7 +4222,7 @@ function ensureSettingsMenuForDashboardPage() {
 
 function createNotificationMenuElement() {
   const root = document.createElement("div");
-  root.className = "dashboard-tool-menu dashboard-notification-menu";
+  root.className = "dashboard-tool-menu dashboard-notification-menu universal-dropdown";
   root.setAttribute("data-notification-menu", "");
   root.innerHTML = `
     <button
@@ -3747,58 +4231,24 @@ function createNotificationMenuElement() {
       aria-label="Notification"
       aria-haspopup="true"
       aria-expanded="false"
-      data-ui-tooltip="Notification"
+      title="Notification"
       data-notification-toggle
     >
       <span class="dashboard-tool-button__icon" aria-hidden="true">
-        <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
-          <path
-            d="M190-200q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h50v-304q0-84 49.5-150.5T420-798v-22q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v22q81 17 130.5 83.5T720-564v304h50q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H190Zm290-302Zm0 422q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80ZM300-260h360v-304q0-75-52.5-127.5T480-744q-75 0-127.5 52.5T300-564v304Z"
-            fill="currentColor"
-          />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.268 21a2 2 0 0 0 3.464 0"></path>
+          <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path>
         </svg>
       </span>
       <span class="dashboard-notification-badge" hidden aria-hidden="true"></span>
     </button>
-
     <div class="dashboard-notification-dropdown" hidden data-notification-dropdown>
-      <button
-        type="button"
-        class="product-gallery-modal__close validation-modal__close dashboard-notification-dropdown__close"
-        aria-label="Close notification"
-        title="Close notification"
-        data-notification-close
-      >
-        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-      </button>
-
       <div class="dashboard-notification-dropdown__header">
         <div>
           <h2 class="dashboard-notification-dropdown__title">Notification</h2>
-          <div class="dashboard-notification-filter" role="tablist" aria-label="Notification filter">
-            <button
-              type="button"
-              class="dashboard-notification-filter__button is-active"
-              data-notification-filter="all"
-              role="tab"
-              aria-selected="true"
-            >
-              All
-            </button>
-            <button
-              type="button"
-              class="dashboard-notification-filter__button"
-              data-notification-filter="unread"
-              role="tab"
-              aria-selected="false"
-            >
-              Unread
-            </button>
-          </div>
         </div>
         <span class="count-pill">0</span>
       </div>
-
       <div class="activity-list dashboard-notification-list">
         <div class="empty-state">No notification yet.</div>
       </div>
@@ -3824,41 +4274,59 @@ function findSiblingNotificationMenu(settingsMenu) {
   return null;
 }
 
-function ensureNotificationMenu(settingsMenu) {
-  if (!settingsMenu.parentElement) {
+function ensureNotificationMenu(settingsMenu = null, notificationRoot = null) {
+  const settingsMenuElement = settingsMenu instanceof HTMLElement ? settingsMenu : null;
+  if (settingsMenuElement && !settingsMenuElement.parentElement) {
     return null;
   }
 
-  let root = findSiblingNotificationMenu(settingsMenu);
+  let root = notificationRoot instanceof HTMLElement
+    ? notificationRoot
+    : settingsMenuElement
+      ? findSiblingNotificationMenu(settingsMenuElement)
+      : null;
   if (!root) {
+    if (!settingsMenuElement?.parentElement) {
+      return null;
+    }
     root = createNotificationMenuElement();
-    settingsMenu.parentElement.insertBefore(root, settingsMenu);
+    settingsMenuElement.parentElement.insertBefore(root, settingsMenuElement);
   }
 
-  if (settingsMenu.classList.contains("login-page-settings")) {
+  if (settingsMenuElement?.classList.contains("login-page-settings")) {
     root.classList.add("login-page-notification");
   }
 
   if (root._notificationEntry) {
-    return root._notificationEntry;
+    const existing = root._notificationEntry;
+    if (root._sellerNotificationPanel instanceof HTMLElement) {
+      existing.dropdown = root._sellerNotificationPanel;
+    }
+    return existing;
   }
 
+  const toggle = root.querySelector("[data-notification-toggle]");
+  const dropdown = root.querySelector("[data-notification-dropdown]")
+    || root._sellerNotificationPanel
+    || document.getElementById(toggle?.getAttribute("aria-controls") || "");
   const entry = {
     root,
-    toggle: root.querySelector("[data-notification-toggle]"),
-    dropdown: root.querySelector("[data-notification-dropdown]"),
+    toggle,
+    dropdown,
     closeButton: null,
-    badge: root.querySelector(".dashboard-notification-badge"),
-    countPill: root.querySelector(".count-pill"),
-    list: root.querySelector(".dashboard-notification-list"),
-    filterButtons: Array.from(root.querySelectorAll("[data-notification-filter]")),
+    badge: root.querySelector("[data-notification-badge], .dashboard-notification-badge, .seller-admin-notification-badge"),
+    countPill: root.querySelector(".count-pill") || dropdown?.querySelector?.(".count-pill"),
+    list: (dropdown instanceof HTMLElement ? dropdown : root).querySelector(".dashboard-notification-list"),
+    footer: (dropdown instanceof HTMLElement ? dropdown : root).querySelector("[data-notification-footer]"),
+    showAllButton: (dropdown instanceof HTMLElement ? dropdown : root).querySelector("[data-notification-show-all]"),
+    filterButtons: Array.from((dropdown instanceof HTMLElement ? dropdown : root).querySelectorAll("[data-notification-filter]")),
     notificationFilter: "all",
     closeTimer: 0,
     hasExpandedNotifications: false,
     collapsedNotificationListHeight: 0,
   };
 
-  if (!entry.toggle || !entry.dropdown || !entry.badge || !entry.countPill || !entry.list) {
+  if (!entry.toggle || !entry.dropdown || !entry.badge || !entry.list) {
     return null;
   }
 
@@ -3883,14 +4351,37 @@ function ensureNotificationMenu(settingsMenu) {
       entry.collapsedNotificationListHeight = 0;
       renderNotificationActivities(currentNotifications);
     });
+    filterButton.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      const buttons = entry.filterButtons.filter((button) => button instanceof HTMLButtonElement);
+      const currentIndex = buttons.indexOf(filterButton);
+      if (currentIndex < 0 || !buttons.length) {
+        return;
+      }
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? buttons.length - 1
+          : event.key === "ArrowLeft"
+            ? (currentIndex - 1 + buttons.length) % buttons.length
+            : (currentIndex + 1) % buttons.length;
+      buttons[nextIndex]?.focus();
+      buttons[nextIndex]?.click();
+    });
   }
 
-  entry.toggle.addEventListener("click", (event) => {
+  const openSellerNotificationPanel = (event) => {
+    event.preventDefault();
     event.stopPropagation();
     const nextIsOpen = entry.toggle.getAttribute("aria-expanded") !== "true";
 
     closeAllNotificationMenus(entry);
-    closeSettingsMenu(settingsMenu);
+    if (settingsMenuElement) {
+      closeSettingsMenu(settingsMenuElement);
+    }
 
     if (entry.closeTimer) {
       window.clearTimeout(entry.closeTimer);
@@ -3900,13 +4391,21 @@ function ensureNotificationMenu(settingsMenu) {
     entry.dropdown.classList.remove("dashboard-notification-dropdown--closing");
     entry.toggle.setAttribute("aria-expanded", nextIsOpen ? "true" : "false");
     if (nextIsOpen) {
+      if (isSellerAdminNotificationEntry(entry) && entry.dropdown.parentElement !== document.body) {
+        document.body.appendChild(entry.dropdown);
+      }
       entry.dropdown.hidden = false;
       markNotificationBadgeSeen();
+      renderNotificationActivities(currentNotifications);
+      positionSellerNotificationPanel(entry);
+      window.requestAnimationFrame(() => positionSellerNotificationPanel(entry));
     } else {
       closeNotificationMenuWithAnimation(entry);
     }
     syncNotificationDrawerScrollLock();
-  });
+  };
+
+  entry.toggle.addEventListener("click", openSellerNotificationPanel);
 
   entry.dropdown.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -3915,6 +4414,13 @@ function ensureNotificationMenu(settingsMenu) {
   entry.closeButton?.addEventListener("click", (event) => {
     event.stopPropagation();
     closeNotificationMenuWithAnimation(entry);
+  });
+
+  entry.showAllButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    entry.hasExpandedNotifications = !entry.hasExpandedNotifications;
+    entry.collapsedNotificationListHeight = 0;
+    renderNotificationActivities(currentNotifications);
   });
 
   root._notificationEntry = entry;
@@ -4340,14 +4846,28 @@ async function loadNotificationActivity() {
     return;
   }
 
+  const activityUrl = buildNotificationActivityUrl();
+  if (!activityUrl) {
+    currentNotifications = [];
+    currentNotificationTotal = 0;
+    syncNotificationBadges();
+    renderNotificationActivities([]);
+    return;
+  }
+
+  const loadSequence = ++notificationLoadSequence;
   try {
     seenNotificationState = loadSeenNotificationState();
     seenNotificationSignature = seenNotificationState.signature;
-    const response = await fetch(buildNotificationActivityUrl());
+    const response = await fetch(activityUrl);
     const data = await response.json();
 
     if (!response.ok) {
       throw new Error(data.message || "Unable to load recent activity.");
+    }
+
+    if (loadSequence !== notificationLoadSequence) {
+      return;
     }
 
     const activities = Array.isArray(data.activities) ? data.activities : [];
@@ -4367,12 +4887,60 @@ async function loadNotificationActivity() {
     syncNotificationBadges();
     renderNotificationActivities(activities);
   } catch (error) {
+    if (loadSequence !== notificationLoadSequence) {
+      return;
+    }
     console.error(error);
     currentNotifications = [];
     currentNotificationTotal = 0;
     latestNotificationSignature = "";
     syncNotificationBadges();
     renderNotificationActivities([], "Unable to load notification right now.");
+  }
+}
+
+function scheduleNotificationRealtimeRefresh(delayMs = 90) {
+  window.clearTimeout(notificationRealtimeRefreshTimer);
+  notificationRealtimeRefreshTimer = window.setTimeout(() => {
+    notificationRealtimeRefreshTimer = 0;
+    void loadNotificationActivity();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+function handleNotificationRealtimeChange(event) {
+  if (!notificationEntries.length) {
+    return;
+  }
+
+  const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+  if (detail.type === "ready") {
+    if (detail.reconnected === true) {
+      scheduleNotificationRealtimeRefresh(0);
+    }
+    return;
+  }
+  if (detail.type !== "data-change") {
+    return;
+  }
+
+  const topics = Array.isArray(detail.topics)
+    ? detail.topics.map((topic) => String(topic ?? "").trim().toLowerCase())
+    : [];
+  const notificationTopics = new Set([
+    "all",
+    "activity",
+    "accounts",
+    "buyers",
+    "employees",
+    "products",
+    "product-requests",
+    "inventory",
+    "orders",
+    "chat",
+    "followers",
+  ]);
+  if (topics.some((topic) => notificationTopics.has(topic))) {
+    scheduleNotificationRealtimeRefresh();
   }
 }
 
@@ -6086,8 +6654,8 @@ function loadStoredLogo() {
 
 function getDefaultWorkspaceLogoIconMarkup() {
   return `
-    <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
-      <path d="M179-120q-24 0-42-18t-18-42v-339q-28-24-37-59t2-70l43-135q8-27 28-42t46-15h553q28 0 49 15.5t29 41.5l44 135q11 35 1.5 70T840-519v339q0 24-18 42t-42 18H179Zm391-430q29 0 49-19t16-46l-25-165H510v165q0 26 17 45.5t43 19.5Zm-187 0q28 0 47.5-19t19.5-46v-165H350l-25 165q-4 26 14 45.5t44 19.5Zm-182 0q24 0 41.5-16.5T263-607l26-173H189l-46 146q-10 31 8 57.5t50 26.5Zm557 0q32 0 50.5-26t8.5-58l-46-146H671l26 173q3 24 20.5 40.5T758-550ZM179-180h601v-311q1 1-6.5 1H758q-25 0-47.5-10.5T666-533q-16 20-40 31.5T573-490q-30 0-51.5-8.5T480-527q-15 18-38 27.5t-52 9.5q-31 0-55-11t-41-32q-24 21-47 32t-46 11h-13.5q-6.5 0-8.5-1v311Zm601 0H179h601Z" fill="currentColor"></path>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-building2-icon lucide-building-2" aria-hidden="true">
+      <path d="M10 12h4"></path><path d="M10 8h4"></path><path d="M14 21v-3a2 2 0 0 0-4 0v3"></path><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"></path><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"></path>
     </svg>`;
 }
 
@@ -6594,12 +7162,22 @@ function refreshSettingsMenusFromThemeScope(event = null) {
   refreshRecentSpectrumSwatches();
 }
 
+window.addEventListener("gms:close-notification-dropdowns", () => {
+  closeAllNotificationMenus();
+});
+
 window.addEventListener("gms:open-employee-settings", openEmployeeSetupSettingsMenu);
 window.addEventListener("gms-theme-scope-updated", refreshSettingsMenusFromThemeScope);
 
-registerSettingsMenusFromDom();
-ensureSettingsMenuForDashboardPage();
-registerSettingsMenusFromDom();
+scheduleSellerAdminNotificationHeaderReady();
+if (!document.querySelector("[data-seller-admin-notification]")) {
+  registerSettingsMenusFromDom();
+  ensureSettingsMenuForDashboardPage();
+  registerSettingsMenusFromDom();
+  document.querySelectorAll("[data-notification-menu]").forEach((notificationMenu) => {
+    ensureNotificationMenu(null, notificationMenu);
+  });
+}
 
 for (const menu of settingsMenus) {
   const button = menu.querySelector("[data-settings-toggle]");
@@ -6617,7 +7195,7 @@ for (const menu of settingsMenus) {
     continue;
   }
 
-  if (!menu.hasAttribute("data-settings-menu-skip-notification")) {
+  if (!menu.hasAttribute("data-settings-menu-skip-notification") && !shouldUseSellerAdminNotificationOnlyHeader()) {
     ensureNotificationMenu(menu);
   }
   ensureSpectrumPicker(menu, colorInput);
@@ -6867,7 +7445,10 @@ document.addEventListener("click", (event) => {
   }
 
   for (const entry of notificationEntries) {
-    if (!entry.root.contains(event.target)) {
+    const target = event.target;
+    const clickedInsideRoot = entry.root?.contains?.(target);
+    const clickedInsidePanel = entry.dropdown?.contains?.(target);
+    if (!clickedInsideRoot && !clickedInsidePanel) {
       closeNotificationMenuWithAnimation(entry);
     }
   }
@@ -6877,10 +7458,79 @@ document.addEventListener("click", handleCarouselButtonActivation, {
   capture: true,
 });
 
+// Sync workspace color from superadmin picker
+function syncWorkspaceColorFromSuperAdmin() {
+  let savedColor = "";
+  try {
+    savedColor = String(window.localStorage?.getItem("gms-workspace-color") || "").trim().toLowerCase();
+  } catch (error) {
+    savedColor = "";
+  }
+
+  if (!/^#[0-9a-f]{6}$/i.test(savedColor)) {
+    return;
+  }
+
+  const rgb = savedColor
+    .slice(1)
+    .match(/.{2}/g)
+    ?.map((part) => String(Number.parseInt(part, 16)))
+    .join(", ");
+
+  if (!rgb) {
+    return;
+  }
+
+  const appliedSharedTheme = Boolean(window.WebTheme?.applyWorkspaceColor);
+  if (appliedSharedTheme) {
+    window.WebTheme.applyWorkspaceColor(savedColor, {
+      cache: false,
+      dispatch: false,
+      source: "settings-sync",
+    });
+  }
+
+  if (!appliedSharedTheme) {
+    document.documentElement.style.setProperty("--accent", savedColor);
+    document.documentElement.style.setProperty("--accent-text", savedColor);
+    document.documentElement.style.setProperty("--accent-strong", savedColor);
+    document.documentElement.style.setProperty("--accent-button-bg", savedColor);
+    document.documentElement.style.setProperty("--accent-button-hover-bg", savedColor);
+    document.documentElement.style.setProperty("--accent-rgb", rgb);
+  }
+
+  // Update color picker in settings dropdown if exists
+  const colorInput = document.querySelector("[data-theme-color-input]");
+  const hexLabel = document.querySelector("[data-theme-hex]");
+  const rgbLabel = document.querySelector("[data-theme-rgb]");
+
+  if (colorInput instanceof HTMLInputElement) {
+    colorInput.value = savedColor;
+  }
+  if (hexLabel) {
+    hexLabel.textContent = savedColor.toUpperCase();
+  }
+  if (rgbLabel) {
+    rgbLabel.textContent = `RGB ${rgb}`;
+  }
+}
+
+// Initialize on page load
+syncWorkspaceColorFromSuperAdmin();
+
+// Listen for storage changes from superadmin
+window.addEventListener("storage", (event) => {
+  if (event.key === "gms-workspace-color") {
+    syncWorkspaceColorFromSuperAdmin();
+  }
+});
+window.addEventListener("gms:workspace-color-changed", syncWorkspaceColorFromSuperAdmin);
+
 const storedLogo = loadStoredLogo();
 updateLoginLogoTargets(storedLogo.dataUrl);
 ensureScrollTopButton();
 applyThemedTooltips(document);
+window.addEventListener("gms:realtime-change", handleNotificationRealtimeChange);
 loadNotificationActivity();
 window.setInterval(loadNotificationActivity, notificationRefreshMs);
 document.addEventListener("visibilitychange", () => {
@@ -6894,6 +7544,7 @@ window.addEventListener("scroll", updateScrollTopButtonVisibility, {
 window.addEventListener("resize", updateScrollTopButtonVisibility);
 window.addEventListener("resize", repositionOpenSettingsMenus);
 window.addEventListener("resize", repositionOpenSpectrumPickers);
+window.addEventListener("resize", repositionOpenNotificationPanels);
 document.addEventListener("scroll", repositionOpenSettingsMenus, {
   passive: true,
   capture: true,

@@ -4,6 +4,25 @@ void dismissAppKeyboard() {
   FocusManager.instance.primaryFocus?.unfocus();
 }
 
+/// Unfocus on tap-outside of a search field without exiting search mode.
+void dismissSearchKeyboardOnTapOutside(PointerDownEvent event) {
+  dismissAppKeyboard();
+}
+
+/// Dismiss keyboard when the user drags any descendant scrollable.
+Widget wrapSearchKeyboardDismiss({required Widget child}) {
+  return NotificationListener<ScrollNotification>(
+    onNotification: (notification) {
+      if (notification is ScrollUpdateNotification &&
+          notification.dragDetails != null) {
+        dismissAppKeyboard();
+      }
+      return false;
+    },
+    child: child,
+  );
+}
+
 class AppKeyboardDismissObserver extends NavigatorObserver {
   void _dismissKeyboard() {
     dismissAppKeyboard();

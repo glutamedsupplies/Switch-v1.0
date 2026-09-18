@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gms_shopping/main.dart';
 import 'package:gms_shopping/models/product.dart';
+import 'package:gms_shopping/profile.dart';
 import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('app snackbar appears near the top of the screen', (
@@ -46,6 +48,29 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('Top snackbar message'), findsNothing);
+  });
+
+  testWidgets('profile page shows settings action above sign out', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfilePage(
+          backgroundColor: Colors.white,
+          surfaceColor: Colors.white,
+          titleColor: Colors.black,
+          secondaryColor: Colors.grey.shade700,
+          primaryColor: Colors.blue,
+          themeModeNotifier: ValueNotifier(ThemeMode.light),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
   });
 
   testWidgets('header, search, footer, and products render', (
@@ -89,11 +114,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.menu_rounded));
     await tester.pumpAndSettle();
 
-    expect(find.text('Menu'), findsOneWidget);
-    expect(find.text('Favorites'), findsOneWidget);
-    expect(find.text('Feedback'), findsOneWidget);
-    expect(find.text('Customer Support'), findsOneWidget);
-    expect(find.text('Light Mode'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Guest Shopper'), findsOneWidget);
   });
 
   testWidgets('dark mode drawer item switches when tapped', (
@@ -133,7 +155,10 @@ void main() {
 
     expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsNothing);
 
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -500));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -500),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
@@ -238,15 +263,24 @@ void main() {
       findsNothing,
     );
     expect(
-      find.descendant(of: dashboardScrollView, matching: find.text('Top Seller 1')),
+      find.descendant(
+        of: dashboardScrollView,
+        matching: find.text('Top Seller 1'),
+      ),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dashboardScrollView, matching: find.text('Top Seller 10')),
+      find.descendant(
+        of: dashboardScrollView,
+        matching: find.text('Top Seller 10'),
+      ),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: dashboardScrollView, matching: find.text('Top Seller 11')),
+      find.descendant(
+        of: dashboardScrollView,
+        matching: find.text('Top Seller 11'),
+      ),
       findsNothing,
     );
   });
@@ -381,7 +415,7 @@ class _TopSellingProductRepository implements ProductRepository {
           createdAt: now.subtract(Duration(days: rank - 1)),
           sold: (12 - rank) * 100,
           rating: 4.0,
-      ),
+        ),
     ];
   }
 

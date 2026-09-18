@@ -7,6 +7,8 @@ class SellerSummary {
     required this.companyPictureUrl,
     required this.profileImageUrl,
     required this.createdAt,
+    this.planName = 'Free Plan',
+    this.hasPaidPlan = false,
   });
 
   final String adminId;
@@ -16,6 +18,10 @@ class SellerSummary {
   final String companyPictureUrl;
   final String profileImageUrl;
   final DateTime createdAt;
+  final String planName;
+  final bool hasPaidPlan;
+
+  bool get isLegitSeller => hasPaidPlan;
 
   String get displayName {
     final normalizedCompanyName = companyName.trim();
@@ -87,6 +93,16 @@ class SellerSummary {
           (json['createdAt'] ?? json['registeredAt'] ?? '').toString(),
         ) ??
         DateTime.fromMillisecondsSinceEpoch(0);
+    final planName =
+        (json['planName'] ?? json['subscriptionPlan'] ?? 'Free Plan')
+            .toString()
+            .trim();
+    final hasPaidPlan = json['hasPaidPlan'] == true ||
+        json['isLegitSeller'] == true ||
+        _sellerPlanLooksPaid(
+          planName,
+          json['planAmount'] ?? json['subscriptionAmount'] ?? json['amount'],
+        );
 
     return SellerSummary(
       adminId: adminId,
@@ -96,6 +112,26 @@ class SellerSummary {
       companyPictureUrl: companyPictureUrl,
       profileImageUrl: profileImageUrl,
       createdAt: createdAt,
+      planName: planName.isEmpty ? 'Free Plan' : planName,
+      hasPaidPlan: hasPaidPlan,
     );
   }
+}
+
+bool _sellerPlanLooksPaid(String planName, Object? amountRaw) {
+  final amount = amountRaw is num
+      ? amountRaw.toDouble()
+      : double.tryParse(amountRaw?.toString() ?? '') ?? 0;
+  if (amount > 0) return true;
+  final name = planName.trim().toLowerCase();
+  if (name.isEmpty ||
+      name == 'free' ||
+      name == 'free plan' ||
+      name.startsWith('free ')) {
+    return false;
+  }
+  return name == 'basic' ||
+      name == 'pro' ||
+      name == 'premium' ||
+      name == 'starter seller plan';
 }

@@ -17,6 +17,21 @@
   const lottiePlayerUrl = "/vendor/lottie.min.js";
   const successCheckAnimationPath = "/animations/employee-account-check.json";
   const successModalAutoCloseMs = 1800;
+  const adminAccountSettingsStylesheet = "/admin_account_settings.css?v=seller-account-deletion-1";
+  const adminAccountSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
+  const adminAccountIcons = Object.freeze({
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>',
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>',
+    profile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><circle cx="12" cy="12" r="10"/></svg>',
+    plan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg>',
+    registration: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>',
+    security: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/><path d="M12 8v4"/><circle cx="12" cy="15" r=".6" fill="currentColor"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+  });
+  let activeSettingsTab = "profile";
+  let deletionCountdownTimer = 0;
+  let workspaceDeletionBanner = null;
   const validationModalIconMarkup = {
     success: `
       <div class="employee-account-settings-lottie-check" data-admin-account-settings-lottie-check></div>
@@ -29,6 +44,25 @@
       </svg>
     `,
   };
+
+  function ensureAdminAccountSettingsStyles() {
+    if (
+      document.querySelector("link[data-admin-account-settings-styles]")
+      || Array.from(document.styleSheets || []).some((sheet) =>
+        String(sheet.href || "").includes("/admin_account_settings.css"),
+      )
+    ) {
+      return;
+    }
+
+    const stylesheet = document.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = adminAccountSettingsStylesheet;
+    stylesheet.dataset.adminAccountSettingsStyles = "true";
+    document.head.appendChild(stylesheet);
+  }
+
+  ensureAdminAccountSettingsStyles();
 
   function readAdminSession() {
     try {
@@ -68,8 +102,8 @@
 
   function getDefaultWorkspaceLogoIconMarkup() {
     return `
-      <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
-        <path d="M179-120q-24 0-42-18t-18-42v-339q-28-24-37-59t2-70l43-135q8-27 28-42t46-15h553q28 0 49 15.5t29 41.5l44 135q11 35 1.5 70T840-519v339q0 24-18 42t-42 18H179Zm391-430q29 0 49-19t16-46l-25-165H510v165q0 26 17 45.5t43 19.5Zm-187 0q28 0 47.5-19t19.5-46v-165H350l-25 165q-4 26 14 45.5t44 19.5Zm-182 0q24 0 41.5-16.5T263-607l26-173H189l-46 146q-10 31 8 57.5t50 26.5Zm557 0q32 0 50.5-26t8.5-58l-46-146H671l26 173q3 24 20.5 40.5T758-550ZM179-180h601v-311q1 1-6.5 1H758q-25 0-47.5-10.5T666-533q-16 20-40 31.5T573-490q-30 0-51.5-8.5T480-527q-15 18-38 27.5t-52 9.5q-31 0-55-11t-41-32q-24 21-47 32t-46 11h-13.5q-6.5 0-8.5-1v311Zm601 0H179h601Z" fill="currentColor"></path>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-building2-icon lucide-building-2" aria-hidden="true">
+        <path d="M10 12h4"></path><path d="M10 8h4"></path><path d="M14 21v-3a2 2 0 0 0-4 0v3"></path><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"></path><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"></path>
       </svg>`;
   }
 
@@ -90,6 +124,9 @@
 
   function getAdminProfileImageUrl(account) {
     return [
+      account?.companyPictureUrl,
+      account?.companyProfileImageUrl,
+      account?.businessLogoUrl,
       account?.profileImageUrl,
       account?.avatarUrl,
       account?.photoUrl,
@@ -97,6 +134,15 @@
       account?.pictureUrl,
       account?.imageUrl,
       account?.logoUrl,
+      account?.company?.companyPictureUrl,
+      account?.company?.profileImageUrl,
+      account?.company?.logoUrl,
+      account?.store?.companyPictureUrl,
+      account?.store?.profileImageUrl,
+      account?.store?.logoUrl,
+      account?.profile?.companyPictureUrl,
+      account?.profile?.profileImageUrl,
+      account?.profile?.logoUrl,
     ]
       .map((value) => String(value ?? "").trim())
       .find(Boolean) || "";
@@ -114,6 +160,266 @@
       day: "numeric",
       year: "numeric",
     }).format(new Date(timestamp))}`;
+  }
+
+  function normalizeAccountText(value, fallback = "Not provided") {
+    const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+    return normalized || fallback;
+  }
+
+  function formatAccountDate(value, fallback = "Not available") {
+    const timestamp = Date.parse(String(value ?? "").trim());
+    if (!Number.isFinite(timestamp)) {
+      return fallback;
+    }
+
+    return new Intl.DateTimeFormat("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(timestamp));
+  }
+
+  function getSellerDeletionScheduledAt(account = modalAccount) {
+    const timestamp = Date.parse(String(
+      account?.deletionScheduledAt
+        ?? account?.accountDeletionScheduledAt
+        ?? "",
+    ).trim());
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function isSellerDeletionScheduled(account = modalAccount) {
+    const status = String(
+      account?.accountDeletionStatus ?? account?.deletionStatus ?? "",
+    ).trim().toLowerCase();
+    return (status === "scheduled" || status === "pending") && getSellerDeletionScheduledAt(account) > Date.now();
+  }
+
+  function formatSellerDeletionCountdown(account = modalAccount) {
+    const remainingMs = Math.max(0, getSellerDeletionScheduledAt(account) - Date.now());
+    const totalHours = Math.floor(remainingMs / (60 * 60 * 1000));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days >= 1) {
+      return `${days} day${days === 1 ? "" : "s"} ${hours} hour${hours === 1 ? "" : "s"}`;
+    }
+    const minutes = Math.floor((remainingMs / (60 * 1000)) % 60);
+    if (totalHours >= 1) {
+      return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
+    }
+    return `${Math.max(1, minutes)} minute${minutes === 1 ? "" : "s"}`;
+  }
+
+  function formatSellerDeletionDate(account = modalAccount) {
+    const timestamp = getSellerDeletionScheduledAt(account);
+    if (!timestamp) {
+      return "the scheduled date";
+    }
+    return new Intl.DateTimeFormat("en", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(timestamp));
+  }
+
+  function stopSellerDeletionCountdown() {
+    if (deletionCountdownTimer) {
+      window.clearInterval(deletionCountdownTimer);
+      deletionCountdownTimer = 0;
+    }
+  }
+
+  function syncSellerDeletionPanel(account = modalAccount) {
+    if (!modalRefs?.deletionPanel) {
+      return;
+    }
+    const scheduled = isSellerDeletionScheduled(account);
+    modalRefs.deletionPanel.classList.toggle("is-scheduled", scheduled);
+    if (modalRefs.deletionRequestForm) {
+      modalRefs.deletionRequestForm.hidden = scheduled;
+    }
+    if (modalRefs.deletionPendingCard) {
+      modalRefs.deletionPendingCard.hidden = !scheduled;
+    }
+    if (scheduled) {
+      if (modalRefs.deletionCountdown) {
+        modalRefs.deletionCountdown.textContent = formatSellerDeletionCountdown(account);
+      }
+      if (modalRefs.deletionDate) {
+        modalRefs.deletionDate.textContent = formatSellerDeletionDate(account);
+      }
+    } else if (modalRefs.deletionPasswordInput) {
+      modalRefs.deletionPasswordInput.value = "";
+      if (modalRefs.deletionConfirmInput) {
+        modalRefs.deletionConfirmInput.value = "";
+      }
+    }
+    syncWorkspaceDeletionBanner(account);
+  }
+
+  function startSellerDeletionCountdown(account = modalAccount) {
+    stopSellerDeletionCountdown();
+    if (!isSellerDeletionScheduled(account)) {
+      syncSellerDeletionPanel(account);
+      return;
+    }
+    syncSellerDeletionPanel(account);
+    deletionCountdownTimer = window.setInterval(() => {
+      const current = modalAccount || account;
+      if (!isSellerDeletionScheduled(current)) {
+        stopSellerDeletionCountdown();
+        syncSellerDeletionPanel(current);
+        return;
+      }
+      syncSellerDeletionPanel(current);
+    }, 60 * 1000);
+  }
+
+  function syncWorkspaceDeletionBanner(account = modalAccount || readAdminSession()) {
+    const scheduled = isSellerDeletionScheduled(account);
+    if (!scheduled) {
+      workspaceDeletionBanner?.remove();
+      workspaceDeletionBanner = null;
+      document.body.classList.remove("seller-account-deletion-pending");
+      return;
+    }
+
+    document.body.classList.add("seller-account-deletion-pending");
+    if (!workspaceDeletionBanner) {
+      workspaceDeletionBanner = document.createElement("div");
+      workspaceDeletionBanner.className = "seller-account-deletion-banner";
+      workspaceDeletionBanner.innerHTML = `
+        <span class="seller-account-deletion-banner__copy">
+          <strong>Account deletion in progress</strong>
+          <span data-seller-deletion-banner-copy></span>
+        </span>
+        <button type="button" class="seller-account-deletion-banner__action" data-seller-deletion-banner-open>
+          Manage
+        </button>
+      `;
+      workspaceDeletionBanner.querySelector("[data-seller-deletion-banner-open]")?.addEventListener("click", () => {
+        void openAdminAccountSettings({ tab: "security" });
+      });
+      const header = document.querySelector(".main-header-container");
+      if (header?.parentNode) {
+        header.after(workspaceDeletionBanner);
+      } else {
+        const host = document.querySelector(".main-page") || document.body;
+        host.prepend(workspaceDeletionBanner);
+      }
+    }
+    const copy = workspaceDeletionBanner.querySelector("[data-seller-deletion-banner-copy]");
+    if (copy) {
+      copy.textContent = `This seller account will be permanently deleted on ${formatSellerDeletionDate(account)}. ${formatSellerDeletionCountdown(account)} remaining.`;
+    }
+  }
+
+  function getAdminPlanDetails(account) {
+    const subscription = account?.subscription && typeof account.subscription === "object"
+      ? account.subscription
+      : {};
+    const planName = normalizeAccountText(
+      account?.planName
+        ?? account?.subscriptionPlan
+        ?? account?.plan
+        ?? subscription.name,
+      "Free Plan",
+    );
+    const status = normalizeAccountText(
+      account?.planStatus
+        ?? account?.subscriptionStatus
+        ?? subscription.status,
+      "Active",
+    );
+
+    return {
+      name: planName,
+      status,
+      billingCycle: normalizeAccountText(
+        account?.billingCycle ?? subscription.billingCycle,
+        "No billing cycle",
+      ),
+      startedAt: formatAccountDate(
+        account?.planStartedAt ?? account?.subscriptionStartedAt ?? subscription.startedAt ?? account?.createdAt,
+      ),
+      renewsAt: formatAccountDate(
+        account?.planRenewsAt
+          ?? account?.nextBillingAt
+          ?? account?.renewalDate
+          ?? subscription.renewsAt,
+        "Not scheduled",
+      ),
+    };
+  }
+
+  function getAdminVerificationText(account) {
+    if (account?.emailVerified === true && account?.mobileVerified === true) {
+      return "Email and mobile verified";
+    }
+    if (account?.emailVerified === true) {
+      return "Email verified";
+    }
+    if (account?.mobileVerified === true) {
+      return "Mobile verified";
+    }
+    if (account?.verificationSkipped === true) {
+      return "Skipped during registration";
+    }
+    return "Not verified";
+  }
+
+  function getAdminPaymentMethodText(account) {
+    const card = account?.paymentCard && typeof account.paymentCard === "object"
+      ? account.paymentCard
+      : null;
+    const last4 = String(card?.last4 ?? "").replace(/\D/g, "").slice(-4);
+    if (!card || last4.length !== 4) {
+      return account?.paymentCardSkipped === true ? "Skipped during registration" : "Not added";
+    }
+
+    const brand = normalizeAccountText(card.brand, "Card");
+    return `${brand} ending in ${last4}`;
+  }
+
+  function getAdminRegistrationDetails(account) {
+    const accountHolder = [
+      account?.firstName,
+      account?.middleName,
+      account?.lastName,
+      account?.suffix,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const countryCode = normalizeAccountText(account?.countryCode, "+63");
+    const mobileNumber = String(account?.mobileNumber ?? "").replace(/\D/g, "");
+    const paymentCard = account?.paymentCard && typeof account.paymentCard === "object"
+      ? account.paymentCard
+      : null;
+    const expiryMonth = Number(paymentCard?.expiryMonth);
+    const expiryYear = Number(paymentCard?.expiryYear);
+    const paymentExpiry = Number.isInteger(expiryMonth)
+      && expiryMonth >= 1
+      && expiryMonth <= 12
+      && Number.isInteger(expiryYear)
+      ? `${String(expiryMonth).padStart(2, "0")}/${expiryYear}`
+      : "Not added";
+
+    return {
+      companyName: normalizeAccountText(account?.companyName ?? account?.storeName),
+      businessType: normalizeAccountText(account?.businessType ?? account?.storeType),
+      accountHolder: normalizeAccountText(accountHolder),
+      email: normalizeAccountText(account?.email),
+      mobile: mobileNumber ? `${countryCode} ${mobileNumber}` : "Not provided",
+      verification: getAdminVerificationText(account),
+      paymentMethod: getAdminPaymentMethodText(account),
+      paymentCardholder: normalizeAccountText(paymentCard?.cardholderName, "Not added"),
+      paymentExpiry,
+      sellerId: normalizeAccountText(account?.adminId ?? account?.accountCode ?? account?.id),
+      registeredAt: formatAccountDate(account?.createdAt),
+      password: "******** (protected)",
+    };
   }
 
   function normalizePhoneNumber(value) {
@@ -137,6 +443,94 @@
         dropdown.hidden = true;
       }
     });
+  }
+
+  function setTextContent(element, value) {
+    if (element) {
+      element.textContent = String(value ?? "");
+    }
+  }
+
+  function syncAdminAccountSummary(account) {
+    if (!modalRefs) {
+      return;
+    }
+
+    const plan = getAdminPlanDetails(account);
+    const registration = getAdminRegistrationDetails(account);
+    setTextContent(modalRefs.profilePlanName, plan.name);
+    setTextContent(modalRefs.planName, plan.name);
+    setTextContent(modalRefs.planStatus, plan.status);
+    setTextContent(modalRefs.planBillingCycle, plan.billingCycle);
+    setTextContent(modalRefs.planStartedAt, plan.startedAt);
+    setTextContent(modalRefs.planRenewsAt, plan.renewsAt);
+    setTextContent(modalRefs.registrationCompanyName, registration.companyName);
+    setTextContent(modalRefs.registrationBusinessType, registration.businessType);
+    setTextContent(modalRefs.registrationAccountHolder, registration.accountHolder);
+    setTextContent(modalRefs.registrationEmail, registration.email);
+    setTextContent(modalRefs.registrationMobile, registration.mobile);
+    setTextContent(modalRefs.registrationVerification, registration.verification);
+    setTextContent(modalRefs.registrationPaymentMethod, registration.paymentMethod);
+    setTextContent(modalRefs.registrationPaymentCardholder, registration.paymentCardholder);
+    setTextContent(modalRefs.registrationPaymentExpiry, registration.paymentExpiry);
+    setTextContent(modalRefs.registrationSellerId, registration.sellerId);
+    setTextContent(modalRefs.registrationCreatedAt, registration.registeredAt);
+    setTextContent(modalRefs.registrationPassword, registration.password);
+  }
+
+  function setAdminAccountSettingsTab(tabName, options = {}) {
+    if (!modalRefs) {
+      return;
+    }
+
+    const normalizedTab = ["profile", "plan", "registration", "security"].includes(tabName)
+      ? tabName
+      : "profile";
+    activeSettingsTab = normalizedTab;
+    modalRefs.tabButtons.forEach((button) => {
+      const isActive = button.dataset.adminAccountSettingsTab === normalizedTab;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+      button.tabIndex = isActive ? 0 : -1;
+    });
+    modalRefs.tabPanels.forEach((panel) => {
+      const isActive = panel.dataset.adminAccountSettingsPanel === normalizedTab;
+      panel.hidden = !isActive;
+      panel.classList.toggle("is-active", isActive);
+    });
+    modalRefs.saveButton.hidden = normalizedTab !== "profile";
+    modalRefs.cancelButton.textContent = normalizedTab === "profile" ? "Cancel" : "Close";
+    syncSaveButtonState();
+
+    if (options.focus === true) {
+      modalRefs.tabButtons
+        .find((button) => button.dataset.adminAccountSettingsTab === normalizedTab)
+        ?.focus({ preventScroll: true });
+    }
+  }
+
+  function handleAdminAccountSettingsTabKeydown(event) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    const tabs = modalRefs?.tabButtons || [];
+    const currentIndex = tabs.indexOf(event.currentTarget);
+    if (currentIndex < 0 || !tabs.length) {
+      return;
+    }
+
+    event.preventDefault();
+    let nextIndex = currentIndex;
+    if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = tabs.length - 1;
+    } else {
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+    }
+    setAdminAccountSettingsTab(tabs[nextIndex].dataset.adminAccountSettingsTab, { focus: true });
   }
 
   function setFeedback(message = "", type = "") {
@@ -225,6 +619,12 @@
     }
     if (modalBusy) {
       setAvatarMenuOpen(false);
+    }
+    if (modalRefs.deletionSubmitButton) {
+      modalRefs.deletionSubmitButton.disabled = modalBusy;
+    }
+    if (modalRefs.deletionCancelButton) {
+      modalRefs.deletionCancelButton.disabled = modalBusy;
     }
     syncAdminAccountSettingsEditButtons();
     syncSaveButtonState();
@@ -688,12 +1088,31 @@
             <h2 id="admin-account-settings-title">Account Settings</h2>
           </div>
           <button type="button" class="employee-account-settings-modal__close" data-admin-account-settings-close aria-label="Close account settings">
-            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            ${adminAccountIcons.close}
           </button>
         </div>
 
         <form class="employee-account-settings-modal__form" data-admin-account-settings-form novalidate>
-          <div class="employee-account-settings-layout">
+          <div class="admin-account-settings-tabs" role="tablist" aria-label="Account settings sections">
+            <button type="button" class="admin-account-settings-tab is-active" role="tab" id="admin-account-settings-profile-tab" aria-selected="true" aria-controls="admin-account-settings-profile-panel" data-admin-account-settings-tab="profile">
+              ${adminAccountIcons.profile}
+              <span>Profile</span>
+            </button>
+            <button type="button" class="admin-account-settings-tab" role="tab" id="admin-account-settings-plan-tab" aria-selected="false" aria-controls="admin-account-settings-plan-panel" tabindex="-1" data-admin-account-settings-tab="plan">
+              ${adminAccountIcons.plan}
+              <span>Plan</span>
+            </button>
+            <button type="button" class="admin-account-settings-tab" role="tab" id="admin-account-settings-registration-tab" aria-selected="false" aria-controls="admin-account-settings-registration-panel" tabindex="-1" data-admin-account-settings-tab="registration">
+              ${adminAccountIcons.registration}
+              <span>Registration Details</span>
+            </button>
+            <button type="button" class="admin-account-settings-tab" role="tab" id="admin-account-settings-security-tab" aria-selected="false" aria-controls="admin-account-settings-security-panel" tabindex="-1" data-admin-account-settings-tab="security">
+              ${adminAccountIcons.security}
+              <span>Security</span>
+            </button>
+          </div>
+
+          <div class="employee-account-settings-layout admin-account-settings-panel is-active" role="tabpanel" id="admin-account-settings-profile-panel" aria-labelledby="admin-account-settings-profile-tab" data-admin-account-settings-panel="profile">
             <section class="employee-account-settings-profile" aria-label="Company picture">
               <h3>Company Picture</h3>
               <span class="employee-account-settings-profile__avatar-wrap" data-admin-account-settings-avatar-wrap>
@@ -704,22 +1123,22 @@
                   </span>
                 </button>
                 <button type="button" class="employee-account-settings-avatar-remove" data-admin-account-settings-remove-photo aria-label="Remove company picture" hidden>
-                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  ${adminAccountIcons.close}
                 </button>
                 <span class="employee-account-settings-profile__menu" data-admin-account-settings-avatar-menu role="menu" hidden>
                   <button type="button" role="menuitem" data-admin-account-settings-see-photo>
-                    <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                    ${adminAccountIcons.eye}
                     <span>See Company Picture</span>
                   </button>
                   <button type="button" role="menuitem" data-admin-account-settings-file-button>
-                    <i class="fa-solid fa-image" aria-hidden="true"></i>
+                    ${adminAccountIcons.image}
                     <span data-admin-account-settings-change-photo-label>Upload Company Picture</span>
                   </button>
                 </span>
               </span>
               <span class="employee-account-settings-profile__identity">
                 <span class="employee-account-settings-profile__name" data-admin-account-settings-profile-name>Admin</span>
-                <span class="employee-account-settings-profile__position">Free Plan</span>
+                <span class="employee-account-settings-profile__position" data-admin-account-settings-profile-plan-name>Free Plan</span>
                 <span class="employee-account-settings-profile__since" data-admin-account-settings-created-since>Created since Not available</span>
               </span>
               <input type="file" accept="image/*" hidden data-admin-account-settings-file />
@@ -733,7 +1152,7 @@
                   <span class="employee-account-settings-editable-field">
                     <input type="text" autocomplete="organization" data-admin-account-settings-company />
                     <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-company-edit aria-label="Edit company name" title="Edit company name" aria-pressed="false">
-                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                      ${adminAccountSquarePenIconMarkup}
                     </button>
                   </span>
                 </label>
@@ -742,7 +1161,7 @@
                   <span class="employee-account-settings-editable-field">
                     <input type="text" autocomplete="given-name" data-admin-account-settings-first-name />
                     <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-first-name-edit aria-label="Edit first name" title="Edit first name" aria-pressed="false">
-                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                      ${adminAccountSquarePenIconMarkup}
                     </button>
                   </span>
                 </label>
@@ -751,7 +1170,7 @@
                   <span class="employee-account-settings-editable-field">
                     <input type="text" autocomplete="family-name" data-admin-account-settings-last-name />
                     <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-last-name-edit aria-label="Edit last name" title="Edit last name" aria-pressed="false">
-                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                      ${adminAccountSquarePenIconMarkup}
                     </button>
                   </span>
                 </label>
@@ -760,7 +1179,7 @@
                   <span class="employee-account-settings-editable-field">
                     <input type="email" inputmode="email" autocomplete="email" data-admin-account-settings-email />
                     <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-email-edit aria-label="Edit e-mail" title="Edit e-mail" aria-pressed="false">
-                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                      ${adminAccountSquarePenIconMarkup}
                     </button>
                   </span>
                 </label>
@@ -770,7 +1189,7 @@
                     <span class="employee-account-settings-phone-field__prefix">+63</span>
                     <input type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="10" data-admin-account-settings-phone />
                     <button type="button" class="employee-account-settings-field-edit employee-account-settings-field-edit--phone" data-admin-account-settings-phone-edit aria-label="Edit contact number" title="Edit contact number" aria-pressed="false">
-                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                      ${adminAccountSquarePenIconMarkup}
                     </button>
                   </span>
                 </label>
@@ -782,7 +1201,7 @@
                   <span class="employee-account-settings-editable-field">
                     <input type="password" autocomplete="new-password" data-admin-account-settings-password />
                     <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-password-edit aria-label="Edit new password" title="Edit new password" aria-pressed="false">
-                      <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                      ${adminAccountSquarePenIconMarkup}
                     </button>
                   </span>
                 </label>
@@ -793,6 +1212,83 @@
               </div>
             </section>
           </div>
+
+          <section class="admin-account-settings-panel admin-account-settings-summary" role="tabpanel" id="admin-account-settings-plan-panel" aria-labelledby="admin-account-settings-plan-tab" data-admin-account-settings-panel="plan" hidden>
+            <div class="admin-account-settings-plan-hero">
+              <span class="admin-account-settings-plan-hero__icon" aria-hidden="true">${adminAccountIcons.plan}</span>
+              <span class="admin-account-settings-plan-hero__copy">
+                <span>Current plan</span>
+                <strong data-admin-account-settings-plan-name>Free Plan</strong>
+              </span>
+              <span class="admin-account-settings-status" data-admin-account-settings-plan-status>Active</span>
+            </div>
+            <dl class="admin-account-settings-detail-grid">
+              <div><dt>Plan started</dt><dd data-admin-account-settings-plan-started>Not available</dd></div>
+              <div><dt>Billing cycle</dt><dd data-admin-account-settings-plan-billing>No billing cycle</dd></div>
+              <div><dt>Next renewal</dt><dd data-admin-account-settings-plan-renews>Not scheduled</dd></div>
+              <div><dt>Account role</dt><dd>Seller Admin</dd></div>
+            </dl>
+          </section>
+
+          <section class="admin-account-settings-panel admin-account-settings-summary" role="tabpanel" id="admin-account-settings-registration-panel" aria-labelledby="admin-account-settings-registration-tab" data-admin-account-settings-panel="registration" hidden>
+            <div class="admin-account-settings-summary__heading">
+              <span class="admin-account-settings-summary__icon" aria-hidden="true">${adminAccountIcons.registration}</span>
+              <div>
+                <h3>Registration Details</h3>
+                <p>Information saved when this seller account was created.</p>
+              </div>
+            </div>
+            <dl class="admin-account-settings-detail-grid admin-account-settings-detail-grid--registration">
+              <div><dt>Company name</dt><dd data-admin-account-settings-registration-company>Not provided</dd></div>
+              <div><dt>Business type</dt><dd data-admin-account-settings-registration-business-type>Not provided</dd></div>
+              <div><dt>Account holder</dt><dd data-admin-account-settings-registration-account-holder>Not provided</dd></div>
+              <div><dt>Email address</dt><dd data-admin-account-settings-registration-email>Not provided</dd></div>
+              <div><dt>Mobile number</dt><dd data-admin-account-settings-registration-mobile>Not provided</dd></div>
+              <div><dt>Verification</dt><dd data-admin-account-settings-registration-verification>Not verified</dd></div>
+              <div><dt>Payment method</dt><dd data-admin-account-settings-registration-payment>Not added</dd></div>
+              <div><dt>Name on card</dt><dd data-admin-account-settings-registration-cardholder>Not added</dd></div>
+              <div><dt>Card expiry</dt><dd data-admin-account-settings-registration-card-expiry>Not added</dd></div>
+              <div><dt>Password</dt><dd data-admin-account-settings-registration-password>******** (protected)</dd></div>
+              <div><dt>Seller ID</dt><dd data-admin-account-settings-registration-seller-id>Not available</dd></div>
+              <div><dt>Registered on</dt><dd data-admin-account-settings-registration-created>Not available</dd></div>
+            </dl>
+          </section>
+
+          <section class="admin-account-settings-panel admin-account-settings-security" role="tabpanel" id="admin-account-settings-security-panel" aria-labelledby="admin-account-settings-security-tab" data-admin-account-settings-panel="security" hidden>
+            <div class="admin-account-deletion" data-admin-account-deletion>
+              <div class="admin-account-deletion__intro">
+                <span class="admin-account-deletion__icon" aria-hidden="true">${adminAccountIcons.trash}</span>
+                <div>
+                  <h3>Delete seller account</h3>
+                  <p>This permanently removes the company workspace after a 30-day waiting period. Listings stay live until the date arrives, and you can cancel anytime.</p>
+                </div>
+              </div>
+
+              <div class="admin-account-deletion__pending" data-admin-account-deletion-pending hidden>
+                <span class="admin-account-deletion__countdown-label">Time remaining</span>
+                <strong class="admin-account-deletion__countdown" data-admin-account-deletion-countdown>—</strong>
+                <p>Permanent deletion is scheduled for <strong data-admin-account-deletion-date>the scheduled date</strong>. Sign in before then to keep this account.</p>
+                <button type="button" class="admin-account-deletion__keep" data-admin-account-deletion-cancel>Keep my account</button>
+              </div>
+
+              <div class="admin-account-deletion__form" data-admin-account-deletion-form>
+                <ul class="admin-account-deletion__facts">
+                  <li>30-day waiting period before the account is erased</li>
+                  <li>Store listings, employees, and login access are removed after that date</li>
+                  <li>The same email can be used to register again after deletion completes</li>
+                </ul>
+                <label class="employee-account-settings-field">
+                  <span>Current password</span>
+                  <input type="password" autocomplete="current-password" data-admin-account-deletion-password />
+                </label>
+                <label class="employee-account-settings-field">
+                  <span>Type DELETE to confirm</span>
+                  <input type="text" autocomplete="off" spellcheck="false" data-admin-account-deletion-confirm placeholder="DELETE" />
+                </label>
+                <button type="button" class="admin-account-deletion__submit" data-admin-account-deletion-submit>Delete account in 30 days</button>
+              </div>
+            </div>
+          </section>
 
           <p class="employee-account-settings-feedback" data-admin-account-settings-feedback aria-live="polite"></p>
 
@@ -806,7 +1302,7 @@
       <div class="employee-account-settings-photo-viewer" data-admin-account-settings-photo-viewer aria-hidden="true" hidden>
         <section class="employee-account-settings-photo-viewer__dialog" role="dialog" aria-modal="true" aria-label="Company picture preview">
           <button type="button" class="employee-account-settings-photo-viewer__close" data-admin-account-settings-photo-viewer-close aria-label="Close company picture preview">
-            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            ${adminAccountIcons.close}
           </button>
           <img data-admin-account-settings-photo-viewer-image alt="" />
         </section>
@@ -815,7 +1311,7 @@
       <div class="validation-modal-overlay admin-account-settings-validation-overlay" data-admin-account-settings-validation-overlay hidden aria-hidden="true">
         <section class="validation-modal" role="dialog" aria-modal="true" aria-labelledby="admin-account-settings-validation-title">
           <button type="button" class="product-gallery-modal__close validation-modal__close" data-admin-account-settings-validation-close aria-label="Close validation modal">
-            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            ${adminAccountIcons.close}
           </button>
           <div class="validation-modal__top">
             <div class="validation-modal__icon validation-modal__icon--notice" data-admin-account-settings-validation-icon aria-hidden="true" role="presentation" tabindex="-1">
@@ -839,7 +1335,10 @@
       closeButton: overlay.querySelector("[data-admin-account-settings-close]"),
       cancelButton: overlay.querySelector("[data-admin-account-settings-cancel]"),
       form: overlay.querySelector("[data-admin-account-settings-form]"),
+      tabButtons: Array.from(overlay.querySelectorAll("[data-admin-account-settings-tab]")),
+      tabPanels: Array.from(overlay.querySelectorAll("[data-admin-account-settings-panel]")),
       profileName: overlay.querySelector("[data-admin-account-settings-profile-name]"),
+      profilePlanName: overlay.querySelector("[data-admin-account-settings-profile-plan-name]"),
       createdSince: overlay.querySelector("[data-admin-account-settings-created-since]"),
       avatarWrap: overlay.querySelector("[data-admin-account-settings-avatar-wrap]"),
       avatarButton: overlay.querySelector("[data-admin-account-settings-avatar-button]"),
@@ -873,14 +1372,68 @@
       passwordInput: overlay.querySelector("[data-admin-account-settings-password]"),
       passwordEditButton: overlay.querySelector("[data-admin-account-settings-password-edit]"),
       confirmPasswordInput: overlay.querySelector("[data-admin-account-settings-confirm-password]"),
+      planName: overlay.querySelector("[data-admin-account-settings-plan-name]"),
+      planStatus: overlay.querySelector("[data-admin-account-settings-plan-status]"),
+      planBillingCycle: overlay.querySelector("[data-admin-account-settings-plan-billing]"),
+      planStartedAt: overlay.querySelector("[data-admin-account-settings-plan-started]"),
+      planRenewsAt: overlay.querySelector("[data-admin-account-settings-plan-renews]"),
+      registrationCompanyName: overlay.querySelector("[data-admin-account-settings-registration-company]"),
+      registrationBusinessType: overlay.querySelector("[data-admin-account-settings-registration-business-type]"),
+      registrationAccountHolder: overlay.querySelector("[data-admin-account-settings-registration-account-holder]"),
+      registrationEmail: overlay.querySelector("[data-admin-account-settings-registration-email]"),
+      registrationMobile: overlay.querySelector("[data-admin-account-settings-registration-mobile]"),
+      registrationVerification: overlay.querySelector("[data-admin-account-settings-registration-verification]"),
+      registrationPaymentMethod: overlay.querySelector("[data-admin-account-settings-registration-payment]"),
+      registrationPaymentCardholder: overlay.querySelector("[data-admin-account-settings-registration-cardholder]"),
+      registrationPaymentExpiry: overlay.querySelector("[data-admin-account-settings-registration-card-expiry]"),
+      registrationSellerId: overlay.querySelector("[data-admin-account-settings-registration-seller-id]"),
+      registrationCreatedAt: overlay.querySelector("[data-admin-account-settings-registration-created]"),
+      registrationPassword: overlay.querySelector("[data-admin-account-settings-registration-password]"),
+      deletionPanel: overlay.querySelector("[data-admin-account-deletion]"),
+      deletionPendingCard: overlay.querySelector("[data-admin-account-deletion-pending]"),
+      deletionRequestForm: overlay.querySelector("[data-admin-account-deletion-form]"),
+      deletionCountdown: overlay.querySelector("[data-admin-account-deletion-countdown]"),
+      deletionDate: overlay.querySelector("[data-admin-account-deletion-date]"),
+      deletionPasswordInput: overlay.querySelector("[data-admin-account-deletion-password]"),
+      deletionConfirmInput: overlay.querySelector("[data-admin-account-deletion-confirm]"),
+      deletionSubmitButton: overlay.querySelector("[data-admin-account-deletion-submit]"),
+      deletionCancelButton: overlay.querySelector("[data-admin-account-deletion-cancel]"),
       feedback: overlay.querySelector("[data-admin-account-settings-feedback]"),
       saveButton: overlay.querySelector("[data-admin-account-settings-save]"),
     };
 
     lockAdminAccountSettingsEditableFields();
+    setAdminAccountSettingsTab("profile");
+    modalRefs.tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        setAdminAccountSettingsTab(button.dataset.adminAccountSettingsTab);
+      });
+      button.addEventListener("keydown", handleAdminAccountSettingsTabKeydown);
+    });
     modalRefs.closeButton.addEventListener("click", closeAdminAccountSettings);
     modalRefs.cancelButton.addEventListener("click", closeAdminAccountSettings);
     modalRefs.form.addEventListener("submit", saveAdminAccountSettings);
+    modalRefs.deletionSubmitButton?.addEventListener("click", () => {
+      void submitSellerAccountDeletion();
+    });
+    modalRefs.deletionCancelButton?.addEventListener("click", () => {
+      void cancelSellerAccountDeletion();
+    });
+    modalRefs.deletionPasswordInput?.addEventListener("input", () => {
+      setFieldTooltip(modalRefs.deletionPasswordInput, "");
+    });
+    modalRefs.deletionConfirmInput?.addEventListener("input", () => {
+      setFieldTooltip(modalRefs.deletionConfirmInput, "");
+    });
+    [modalRefs.deletionPasswordInput, modalRefs.deletionConfirmInput].forEach((input) => {
+      input?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") {
+          return;
+        }
+        event.preventDefault();
+        void submitSellerAccountDeletion();
+      });
+    });
     modalRefs.avatarButton.addEventListener("click", toggleAvatarMenu);
     modalRefs.seePhotoButton.addEventListener("click", openProfilePictureViewer);
     modalRefs.fileButton.addEventListener("click", openFilePicker);
@@ -979,12 +1532,15 @@
     modalRefs.confirmPasswordInput.value = "";
     modalBaseline = getAdminAccountSettingsValues();
     syncProfilePreview();
+    syncAdminAccountSummary(account);
+    syncSellerDeletionPanel(account);
+    startSellerDeletionCountdown();
     clearFieldTooltips();
     lockAdminAccountSettingsEditableFields();
     syncSaveButtonState();
   }
 
-  async function openAdminAccountSettings() {
+  async function openAdminAccountSettings(options = {}) {
     const session = readAdminSession();
     if (!session || typeof session !== "object") {
       window.location.href = "/login.html?role=admin";
@@ -994,10 +1550,12 @@
     const refs = createAdminAccountSettingsModal();
     closeWorkspaceMenus();
     lockAdminAccountSettingsEditableFields();
+    setAdminAccountSettingsTab(options.tab === "security" ? "security" : "profile");
     refs.overlay.hidden = false;
     refs.overlay.setAttribute("aria-hidden", "false");
     refs.overlay.classList.add("is-open");
     document.body.classList.add("modal-open");
+    window.dispatchEvent(new CustomEvent("gms-admin-account-settings-opened"));
     setFeedback("Loading account...");
     setBusy(true);
 
@@ -1006,7 +1564,16 @@
       fillAdminAccountForm(modalAccount);
       setFeedback("");
       setBusy(false);
-      window.requestAnimationFrame(() => refs.companyEditButton.focus());
+      if (options.tab === "security") {
+        setAdminAccountSettingsTab("security");
+      }
+      window.requestAnimationFrame(() => {
+        if (options.tab === "security") {
+          (modalRefs.deletionPasswordInput || modalRefs.deletionCancelButton)?.focus();
+          return;
+        }
+        refs.companyEditButton.focus();
+      });
     } catch (error) {
       setBusy(false);
       setFeedback(error instanceof Error ? error.message : "Unable to open account settings.", "error");
@@ -1024,6 +1591,7 @@
     modalRefs.overlay.hidden = true;
     modalRefs.overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
+    window.dispatchEvent(new CustomEvent("gms-admin-account-settings-closed"));
     modalRefs.passwordInput.value = "";
     modalRefs.confirmPasswordInput.value = "";
     modalBaseline = getAdminAccountSettingsValues();
@@ -1031,6 +1599,112 @@
     clearFieldTooltips();
     setFeedback("");
     syncSaveButtonState();
+  }
+
+  async function submitSellerAccountDeletion() {
+    if (modalBusy || !modalAccount) {
+      return;
+    }
+    const password = String(modalRefs.deletionPasswordInput?.value || "").trim();
+    const confirmation = String(modalRefs.deletionConfirmInput?.value || "").trim();
+    clearFieldTooltips();
+    if (!password) {
+      setFieldTooltip(modalRefs.deletionPasswordInput, "Enter your current password.");
+      modalRefs.deletionPasswordInput?.focus();
+      return;
+    }
+    if (confirmation.toUpperCase() !== "DELETE") {
+      setFieldTooltip(modalRefs.deletionConfirmInput, "Type DELETE to confirm.");
+      modalRefs.deletionConfirmInput?.focus();
+      return;
+    }
+
+    setBusy(true);
+    setFeedback("");
+    try {
+      const response = await fetch("/api/admin-account/deletion", {
+        method: "POST",
+        headers: getAdminHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          password,
+          confirmation: "DELETE",
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to schedule account deletion.");
+      }
+      modalAccount = data.admin || modalAccount;
+      fillAdminAccountForm(modalAccount);
+      setAdminAccountSettingsTab("security");
+      openValidationModal(
+        `Your seller account will be permanently deleted on ${formatSellerDeletionDate(modalAccount)}. You can cancel anytime before that date.`,
+        {
+          title: "Deletion scheduled",
+          mode: "success",
+          hideAction: true,
+          hideClose: true,
+          allowManualClose: false,
+          autoCloseMs: successModalAutoCloseMs,
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to schedule account deletion.";
+      if (/password/i.test(message)) {
+        setFieldTooltip(modalRefs.deletionPasswordInput, message);
+        modalRefs.deletionPasswordInput?.focus();
+      } else if (/DELETE/i.test(message)) {
+        setFieldTooltip(modalRefs.deletionConfirmInput, message);
+        modalRefs.deletionConfirmInput?.focus();
+      } else {
+        setFeedback(message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelSellerAccountDeletion() {
+    if (modalBusy || !modalAccount) {
+      return;
+    }
+    setBusy(true);
+    setFeedback("");
+    try {
+      const response = await fetch("/api/admin-account/deletion/cancel", {
+        method: "POST",
+        headers: getAdminHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to cancel account deletion.");
+      }
+      modalAccount = data.admin || modalAccount;
+      fillAdminAccountForm(modalAccount);
+      setAdminAccountSettingsTab("security");
+      openValidationModal("Account deletion canceled. Your seller workspace stays active.", {
+        title: "Account kept",
+        mode: "success",
+        hideAction: true,
+        hideClose: true,
+        allowManualClose: false,
+        autoCloseMs: successModalAutoCloseMs,
+      });
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Unable to cancel account deletion.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function maybeOpenAccountSettingsFromHash() {
+    const hash = String(window.location.hash || "").replace(/^#/, "").trim().toLowerCase();
+    if (hash === "account-settings" || hash === "account") {
+      void openAdminAccountSettings({
+        tab: hash === "account-settings" ? "security" : "profile",
+      });
+    }
   }
 
   function validateAdminForm() {
@@ -1208,4 +1882,47 @@
   });
 
   window.gmsOpenAdminAccountSettings = openAdminAccountSettings;
+
+  window.addEventListener("hashchange", maybeOpenAccountSettingsFromHash);
+  window.addEventListener("gms-admin-session-updated", (event) => {
+    const session = event?.detail?.session || readAdminSession();
+    if (session) {
+      syncWorkspaceDeletionBanner(session);
+    }
+  });
+
+  async function refreshWorkspaceDeletionBannerFromServer() {
+    const session = readAdminSession();
+    if (!session) {
+      return;
+    }
+    try {
+      const account = await fetchAdminAccount();
+      const nextSession = { ...session, ...account };
+      writeAdminSession(nextSession);
+      syncWorkspaceDeletionBanner(account);
+      startSellerDeletionCountdown(account);
+    } catch (error) {
+      if (/deleted/i.test(String(error?.message || ""))) {
+        try {
+          window.sessionStorage.removeItem(adminSessionKey);
+        } catch (_) {
+          // Session clear is best-effort.
+        }
+        window.location.href = "/login.html?role=admin";
+        return;
+      }
+      syncWorkspaceDeletionBanner(session);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      maybeOpenAccountSettingsFromHash();
+      void refreshWorkspaceDeletionBannerFromServer();
+    }, { once: true });
+  } else {
+    maybeOpenAccountSettingsFromHash();
+    void refreshWorkspaceDeletionBannerFromServer();
+  }
 })();

@@ -1,0 +1,337 @@
+:root {
+  --waybill-width: 100mm;
+  --waybill-height: 150mm;
+  --waybill-barcode-height: 52px;
+}
+
+@page {
+  size: 100mm 150mm;
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  color: #111111;
+  background: #ffffff;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+}
+
+.main-orders-waybill-print-page {
+  width: var(--waybill-width);
+  height: var(--waybill-height);
+  page-break-after: always;
+  break-after: page;
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  padding: 0;
+}
+
+.main-orders-waybill-print-page:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
+
+.waybill-sheet {
+  width: 100%;
+  height: 100%;
+  min-height: var(--waybill-height);
+  max-height: var(--waybill-height);
+  border: 1.5px solid #111111;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.waybill-header {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1.5px solid #111111;
+}
+
+.waybill-header__block {
+  padding: 6px 7px;
+  border-right: 1.5px solid #111111;
+  min-width: 0;
+}
+
+.waybill-header__block:last-child {
+  border-right: 0;
+}
+
+.waybill-header__block--right {
+  text-align: right;
+}
+
+.waybill-label {
+  display: block;
+  margin-bottom: 3px;
+  color: #666666;
+  font-size: 6.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.waybill-order-id,
+.waybill-order-type {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0;
+  word-break: break-word;
+}
+
+.waybill-priority {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0 6px;
+  background: #111111;
+  color: #ffffff;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.waybill-meta {
+  display: block;
+  margin-top: 4px;
+  color: #555555;
+  font-size: 6.5px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.waybill-info {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1.5px solid #111111;
+}
+
+.waybill-info__block {
+  padding: 6px 7px;
+  border-right: 1.5px solid #111111;
+  min-width: 0;
+}
+
+.waybill-info__block:last-child {
+  border-right: 0;
+}
+
+.waybill-info__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  color: #666666;
+  font-size: 6.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.waybill-info__title svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 10px;
+}
+
+.waybill-customer-name {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.waybill-info__block p {
+  margin: 0 0 3px;
+  color: #222222;
+  font-size: 7px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.waybill-info__block p:last-child {
+  margin-bottom: 0;
+}
+
+.waybill-route-note {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 6.5px;
+}
+
+.waybill-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  flex: 1 1 auto;
+}
+
+.waybill-table thead th {
+  padding: 4px 5px;
+  border-bottom: 1.5px solid #111111;
+  background: #111111;
+  color: #ffffff;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.waybill-table thead th:nth-child(1) { width: 7%; }
+.waybill-table thead th:nth-child(2) { width: 28%; }
+.waybill-table thead th:nth-child(3) { width: 18%; }
+.waybill-table thead th:nth-child(4) { width: 10%; }
+.waybill-table thead th:nth-child(5) { width: 37%; }
+
+.waybill-table tbody td {
+  padding: 5px 4px;
+  border-bottom: 1px solid #d9d9d9;
+  vertical-align: top;
+  font-size: 7px;
+  line-height: 1.25;
+}
+
+.waybill-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.waybill-table__index {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.waybill-table__product strong {
+  display: block;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.waybill-table__product small {
+  display: block;
+  margin-top: 2px;
+  color: #666666;
+  font-size: 6px;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.waybill-table__variant {
+  color: #222222;
+  font-size: 6.5px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.waybill-table__variant span {
+  display: block;
+}
+
+.waybill-table__variant span + span {
+  margin-top: 2px;
+}
+
+.waybill-table__qty {
+  text-align: center;
+}
+
+.waybill-table__qty strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.waybill-table__qty small {
+  display: block;
+  margin-top: 2px;
+  color: #666666;
+  font-size: 5.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.waybill-table__barcode {
+  text-align: center;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.waybill-barcode {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: var(--waybill-barcode-height);
+  margin: 0 auto;
+}
+
+.waybill-table__barcode--listing .waybill-barcode {
+  height: calc(var(--waybill-barcode-height) + 6px);
+}
+
+.waybill-table__barcode small {
+  display: block;
+  margin-top: 2px;
+  color: #333333;
+  font-size: 5.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+
+@media print {
+  html,
+  body {
+    width: var(--waybill-width);
+    height: auto;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .main-orders-waybill-print-page {
+    width: var(--waybill-width);
+    height: var(--waybill-height);
+    min-height: var(--waybill-height);
+    max-height: var(--waybill-height);
+    margin: 0 !important;
+    padding: 0 !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .waybill-sheet {
+    width: var(--waybill-width);
+    height: var(--waybill-height);
+    min-height: var(--waybill-height);
+    max-height: var(--waybill-height);
+    border: 1.5px solid #111111;
+    box-shadow: none;
+  }
+}

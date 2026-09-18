@@ -11,9 +11,7 @@ const _requestTimeout = Duration(seconds: 3);
 String? _preferredBaseUrl;
 
 ChatSupportSyncService createChatSupportSyncService({String? baseUrl}) {
-  return _WebChatSupportSyncService(
-    baseUrls: _buildBaseUrls(baseUrl: baseUrl),
-  );
+  return _WebChatSupportSyncService(baseUrls: _buildBaseUrls(baseUrl: baseUrl));
 }
 
 List<String> _buildBaseUrls({String? baseUrl}) {
@@ -50,12 +48,14 @@ String _withChatAdminScopeUrl(String url, {String adminId = ''}) {
   if (resolvedAdminId.isEmpty || uri.queryParameters.containsKey('adminId')) {
     return uri.toString();
   }
-  return uri.replace(
-    queryParameters: <String, String>{
-      ...uri.queryParameters,
-      'adminId': resolvedAdminId,
-    },
-  ).toString();
+  return uri
+      .replace(
+        queryParameters: <String, String>{
+          ...uri.queryParameters,
+          'adminId': resolvedAdminId,
+        },
+      )
+      .toString();
 }
 
 Map<String, String> _withChatAdminScopeHeaders(
@@ -66,10 +66,7 @@ Map<String, String> _withChatAdminScopeHeaders(
   if (resolvedAdminId.isEmpty || headers.containsKey('X-GMS-Admin-ID')) {
     return headers;
   }
-  return <String, String>{
-    ...headers,
-    'X-GMS-Admin-ID': resolvedAdminId,
-  };
+  return <String, String>{...headers, 'X-GMS-Admin-ID': resolvedAdminId};
 }
 
 Map<String, dynamic> _withChatAdminScopePayload(
@@ -80,16 +77,11 @@ Map<String, dynamic> _withChatAdminScopePayload(
   if (resolvedAdminId.isEmpty || payload.containsKey('adminId')) {
     return payload;
   }
-  return <String, dynamic>{
-    ...payload,
-    'adminId': resolvedAdminId,
-  };
+  return <String, dynamic>{...payload, 'adminId': resolvedAdminId};
 }
 
 class _WebChatSupportSyncService implements ChatSupportSyncService {
-  _WebChatSupportSyncService({
-    required this.baseUrls,
-  });
+  _WebChatSupportSyncService({required this.baseUrls});
 
   final List<String> baseUrls;
 
@@ -112,21 +104,35 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
     required Map<String, dynamic> thread,
   }) {
     final normalizedThread = Map<String, dynamic>.from(thread);
+    for (final field in <String>[
+      'productImageUrl',
+      'customerAvatarUrl',
+      'customerImageUrl',
+      'customerProfileImageUrl',
+      'companyPictureUrl',
+    ]) {
+      normalizedThread[field] = _resolveChatMediaUrl(
+        baseUrl,
+        normalizedThread[field],
+      );
+    }
     final rawMessages = normalizedThread['messages'];
     if (rawMessages is List) {
-      normalizedThread['messages'] = rawMessages.map((message) {
-        if (message is! Map) {
-          return message;
-        }
-        final normalizedMessage = Map<String, dynamic>.from(
-          message.cast<Object?, Object?>(),
-        );
-        normalizedMessage['imageUrl'] = _resolveChatMediaUrl(
-          baseUrl,
-          normalizedMessage['imageUrl'],
-        );
-        return normalizedMessage;
-      }).toList(growable: false);
+      normalizedThread['messages'] = rawMessages
+          .map((message) {
+            if (message is! Map) {
+              return message;
+            }
+            final normalizedMessage = Map<String, dynamic>.from(
+              message.cast<Object?, Object?>(),
+            );
+            normalizedMessage['imageUrl'] = _resolveChatMediaUrl(
+              baseUrl,
+              normalizedMessage['imageUrl'],
+            );
+            return normalizedMessage;
+          })
+          .toList(growable: false);
     }
 
     return normalizedThread;
@@ -237,10 +243,9 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         }, adminId: adminId),
-        sendData: jsonEncode(_withChatAdminScopePayload(
-          <String, dynamic>{},
-          adminId: adminId,
-        )),
+        sendData: jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{}, adminId: adminId),
+        ),
       ).timeout(_requestTimeout);
 
       if (response.status != 200) {
@@ -275,6 +280,55 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
     }
   }
 
+  Future<Map<String, dynamic>> _requestHumanAgentFromBaseUrl({
+    required String baseUrl,
+    required String threadId,
+    required String customerId,
+    String adminId = '',
+  }) async {
+    try {
+      final response = await HttpRequest.request(
+        _withChatAdminScopeUrl(
+          '$baseUrl/api/chat-support/${Uri.encodeComponent(threadId)}/request-agent',
+          adminId: adminId,
+        ),
+        method: 'POST',
+        requestHeaders: _withChatAdminScopeHeaders(const <String, String>{
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }, adminId: adminId),
+        sendData: jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'customerId': customerId,
+          }, adminId: adminId),
+        ),
+      ).timeout(_requestTimeout);
+      final decoded =
+          jsonDecode(response.responseText ?? '{}') as Map<String, dynamic>;
+      if (response.status != 200) {
+        final message = decoded['message']?.toString().trim();
+        throw _BaseUrlAttemptFailure(
+          message?.isNotEmpty == true ? message! : '${response.status}',
+        );
+      }
+      final thread = decoded['thread'];
+      if (thread is! Map<String, dynamic>) {
+        throw const _BaseUrlAttemptFailure('invalid thread response');
+      }
+      _preferredBaseUrl = baseUrl;
+      return _normalizeThreadMediaUrls(
+        baseUrl: baseUrl,
+        thread: Map<String, dynamic>.from(thread),
+      );
+    } on _BaseUrlAttemptFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const _BaseUrlAttemptFailure('timeout');
+    } catch (_) {
+      throw const _BaseUrlAttemptFailure('connection failed');
+    }
+  }
+
   Future<Map<String, dynamic>> _syncThreadToBaseUrl({
     required String baseUrl,
     required Map<String, dynamic> thread,
@@ -288,10 +342,11 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         }, adminId: adminId),
-        sendData: jsonEncode(_withChatAdminScopePayload(
-          <String, dynamic>{'thread': thread},
-          adminId: adminId,
-        )),
+        sendData: jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'thread': thread,
+          }, adminId: adminId),
+        ),
       ).timeout(_requestTimeout);
 
       if (response.status != 200) {
@@ -335,10 +390,12 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         }, adminId: adminId),
-        sendData: jsonEncode(_withChatAdminScopePayload(<String, dynamic>{
-          'messageId': messageId,
-          'text': text,
-        }, adminId: adminId)),
+        sendData: jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'messageId': messageId,
+            'text': text,
+          }, adminId: adminId),
+        ),
       ).timeout(_requestTimeout);
 
       final decoded =
@@ -387,10 +444,13 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         }, adminId: adminId),
-        sendData: jsonEncode(_withChatAdminScopePayload(<String, dynamic>{
-          'messageId': messageId,
-          if ((customerId ?? '').trim().isNotEmpty) 'customerId': customerId!.trim(),
-        }, adminId: adminId)),
+        sendData: jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'messageId': messageId,
+            if ((customerId ?? '').trim().isNotEmpty)
+              'customerId': customerId!.trim(),
+          }, adminId: adminId),
+        ),
       ).timeout(_requestTimeout);
 
       final decoded =
@@ -443,15 +503,18 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         }, adminId: adminId),
-        sendData: jsonEncode(_withChatAdminScopePayload(<String, dynamic>{
-          'actor': actor,
-          'isTyping': isTyping,
-          'isOnline': ?isOnline,
-          if ((displayName ?? '').trim().isNotEmpty)
-            'displayName': displayName!.trim(),
-          if ((avatarUrl ?? '').trim().isNotEmpty) 'avatarUrl': avatarUrl!.trim(),
-          'thread': ?thread,
-        }, adminId: adminId)),
+        sendData: jsonEncode(
+          _withChatAdminScopePayload(<String, dynamic>{
+            'actor': actor,
+            'isTyping': isTyping,
+            'isOnline': ?isOnline,
+            if ((displayName ?? '').trim().isNotEmpty)
+              'displayName': displayName!.trim(),
+            if ((avatarUrl ?? '').trim().isNotEmpty)
+              'avatarUrl': avatarUrl!.trim(),
+            'thread': ?thread,
+          }, adminId: adminId),
+        ),
       ).timeout(_requestTimeout);
 
       if (response.status == 404) {
@@ -587,16 +650,18 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
     }
 
     for (final baseUrl in baseUrls) {
-      run(baseUrl).then((result) {
-        if (!completer.isCompleted) {
-          completer.complete(result);
-        }
-      }).catchError((Object error) {
-        final failure = error is _BaseUrlAttemptFailure
-            ? error.message
-            : 'unknown error';
-        completeFailure(baseUrl, failure);
-      });
+      run(baseUrl)
+          .then((result) {
+            if (!completer.isCompleted) {
+              completer.complete(result);
+            }
+          })
+          .catchError((Object error) {
+            final failure = error is _BaseUrlAttemptFailure
+                ? error.message
+                : 'unknown error';
+            completeFailure(baseUrl, failure);
+          });
     }
 
     return completer.future;
@@ -696,6 +761,38 @@ class _WebChatSupportSyncService implements ChatSupportSyncService {
         adminId: adminId,
       ),
       errorPrefix: 'Could not request chat AI reply.',
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestHumanAgent({
+    required String threadId,
+    required String customerId,
+    String adminId = '',
+  }) async {
+    final preferredBaseUrl = _preferredBaseUrl;
+    if (preferredBaseUrl != null) {
+      try {
+        return await _requestHumanAgentFromBaseUrl(
+          baseUrl: preferredBaseUrl,
+          threadId: threadId,
+          customerId: customerId,
+          adminId: adminId,
+        );
+      } on _BaseUrlAttemptFailure {
+        if (_preferredBaseUrl == preferredBaseUrl) {
+          _preferredBaseUrl = null;
+        }
+      }
+    }
+    return _runWithFallbacks<Map<String, dynamic>>(
+      run: (baseUrl) => _requestHumanAgentFromBaseUrl(
+        baseUrl: baseUrl,
+        threadId: threadId,
+        customerId: customerId,
+        adminId: adminId,
+      ),
+      errorPrefix: 'Could not request a human support agent.',
     );
   }
 

@@ -40,9 +40,7 @@ class ProductVariant {
   final List<ProductVariantAddOn> addOns;
 
   bool get hasSalesPrice =>
-      salesPrice != null &&
-      salesPrice! >= 0 &&
-      salesPrice! < originalPrice;
+      salesPrice != null && salesPrice! >= 0 && salesPrice! < originalPrice;
 
   double get displayPrice => hasSalesPrice ? salesPrice! : originalPrice;
 
@@ -151,13 +149,13 @@ class ProductReviewMedia {
   bool get isVideo => type == ProductReviewMediaType.video;
 
   Map<String, dynamic> toJson() => {
-        'type': isVideo ? 'video' : 'image',
-        'url': url,
-        'mediaUrl': url,
-        'thumbnailUrl': thumbnailUrl,
-        'fileName': fileName,
-        'contentType': contentType,
-      };
+    'type': isVideo ? 'video' : 'image',
+    'url': url,
+    'mediaUrl': url,
+    'thumbnailUrl': thumbnailUrl,
+    'fileName': fileName,
+    'contentType': contentType,
+  };
 
   factory ProductReviewMedia.fromJson(Object? value) {
     if (value is ProductReviewMedia) {
@@ -182,33 +180,35 @@ class ProductReviewMedia {
     final json = Map<String, dynamic>.from(value);
     final rawVideoUrl = json['videoUrl']?.toString().trim() ?? '';
     final rawImageUrl = json['imageUrl']?.toString().trim() ?? '';
-    final url = [
-      json['url'],
-      json['mediaUrl'],
-      json['src'],
-      json['imageUrl'],
-      json['videoUrl'],
-    ]
-        .map((candidate) => candidate?.toString().trim() ?? '')
-        .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => '');
+    final url =
+        [
+              json['url'],
+              json['mediaUrl'],
+              json['src'],
+              json['imageUrl'],
+              json['videoUrl'],
+            ]
+            .map((candidate) => candidate?.toString().trim() ?? '')
+            .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => '');
 
     return ProductReviewMedia(
       type: _inferProductReviewMediaType(
         url: url,
-        type: json['type'] ??
+        type:
+            json['type'] ??
             json['mediaType'] ??
             json['kind'] ??
             (rawVideoUrl.isNotEmpty && rawImageUrl.isEmpty ? 'video' : null),
         contentType: json['contentType'] ?? json['mimeType'],
       ),
       url: url,
-      thumbnailUrl: [
-        json['thumbnailUrl'],
-        json['videoThumbnailUrl'],
-        json['posterUrl'],
-      ]
-          .map((candidate) => candidate?.toString().trim() ?? '')
-          .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => ''),
+      thumbnailUrl:
+          [json['thumbnailUrl'], json['videoThumbnailUrl'], json['posterUrl']]
+              .map((candidate) => candidate?.toString().trim() ?? '')
+              .firstWhere(
+                (candidate) => candidate.isNotEmpty,
+                orElse: () => '',
+              ),
       fileName: (json['fileName'] ?? json['name'])?.toString().trim() ?? '',
       contentType:
           (json['contentType'] ?? json['mimeType'])?.toString().trim() ?? '',
@@ -241,39 +241,48 @@ class ProductReviewSellerReply {
     final rawReply = value is Map
         ? Map<String, dynamic>.from(value)
         : <String, dynamic>{'message': value};
-    final message = [
-      rawReply['message'],
-      rawReply['reply'],
-      rawReply['text'],
-      rawReply['comment'],
-    ]
-        .map((candidate) => candidate?.toString().trim() ?? '')
-        .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => '');
+    final message =
+        [
+              rawReply['message'],
+              rawReply['reply'],
+              rawReply['text'],
+              rawReply['comment'],
+            ]
+            .map((candidate) => candidate?.toString().trim() ?? '')
+            .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => '');
 
     return ProductReviewSellerReply(
       message: message,
-      author: [
-        rawReply['author'],
-        rawReply['sellerName'],
-        rawReply['companyName'],
-      ]
-          .map((candidate) => candidate?.toString().trim() ?? '')
-          .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => ''),
-      companyName: [
-        rawReply['companyName'],
-        rawReply['storeName'],
-        rawReply['businessName'],
-      ]
-          .map((candidate) => candidate?.toString().trim() ?? '')
-          .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => ''),
-      companyPictureUrl: [
-        rawReply['companyPictureUrl'],
-        rawReply['companyProfileImageUrl'],
-        rawReply['profileImageUrl'],
-        rawReply['logoUrl'],
-      ]
-          .map((candidate) => candidate?.toString().trim() ?? '')
-          .firstWhere((candidate) => candidate.isNotEmpty, orElse: () => ''),
+      author:
+          [rawReply['author'], rawReply['sellerName'], rawReply['companyName']]
+              .map((candidate) => candidate?.toString().trim() ?? '')
+              .firstWhere(
+                (candidate) => candidate.isNotEmpty,
+                orElse: () => '',
+              ),
+      companyName:
+          [
+                rawReply['companyName'],
+                rawReply['storeName'],
+                rawReply['businessName'],
+              ]
+              .map((candidate) => candidate?.toString().trim() ?? '')
+              .firstWhere(
+                (candidate) => candidate.isNotEmpty,
+                orElse: () => '',
+              ),
+      companyPictureUrl:
+          [
+                rawReply['companyPictureUrl'],
+                rawReply['companyProfileImageUrl'],
+                rawReply['profileImageUrl'],
+                rawReply['logoUrl'],
+              ]
+              .map((candidate) => candidate?.toString().trim() ?? '')
+              .firstWhere(
+                (candidate) => candidate.isNotEmpty,
+                orElse: () => '',
+              ),
       createdAt: _normalizeProductReviewDate(
         rawReply['createdAt'] ?? rawReply['repliedAt'],
         rawReply['createdAtEpochMs'] ?? rawReply['repliedAtEpochMs'],
@@ -309,26 +318,26 @@ class ProductReviewComment {
 
   factory ProductReviewComment.fromJson(Map<String, dynamic> json) {
     final rating = _normalizeProductReviewRating(json['rating']);
-    final reviewer = [
-      json['reviewer'],
-      json['author'],
-      json['user'],
-      json['userName'],
-      json['customerName'],
-    ]
-        .map((value) => value?.toString().trim() ?? '')
-        .firstWhere((value) => value.isNotEmpty, orElse: () => 'Verified Buyer');
-    final message = [
-      json['message'],
-      json['comment'],
-      json['text'],
-      json['review'],
-    ]
-        .map((value) => value?.toString().trim() ?? '')
-        .firstWhere(
-          (value) => value.isNotEmpty,
-          orElse: () => _defaultProductReviewCommentForRating(rating),
-        );
+    final reviewer =
+        [
+              json['reviewer'],
+              json['author'],
+              json['user'],
+              json['userName'],
+              json['customerName'],
+            ]
+            .map((value) => value?.toString().trim() ?? '')
+            .firstWhere(
+              (value) => value.isNotEmpty,
+              orElse: () => 'Verified Buyer',
+            );
+    final message =
+        [json['message'], json['comment'], json['text'], json['review']]
+            .map((value) => value?.toString().trim() ?? '')
+            .firstWhere(
+              (value) => value.isNotEmpty,
+              orElse: () => _defaultProductReviewCommentForRating(rating),
+            );
 
     return ProductReviewComment(
       id: json['id']?.toString().trim() ?? '',
@@ -370,8 +379,10 @@ class Product {
     required this.imageUrl,
     required this.createdAt,
     this.imageUrls = const <String>[],
+    this.descriptionImageUrls = const <String>[],
     this.categories = const <String>[],
     this.deliveryPartnerIds = const <String>[],
+    this.freeDelivery = false,
     this.paymentPartnerIds = const <String>[],
     this.videoUrl = '',
     this.videoUrls = const <String>[],
@@ -411,6 +422,8 @@ class Product {
     this.approvalStatus = 'approved',
     this.companyName = '',
     this.companyPictureUrl = '',
+    this.planName = '',
+    this.hasPaidPlan = false,
   });
 
   final String id;
@@ -418,16 +431,20 @@ class Product {
   final String approvalStatus;
   final String companyName;
   final String companyPictureUrl;
+  final String planName;
+  final bool hasPaidPlan;
   final String name;
   final double originalPrice;
   final String category;
   final List<String> categories;
   final List<String> deliveryPartnerIds;
+  final bool freeDelivery;
   final List<String> paymentPartnerIds;
   final String description;
   final String imageUrl;
   final DateTime createdAt;
   final List<String> imageUrls;
+  final List<String> descriptionImageUrls;
   final String videoUrl;
   final List<String> videoUrls;
   final String videoThumbnailUrl;
@@ -471,6 +488,8 @@ class Product {
 
   bool get hasCompanyIdentity =>
       companyName.trim().isNotEmpty || companyPictureUrl.trim().isNotEmpty;
+
+  bool get isLegitSeller => hasPaidPlan;
 
   bool get isApprovedForApp =>
       approvalStatus.trim().isEmpty ||
@@ -525,7 +544,11 @@ class Product {
     }
 
     final normalizedThumbnailUrls = List<String>.filled(videos.length, '');
-    for (var index = 0; index < videos.length && index < videoThumbnailUrls.length; index += 1) {
+    for (
+      var index = 0;
+      index < videos.length && index < videoThumbnailUrls.length;
+      index += 1
+    ) {
       normalizedThumbnailUrls[index] = videoThumbnailUrls[index].trim();
     }
 
@@ -618,8 +641,27 @@ class Product {
   String get buyModalDisplayImageUrl =>
       hasSavedBuyModalImageCrop ? buyModalImageUrl.trim() : imageUrl.trim();
 
-  String get cardDisplayImageUrl =>
-      hasSavedCardImageCrop ? cardImageUrl.trim() : imageUrl.trim();
+  String get listingVideoCoverUrl {
+    if (!hasVideo) {
+      return '';
+    }
+
+    final videos = galleryVideoUrls;
+    if (videos.isEmpty) {
+      return '';
+    }
+
+    return resolveVideoThumbnailUrl(videos.first);
+  }
+
+  String get cardDisplayImageUrl {
+    final videoCover = listingVideoCoverUrl;
+    if (videoCover.isNotEmpty) {
+      return videoCover;
+    }
+
+    return hasSavedCardImageCrop ? cardImageUrl.trim() : imageUrl.trim();
+  }
 
   bool get hasSavedDetailsVideoCrop {
     final trimmedDetailsVideoSourceUrl = detailsVideoSourceUrl.trim();
@@ -694,16 +736,20 @@ class Product {
     String? approvalStatus,
     String? companyName,
     String? companyPictureUrl,
+    String? planName,
+    bool? hasPaidPlan,
     String? name,
     double? originalPrice,
     String? category,
     List<String>? categories,
     List<String>? deliveryPartnerIds,
+    bool? freeDelivery,
     List<String>? paymentPartnerIds,
     String? description,
     String? imageUrl,
     DateTime? createdAt,
     List<String>? imageUrls,
+    List<String>? descriptionImageUrls,
     String? videoUrl,
     List<String>? videoUrls,
     String? videoThumbnailUrl,
@@ -745,16 +791,20 @@ class Product {
       approvalStatus: approvalStatus ?? this.approvalStatus,
       companyName: companyName ?? this.companyName,
       companyPictureUrl: companyPictureUrl ?? this.companyPictureUrl,
+      planName: planName ?? this.planName,
+      hasPaidPlan: hasPaidPlan ?? this.hasPaidPlan,
       name: name ?? this.name,
       originalPrice: originalPrice ?? this.originalPrice,
       category: category ?? this.category,
       categories: categories ?? this.categories,
       deliveryPartnerIds: deliveryPartnerIds ?? this.deliveryPartnerIds,
+      freeDelivery: freeDelivery ?? this.freeDelivery,
       paymentPartnerIds: paymentPartnerIds ?? this.paymentPartnerIds,
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
       imageUrls: imageUrls ?? this.imageUrls,
+      descriptionImageUrls: descriptionImageUrls ?? this.descriptionImageUrls,
       videoUrl: videoUrl ?? this.videoUrl,
       videoUrls: videoUrls ?? this.videoUrls,
       videoThumbnailUrl: videoThumbnailUrl ?? this.videoThumbnailUrl,
@@ -763,8 +813,7 @@ class Product {
           detailsVideoSourceUrl ?? this.detailsVideoSourceUrl,
       visualSearchImageUrl: visualSearchImageUrl ?? this.visualSearchImageUrl,
       model3dUrl: model3dUrl ?? this.model3dUrl,
-      model3dScanImageUrls:
-          model3dScanImageUrls ?? this.model3dScanImageUrls,
+      model3dScanImageUrls: model3dScanImageUrls ?? this.model3dScanImageUrls,
       variants: variants ?? this.variants,
       mainImageIndex: mainImageIndex ?? this.mainImageIndex,
       buyModalImageUrl: buyModalImageUrl ?? this.buyModalImageUrl,
@@ -808,8 +857,8 @@ class Product {
   factory Product.fromJson(Map<String, dynamic> json) {
     final originalPrice =
         (json['originalPrice'] as num?)?.toDouble() ??
-            (json['price'] as num?)?.toDouble() ??
-            0;
+        (json['price'] as num?)?.toDouble() ??
+        0;
     final salesPrice = (json['salesPrice'] as num?)?.toDouble();
     final stock = (json['stock'] as num?)?.toInt() ?? 0;
     final sold = (json['sold'] as num?)?.toInt() ?? 0;
@@ -831,7 +880,9 @@ class Product {
           json['productReviewCommentCount'],
     );
     final reviewComments = _normalizeProductReviewComments(
-      json['reviewComments'] ?? json['productReviewComments'] ?? json['reviews'],
+      json['reviewComments'] ??
+          json['productReviewComments'] ??
+          json['reviews'],
     );
     final variants = (json['variants'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
@@ -871,53 +922,78 @@ class Product {
 
     return Product(
       id: json['id']?.toString() ?? '',
-      adminId: (json['adminId'] ??
-              json['tenantId'] ??
-              json['ownerAdminId'] ??
-              json['workspaceId'] ??
-              json['storeAdminId'])
-          ?.toString()
-          .trim() ??
+      adminId:
+          (json['adminId'] ??
+                  json['tenantId'] ??
+                  json['ownerAdminId'] ??
+                  json['workspaceId'] ??
+                  json['storeAdminId'])
+              ?.toString()
+              .trim() ??
           '',
-      companyName: (json['companyName'] ??
-              json['storeName'] ??
-              json['businessName'] ??
-              json['adminCompanyName'] ??
-              json['sellerName'])
-          ?.toString()
-          .trim() ??
+      companyName:
+          (json['companyName'] ??
+                  json['storeName'] ??
+                  json['businessName'] ??
+                  json['adminCompanyName'] ??
+                  json['sellerName'])
+              ?.toString()
+              .trim() ??
           '',
-      approvalStatus: (json['approvalStatus'] ??
-              json['reviewStatus'] ??
-              json['productApprovalStatus'])
-          ?.toString()
-          .trim()
-          .toLowerCase() ??
+      approvalStatus:
+          (json['approvalStatus'] ??
+                  json['reviewStatus'] ??
+                  json['productApprovalStatus'])
+              ?.toString()
+              .trim()
+              .toLowerCase() ??
           'approved',
-      companyPictureUrl: (json['companyPictureUrl'] ??
-              json['companyProfileImageUrl'] ??
-              json['profileImageUrl'] ??
-              json['logoUrl'] ??
-              json['avatarUrl'] ??
-              json['photoUrl'])
-          ?.toString()
-          .trim() ??
+      companyPictureUrl:
+          (json['companyPictureUrl'] ??
+                  json['companyProfileImageUrl'] ??
+                  json['profileImageUrl'] ??
+                  json['logoUrl'] ??
+                  json['avatarUrl'] ??
+                  json['photoUrl'])
+              ?.toString()
+              .trim() ??
           '',
+      planName: (json['planName'] ?? json['subscriptionPlan'] ?? '')
+          .toString()
+          .trim(),
+      hasPaidPlan: json['hasPaidPlan'] == true ||
+          json['isLegitSeller'] == true ||
+          _productPlanLooksPaid(
+            (json['planName'] ?? json['subscriptionPlan'] ?? '')
+                .toString()
+                .trim(),
+            json['planAmount'] ?? json['subscriptionAmount'] ?? json['amount'],
+          ),
       name: json['name']?.toString() ?? '',
       originalPrice: originalPrice,
       category: normalizedCategories.isNotEmpty
           ? normalizedCategories.first
           : json['category']?.toString() ?? '',
       categories: normalizedCategories,
-      deliveryPartnerIds:
-          _normalizeStringList(json['deliveryPartnerIds'] as List<dynamic>?),
-      paymentPartnerIds:
-          _normalizeStringList(json['paymentPartnerIds'] as List<dynamic>?),
+      deliveryPartnerIds: _normalizeStringList(
+        json['deliveryPartnerIds'] as List<dynamic>?,
+      ),
+      freeDelivery: _normalizeProductActiveState(
+        json['freeDelivery'] ?? json['isFreeDelivery'] ?? json['freeShipping'],
+        false,
+      ),
+      paymentPartnerIds: _normalizeStringList(
+        json['paymentPartnerIds'] as List<dynamic>?,
+      ),
       description: json['description']?.toString() ?? '',
       imageUrl: resolvedMainImageUrl,
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       imageUrls: imageUrls,
+      descriptionImageUrls: _normalizeStringList(
+        json['descriptionImageUrls'] as List<dynamic>?,
+      ),
       videoUrl: videoUrls.isNotEmpty ? videoUrls.first : fallbackVideoUrl,
       videoUrls: videoUrls,
       videoThumbnailUrl: videoThumbnailUrls.isNotEmpty
@@ -932,13 +1008,13 @@ class Product {
           json['threeDModelUrl']?.toString() ??
           json['modelUrl']?.toString() ??
           '',
-      model3dScanImageUrls:
-          _normalizeStringList(json['model3dScanImageUrls'] as List<dynamic>?),
+      model3dScanImageUrls: _normalizeStringList(
+        json['model3dScanImageUrls'] as List<dynamic>?,
+      ),
       variants: variants,
       mainImageIndex: mainImageIndex,
       buyModalImageUrl: json['buyModalImageUrl']?.toString() ?? '',
-      buyModalImageSourceUrl:
-          json['buyModalImageSourceUrl']?.toString() ?? '',
+      buyModalImageSourceUrl: json['buyModalImageSourceUrl']?.toString() ?? '',
       cardImageUrl: json['cardImageUrl']?.toString() ?? '',
       cardImageSourceUrl: json['cardImageSourceUrl']?.toString() ?? '',
       detailsImageCrops: detailsImageCrops,
@@ -1004,7 +1080,9 @@ double _normalizeNonNegativeDouble(dynamic value, [double fallback = 0]) {
 }
 
 double _normalizeProductReviewRating(dynamic value) {
-  final rating = value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');
+  final rating = value is num
+      ? value.toDouble()
+      : double.tryParse(value?.toString() ?? '');
   if (rating == null || !rating.isFinite || rating <= 0) {
     return 0;
   }
@@ -1053,8 +1131,7 @@ ProductReviewMediaType _inferProductReviewMediaType({
       normalizedContentType.startsWith('image/')) {
     return ProductReviewMediaType.image;
   }
-  if (RegExp(r'\.(mp4|mov|m4v|webm|avi|mkv|3gp)$')
-      .hasMatch(normalizedUrl)) {
+  if (RegExp(r'\.(mp4|mov|m4v|webm|avi|mkv|3gp)$').hasMatch(normalizedUrl)) {
     return ProductReviewMediaType.video;
   }
 
@@ -1064,20 +1141,14 @@ ProductReviewMediaType _inferProductReviewMediaType({
 Object? _wrapProductReviewMediaUrls(Object? value, String type) {
   if (value is List) {
     return value
-        .map((url) => {
-              'type': type,
-              'url': url,
-            })
+        .map((url) => {'type': type, 'url': url})
         .toList(growable: false);
   }
   if (value == null || value.toString().trim().isEmpty) {
     return null;
   }
 
-  return {
-    'type': type,
-    'url': value,
-  };
+  return {'type': type, 'url': value};
 }
 
 List<ProductReviewMedia> _normalizeProductReviewMediaList(
@@ -1122,8 +1193,8 @@ ProductReviewSellerReply? _normalizeProductReviewSellerReply(
   Object? value, {
   Object? fallbackMessage,
 }) {
-  final hasUsableValue = value is Map ||
-      (value != null && value.toString().trim().isNotEmpty);
+  final hasUsableValue =
+      value is Map || (value != null && value.toString().trim().isNotEmpty);
   final reply = ProductReviewSellerReply.fromJson(
     hasUsableValue ? value : {'message': fallbackMessage},
   );
@@ -1135,8 +1206,9 @@ ProductReviewSellerReply? _normalizeProductReviewSellerReply(
 }
 
 DateTime? _normalizeProductReviewDate(dynamic value, dynamic epochMs) {
-  final epochNumber =
-      epochMs is num ? epochMs : num.tryParse(epochMs?.toString() ?? '');
+  final epochNumber = epochMs is num
+      ? epochMs
+      : num.tryParse(epochMs?.toString() ?? '');
   if (epochNumber != null && epochNumber.isFinite && epochNumber > 0) {
     return DateTime.fromMillisecondsSinceEpoch(epochNumber.toInt());
   }
@@ -1427,8 +1499,8 @@ List<String> _normalizeProductVideoThumbnailUrls(
   for (var index = 0; index < videoUrls.length; index += 1) {
     final thumbnailUrl =
         rawVideoThumbnailUrls != null && index < rawVideoThumbnailUrls.length
-            ? rawVideoThumbnailUrls[index]?.toString().trim() ?? ''
-            : '';
+        ? rawVideoThumbnailUrls[index]?.toString().trim() ?? ''
+        : '';
     if (thumbnailUrl.isNotEmpty) {
       normalizedThumbnailUrls.add(thumbnailUrl);
       continue;
@@ -1487,4 +1559,22 @@ int _resolveProductMainImageIndex({
 
   final fallbackIndex = imageUrls.indexOf(requestedMainImageUrl.trim());
   return fallbackIndex >= 0 ? fallbackIndex : 0;
+}
+
+bool _productPlanLooksPaid(String planName, Object? amountRaw) {
+  final amount = amountRaw is num
+      ? amountRaw.toDouble()
+      : double.tryParse(amountRaw?.toString() ?? '') ?? 0;
+  if (amount > 0) return true;
+  final name = planName.trim().toLowerCase();
+  if (name.isEmpty ||
+      name == 'free' ||
+      name == 'free plan' ||
+      name.startsWith('free ')) {
+    return false;
+  }
+  return name == 'basic' ||
+      name == 'pro' ||
+      name == 'premium' ||
+      name == 'starter seller plan';
 }

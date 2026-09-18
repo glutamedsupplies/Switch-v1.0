@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Validation Modal Preview</title>
+    <link rel="stylesheet" href="styles.css?v=universal-search-1" />
+    <style>
+      .modal-demo-shell {
+        width: min(880px, calc(100% - 32px));
+      }
+
+      .modal-demo-panel {
+        display: grid;
+        gap: 18px;
+      }
+
+      .modal-preview-card {
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, var(--surface-soft) 100%);
+      }
+
+      .modal-preview-card p {
+        margin: 10px 0 0;
+        color: var(--text-secondary);
+        line-height: 1.6;
+      }
+
+      .modal-demo-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .modal-trigger--error {
+        background: #c44747;
+        color: #ffffff;
+      }
+
+      .modal-trigger--error:hover {
+        background: #af3939;
+      }
+
+      .modal-trigger--delete {
+        background: #a83434;
+        color: #ffffff;
+      }
+
+      .modal-trigger--delete:hover {
+        background: #922d2d;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(15, 23, 42, 0.46);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 160ms ease;
+      }
+
+      .modal-overlay.is-open {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .validation-modal {
+        width: min(100%, 420px);
+        padding: 24px;
+        position: relative;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        box-shadow: 0 28px 70px rgba(15, 23, 42, 0.24);
+        transform: translateY(18px) scale(0.98);
+        transition: transform 160ms ease;
+      }
+
+      .modal-overlay.is-open .validation-modal {
+        transform: translateY(0) scale(1);
+      }
+
+      .validation-modal__close {
+        position: absolute;
+        top: 24px;
+        right: 24px;
+        z-index: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .validation-modal__top {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .validation-modal__icon {
+        width: 172px;
+        height: 172px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        background: transparent;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .validation-modal__icon i {
+        font-size: 140px;
+        line-height: 1;
+        pointer-events: none;
+      }
+
+      .validation-modal__icon svg {
+        width: 140px;
+        height: 140px;
+        display: block;
+        pointer-events: none;
+      }
+
+      .validation-modal__icon--notice {
+        color: #f9a825;
+      }
+
+      .validation-modal__icon--error {
+        color: #a83434;
+      }
+
+      .validation-modal__body {
+        margin-top: 18px;
+        text-align: center;
+      }
+
+      .validation-modal__badge {
+        display: flex;
+        width: fit-content;
+        align-items: center;
+        padding: 7px 12px;
+        margin: 0 auto;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .validation-modal__badge--success {
+        background: rgba(47, 125, 79, 0.14);
+        color: var(--success);
+      }
+
+      .validation-modal__badge--error {
+        background: rgba(168, 52, 52, 0.14);
+        color: #a83434;
+      }
+
+      .validation-modal__title {
+        margin: 14px 0 0;
+        font-size: 26px;
+      }
+
+      .validation-modal__badge[hidden] + .validation-modal__title {
+        margin-top: 0;
+      }
+
+      .validation-modal__copy {
+        margin: 10px 0 0;
+        color: var(--text-secondary);
+        line-height: 1.6;
+      }
+
+      .validation-modal__actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .validation-modal__actions button {
+        flex: 1;
+        border-radius: 8px;
+      }
+
+      .validation-modal__actions .ghost-button,
+      .validation-modal__actions .ghost-button:focus,
+      .validation-modal__actions .ghost-button:active {
+        background: #d1d5db;
+        border-color: transparent;
+        color: var(--text-primary);
+        box-shadow: none;
+      }
+
+      .validation-modal__actions .ghost-button:hover {
+        background: #4b5563;
+        border-color: transparent;
+        color: #ffffff;
+        box-shadow: none;
+      }
+
+      .modal-demo-actions button {
+        border-radius: 8px;
+      }
+
+      @media (max-width: 640px) {
+        .modal-demo-shell {
+          width: min(100%, calc(100% - 20px));
+        }
+
+        .modal-demo-actions,
+        .validation-modal__actions {
+          flex-direction: column;
+        }
+      }
+    </style>
+    <script src="lazy-loading.js?v=global-lazy-1"></script>
+  </head>
+  <body>
+    <main class="page-shell modal-demo-shell">
+      <section class="hero">
+        <p class="eyebrow">Validation UI</p>
+        <h1>Modal Preview</h1>
+        <p class="hero-copy">
+          This page contains a simple minimal preview for both success and
+          error validation modals.
+        </p>
+      </section>
+
+      <section class="panel modal-demo-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-label">Modal States</p>
+            <h2>Choose a preview</h2>
+          </div>
+          <span class="count-pill">4 Variants</span>
+        </div>
+
+        <div class="modal-preview-card">
+          <p class="section-label">Live Trigger</p>
+          <h3 class="product-name">Validation feedback modals</h3>
+          <p>
+            Use the buttons below to preview the modal shown when a form action
+            shows an important notice or an error.
+          </p>
+        </div>
+
+        <div class="modal-demo-actions">
+          <button type="button" id="show-success-modal">Success</button>
+          <button type="button" id="show-important-notice-modal">Important notice</button>
+          <button type="button" class="modal-trigger--error" id="show-error-modal">
+            Error
+          </button>
+          <button type="button" class="modal-trigger--delete" id="show-delete-modal">
+            Delete
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal-overlay" id="modal-overlay" aria-hidden="true">
+      <section
+        class="validation-modal"
+        id="validation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="validation-modal-title"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="validation-modal-close"
+          aria-label="Close validation modal"
+          title="Close validation modal"
+        >
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <div class="validation-modal__top">
+          <div
+            class="validation-modal__icon validation-modal__icon--notice"
+            id="modal-icon"
+            aria-hidden="true"
+            role="presentation"
+            tabindex="-1"
+          ></div>
+        </div>
+
+        <div class="validation-modal__body">
+          <span class="validation-modal__badge validation-modal__badge--success" id="modal-badge" hidden></span>
+          <h2 class="validation-modal__title" id="validation-modal-title">
+            Important notice
+          </h2>
+          <p class="validation-modal__copy" id="modal-copy">
+            Please review the details carefully before you continue.
+          </p>
+
+          <div class="validation-modal__actions">
+            <button type="button" class="ghost-button" id="modal-secondary-action" hidden>
+              Cancel
+            </button>
+            <button type="button" id="modal-primary-action">Continue</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="theme.js?v=platform-workspace-settings-1"></script>
+    <script>
+      const overlay = document.getElementById("modal-overlay");
+      const modalIcon = document.getElementById("modal-icon");
+      const modalBadge = document.getElementById("modal-badge");
+      const modalTitle = document.getElementById("validation-modal-title");
+      const modalCopy = document.getElementById("modal-copy");
+      const modalSecondaryAction = document.getElementById("modal-secondary-action");
+      const modalPrimaryAction = document.getElementById("modal-primary-action");
+      const modalCloseButton = document.getElementById("validation-modal-close");
+      const showSuccessButton = document.getElementById("show-success-modal");
+      const showImportantNoticeButton = document.getElementById("show-important-notice-modal");
+      const showErrorButton = document.getElementById("show-error-modal");
+      const showDeleteButton = document.getElementById("show-delete-modal");
+
+      const modalPresets = {
+        success: {
+          badge: "",
+          showBadge: false,
+          title: "Success",
+          copy: "Your request has been processed and everything looks good.",
+          showCopy: true,
+          primaryAction: "Continue",
+          secondaryAction: "",
+          showSecondaryAction: false,
+          badgeClass: "validation-modal__badge validation-modal__badge--success",
+          iconClass: "validation-modal__icon validation-modal__icon--success",
+          iconMarkup: '<i class="fa-solid fa-circle-check" aria-hidden="true"></i>',
+        },
+        notice: {
+          badge: "",
+          showBadge: false,
+          title: "Important notice",
+          copy: "Please review the details carefully before you continue.",
+          showCopy: true,
+          primaryAction: "Continue",
+          secondaryAction: "",
+          showSecondaryAction: false,
+          badgeClass: "validation-modal__badge",
+          iconClass: "validation-modal__icon validation-modal__icon--notice",
+          iconMarkup: '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>',
+        },
+        error: {
+          badge: "",
+          showBadge: false,
+          title: "Error",
+          copy: "We could not complete the action. Please review the input and try again.",
+          showCopy: true,
+          primaryAction: "Try Again",
+          secondaryAction: "",
+          showSecondaryAction: false,
+          badgeClass: "validation-modal__badge validation-modal__badge--error",
+          iconClass: "validation-modal__icon validation-modal__icon--error",
+          iconMarkup: '<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>',
+        },
+        delete: {
+          badge: "",
+          showBadge: false,
+          title: "Opps!",
+          copy: "Are you sure you want to delete this?",
+          showCopy: true,
+          primaryAction: "Continue",
+          secondaryAction: "Cancel",
+          showSecondaryAction: true,
+          badgeClass: "validation-modal__badge validation-modal__badge--error",
+          iconClass: "validation-modal__icon validation-modal__icon--error validation-modal__icon--delete",
+          iconMarkup: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+        },
+      };
+
+      function openModal(mode) {
+        const preset = modalPresets[mode];
+        if (!preset) {
+          return;
+        }
+
+        modalBadge.textContent = preset.badge;
+        modalBadge.hidden = !preset.showBadge;
+        modalTitle.textContent = preset.title;
+        modalCopy.textContent = preset.copy;
+        modalCopy.hidden = !preset.showCopy;
+        modalSecondaryAction.textContent = preset.secondaryAction || "Cancel";
+        modalSecondaryAction.hidden = !preset.showSecondaryAction;
+        modalPrimaryAction.textContent = preset.primaryAction;
+        modalBadge.className = preset.badgeClass;
+        modalIcon.className = preset.iconClass;
+        modalIcon.innerHTML = preset.iconMarkup || '<i class="fa-solid fa-circle-check" aria-hidden="true"></i>';
+        overlay.classList.add("is-open");
+        overlay.setAttribute("aria-hidden", "false");
+      }
+
+      function closeModal() {
+        overlay.classList.remove("is-open");
+        overlay.setAttribute("aria-hidden", "true");
+      }
+
+      showSuccessButton.addEventListener("click", () => openModal("success"));
+      showImportantNoticeButton.addEventListener("click", () => openModal("notice"));
+      showErrorButton.addEventListener("click", () => openModal("error"));
+      showDeleteButton.addEventListener("click", () => openModal("delete"));
+      modalSecondaryAction.addEventListener("click", closeModal);
+      modalPrimaryAction.addEventListener("click", closeModal);
+      modalCloseButton.addEventListener("click", closeModal);
+
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) {
+          closeModal();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeModal();
+        }
+      });
+    </script>
+  </body>
+</html>

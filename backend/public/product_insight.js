@@ -1,3 +1,12 @@
+const listingInsightSearchParams = new URLSearchParams(window.location.search);
+const listingInsightRequestedProductId = String(
+  listingInsightSearchParams.get("main_listing_insight_product") || "",
+).trim();
+let listingInsightRequestedProductOpened = false;
+const listingInsightEmbeddedMode = listingInsightSearchParams.get("main_listing_insight") === "1"
+  || document.body.classList.contains("listing-insight-embedded");
+document.body?.classList.toggle("listing-insight-embedded", listingInsightEmbeddedMode);
+
 const totalProductsEl = document.getElementById("product-insight-total-products");
 const topSoldEl = document.getElementById("product-insight-top-sold");
 const topRatingEl = document.getElementById("product-insight-top-rating");
@@ -19,21 +28,51 @@ const soldMetricFilterDropdown = document.getElementById("product-insight-metric
 const soldMetricFilterTrigger = document.getElementById("product-insight-metric-filter-trigger");
 const soldMetricFilterSummary = document.getElementById("product-insight-metric-filter-summary");
 const soldMetricFilterMenu = document.getElementById("product-insight-metric-filter-menu");
+const listingInsightRankingTitleEl = document.querySelector("[data-listing-insight-ranking-title]");
+const listingInsightRankingCriterionEl = document.querySelector("[data-listing-insight-ranking-criterion]");
+const listingInsightRankingInfoEl = document.querySelector("[data-listing-insight-ranking-info]");
+const listingInsightLocalTableHeadEl = document.querySelector("[data-listing-insight-local-table-head]");
+const listingInsightOverallRankingViewEl = document.querySelector(
+  "[data-listing-insight-overall-ranking-view]",
+);
+const listingInsightVisibleCountEl = document.querySelector("[data-listing-insight-visible-count]");
 const timeframeFilterButtons = Array.from(
   document.querySelectorAll("[data-product-insight-range-filter]"),
 );
 const sideViewButtons = Array.from(
   document.querySelectorAll("[data-product-insight-side-view]"),
 );
+const listingInsightCloseButtons = Array.from(
+  document.querySelectorAll("[data-listing-insight-close]"),
+);
+const listingInsightProductDetailEl = document.querySelector("[data-listing-insight-product-detail]");
+const listingInsightDetailContentEl = document.querySelector("[data-listing-insight-detail-content]");
+const listingInsightDetailBreadcrumbEl = document.querySelector("[data-listing-insight-detail-breadcrumb]");
+const listingInsightDetailBackButton = document.querySelector("[data-listing-insight-detail-back]");
+const listingInsightDetailRangeSelect = document.querySelector("[data-listing-insight-detail-range]");
+const listingInsightDetailRangeControl = listingInsightDetailRangeSelect?.closest(
+  ".listing-insight-detail-range",
+) ?? null;
 let currentProductInsightProducts = [];
 let soldCategoryFilter = "";
-let soldMetricFilter = "all";
+let productInsightBusinessType = "";
+let productInsightBusinessCategories = [];
+let soldMetricFilter = listingInsightEmbeddedMode ? "sold" : "all";
+let activeListingInsightRankingMode = normalizeListingInsightRankingMode(
+  listingInsightSearchParams.get("main_listing_insight_mode") || soldMetricFilter,
+);
 let soldRangeFilter = "all";
+let listingInsightAvailabilityFilter = "all";
 let selectedSoldProductId = "";
+let selectedListingInsightProductId = "";
 let activeProductInsightSideView = "sold";
+let activeListingInsightDetailView = "sold";
 let reviewSearchTerm = "";
 let soldSearchTimer = 0;
 let reviewSearchTimer = 0;
+let productInsightRealtimeRefreshTimer = 0;
+let productInsightRealtimeRefreshInFlight = false;
+let productInsightRealtimeRefreshQueued = false;
 let productInsightStarGradientId = 0;
 let reviewSortMode = "relevant";
 let reviewRatingFilter = "";
@@ -44,12 +83,26 @@ let productInsightScrollProxySpacerEl = null;
 let isSyncingProductInsightScrollProxy = false;
 let productInsightScrollProxyFrame = 0;
 let productInsightSoldSpacerFrame = 0;
+let productInsightWorkspaceThemeSyncFrame = 0;
+const productInsightRankCardProducts = new WeakMap();
 const productInsightChartViewportState = new Map();
+const listingInsightOverallRankingCache = new Map();
+const PRODUCT_INSIGHT_WORKSPACE_COLOR_STORAGE_KEY = "gms-workspace-color";
+const productInsightRealtimeTopics = new Set([
+  "all",
+  "products",
+  "product-requests",
+  "inventory",
+  "orders",
+  "categories",
+  "store-types",
+]);
 const PRODUCT_INSIGHT_METRIC_FILTER_OPTIONS = [
   { value: "all", label: "All" },
   { value: "sold", label: "Top Sold" },
   { value: "rating", label: "Top Rating" },
   { value: "income", label: "Total Income" },
+  { value: "trend", label: "Top Trend" },
 ];
 const PRODUCT_INSIGHT_SOLD_ICON_MARKUP = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -69,11 +122,8 @@ const PRODUCT_INSIGHT_TOTAL_INCOME_ICON_MARKUP = `
     <path d="M448 576a160 160 0 1 1 0-320 160 160 0 0 1 0 320zm0-64a96 96 0 1 0 0-192 96 96 0 0 0 0 192z"></path>
   </svg>
 `;
-const PRODUCT_INSIGHT_RATING_ICON_MARKUP = `
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M12 2.2 14.95 8.18 21.55 9.14 16.78 13.79 17.91 20.35 12 17.24 6.09 20.35 7.22 13.79 2.45 9.14 9.05 8.18 12 2.2Z"></path>
-  </svg>
-`;
+const PRODUCT_INSIGHT_RATING_ICON_MARKUP =
+  '<span class="product-insight-rating-icon" aria-hidden="true">★</span>';
 const PRODUCT_INSIGHT_REVIEWS_ICON_MARKUP = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path
@@ -91,6 +141,136 @@ const PRODUCT_INSIGHT_REVIEWS_ICON_MARKUP = `
     ></path>
   </svg>
 `;
+
+function parseProductInsightHexColor(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const match = normalized.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!match) {
+    return null;
+  }
+
+  const channels = match.slice(1).map((part) => Number.parseInt(part, 16));
+  return {
+    hex: normalized,
+    channels,
+    rgb: channels.join(", "),
+    contrast: (
+      ((channels[0] * 299) + (channels[1] * 587) + (channels[2] * 114)) / 1000
+    ) >= 168 ? "#111827" : "#ffffff",
+  };
+}
+
+function getStoredProductInsightWorkspaceColor() {
+  try {
+    return String(
+      window.localStorage?.getItem(PRODUCT_INSIGHT_WORKSPACE_COLOR_STORAGE_KEY) || "",
+    ).trim().toLowerCase();
+  } catch (error) {
+    return "";
+  }
+}
+
+function getProductInsightThemeColor() {
+  const storedColor = getStoredProductInsightWorkspaceColor();
+  if (parseProductInsightHexColor(storedColor)) {
+    return storedColor;
+  }
+
+  try {
+    const theme = window.WebTheme?.loadThemeConfig?.()?.theme || window.WebTheme?.loadTheme?.();
+    if (theme && window.WebTheme?.rgbToHex) {
+      return window.WebTheme.rgbToHex(theme).toLowerCase();
+    }
+  } catch (error) {
+    // Use the currently applied CSS variables below.
+  }
+
+  const styles = window.getComputedStyle(document.documentElement);
+  const accent = String(styles.getPropertyValue("--accent") || "").trim().toLowerCase();
+  if (parseProductInsightHexColor(accent)) {
+    return accent;
+  }
+
+  return "#2563eb";
+}
+
+function setProductInsightRootVariable(root, name, value) {
+  if (root.style.getPropertyValue(name) === value) {
+    return;
+  }
+  root.style.setProperty(name, value);
+}
+
+function syncListingInsightWorkspaceAccent() {
+  const parsedColor = parseProductInsightHexColor(getProductInsightThemeColor());
+  if (!parsedColor) {
+    return "";
+  }
+
+  const root = document.documentElement;
+  setProductInsightRootVariable(root, "--accent", parsedColor.hex);
+  setProductInsightRootVariable(root, "--accent-rgb", parsedColor.rgb);
+  setProductInsightRootVariable(root, "--accent-strong", parsedColor.hex);
+  setProductInsightRootVariable(root, "--accent-text", parsedColor.hex);
+  setProductInsightRootVariable(root, "--accent-button-bg", parsedColor.hex);
+  setProductInsightRootVariable(root, "--accent-button-hover-bg", parsedColor.hex);
+  setProductInsightRootVariable(root, "--accent-contrast", parsedColor.contrast);
+  setProductInsightRootVariable(root, "--listing-insight-accent", parsedColor.hex);
+  setProductInsightRootVariable(root, "--listing-insight-accent-rgb", parsedColor.rgb);
+  setProductInsightRootVariable(root, "--listing-insight-accent-soft", `rgba(${parsedColor.rgb}, 0.14)`);
+  setProductInsightRootVariable(root, "--listing-insight-accent-muted", `rgba(${parsedColor.rgb}, 0.075)`);
+  setProductInsightRootVariable(root, "--listing-insight-accent-border", `rgba(${parsedColor.rgb}, 0.28)`);
+  setProductInsightRootVariable(root, "--listing-insight-accent-contrast", parsedColor.contrast);
+  setProductInsightRootVariable(root, "--table-row-hover-bg", `rgba(${parsedColor.rgb}, 0.055)`);
+  setProductInsightRootVariable(root, "--table-row-hover-shadow", `inset 3px 0 0 rgba(${parsedColor.rgb}, 0.55)`);
+
+  return parsedColor.hex;
+}
+
+function scheduleListingInsightWorkspaceAccentSync() {
+  if (productInsightWorkspaceThemeSyncFrame) {
+    window.cancelAnimationFrame(productInsightWorkspaceThemeSyncFrame);
+  }
+  productInsightWorkspaceThemeSyncFrame = window.requestAnimationFrame(() => {
+    productInsightWorkspaceThemeSyncFrame = 0;
+    syncListingInsightWorkspaceAccent();
+  });
+}
+
+syncListingInsightWorkspaceAccent();
+
+window.addEventListener("gms-theme-scope-updated", scheduleListingInsightWorkspaceAccentSync);
+window.addEventListener("gms-theme-updated", scheduleListingInsightWorkspaceAccentSync);
+window.addEventListener("storage", (event) => {
+  if (
+    event.key === PRODUCT_INSIGHT_WORKSPACE_COLOR_STORAGE_KEY
+    || event.key === window.WebTheme?.storageKey
+    || event.key === window.WebTheme?.getThemeStorageKey?.()
+  ) {
+    scheduleListingInsightWorkspaceAccentSync();
+  }
+});
+window.addEventListener("focus", scheduleListingInsightWorkspaceAccentSync);
+window.addEventListener("pageshow", scheduleListingInsightWorkspaceAccentSync);
+
+if (window.MutationObserver) {
+  const rootStyleObserver = new MutationObserver(() => {
+    const storedColor = getStoredProductInsightWorkspaceColor();
+    if (!parseProductInsightHexColor(storedColor)) {
+      return;
+    }
+    const currentAccent = String(
+      document.documentElement.style.getPropertyValue("--accent") || "",
+    ).trim().toLowerCase();
+    if (currentAccent !== storedColor) {
+      scheduleListingInsightWorkspaceAccentSync();
+    }
+  });
+  rootStyleObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["style"],
+  });
+}
 
 function toNumber(value) {
   const parsed = Number(value);
@@ -771,6 +951,73 @@ function getStock(product) {
   return stock > 0 ? Math.trunc(stock) : 0;
 }
 
+function isProductInsightApprovedListing(product) {
+  const approvalStatus = String(product?.approvalStatus ?? "").trim().toLowerCase();
+  if (
+    product?.isRejected === true ||
+    product?.isApprovalPending === true ||
+    approvalStatus === "rejected" ||
+    approvalStatus === "pending"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isProductInsightActiveListing(product) {
+  return Boolean(String(product?.name ?? "").trim()) &&
+    isProductInsightApprovedListing(product) &&
+    product?.isActive !== false &&
+    getStock(product) > 0;
+}
+
+function normalizeListingInsightAvailabilityFilter(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  return ["active", "out-of-stock", "inactive"].includes(normalizedValue)
+    ? normalizedValue
+    : "all";
+}
+
+function getProductInsightAvailability(product) {
+  if (isProductInsightActiveListing(product)) {
+    return "active";
+  }
+  if (
+    Boolean(String(product?.name ?? "").trim())
+    && isProductInsightApprovedListing(product)
+    && product?.isActive !== false
+    && getStock(product) <= 0
+  ) {
+    return "out-of-stock";
+  }
+  return "inactive";
+}
+
+function matchesListingInsightAvailability(product, filter = listingInsightAvailabilityFilter) {
+  const normalizedFilter = normalizeListingInsightAvailabilityFilter(filter);
+  return normalizedFilter === "all" || getProductInsightAvailability(product) === normalizedFilter;
+}
+
+function hasProductInsightListingHistory(product) {
+  return Boolean(
+    product?.hasListingInsightHistory === true ||
+      product?.wasListedInInsight === true ||
+      product?.listingInsightHistory === true ||
+      String(
+        product?.listingInsightListedAt ??
+          product?.firstListingInsightListedAt ??
+          product?.firstListedAt ??
+          "",
+      ).trim() ||
+      hasProductInsightAnyRankingMetric(product),
+  );
+}
+
+function shouldShowProductInListingInsight(product) {
+  return isProductInsightActiveListing(product) || hasProductInsightListingHistory(product);
+}
+
 function getPrice(product) {
   const salesPrice = toNumber(product?.salesPrice);  
   if (salesPrice > 0) {
@@ -815,7 +1062,12 @@ function normalizeProductInsightSearch(value) {
 }
 
 function getProductInsightScrollProxy() {
-  if (!document.body?.classList.contains("product-insight-page") || !soldListEl) {
+  if (
+    !document.body?.classList.contains("product-insight-page")
+    || listingInsightEmbeddedMode
+    || document.body?.classList.contains("listing-insight-overall-mode")
+    || !soldListEl
+  ) {
     return null;
   }
 
@@ -884,6 +1136,13 @@ function requestProductInsightSoldSpacerScrollState() {
 }
 
 function updateProductInsightScrollProxy() {
+  if (listingInsightEmbeddedMode || document.body?.classList.contains("listing-insight-overall-mode")) {
+    if (productInsightScrollProxyEl) {
+      productInsightScrollProxyEl.hidden = true;
+      productInsightScrollProxyEl.scrollTop = 0;
+    }
+    return;
+  }
   const proxyEl = getProductInsightScrollProxy();
   if (!proxyEl || !productInsightScrollProxySpacerEl || !soldListEl) {
     return;
@@ -948,7 +1207,12 @@ function shouldProductInsightWheelTargetStayLocal(target) {
 }
 
 function handleProductInsightPageWheel(event) {
-  if (!document.body?.classList.contains("product-insight-page") || event.defaultPrevented) {
+  if (
+    !document.body?.classList.contains("product-insight-page")
+    || listingInsightEmbeddedMode
+    || document.body?.classList.contains("listing-insight-overall-mode")
+    || event.defaultPrevented
+  ) {
     return;
   }
 
@@ -2131,7 +2395,28 @@ function syncSoldCategoryFilterSummary() {
   }
 
   soldCategoryFilterSummary.textContent =
-    normalizeProductInsightCategoryName(soldCategoryFilter) || "All Categories";
+    normalizeProductInsightCategoryName(soldCategoryFilter) || "All";
+}
+
+function syncSoldCategoryFilterIntrinsicWidth(options = []) {
+  if (!soldCategoryFilterDropdown) {
+    return;
+  }
+
+  const labels = options
+    .map((option) => normalizeProductInsightCategoryName(option?.label))
+    .filter(Boolean);
+  const longestLabel = labels.reduce((longest, label) => {
+    if (!longest) {
+      return label;
+    }
+
+    const longestLength = Array.from(longest).length;
+    const labelLength = Array.from(label).length;
+    return labelLength > longestLength ? label : longest;
+  }, "");
+
+  soldCategoryFilterDropdown.dataset.longestLabel = longestLabel || "All";
 }
 
 function setSoldCategoryFilterOpen(isOpen) {
@@ -2148,6 +2433,170 @@ function setSoldCategoryFilterOpen(isOpen) {
   soldCategoryFilterMenu.hidden = !isOpen;
 }
 
+function normalizeListingInsightRankingMode(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  if (["income", "trend"].includes(normalizedValue)) {
+    return normalizedValue;
+  }
+  return "sold";
+}
+
+function getListingInsightRankingModeConfig(value = activeListingInsightRankingMode) {
+  const normalizedMode = normalizeListingInsightRankingMode(value);
+  return {
+    sold: {
+      title: "Top Sold Products",
+      criterion: "(by Units Sold)",
+      info: "Top 10 products ranked by completed-order units for the selected period.",
+      searchPlaceholder: "Search sold products...",
+    },
+    income: {
+      title: "Top Income Products",
+      criterion: "(by Revenue)",
+      info: "Top 10 products ranked by completed-order income for the selected period.",
+      searchPlaceholder: "Search income ranking...",
+    },
+    trend: {
+      title: "Top Trending Products",
+      criterion: "(by Sales Growth)",
+      info: "Top 10 products ranked by their latest sales growth percentage.",
+      searchPlaceholder: "Search trend ranking...",
+    },
+    overall: {
+      title: "Overall Ranking",
+      criterion: "(by Category)",
+      info: "Top 10 approved listings across all sellers in the selected category.",
+      searchPlaceholder: "Search products or sellers...",
+    },
+  }[normalizedMode];
+}
+
+function setListingInsightVisibleCount(value) {
+  if (listingInsightVisibleCountEl) {
+    listingInsightVisibleCountEl.textContent = String(Math.max(0, Math.trunc(toNumber(value))));
+  }
+}
+
+function syncListingInsightRankingModePresentation() {
+  const mode = normalizeListingInsightRankingMode(activeListingInsightRankingMode);
+  const config = getListingInsightRankingModeConfig(mode);
+  const isOverall = listingInsightEmbeddedMode && mode === "overall";
+  document.body.classList.toggle("listing-insight-overall-mode", isOverall);
+
+  if (listingInsightRankingTitleEl) {
+    listingInsightRankingTitleEl.textContent = config.title;
+  }
+  if (listingInsightRankingCriterionEl) {
+    listingInsightRankingCriterionEl.textContent = config.criterion;
+  }
+  if (listingInsightRankingInfoEl) {
+    listingInsightRankingInfoEl.title = config.info;
+    listingInsightRankingInfoEl.setAttribute("aria-label", config.info);
+  }
+  if (soldSearchInput) {
+    soldSearchInput.placeholder = config.searchPlaceholder;
+    soldSearchInput.setAttribute("aria-label", config.searchPlaceholder.replace(/\.\.\.$/, ""));
+  }
+  if (listingInsightLocalTableHeadEl) {
+    listingInsightLocalTableHeadEl.hidden = isOverall;
+  }
+  if (soldListEl) {
+    soldListEl.hidden = isOverall;
+  }
+  if (listingInsightOverallRankingViewEl) {
+    listingInsightOverallRankingViewEl.hidden = !isOverall;
+  }
+}
+
+function notifyMainListingInsightRankingMode() {
+  if (!listingInsightEmbeddedMode || window.parent === window) {
+    return;
+  }
+  window.parent.postMessage(
+    {
+      type: "gms-main-listing-insight-ranking-mode-state",
+      mode: activeListingInsightRankingMode,
+    },
+    window.location.origin,
+  );
+}
+
+function setActiveListingInsightRankingMode(value, options = {}) {
+  const nextMode = normalizeListingInsightRankingMode(value);
+  const modeChanged = nextMode !== activeListingInsightRankingMode;
+  activeListingInsightRankingMode = nextMode;
+  if (nextMode !== "overall") {
+    soldMetricFilter = nextMode;
+  }
+
+  if (modeChanged && listingInsightEmbeddedMode) {
+    selectedSoldProductId = "";
+    selectedListingInsightProductId = "";
+    setListingInsightDetailOpen(false);
+    setListingInsightProductOpen(false);
+  }
+
+  syncListingInsightRankingModePresentation();
+  renderSoldMetricFilterOptions();
+  if (options.notify !== false) {
+    notifyMainListingInsightRankingMode();
+  }
+  if (options.render !== false) {
+    renderProductInsight(currentProductInsightProducts);
+  }
+}
+
+window.GMS_MAIN_LISTING_INSIGHT_SET_RANKING_MODE = (mode) => {
+  setActiveListingInsightRankingMode(mode);
+};
+
+function getMainListingInsightFilterOptionsPayload() {
+  return {
+    categories: productInsightBusinessCategories.slice(),
+    filters: {
+      category: normalizeProductInsightCategoryFilter(soldCategoryFilter) || "all",
+      availability: normalizeListingInsightAvailabilityFilter(
+        listingInsightAvailabilityFilter,
+      ),
+      period: normalizeProductInsightSoldRange(soldRangeFilter),
+    },
+  };
+}
+
+function notifyMainListingInsightFilterOptions() {
+  if (!listingInsightEmbeddedMode || window.parent === window) {
+    return;
+  }
+  window.parent.postMessage(
+    {
+      type: "gms-main-listing-insight-filter-options",
+      ...getMainListingInsightFilterOptionsPayload(),
+    },
+    window.location.origin,
+  );
+}
+
+function setMainListingInsightFilters(filters = {}) {
+  const source = filters && typeof filters === "object" ? filters : {};
+  const requestedCategory = normalizeProductInsightCategoryFilter(source.category);
+  const resolvedCategory = requestedCategory && requestedCategory !== "all"
+    ? productInsightBusinessCategories.find(
+      (category) => normalizeProductInsightCategoryFilter(category) === requestedCategory,
+    ) || String(source.category || "").trim()
+    : "";
+
+  soldCategoryFilter = resolvedCategory;
+  listingInsightAvailabilityFilter = normalizeListingInsightAvailabilityFilter(
+    source.availability,
+  );
+  setActiveTimeframeFilter(source.period);
+  renderSoldCategoryFilterOptions();
+  renderProductInsight(currentProductInsightProducts);
+}
+
+window.GMS_MAIN_LISTING_INSIGHT_SET_FILTERS = setMainListingInsightFilters;
+window.GMS_MAIN_LISTING_INSIGHT_GET_FILTER_OPTIONS = getMainListingInsightFilterOptionsPayload;
+
 function normalizeProductInsightMetricFilter(value) {
   const normalizedValue = String(value ?? "").trim().toLowerCase();
   if (!normalizedValue || normalizedValue === "all") {
@@ -2158,6 +2607,9 @@ function normalizeProductInsightMetricFilter(value) {
   }
   if (["income", "total-income", "revenue", "sales"].includes(normalizedValue)) {
     return "income";
+  }
+  if (["trend", "trending", "growth", "sales-growth"].includes(normalizedValue)) {
+    return "trend";
   }
   return "sold";
 }
@@ -2320,43 +2772,70 @@ function createProductInsightDropdown({
   return dropdown;
 }
 
-function renderSoldCategoryFilterOptions(products) {
+function setProductInsightBusinessCategories(payload = {}, products = []) {
+  productInsightBusinessType = normalizeProductInsightCategoryName(payload?.businessType);
+  const seen = new Set();
+  productInsightBusinessCategories = [];
+
+  for (const value of Array.isArray(payload?.categories) ? payload.categories : []) {
+    const category = normalizeProductInsightCategoryName(value);
+    const normalizedKey = normalizeProductInsightCategoryFilter(category);
+    if (!normalizedKey || seen.has(normalizedKey)) {
+      continue;
+    }
+
+    seen.add(normalizedKey);
+    productInsightBusinessCategories.push(category);
+  }
+
+  if (!productInsightBusinessCategories.length) {
+    for (const product of Array.isArray(products) ? products : []) {
+      for (const value of getProductInsightCategoryList(product)) {
+        const category = normalizeProductInsightCategoryName(value);
+        const normalizedKey = normalizeProductInsightCategoryFilter(category);
+        if (!normalizedKey || seen.has(normalizedKey)) {
+          continue;
+        }
+        seen.add(normalizedKey);
+        productInsightBusinessCategories.push(category);
+      }
+    }
+  }
+}
+
+function renderSoldCategoryFilterOptions() {
   if (!soldCategoryFilterMenu) {
     return;
   }
 
-  const nextCategories = [];
-  const seen = new Set();
-
-  for (const product of Array.isArray(products) ? products : []) {
-    for (const category of getProductInsightCategoryList(product)) {
-      const normalizedKey = normalizeProductInsightCategoryFilter(category);
-      if (!normalizedKey || seen.has(normalizedKey)) {
-        continue;
-      }
-
-      seen.add(normalizedKey);
-      nextCategories.push(category);
-    }
-  }
-
-  nextCategories.sort((left, right) =>
-    String(left).localeCompare(String(right), undefined, { sensitivity: "base" }),
-  );
+  const nextCategories = productInsightBusinessCategories.slice();
 
   const normalizedSelectedFilter = normalizeProductInsightCategoryFilter(soldCategoryFilter);
   const resolvedSelectedFilter = nextCategories.find(
     (category) => normalizeProductInsightCategoryFilter(category) === normalizedSelectedFilter,
   );
+  const categoryIsRequired = listingInsightEmbeddedMode
+    && activeListingInsightRankingMode === "overall";
 
-  soldCategoryFilter = resolvedSelectedFilter ?? "";
+  soldCategoryFilter = resolvedSelectedFilter
+    ?? (categoryIsRequired ? (nextCategories[0] || "") : "");
   syncSoldCategoryFilterSummary();
+  soldCategoryFilterTrigger?.setAttribute(
+    "title",
+    productInsightBusinessType
+      ? `Categories for ${productInsightBusinessType}`
+      : "Listing categories",
+  );
   soldCategoryFilterMenu.innerHTML = "";
 
-  const options = [{ value: "", label: "All Categories" }, ...nextCategories.map((category) => ({
-    value: category,
-    label: category,
-  }))];
+  const options = [
+    ...(categoryIsRequired ? [] : [{ value: "", label: "All" }]),
+    ...nextCategories.map((category) => ({
+      value: category,
+      label: category,
+    })),
+  ];
+  syncSoldCategoryFilterIntrinsicWidth(options);
 
   for (const optionConfig of options) {
     const option = document.createElement("button");
@@ -2376,7 +2855,7 @@ function renderSoldCategoryFilterOptions(products) {
     option.addEventListener("click", () => {
       soldCategoryFilter = optionConfig.value;
       syncSoldCategoryFilterSummary();
-      renderSoldCategoryFilterOptions(currentProductInsightProducts);
+      renderSoldCategoryFilterOptions();
       setSoldCategoryFilterOpen(false);
       soldCategoryFilterTrigger?.focus();
       renderProductInsight(currentProductInsightProducts);
@@ -2424,6 +2903,9 @@ function getProductInsightRankingMetricValue(product, metric = soldMetricFilter)
   if (normalizedMetric === "income") {
     return getProductInsightIncomeAmount(product, soldRangeFilter);
   }
+  if (normalizedMetric === "trend") {
+    return getListingInsightTrendSnapshot(product).percentageChange;
+  }
   return getProductInsightSoldCount(product);
 }
 
@@ -2432,6 +2914,7 @@ function hasProductInsightAnyRankingMetric(product) {
     getProductInsightSoldCount(product) > 0
     || getRating(product) > 0
     || getProductInsightIncomeAmount(product, soldRangeFilter) > 0
+    || getListingInsightTrendSnapshot(product).percentageChange !== 0
   );
 }
 
@@ -2446,15 +2929,21 @@ function getProductInsightMetricLabel(metric = soldMetricFilter) {
   if (normalizedMetric === "income") {
     return "Total income";
   }
+  if (normalizedMetric === "trend") {
+    return "Sales trend";
+  }
   return getProductInsightSoldMetricLabel();
 }
 
-function getProductInsightRankedProducts(products, metric = soldMetricFilter) {
+function getProductInsightRankedProducts(products, metric = soldMetricFilter, options = {}) {
   const normalizedMetric = normalizeProductInsightMetricFilter(metric);
+  const includeZeroMetricProducts = options?.includeZeroMetricProducts === true;
   const normalizedProducts = Array.isArray(products) ? products : [];
   return normalizedProducts
     .filter((product) => (
-      normalizedMetric === "all"
+      includeZeroMetricProducts
+        ? true
+      : normalizedMetric === "all"
         ? hasProductInsightAnyRankingMetric(product)
         : getProductInsightRankingMetricValue(product, normalizedMetric) > 0
     ))
@@ -2526,6 +3015,14 @@ function buildProductInsightRankMetric(product, metric = soldMetricFilter) {
     return {
       metricText: formatProductInsightCurrency(getProductInsightIncomeAmount(product, soldRangeFilter)),
       metricMode: "income",
+    };
+  }
+  if (normalizedMetric === "trend") {
+    const snapshot = getListingInsightTrendSnapshot(product);
+    const prefix = snapshot.percentageChange > 0 ? "+" : "";
+    return {
+      metricText: `${prefix}${snapshot.percentageChange.toFixed(1)}% trend`,
+      metricMode: "trend",
     };
   }
   return {
@@ -2643,8 +3140,25 @@ function buildProductInsightExampleReviews(product) {
 }
 
 function createEmptyState(message) {
+  if (window.GMS_ADMIN_EMPTY_STATE_LOTTIE?.create) {
+    const emptyState = window.GMS_ADMIN_EMPTY_STATE_LOTTIE.create({
+      label: message,
+      copy: "Listing insights will appear here once product activity is available.",
+    });
+    if (listingInsightEmbeddedMode) {
+      emptyState.classList.add("is-compact");
+    }
+    return emptyState;
+  }
   const state = document.createElement("div");
   state.className = "empty-state";
+  state.textContent = message;
+  return state;
+}
+
+function createListingInsightModalEmptyState(message) {
+  const state = document.createElement("div");
+  state.className = "empty-state listing-insight-modal-empty-state";
   state.textContent = message;
   return state;
 }
@@ -2798,61 +3312,1288 @@ function createRankBadge(rank) {
   return badge;
 }
 
-function createStarSvg(svgNamespace, fillPercentage) {
-  const starSvg = document.createElementNS(svgNamespace, "svg");
-  starSvg.setAttribute("viewBox", "0 0 24 24");
-  starSvg.setAttribute("focusable", "false");
-  starSvg.setAttribute("aria-hidden", "true");
-  starSvg.setAttribute("class", "product-insight-star__svg");
+function getListingInsightTrendSnapshot(product, range = soldRangeFilter) {
+  const chartRange = normalizeProductInsightSoldRange(range) === "all"
+    ? "weekly"
+    : normalizeProductInsightChartRange(range);
+  const series = getProductInsightInteractiveSoldSeries(product, chartRange);
+  const currentValue = Math.max(0, toNumber(series[series.length - 1]?.value));
+  const previousValue = Math.max(0, toNumber(series[series.length - 2]?.value));
+  const change = currentValue - previousValue;
+  const percentageChange = previousValue > 0
+    ? (change / previousValue) * 100
+    : currentValue > 0
+      ? 100
+      : 0;
+
+  return {
+    series,
+    currentValue,
+    previousValue,
+    percentageChange,
+    direction: change > 0 ? "up" : change < 0 ? "down" : "flat",
+  };
+}
+
+function createListingInsightSparkline(snapshot) {
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNamespace, "svg");
+  svg.setAttribute("viewBox", "0 0 120 34");
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", `listing-insight-sparkline is-${snapshot.direction}`);
+
+  const values = snapshot.series
+    .slice(-12)
+    .map((point) => Math.max(0, toNumber(point?.value)));
+  if (!values.length) {
+    values.push(0, 0);
+  } else if (values.length === 1) {
+    values.unshift(values[0]);
+  }
+
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const spread = Math.max(1, maximum - minimum);
+  const points = values.map((value, index) => {
+    const x = 2 + ((116 * index) / Math.max(1, values.length - 1));
+    const y = 31 - (((value - minimum) / spread) * 28);
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(" ");
 
   const defs = document.createElementNS(svgNamespace, "defs");
   const gradient = document.createElementNS(svgNamespace, "linearGradient");
-  const gradientId = `product-insight-star-gradient-${productInsightStarGradientId += 1}`;
-  const clampedFill = Math.max(0, Math.min(100, fillPercentage));
-
+  const gradientId = `listing-insight-sparkline-fade-${productInsightStarGradientId += 1}`;
   gradient.setAttribute("id", gradientId);
-  gradient.setAttribute("x1", "0%");
-  gradient.setAttribute("y1", "0%");
-  gradient.setAttribute("x2", "100%");
-  gradient.setAttribute("y2", "0%");
-
+  gradient.setAttribute("gradientUnits", "userSpaceOnUse");
+  gradient.setAttribute("x1", "0");
+  gradient.setAttribute("y1", "0");
+  gradient.setAttribute("x2", "0");
+  gradient.setAttribute("y2", "34");
   [
-    ["0%", "#f59e0b"],
-    [`${clampedFill}%`, "#f59e0b"],
-    [`${clampedFill}%`, "#d1d5db"],
-    ["100%", "#d1d5db"],
-  ].forEach(([offset, color]) => {
+    ["0%", "0.3"],
+    ["58%", "0.13"],
+    ["100%", "0"],
+  ].forEach(([offset, opacity]) => {
     const stop = document.createElementNS(svgNamespace, "stop");
     stop.setAttribute("offset", offset);
-    stop.setAttribute("stop-color", color);
+    stop.setAttribute("stop-color", "currentColor");
+    stop.setAttribute("stop-opacity", opacity);
     gradient.appendChild(stop);
   });
-
   defs.appendChild(gradient);
 
-  const shape = document.createElementNS(svgNamespace, "path");
-  shape.setAttribute(
+  const area = document.createElementNS(svgNamespace, "polygon");
+  area.setAttribute("class", "listing-insight-sparkline__area");
+  area.setAttribute("points", `${points} 118,34 2,34`);
+  area.setAttribute("fill", `url(#${gradientId})`);
+
+  const polyline = document.createElementNS(svgNamespace, "polyline");
+  polyline.setAttribute("class", "listing-insight-sparkline__line");
+  polyline.setAttribute("points", points);
+  polyline.setAttribute("fill", "none");
+  polyline.setAttribute("stroke", "currentColor");
+  polyline.setAttribute("stroke-width", "1.8");
+  polyline.setAttribute("stroke-linecap", "round");
+  polyline.setAttribute("stroke-linejoin", "round");
+  svg.append(defs, area, polyline);
+  return svg;
+}
+
+function createListingInsightChange(snapshot) {
+  const change = document.createElement("span");
+  change.className = `listing-insight-row__change-value is-${snapshot.direction}`;
+
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "2");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("aria-hidden", "true");
+  const iconPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  iconPath.setAttribute(
     "d",
-    "M12 2.2 14.95 8.18 21.55 9.14 16.78 13.79 17.91 20.35 12 17.24 6.09 20.35 7.22 13.79 2.45 9.14 9.05 8.18 12 2.2Z",
+    snapshot.direction === "down" ? "m18 9-6 6-6-6" : snapshot.direction === "up" ? "m6 15 6-6 6 6" : "M6 12h12",
   );
-  shape.setAttribute("fill", `url(#${gradientId})`);
-  starSvg.append(defs, shape);
-  return starSvg;
+  icon.appendChild(iconPath);
+
+  const value = document.createElement("span");
+  value.textContent = `${Math.abs(snapshot.percentageChange).toFixed(1)}%`;
+  change.append(icon, value);
+  change.title = `Previous: ${formatProductInsightInteger(snapshot.previousValue)}, current: ${formatProductInsightInteger(snapshot.currentValue)}`;
+  return change;
+}
+
+function createListingInsightRankRow(product, options) {
+  const {
+    rank,
+    interactive = false,
+    selected = false,
+    productIdentifier = "",
+  } = options;
+  const row = document.createElement("article");
+  row.className = "product-insight-rank-card listing-insight-row";
+  productInsightRankCardProducts.set(row, product);
+
+  if (interactive && productIdentifier) {
+    row.dataset.productInsightProductId = productIdentifier;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-pressed", selected ? "true" : "false");
+    row.setAttribute("aria-label", `Open details for ${product.name || "product"}`);
+    row.classList.add("is-interactive");
+    row.classList.toggle("is-selected", selected);
+  }
+
+  const rankCell = document.createElement("span");
+  rankCell.className = `listing-insight-row__rank${rank <= 3 ? ` is-rank-${rank}` : ""}`;
+  // Show icons for rank 1, 2 and 3
+  if (rank === 1) {
+    rankCell.innerHTML = `<svg class="rank-trophy-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img"><path fill="#E2A042" d="M382.287 464.724c-6.201-6.996-13.561-12.868-21.523-14.416c0-.05.008-.099.008-.15c0-12.345-10.007-22.353-22.353-22.353H174.136c-12.345 0-22.353 10.007-22.353 22.353c0 .05.007.099.008.15c-7.962 1.548-15.322 7.42-21.523 14.416c-10.236 11.548-2.011 29.778 13.421 29.778h225.178c15.431 0 23.656-18.23 13.42-29.778z"></path><path fill="#FFB636" d="M493.587 86.056c-11.911-14.232-29.387-22.395-47.946-22.395h-24.134V34.59H91.047v29.071H66.359c-18.559 0-36.034 8.162-47.945 22.395c-11.911 14.232-16.868 32.872-13.597 51.141l19.321 107.935c5.342 29.843 31.224 51.504 61.542 51.504h77.056c2.194 0 4.371-.123 6.528-.348c9.869 11.219 20.411 22.255 31.474 33.319c8.042 8.042 15.26 14.671 21.947 19.899a556.241 556.241 0 0 1-6.27 27.387l-2.902 11.009c-1.044 3.631-1.945 7.205-3.046 10.663c-1.151 3.458-2.722 6.801-4.468 9.971c-1.761 3.17-3.609 6.167-5.117 8.934a74.18 74.18 0 0 0-3.749 7.551c-.44 1.124-.906 2.176-1.212 3.149c-.295.973-.502 1.866-.577 2.673c-.374 3.228.868 5.072.868 5.072c6.216 9.245 16.262 17.142 29.488 22.184c33.012 12.583 73.333 2.651 90.06-22.184c0 0 1.242-1.844.868-5.072c-.075-.807-.282-1.7-.577-2.673c-.305-.973-.772-2.025-1.212-3.149a74.18 74.18 0 0 0-3.749-7.551c-1.508-2.767-3.356-5.764-5.117-8.934c-1.746-3.17-3.318-6.513-4.468-9.971c-1.101-3.458-2.001-7.032-3.046-10.663l-2.902-11.009a557.4 557.4 0 0 1-6.192-26.997c6.828-5.287 14.207-12.045 22.451-20.289c11.05-11.05 21.579-22.072 31.437-33.276a62.8 62.8 0 0 0 6.01.305h77.057c30.317 0 56.199-21.66 61.543-51.505l19.319-107.934c3.271-18.268-1.685-36.909-13.595-51.141zM85.68 254.037a19.902 19.902 0 0 1-19.61-16.412L46.748 129.691c-1.426-7.97 2.102-13.631 4.333-16.296s7.181-7.136 15.278-7.136h24.713c.639 60.152 17.88 106.563 45.375 147.778H85.68zm379.571-124.346l-19.319 107.934a19.905 19.905 0 0 1-19.611 16.413h-50.213c27.495-41.215 44.737-87.626 45.375-147.778h24.159c8.096 0 13.047 4.471 15.278 7.136c2.23 2.664 5.757 8.325 4.331 16.295z"></path><path fill="#E2A042" d="M133.385 491.285C146.858 504.758 199.197 510 256.277 510s115.373-10.86 124.535-20.022s-51.063-9.408-51.063-9.408l-196.364 10.715z"></path><ellipse fill="#FFD469" cx="256" cy="34.59" rx="165.068" ry="28.143"></ellipse><path fill="#FFD469" d="M366.507 191.449c-1.965 0-3.962-.353-5.906-1.099c-8.508-3.263-12.76-12.806-9.496-21.314c12.218-31.855 11.069-50.287 9.854-69.8c-.567-9.095 6.347-16.928 15.441-17.495c9.113-.564 16.928 6.348 17.494 15.442c1.593 25.56 1.723 47.95-11.979 83.67c-2.518 6.565-8.774 10.596-15.408 10.596z"></path></svg>`;
+  } else if (rank === 2) {
+    rankCell.innerHTML = `<svg class="rank-trophy-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img"><path fill="#808080" d="M382.287 464.724c-6.201-6.996-13.561-12.868-21.523-14.416c0-.05.008-.099.008-.15c0-12.345-10.007-22.353-22.353-22.353H174.136c-12.345 0-22.353 10.007-22.353 22.353c0 .05.007.099.008.15c-7.962 1.548-15.322 7.42-21.523 14.416c-10.236 11.548-2.011 29.778 13.421 29.778h225.178c15.431 0 23.656-18.23 13.42-29.778z"/><path fill="#adadad" d="M493.587 86.056c-11.911-14.232-29.387-22.395-47.946-22.395h-24.134V34.59H91.047v29.071H66.359c-18.559 0-36.034 8.162-47.945 22.395c-11.911 14.232-16.868 32.872-13.597 51.141l19.321 107.935c5.342 29.843 31.224 51.504 61.542 51.504h77.056c2.194 0 4.371-.123 6.528-.348c9.869 11.219 20.411 22.255 31.474 33.319c8.042 8.042 15.26 14.671 21.947 19.899a556.241 556.241 0 0 1-6.27 27.387l-2.902 11.009c-1.044 3.631-1.945 7.205-3.046 10.663c-1.151 3.458-2.722 6.801-4.468 9.971c-1.761 3.17-3.609 6.167-5.117 8.934a74.18 74.18 0 0 0-3.749 7.551c-.44 1.124-.906 2.176-1.212 3.149c-.295.973-.502 1.866-.577 2.673c-.374 3.228.868 5.072.868 5.072c6.216 9.245 16.262 17.142 29.488 22.184c33.012 12.583 73.333 2.651 90.06-22.184c0 0 1.242-1.844.868-5.072c-.075-.807-.282-1.7-.577-2.673c-.305-.973-.772-2.025-1.212-3.149a74.18 74.18 0 0 0-3.749-7.551c-1.508-2.767-3.356-5.764-5.117-8.934c-1.746-3.17-3.318-6.513-4.468-9.971c-1.101-3.458-2.001-7.032-3.046-10.663l-2.902-11.009a557.4 557.4 0 0 1-6.192-26.997c6.828-5.287 14.207-12.045 22.451-20.289c11.05-11.05 21.579-22.072 31.437-33.276a62.8 62.8 0 0 0 6.01.305h77.057c30.317 0 56.199-21.66 61.543-51.505l19.319-107.934c3.271-18.268-1.685-36.909-13.595-51.141zM85.68 254.037a19.902 19.902 0 0 1-19.61-16.412L46.748 129.691c-1.426-7.97 2.102-13.631 4.333-16.296s7.181-7.136 15.278-7.136h24.713c.639 60.152 17.88 106.563 45.375 147.778H85.68zm379.571-124.346l-19.319 107.934a19.905 19.905 0 0 1-19.611 16.413h-50.213c27.495-41.215 44.737-87.626 45.375-147.778h24.159c8.096 0 13.047 4.471 15.278 7.136c2.23 2.664 5.757 8.325 4.331 16.295z"/><path fill="#808080" d="M133.385 491.285C146.858 504.758 199.197 510 256.277 510s115.373-10.86 124.535-20.022s-51.063-9.408-51.063-9.408l-196.364 10.715z"/><ellipse fill="#dbdbdb" cx="256" cy="34.59" rx="165.068" ry="28.143"/><path fill="#dbdbdb" d="M366.507 191.449c-1.965 0-3.962-.353-5.906-1.099c-8.508-3.263-12.76-12.806-9.496-21.314c12.218-31.855 11.069-50.287 9.854-69.8c-.567-9.095 6.347-16.928 15.441-17.495c9.113-.564 16.928 6.348 17.494 15.442c1.593 25.56 1.723 47.95-11.979 83.67c-2.518 6.565-8.774 10.596-15.408 10.596z"/></svg>`;
+  } else if (rank === 3) {
+    rankCell.innerHTML = `<svg class="rank-trophy-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img"><path fill="#854d00" d="M382.287 464.724c-6.201-6.996-13.561-12.868-21.523-14.416c0-.05.008-.099.008-.15c0-12.345-10.007-22.353-22.353-22.353H174.136c-12.345 0-22.353 10.007-22.353 22.353c0 .05.007.099.008.15c-7.962 1.548-15.322 7.42-21.523 14.416c-10.236 11.548-2.011 29.778 13.421 29.778h225.178c15.431 0 23.656-18.23 13.42-29.778z"/><path fill="#996100" d="M493.587 86.056c-11.911-14.232-29.387-22.395-47.946-22.395h-24.134V34.59H91.047v29.071H66.359c-18.559 0-36.034 8.162-47.945 22.395c-11.911 14.232-16.868 32.872-13.597 51.141l19.321 107.935c5.342 29.843 31.224 51.504 61.542 51.504h77.056c2.194 0 4.371-.123 6.528-.348c9.869 11.219 20.411 22.255 31.474 33.319c8.042 8.042 15.26 14.671 21.947 19.899a556.241 556.241 0 0 1-6.27 27.387l-2.902 11.009c-1.044 3.631-1.945 7.205-3.046 10.663c-1.151 3.458-2.722 6.801-4.468 9.971c-1.761 3.17-3.609 6.167-5.117 8.934a74.18 74.18 0 0 0-3.749 7.551c-.44 1.124-.906 2.176-1.212 3.149c-.295.973-.502 1.866-.577 2.673c-.374 3.228.868 5.072.868 5.072c6.216 9.245 16.262 17.142 29.488 22.184c33.012 12.583 73.333 2.651 90.06-22.184c0 0 1.242-1.844.868-5.072c-.075-.807-.282-1.7-.577-2.673c-.305-.973-.772-2.025-1.212-3.149a74.18 74.18 0 0 0-3.749-7.551c-1.508-2.767-3.356-5.764-5.117-8.934c-1.746-3.17-3.318-6.513-4.468-9.971c-1.101-3.458-2.001-7.032-3.046-10.663l-2.902-11.009a557.4 557.4 0 0 1-6.192-26.997c6.828-5.287 14.207-12.045 22.451-20.289c11.05-11.05 21.579-22.072 31.437-33.276a62.8 62.8 0 0 0 6.01.305h77.057c30.317 0 56.199-21.66 61.543-51.505l19.319-107.934c3.271-18.268-1.685-36.909-13.595-51.141zM85.68 254.037a19.902 19.902 0 0 1-19.61-16.412L46.748 129.691c-1.426-7.97 2.102-13.631 4.333-16.296s7.181-7.136 15.278-7.136h24.713c.639 60.152 17.88 106.563 45.375 147.778H85.68zm379.571-124.346l-19.319 107.934a19.905 19.905 0 0 1-19.611 16.413h-50.213c27.495-41.215 44.737-87.626 45.375-147.778h24.159c8.096 0 13.047 4.471 15.278 7.136c2.23 2.664 5.757 8.325 4.331 16.295z"/><path fill="#854d00" d="M133.385 491.285C146.858 504.758 199.197 510 256.277 510s115.373-10.86 124.535-20.022s-51.063-9.408-51.063-9.408l-196.364 10.715z"/><ellipse fill="#bd8700" cx="256" cy="34.59" rx="165.068" ry="28.143"/><path fill="#bd8700" d="M366.507 191.449c-1.965 0-3.962-.353-5.906-1.099c-8.508-3.263-12.76-12.806-9.496-21.314c12.218-31.855 11.069-50.287 9.854-69.8c-.567-9.095 6.347-16.928 15.441-17.495c9.113-.564 16.928 6.348 17.494 15.442c1.593 25.56 1.723 47.95-11.979 83.67c-2.518 6.565-8.774 10.596-15.408 10.596z"/></svg>`;
+  } else {
+    rankCell.textContent = String(rank);
+  }
+
+  const productCell = document.createElement("div");
+  productCell.className = "listing-insight-row__product";
+  productCell.appendChild(createProductMedia(product));
+
+  const productCopy = document.createElement("div");
+  productCopy.className = "listing-insight-row__product-copy";
+  const productName = document.createElement("h3");
+  productName.textContent = product.name || "Unnamed Product";
+  const productCategory = document.createElement("p");
+  productCategory.textContent = product.category || "General";
+  productCopy.append(productName, productCategory);
+  productCell.appendChild(productCopy);
+
+  const unitsCell = document.createElement("strong");
+  unitsCell.className = "listing-insight-row__units";
+  unitsCell.dataset.label = "Units Sold";
+  unitsCell.textContent = formatProductInsightInteger(getProductInsightSoldCount(product));
+
+  const revenueCell = document.createElement("strong");
+  revenueCell.className = "listing-insight-row__revenue";
+  revenueCell.dataset.label = "Revenue";
+  revenueCell.textContent = formatProductInsightCurrency(
+    getProductInsightIncomeAmount(product, soldRangeFilter),
+  );
+
+  const trendSnapshot = getListingInsightTrendSnapshot(product);
+  const changeCell = document.createElement("div");
+  changeCell.className = "listing-insight-row__change";
+  changeCell.dataset.label = "Change";
+  changeCell.appendChild(createListingInsightChange(trendSnapshot));
+
+  const trendCell = document.createElement("div");
+  trendCell.className = "listing-insight-row__trend";
+  trendCell.dataset.label = "Trend";
+  trendCell.appendChild(createListingInsightSparkline(trendSnapshot));
+
+  row.append(rankCell, productCell, unitsCell, revenueCell, changeCell, trendCell);
+  return row;
+}
+
+function createListingInsightElement(tagName, className = "", textContent = "") {
+  const element = document.createElement(tagName);
+  if (className) {
+    element.className = className;
+  }
+  if (textContent !== "") {
+    element.textContent = textContent;
+  }
+  return element;
+}
+
+function getListingInsightNumericField(product, candidateKeys, fallback = 0) {
+  for (const key of candidateKeys) {
+    const value = toNumber(product?.[key]);
+    if (Number.isFinite(value) && value >= 0 && product?.[key] !== "" && product?.[key] != null) {
+      return value;
+    }
+  }
+  return fallback;
+}
+
+function getListingInsightIncomeTrendSnapshot(product) {
+  const chartRange = soldRangeFilter === "all"
+    ? "weekly"
+    : normalizeProductInsightChartRange(soldRangeFilter);
+  const snapshot = getProductInsightIncomeTrendSnapshot(product, chartRange);
+  return {
+    ...snapshot,
+    series: getProductInsightInteractiveIncomeSeries(product, chartRange),
+  };
+}
+
+function createListingInsightFlatSnapshot(value = 0, percentageChange = 0) {
+  const normalizedValue = Math.max(0, toNumber(value));
+  const normalizedChange = toNumber(percentageChange);
+  return {
+    series: [{ value: normalizedValue }, { value: normalizedValue }],
+    currentValue: normalizedValue,
+    previousValue: normalizedValue,
+    percentageChange: normalizedChange,
+    direction: normalizedChange > 0 ? "up" : normalizedChange < 0 ? "down" : "flat",
+  };
+}
+
+function createListingInsightMetricIcon(metricKey) {
+  const icon = createListingInsightElement("span", `listing-insight-detail-metric__icon is-${metricKey}`);
+  const iconMarkup = {
+    sold: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shopping-basket-icon lucide-shopping-basket" aria-hidden="true"><path d="m15 11 -1 9"/><path d="m19 11 -4-7"/><path d="M2 11h20"/><path d="m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4"/><path d="M4.5 15.5h15"/><path d="m5 11 4-7"/><path d="m9 11 1 9"/></svg>',
+    revenue: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-philippine-peso-icon lucide-philippine-peso" aria-hidden="true"><path d="M20 11H4"/><path d="M20 7H4"/><path d="M7 21V4a1 1 0 0 1 1-1h4a1 1 0 0 1 0 12H7"/></svg>',
+    price: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 16 6-6 4 4 6-7"/><path d="M15 7h5v5"/></svg>',
+    views: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-icon lucide-eye" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>',
+  }[metricKey] || "";
+  icon.innerHTML = iconMarkup;
+  return icon;
+}
+
+function createListingInsightOverviewMetric(label, value, metricKey, trendSnapshot) {
+  const metric = createListingInsightElement("div", "listing-insight-detail-metric");
+  metric.appendChild(createListingInsightMetricIcon(metricKey));
+
+  const copy = createListingInsightElement("div", "listing-insight-detail-metric__copy");
+  copy.append(
+    createListingInsightElement("span", "listing-insight-detail-metric__label", label),
+    createListingInsightElement("strong", "listing-insight-detail-metric__value", value),
+  );
+  if (trendSnapshot) {
+    copy.appendChild(createListingInsightChange(trendSnapshot));
+  }
+  metric.appendChild(copy);
+  return metric;
+}
+
+function createListingInsightProductOverview(product) {
+  const overview = createListingInsightElement("article", "listing-insight-detail-overview listing-insight-detail-card");
+  const identity = createListingInsightElement("div", "listing-insight-detail-product");
+  identity.appendChild(createProductMedia(product));
+
+  const copy = createListingInsightElement("div", "listing-insight-detail-product__copy");
+  const titleLine = createListingInsightElement("div", "listing-insight-detail-product__title");
+  const productName = product.name || "Unnamed Product";
+  const hasStock = getStock(product) > 0;
+  const isActive = product?.isActive !== false && hasStock;
+  const isPending = product?.isActive === "pending" || product?.status === "pending" || product?.isActive === "review";
+  const statusClass = isActive ? "is-active" : (isPending ? "is-pending" : "is-inactive");
+  const statusLabel = isActive ? "Online" : (isPending ? "Pending Review" : "Offline");
+
+  titleLine.appendChild(createListingInsightElement("h3", "", productName));
+  titleLine.appendChild(createListingInsightElement("span", `listing-insight-detail-product__status ${statusClass}`, statusLabel));
+
+  const overallRankButton = document.createElement("button");
+  overallRankButton.type = "button";
+  overallRankButton.className = "listing-insight-detail-product__overall-rank";
+  const isOverallRankView = activeListingInsightDetailView === "overall-rank";
+  overallRankButton.classList.toggle("is-active", isOverallRankView);
+  overallRankButton.setAttribute("aria-pressed", isOverallRankView ? "true" : "false");
+  overallRankButton.setAttribute(
+    "aria-label",
+    isOverallRankView
+      ? `Return to sales analytics for ${productName}`
+      : `Show Overall Ranking for ${productName}`,
+  );
+  overallRankButton.title = isOverallRankView
+    ? `Return to ${productName} sales analytics`
+    : `Show ${productName} in its category ranking`;
+  overallRankButton.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trophy" aria-hidden="true">
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+      <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+      <path d="M5 9H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4" />
+      <path d="M19 9h1a2 2 0 0 0 2-2V6a1 1 0 0 0-1-1h-4" />
+    </svg>
+    <span class="listing-insight-detail-product__overall-rank-label">Rank 1</span>
+  `;
+  overallRankButton.addEventListener("click", () => {
+    if (isOverallRankView) {
+      setActiveListingInsightDetailView("sold");
+      return;
+    }
+    openListingInsightOverallRanking(product);
+  });
+  titleLine.appendChild(overallRankButton);
+
+  const metadata = createListingInsightElement("p", "listing-insight-detail-product__metadata");
+  const metadataItems = [
+    product.category || "General",
+    `SKU: ${product.sku || product.stockKeepingUnit || product.barcode || getProductInsightProductIdentifier(product) || "N/A"}`,
+    `Brand: ${product.brand || product.brandName || "Unbranded"}`,
+  ];
+  metadataItems.forEach((item) => {
+    metadata.appendChild(
+      createListingInsightElement("span", "listing-insight-detail-product__metadata-item", item),
+    );
+  });
+
+  const rating = createListingInsightElement("div", "listing-insight-detail-product__rating");
+  rating.append(
+    createRatingStars(getRating(product), { compact: true }),
+    createListingInsightElement("strong", "", formatRating(getRating(product))),
+    createListingInsightElement("span", "", `(${formatProductInsightInteger(getProductInsightReviewCount(product))} reviews)`),
+  );
+  copy.append(titleLine, metadata, rating);
+  identity.appendChild(copy);
+  overview.appendChild(identity);
+
+  const soldTrend = getListingInsightTrendSnapshot(product);
+  const incomeTrend = getListingInsightIncomeTrendSnapshot(product);
+  const price = getPrice(product);
+  const views = getListingInsightNumericField(product, ["views", "viewCount", "productViews", "totalViews"]);
+  overview.append(
+    createListingInsightOverviewMetric(
+      "Units Sold",
+      formatProductInsightInteger(getProductInsightSoldCount(product)),
+      "sold",
+      soldTrend,
+    ),
+    createListingInsightOverviewMetric(
+      "Revenue",
+      formatProductInsightCurrency(getProductInsightIncomeAmount(product, soldRangeFilter)),
+      "revenue",
+      incomeTrend,
+    ),
+    createListingInsightOverviewMetric(
+      "Average Price",
+      formatProductInsightCurrency(price),
+      "price",
+      createListingInsightFlatSnapshot(price),
+    ),
+    createListingInsightOverviewMetric(
+      "Views",
+      formatProductInsightInteger(views),
+      "views",
+      createListingInsightFlatSnapshot(views),
+    ),
+  );
+  return overview;
+}
+
+function getListingInsightChartPoints(product, mode = "sold") {
+  const chartRange = soldRangeFilter === "all"
+    ? "weekly"
+    : normalizeProductInsightChartRange(soldRangeFilter);
+  const series = mode === "income"
+    ? getProductInsightInteractiveIncomeSeries(product, chartRange)
+    : getProductInsightInteractiveSoldSeries(product, chartRange);
+  const maximumPoints = window.matchMedia("(max-width: 760px)").matches
+    ? 7
+    : chartRange === "yearly"
+      ? 12
+      : chartRange === "daily"
+        ? 8
+        : 7;
+  return series.slice(-maximumPoints);
+}
+
+function createListingInsightChartMetricControl() {
+  const control = createListingInsightElement("label", "listing-insight-detail-chart-filter");
+  control.title = "Change chart metric";
+  control.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-column-increasing" aria-hidden="true">
+      <path d="M13 17V9" />
+      <path d="M18 17V5" />
+      <path d="M8 17v-3" />
+      <path d="M3 3v18h18" />
+    </svg>
+  `;
+
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Listing insight chart metric");
+  select.dataset.listingInsightDetailChartMetric = "";
+  [
+    { value: "sold", label: "By Sold" },
+    { value: "income", label: "By Income" },
+    { value: "trend", label: "Trend" },
+  ].forEach((optionConfig) => {
+    const option = document.createElement("option");
+    option.value = optionConfig.value;
+    option.textContent = optionConfig.label;
+    select.appendChild(option);
+  });
+  select.value = activeListingInsightDetailView;
+  select.addEventListener("change", () => {
+    setActiveListingInsightDetailView(select.value || "sold");
+  });
+  control.appendChild(select);
+  return control;
+}
+
+function createListingInsightChartHeader(title) {
+  const header = createListingInsightElement("header", "listing-insight-detail-card__header");
+  const actions = createListingInsightElement(
+    "div",
+    "listing-insight-detail-card__header-actions",
+  );
+  actions.append(
+    createListingInsightElement(
+      "span",
+      "listing-insight-detail-card__context",
+      getProductInsightSoldRangeLabel(soldRangeFilter),
+    ),
+    createListingInsightChartMetricControl(),
+  );
+  header.append(createListingInsightElement("h3", "", title), actions);
+  return header;
+}
+
+function createListingInsightUnitsChart(product, options = {}) {
+  const isIncomeView = options.mode === "income";
+  const isTrendView = options.mode === "trend";
+  const panel = createListingInsightElement("section", "listing-insight-detail-card listing-insight-detail-chart");
+  const header = createListingInsightChartHeader(
+    isIncomeView
+      ? "Income Over Time"
+      : isTrendView
+        ? "Sales Trend Over Time"
+        : "Units Sold Over Time",
+  );
+  panel.appendChild(header);
+
+  const points = getListingInsightChartPoints(product, isIncomeView ? "income" : "sold");
+  const maximumValue = Math.max(1, ...points.map((point) => toNumber(point?.value)));
+  const plot = createListingInsightElement("div", "listing-insight-detail-bar-chart");
+  points.forEach((point) => {
+    const column = createListingInsightElement("div", "listing-insight-detail-bar-chart__column");
+    const value = Math.max(0, toNumber(point?.value));
+    const formattedValue = isIncomeView
+      ? formatProductInsightCompactCurrency(value)
+      : formatProductInsightInteger(value);
+    const valueLabel = createListingInsightElement("strong", "", formattedValue);
+    const bar = createListingInsightElement("span", "listing-insight-detail-bar-chart__bar");
+    bar.style.setProperty("--listing-insight-bar-size", `${Math.max(3, (value / maximumValue) * 100)}%`);
+    bar.title = `${point?.fullLabel || point?.label || "Period"}: ${formattedValue}${isIncomeView ? " income" : " units sold"}`;
+    column.append(valueLabel, bar, createListingInsightElement("span", "", point?.label || "-"));
+    plot.appendChild(column);
+  });
+  panel.appendChild(plot);
+
+  const legend = createListingInsightElement("div", "listing-insight-detail-chart__legend");
+  legend.append(
+    createListingInsightElement("span", "listing-insight-detail-chart__legend-dot"),
+    document.createTextNode(
+      isIncomeView ? "Income" : isTrendView ? "Sales Trend" : "Units Sold",
+    ),
+  );
+  panel.appendChild(legend);
+  return panel;
+}
+
+function createListingInsightPerformanceRow(label, value, snapshot) {
+  const row = createListingInsightElement("div", "listing-insight-performance-row");
+  row.append(
+    createListingInsightElement("span", "listing-insight-performance-row__label", label),
+    createListingInsightElement("strong", "listing-insight-performance-row__value", value),
+  );
+  const trend = createListingInsightElement("span", "listing-insight-performance-row__sparkline");
+  trend.appendChild(createListingInsightSparkline(snapshot));
+  row.append(trend, createListingInsightChange(snapshot));
+  return row;
+}
+
+function createListingInsightPerformanceSummary(product) {
+  const panel = createListingInsightElement("section", "listing-insight-detail-card listing-insight-performance");
+  const header = createListingInsightElement("header", "listing-insight-detail-card__header");
+  header.appendChild(createListingInsightElement("h3", "", "Product Performance Summary"));
+  panel.appendChild(header);
+
+  const soldSnapshot = getListingInsightTrendSnapshot(product);
+  const incomeSnapshot = getListingInsightIncomeTrendSnapshot(product);
+  const conversion = getListingInsightNumericField(product, ["conversionRate", "productConversionRate"]);
+  const addToCart = getListingInsightNumericField(product, ["addToCartRate", "cartRate"]);
+  const refund = getListingInsightNumericField(product, ["refundRate", "productRefundRate"]);
+  const conversionChange = getListingInsightNumericField(product, ["conversionRateChange"]);
+  const addToCartChange = getListingInsightNumericField(product, ["addToCartRateChange", "cartRateChange"]);
+  const refundChange = getListingInsightNumericField(product, ["refundRateChange"]);
+
+  const rows = createListingInsightElement("div", "listing-insight-performance__rows");
+  rows.append(
+    createListingInsightPerformanceRow(
+      "Units Sold",
+      formatProductInsightInteger(getProductInsightSoldCount(product)),
+      soldSnapshot,
+    ),
+    createListingInsightPerformanceRow(
+      "Revenue",
+      formatProductInsightCurrency(getProductInsightIncomeAmount(product, soldRangeFilter)),
+      incomeSnapshot,
+    ),
+    createListingInsightPerformanceRow(
+      "Conversion Rate",
+      `${conversion.toFixed(2)}%`,
+      createListingInsightFlatSnapshot(conversion, conversionChange),
+    ),
+    createListingInsightPerformanceRow(
+      "Add to Cart Rate",
+      `${addToCart.toFixed(2)}%`,
+      createListingInsightFlatSnapshot(addToCart, addToCartChange),
+    ),
+    createListingInsightPerformanceRow(
+      "Refund Rate",
+      `${refund.toFixed(2)}%`,
+      createListingInsightFlatSnapshot(refund, refundChange),
+    ),
+  );
+  panel.appendChild(rows);
+  return panel;
+}
+
+function formatListingInsightReviewDate(value) {
+  const normalizedValue = String(value ?? "").trim();
+  if (!normalizedValue) {
+    return "Date unavailable";
+  }
+  const date = new Date(normalizedValue);
+  if (Number.isNaN(date.getTime())) {
+    return normalizedValue;
+  }
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function createListingInsightBuyerComments(product) {
+  const panel = createListingInsightElement("section", "listing-insight-detail-card listing-insight-comments");
+  const comments = buildProductInsightExampleReviews(product);
+  const header = createListingInsightElement("header", "listing-insight-detail-card__header");
+  const title = createListingInsightElement("h3", "", "Buyer Comments");
+  title.appendChild(createListingInsightElement("span", "", " (Latest)"));
+  header.append(
+    title,
+    createListingInsightElement("span", "listing-insight-detail-card__context", `${formatProductInsightInteger(comments.length)} comments`),
+  );
+  panel.appendChild(header);
+
+  const list = createListingInsightElement("div", "listing-insight-comments__list");
+  if (!comments.length) {
+    list.appendChild(
+      createListingInsightModalEmptyState("No buyer comments available yet."),
+    );
+  } else {
+    comments.slice(0, 4).forEach((review) => {
+      const row = createListingInsightElement("article", "listing-insight-comment");
+      const avatar = createListingInsightElement("span", "listing-insight-comment__avatar");
+      avatar.textContent = String(review.author || "Customer")
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join("") || "CU";
+
+      const copy = createListingInsightElement("div", "listing-insight-comment__copy");
+      const identity = createListingInsightElement("div", "listing-insight-comment__identity");
+      identity.append(
+        createListingInsightElement("strong", "", review.author || "Customer"),
+        createRatingStars(review.rating, { compact: true }),
+      );
+      copy.append(
+        identity,
+        createListingInsightElement("p", "", review.comment || "Review submitted."),
+        createListingInsightElement("time", "", formatListingInsightReviewDate(review.date || review.age)),
+      );
+
+      const sentiment = review.rating >= 4 ? "Positive" : review.rating >= 3 ? "Neutral" : "Negative";
+      row.append(
+        avatar,
+        copy,
+        createListingInsightElement("span", `listing-insight-comment__sentiment is-${sentiment.toLowerCase()}`, sentiment),
+      );
+      list.appendChild(row);
+    });
+  }
+  panel.appendChild(list);
+
+  if (comments.length) {
+    panel.appendChild(
+      createListingInsightElement(
+        "footer",
+        "listing-insight-comments__footer",
+        `Showing 1 to ${Math.min(4, comments.length)} of ${comments.length} comments`,
+      ),
+    );
+  }
+  return panel;
+}
+
+function createListingInsightRatingBreakdown(product) {
+  const panel = createListingInsightElement("section", "listing-insight-detail-card listing-insight-rating-panel");
+  const header = createListingInsightElement("header", "listing-insight-detail-card__header");
+  header.appendChild(createListingInsightElement("h3", "", "Rating Breakdown"));
+  panel.appendChild(header);
+
+  const totalReviews = getProductInsightReviewCount(product);
+  const breakdown = buildProductInsightRatingBreakdown(product);
+  const summary = createListingInsightElement("div", "listing-insight-rating-panel__summary");
+  const rating = createListingInsightElement("div", "listing-insight-rating-panel__score");
+  rating.append(
+    createListingInsightElement("strong", "", formatRating(getRating(product))),
+    createRatingStars(getRating(product)),
+    createListingInsightElement("span", "", `${formatProductInsightInteger(totalReviews)} total reviews`),
+  );
+
+  const bars = createListingInsightElement("div", "listing-insight-rating-panel__bars");
+  breakdown.forEach((entry) => {
+    const row = createListingInsightElement("div", "listing-insight-rating-row");
+    const track = createListingInsightElement("span", "listing-insight-rating-row__track");
+    const fill = createListingInsightElement("span", "listing-insight-rating-row__fill");
+    fill.style.width = `${Math.max(0, Math.min(100, entry.percentage))}%`;
+    track.appendChild(fill);
+    row.append(
+      createListingInsightElement("span", "", `${entry.stars}`),
+      track,
+      createListingInsightElement("span", "", `${entry.count} (${Math.round(entry.percentage)}%)`),
+    );
+    bars.appendChild(row);
+  });
+  summary.append(rating, bars);
+  panel.appendChild(summary);
+
+  const recommendedCount = breakdown
+    .filter((entry) => entry.stars >= 4)
+    .reduce((sum, entry) => sum + entry.count, 0);
+  const recommendedPercentage = totalReviews > 0 ? Math.round((recommendedCount / totalReviews) * 100) : 0;
+  const recommendation = createListingInsightElement("div", "listing-insight-rating-panel__recommendation");
+  recommendation.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>';
+  const recommendationCopy = createListingInsightElement("span");
+  const recommendationValue = createListingInsightElement("strong", "", `${recommendedPercentage}%`);
+  recommendationCopy.append(
+    recommendationValue,
+    document.createTextNode(" of customers recommend this product"),
+    createListingInsightElement("small", "", `Based on ${formatProductInsightInteger(totalReviews)} reviews`),
+  );
+  recommendation.appendChild(recommendationCopy);
+  panel.appendChild(recommendation);
+  return panel;
+}
+
+function normalizeListingInsightDetailView(value) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  return ["sold", "income", "trend", "overall-rank"].includes(normalizedValue)
+    ? normalizedValue
+    : "sold";
+}
+
+function syncListingInsightDetailViewControls() {
+  activeListingInsightDetailView = normalizeListingInsightDetailView(
+    activeListingInsightDetailView,
+  );
+  const isOverallRankView = activeListingInsightDetailView === "overall-rank";
+  if (listingInsightDetailRangeControl) {
+    listingInsightDetailRangeControl.classList.toggle("is-hidden", isOverallRankView);
+    listingInsightDetailRangeControl.setAttribute(
+      "aria-hidden",
+      isOverallRankView ? "true" : "false",
+    );
+  }
+  if (listingInsightDetailRangeSelect instanceof HTMLSelectElement) {
+    listingInsightDetailRangeSelect.disabled = isOverallRankView;
+  }
+}
+
+function setActiveListingInsightDetailView(value) {
+  activeListingInsightDetailView = normalizeListingInsightDetailView(value);
+  syncListingInsightDetailViewControls();
+  if (!document.body.classList.contains("listing-insight-product-open")) {
+    return;
+  }
+
+  const product = currentProductInsightProducts.find(
+    (item) => getProductInsightProductIdentifier(item) === selectedListingInsightProductId,
+  );
+  if (product) {
+    renderListingInsightProductDetail(product);
+  }
+}
+
+function getListingInsightOverallRankingCategory(product) {
+  const productCategories = getProductInsightCategoryList(product);
+  const allowedCategoriesByKey = new Map(
+    productInsightBusinessCategories.map((category) => [
+      normalizeProductInsightCategoryFilter(category),
+      category,
+    ]),
+  );
+  const preferredCategoryKey = normalizeProductInsightCategoryFilter(soldCategoryFilter);
+  if (
+    preferredCategoryKey
+    && productCategories.some(
+      (category) => normalizeProductInsightCategoryFilter(category) === preferredCategoryKey,
+    )
+    && allowedCategoriesByKey.has(preferredCategoryKey)
+  ) {
+    return allowedCategoriesByKey.get(preferredCategoryKey);
+  }
+
+  for (const category of productCategories) {
+    const categoryKey = normalizeProductInsightCategoryFilter(category);
+    if (allowedCategoriesByKey.has(categoryKey)) {
+      return allowedCategoriesByKey.get(categoryKey);
+    }
+  }
+  return "";
+}
+
+function openListingInsightOverallRanking(product) {
+  if (!product) {
+    return;
+  }
+  setActiveListingInsightDetailView("overall-rank");
+}
+
+function getListingInsightOverallRankingCacheKey(product, category) {
+  return [
+    getActiveProductInsightAdminTenantId(),
+    normalizeProductInsightCategoryFilter(category),
+    getProductInsightProductIdentifier(product),
+  ].join("::");
+}
+
+function refreshListingInsightOverallRankingViews(productIdentifier = "") {
+  const isProductDetailOpen = document.body.classList.contains(
+    "listing-insight-product-open",
+  );
+  if (
+    isProductDetailOpen
+    && activeListingInsightDetailView === "overall-rank"
+    && (!productIdentifier || productIdentifier === selectedListingInsightProductId)
+  ) {
+    const product = currentProductInsightProducts.find(
+      (item) => getProductInsightProductIdentifier(item) === selectedListingInsightProductId,
+    );
+    if (product) {
+      renderListingInsightProductDetail(product);
+    }
+  }
+
+  if (
+    listingInsightEmbeddedMode
+    && activeListingInsightRankingMode === "overall"
+    && !isProductDetailOpen
+  ) {
+    renderProductInsight(currentProductInsightProducts);
+  }
+}
+
+function ensureListingInsightOverallRanking(product, category) {
+  const cacheKey = getListingInsightOverallRankingCacheKey(product, category);
+  const productIdentifier = getProductInsightProductIdentifier(product);
+  const cachedState = listingInsightOverallRankingCache.get(cacheKey);
+  const isFresh = cachedState?.loadedAt && Date.now() - cachedState.loadedAt < 60000;
+  if (cachedState?.status === "loading" || (cachedState?.status === "ready" && isFresh)) {
+    return cachedState;
+  }
+
+  const nextState = { status: "loading", payload: null, message: "", loadedAt: 0 };
+  listingInsightOverallRankingCache.set(cacheKey, nextState);
+  const searchParams = new URLSearchParams({
+    category,
+    productId: productIdentifier,
+  });
+
+  loadProductInsightJson(`/api/listing-insight/overall-ranking?${searchParams.toString()}`)
+    .then((payload) => {
+      listingInsightOverallRankingCache.set(cacheKey, {
+        status: "ready",
+        payload,
+        message: "",
+        loadedAt: Date.now(),
+      });
+      refreshListingInsightOverallRankingViews(productIdentifier);
+    })
+    .catch((error) => {
+      console.error(error);
+      listingInsightOverallRankingCache.set(cacheKey, {
+        status: "error",
+        payload: null,
+        message: error instanceof Error ? error.message : "Unable to load overall ranking.",
+        loadedAt: Date.now(),
+      });
+      refreshListingInsightOverallRankingViews(productIdentifier);
+    });
+
+  return nextState;
+}
+
+function createListingInsightOverallRankingSkeleton() {
+  const skeleton = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__skeleton",
+  );
+  skeleton.setAttribute("aria-label", "Loading overall ranking");
+  for (let index = 0; index < 5; index += 1) {
+    const row = createListingInsightElement(
+      "div",
+      "listing-insight-overall-ranking__skeleton-row",
+    );
+    row.append(
+      createListingInsightElement("span"),
+      createListingInsightElement("span"),
+      createListingInsightElement("span"),
+      createListingInsightElement("span"),
+    );
+    skeleton.appendChild(row);
+  }
+  return skeleton;
+}
+
+function createListingInsightOverallRankingProduct(row) {
+  const product = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__product",
+  );
+  const media = createListingInsightElement(
+    "span",
+    "listing-insight-overall-ranking__product-media",
+  );
+  if (row?.imageUrl) {
+    const image = document.createElement("img");
+    image.src = row.imageUrl;
+    image.alt = row.productName || "Product image";
+    image.loading = "lazy";
+    media.appendChild(image);
+  } else {
+    media.textContent = String(row?.productName || "P").charAt(0).toUpperCase();
+  }
+
+  const copy = createListingInsightElement(
+    "span",
+    "listing-insight-overall-ranking__product-copy",
+  );
+  copy.appendChild(
+    createListingInsightElement("strong", "", row?.productName || "Unnamed Product"),
+  );
+  product.append(media, copy);
+  return product;
+}
+
+function createListingInsightOverallRankingSeller(row) {
+  const sellerName = String(row?.sellerName || "Seller").trim() || "Seller";
+  const seller = createListingInsightElement(
+    "span",
+    "listing-insight-overall-ranking__seller",
+  );
+  seller.dataset.label = "Seller";
+  seller.setAttribute("aria-label", sellerName);
+  seller.title = sellerName;
+
+  const logo = createListingInsightElement(
+    "span",
+    "listing-insight-overall-ranking__seller-logo",
+    sellerName.charAt(0).toUpperCase() || "S",
+  );
+  logo.setAttribute("aria-hidden", "true");
+  const sellerLogoUrl = String(row?.sellerLogoUrl || "").trim();
+  if (sellerLogoUrl) {
+    const image = document.createElement("img");
+    image.src = sellerLogoUrl;
+    image.alt = "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    logo.appendChild(image);
+  }
+  seller.appendChild(logo);
+  return seller;
+}
+
+function createListingInsightOverallRankingRankIcon(rankValue) {
+  const rank = createListingInsightElement("strong", "listing-insight-overall-ranking__rank");
+  rank.dataset.label = "Rank";
+
+  if (rankValue === 1) {
+    rank.classList.add("is-gold");
+    rank.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+        <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+        <path d="M5 9H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4" />
+        <path d="M19 9h1a2 2 0 0 0 2-2V6a1 1 0 0 0-1-1h-4" />
+      </svg>
+    `;
+    return rank;
+  }
+
+  if (rankValue === 2) {
+    rank.classList.add("is-silver");
+    rank.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+        <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+        <path d="M5 9H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4" />
+        <path d="M19 9h1a2 2 0 0 0 2-2V6a1 1 0 0 0-1-1h-4" />
+      </svg>
+    `;
+    return rank;
+  }
+
+  if (rankValue === 3) {
+    rank.classList.add("is-bronze");
+    rank.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+        <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+        <path d="M5 9H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4" />
+        <path d="M19 9h1a2 2 0 0 0 2-2V6a1 1 0 0 0-1-1h-4" />
+      </svg>
+    `;
+    return rank;
+  }
+
+  rank.textContent = String(rankValue);
+  return rank;
+}
+
+function createListingInsightOverallRankingRow(row) {
+  const item = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__row",
+  );
+  item.setAttribute("role", "row");
+  item.classList.toggle("is-own-seller", Boolean(row?.isOwnSeller));
+  item.classList.toggle("is-selected-product", Boolean(row?.isSelectedProduct));
+
+  const rankValue = Math.max(1, Math.trunc(toNumber(row?.rank)));
+  const rank = createListingInsightOverallRankingRankIcon(rankValue);
+  const product = createListingInsightOverallRankingProduct(row);
+  product.dataset.label = "Product";
+  const seller = createListingInsightOverallRankingSeller(row);
+  const sold = createListingInsightElement(
+    "strong",
+    "listing-insight-overall-ranking__number",
+    formatProductInsightInteger(row?.unitsSold),
+  );
+  sold.dataset.label = "Sold";
+  const trend = createListingInsightElement("span", "listing-insight-overall-ranking__trend");
+  const trendSnapshot = getListingInsightTrendSnapshot(row);
+  trend.dataset.label = "Trend";
+  trend.appendChild(createListingInsightSparkline(trendSnapshot));
+  const rating = createListingInsightElement(
+    "strong",
+    "listing-insight-overall-ranking__number",
+    formatRating(row?.rating),
+  );
+  rating.dataset.label = "Rating";
+  item.append(rank, product, seller, sold, trend, rating);
+  return item;
+}
+
+function createListingInsightOverallRankingTableHead(additionalClass = "") {
+  const tableHead = createListingInsightElement(
+    "div",
+    ["listing-insight-overall-ranking__table-head", additionalClass]
+      .filter(Boolean)
+      .join(" "),
+  );
+  tableHead.setAttribute("role", "row");
+  ["Rank", "Product", "Seller", "Sold", "Trend", "Rating"].forEach((label) => {
+    const column = createListingInsightElement("span", "", label);
+    column.setAttribute("role", "columnheader");
+    tableHead.appendChild(column);
+  });
+  return tableHead;
+}
+
+function createListingInsightOverallRankingTracker(row) {
+  const tracker = createListingInsightElement(
+    "aside",
+    "listing-insight-overall-ranking__tracker",
+  );
+  const productName = row?.productName || "Selected product";
+  tracker.setAttribute("aria-label", `${productName} product rank tracker`);
+
+  const trackerTable = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__tracker-table",
+  );
+  trackerTable.setAttribute("role", "table");
+  const trackerRow = createListingInsightOverallRankingRow(row);
+  trackerRow.classList.add("listing-insight-overall-ranking__tracker-row");
+  trackerTable.appendChild(trackerRow);
+  tracker.appendChild(trackerTable);
+  return tracker;
+}
+
+function createListingInsightOverallRankingView(product, options = {}) {
+  const isPrimaryView = options.primary === true;
+  const createRankingEmptyState = isPrimaryView
+    ? createEmptyState
+    : createListingInsightModalEmptyState;
+  const requestedCategory = normalizeProductInsightCategoryName(options.category);
+  const category = requestedCategory || getListingInsightOverallRankingCategory(product);
+  const searchTerm = normalizeProductInsightSearch(options.searchTerm);
+  const rowLimit = Number.isFinite(Number(options.limit))
+    ? Math.max(1, Math.trunc(Number(options.limit)))
+    : Number.POSITIVE_INFINITY;
+  const panel = createListingInsightElement(
+    "section",
+    "listing-insight-overall-ranking",
+  );
+  if (!category) {
+    if (isPrimaryView) {
+      setListingInsightVisibleCount(0);
+    }
+    panel.appendChild(
+      createRankingEmptyState("No Business Type category is available for this product."),
+    );
+    return panel;
+  }
+
+  const cacheKey = getListingInsightOverallRankingCacheKey(product, category);
+  const rankingState = listingInsightOverallRankingCache.get(cacheKey)
+    ?? ensureListingInsightOverallRanking(product, category);
+  const header = createListingInsightElement(
+    "header",
+    "listing-insight-overall-ranking__header",
+  );
+  const heading = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__heading",
+  );
+  heading.append(
+    createListingInsightElement("h3", "", `${category} Overall Ranking`),
+    createListingInsightElement(
+      "p",
+      "",
+      isPrimaryView
+        ? "Top 10 approved products from all sellers in this category, ranked by units sold."
+        : "Products from all sellers in the same category, ranked by units sold.",
+    ),
+  );
+  header.appendChild(heading);
+  panel.appendChild(header);
+
+  if (rankingState?.status === "loading") {
+    if (isPrimaryView) {
+      setListingInsightVisibleCount(0);
+    }
+    panel.setAttribute("aria-busy", "true");
+    panel.appendChild(createListingInsightOverallRankingSkeleton());
+    return panel;
+  }
+  if (rankingState?.status === "error") {
+    if (isPrimaryView) {
+      setListingInsightVisibleCount(0);
+    }
+    panel.appendChild(
+      createRankingEmptyState(rankingState.message || "Unable to load overall ranking."),
+    );
+    return panel;
+  }
+
+  const payload = rankingState?.payload ?? {};
+  const sellerProfilesByRef = new Map(
+    (Array.isArray(payload.sellers) ? payload.sellers : [])
+      .map((seller) => [String(seller?.ref ?? "").trim(), seller])
+      .filter(([sellerRef]) => Boolean(sellerRef)),
+  );
+  const allRows = (Array.isArray(payload.rows) ? payload.rows : []).map((row) => {
+    const sellerProfile = sellerProfilesByRef.get(String(row?.sellerRef ?? "").trim());
+    return {
+      ...row,
+      sellerName: String(row?.sellerName ?? sellerProfile?.name ?? "Seller").trim() || "Seller",
+      sellerLogoUrl: String(row?.sellerLogoUrl ?? sellerProfile?.logoUrl ?? "").trim(),
+    };
+  });
+  const matchingRows = searchTerm
+    ? allRows.filter((row) => normalizeProductInsightSearch([
+        row?.productName,
+        row?.sellerName,
+        row?.category,
+      ].join(" ")).includes(searchTerm))
+    : allRows;
+  const rows = matchingRows.slice(0, rowLimit);
+  const selectedProductRow = isPrimaryView
+    ? null
+    : allRows.find((row) => row?.isSelectedProduct) ?? null;
+  if (isPrimaryView) {
+    setListingInsightVisibleCount(rows.length);
+  }
+  if (!rows.length) {
+    panel.appendChild(createRankingEmptyState(
+      searchTerm
+        ? `No matching ranked products or sellers in ${category}.`
+        : `No ranked products in ${category} yet.`,
+    ));
+    return panel;
+  }
+
+  const table = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__table",
+  );
+  table.setAttribute("role", "table");
+  const tableHead = createListingInsightOverallRankingTableHead();
+  const tableBody = createListingInsightElement(
+    "div",
+    "listing-insight-overall-ranking__table-body",
+  );
+  rows.forEach((row) => tableBody.appendChild(createListingInsightOverallRankingRow(row)));
+  table.append(tableHead, tableBody);
+  panel.appendChild(table);
+  if (selectedProductRow) {
+    panel.classList.add("has-rank-tracker");
+    panel.appendChild(
+      createListingInsightOverallRankingTracker(selectedProductRow),
+    );
+  }
+  return panel;
+}
+
+function renderPrimaryListingInsightOverallRanking(searchTerm = "") {
+  if (!listingInsightOverallRankingViewEl) {
+    return;
+  }
+
+  const selectedCategoryKey = normalizeProductInsightCategoryFilter(soldCategoryFilter);
+  const resolvedCategory = productInsightBusinessCategories.find(
+    (category) => normalizeProductInsightCategoryFilter(category) === selectedCategoryKey,
+  ) || productInsightBusinessCategories[0] || "";
+  if (soldCategoryFilter !== resolvedCategory) {
+    soldCategoryFilter = resolvedCategory;
+    renderSoldCategoryFilterOptions();
+  }
+
+  listingInsightOverallRankingViewEl.replaceChildren(
+    createListingInsightOverallRankingView(null, {
+      category: resolvedCategory,
+      limit: 10,
+      primary: true,
+      searchTerm,
+    }),
+  );
+}
+
+function createListingInsightIncomeDetail(product) {
+  return createListingInsightUnitsChart(product, { mode: "income" });
+}
+
+function renderListingInsightProductDetail(product) {
+  if (!listingInsightDetailContentEl || !product) {
+    return;
+  }
+  if (listingInsightDetailBreadcrumbEl) {
+    listingInsightDetailBreadcrumbEl.textContent = product.name || "Product";
+  }
+  if (listingInsightDetailRangeSelect instanceof HTMLSelectElement) {
+    listingInsightDetailRangeSelect.value = soldRangeFilter;
+  }
+
+  syncListingInsightDetailViewControls();
+  listingInsightDetailContentEl.replaceChildren();
+
+  const overview = createListingInsightProductOverview(product);
+  if (activeListingInsightDetailView === "overall-rank") {
+    const overallRanking = createListingInsightOverallRankingView(product, { limit: 10 });
+    overallRanking.classList.add("listing-insight-overall-ranking--detail");
+    listingInsightDetailContentEl.append(overview, overallRanking);
+    return;
+  }
+
+  const analyticsGrid = createListingInsightElement(
+    "div",
+    `listing-insight-detail-grid is-${activeListingInsightDetailView}`,
+  );
+  const analyticsStack = createListingInsightElement(
+    "div",
+    "listing-insight-detail-analytics-stack",
+  );
+  if (activeListingInsightDetailView === "income") {
+    analyticsStack.appendChild(createListingInsightIncomeDetail(product));
+  } else if (activeListingInsightDetailView === "trend") {
+    analyticsStack.append(
+      createListingInsightUnitsChart(product, { mode: "trend" }),
+      createListingInsightPerformanceSummary(product),
+    );
+  } else {
+    analyticsStack.appendChild(createListingInsightUnitsChart(product));
+  }
+
+  const feedbackStack = createListingInsightElement(
+    "div",
+    "listing-insight-detail-feedback-stack",
+  );
+  feedbackStack.append(
+    createListingInsightRatingBreakdown(product),
+    createListingInsightBuyerComments(product),
+  );
+  analyticsGrid.append(analyticsStack, feedbackStack);
+  listingInsightDetailContentEl.append(overview, analyticsGrid);
+}
+
+function notifyMainListingInsightDetailModalState(isOpen) {
+  if (window.parent === window) {
+    return;
+  }
+
+  try {
+    window.parent.GMS_MAIN_LISTING_INSIGHT_MODAL?.setOpen(Boolean(isOpen));
+  } catch (error) {
+    // The postMessage fallback below handles non-same-origin hosts.
+  }
+
+  window.parent.postMessage(
+    {
+      type: "gms-main-listing-insight-detail-modal-state",
+      isOpen: Boolean(isOpen),
+    },
+    window.location.origin,
+  );
+}
+
+function setListingInsightProductOpen(isOpen, product = null) {
+  if (!listingInsightProductDetailEl) {
+    return;
+  }
+  const shouldOpen = Boolean(isOpen && product);
+  setListingInsightDetailOpen(false);
+  notifyMainListingInsightDetailModalState(shouldOpen);
+  document.body.classList.toggle("listing-insight-product-open", shouldOpen);
+  listingInsightProductDetailEl.hidden = !shouldOpen;
+  if (shouldOpen) {
+    const productIdentifier = getProductInsightProductIdentifier(product);
+    selectedListingInsightProductId = productIdentifier;
+    selectedSoldProductId = productIdentifier;
+    activeListingInsightDetailView = "sold";
+    syncListingInsightDetailViewControls();
+    renderListingInsightProductDetail(product);
+    listingInsightProductDetailEl.scrollTop = 0;
+    window.requestAnimationFrame(() => listingInsightDetailBackButton?.focus());
+  }
+}
+
+function createRatingStarElement(fillPercentage) {
+  const star = document.createElement("span");
+  star.className = "product-insight-star";
+  star.style.setProperty("--star-fill", `${fillPercentage}%`);
+  star.setAttribute("aria-hidden", "true");
+  star.innerHTML = `
+    <span class="product-insight-star__base">&#9733;</span>
+    <span class="product-insight-star__fill">&#9733;</span>
+  `;
+  return star;
 }
 
 function createRatingStars(rating, options = {}) {
   const { compact = false, maxStars = 5 } = options;
   const stars = document.createElement("span");
   stars.className = `product-insight-stars${compact ? " is-compact" : ""}`;
-  const svgNamespace = "http://www.w3.org/2000/svg";
 
   for (let index = 0; index < maxStars; index += 1) {
-    const fillPercentage = getStarFillPercentage(rating, index);
-    const star = document.createElement("span");
-    star.className = "product-insight-star";
-    star.setAttribute("aria-hidden", "true");
-    star.appendChild(createStarSvg(svgNamespace, fillPercentage));
-    stars.appendChild(star);
+    stars.appendChild(createRatingStarElement(getStarFillPercentage(rating, index)));
   }
 
   return stars;
@@ -3018,11 +4759,11 @@ function createProductInsightIncomeChartPanel(product, options = {}) {
 
   const topStop = document.createElementNS(svgNamespace, "stop");
   topStop.setAttribute("offset", "0%");
-  topStop.setAttribute("style", "stop-color: rgba(var(--accent-rgb), 0.34)");
+  topStop.setAttribute("style", "stop-color: rgba(var(--listing-insight-accent-rgb), 0.34)");
 
   const bottomStop = document.createElementNS(svgNamespace, "stop");
   bottomStop.setAttribute("offset", "100%");
-  bottomStop.setAttribute("style", "stop-color: rgba(var(--accent-rgb), 0)");
+  bottomStop.setAttribute("style", "stop-color: rgba(var(--listing-insight-accent-rgb), 0)");
 
   gradient.append(topStop, bottomStop);
   defs.appendChild(gradient);
@@ -3735,6 +5476,7 @@ function createRankCard(product, options) {
   } = options;
   const card = document.createElement("article");
   card.className = "product-insight-rank-card";
+  productInsightRankCardProducts.set(card, product);
 
   if (interactive && productIdentifier) {
     card.dataset.productInsightProductId = productIdentifier;
@@ -3849,12 +5591,21 @@ function renderRankList(element, products, emptyMessage, metricBuilder, options 
     return;
   }
 
-  const { interactive = false, selectedProductId = "", rankMap = null } = options;
+  const {
+    interactive = false,
+    selectedProductId = "",
+    rankMap = null,
+    searchEmpty = false,
+  } = options;
 
   element.replaceChildren();
 
   if (!products.length) {
-    element.appendChild(createEmptyState(emptyMessage));
+    element.appendChild(
+      searchEmpty && window.GMS_ADMIN_SEARCH_NOT_FOUND
+        ? window.GMS_ADMIN_SEARCH_NOT_FOUND.create()
+        : createEmptyState(emptyMessage),
+    );
     return;
   }
 
@@ -3864,13 +5615,20 @@ function renderRankList(element, products, emptyMessage, metricBuilder, options 
       ? (rankMap.get(productIdentifier) ?? (index + 1))
       : (index + 1);
     element.appendChild(
-      createRankCard(product, {
-        rank: resolvedRank,
-        ...metricBuilder(product),
-        interactive,
-        productIdentifier,
-        selected: interactive && productIdentifier === selectedProductId,
-      }),
+      listingInsightEmbeddedMode
+        ? createListingInsightRankRow(product, {
+          rank: resolvedRank,
+          interactive,
+          productIdentifier,
+          selected: interactive && productIdentifier === selectedProductId,
+        })
+        : createRankCard(product, {
+          rank: resolvedRank,
+          ...metricBuilder(product),
+          interactive,
+          productIdentifier,
+          selected: interactive && productIdentifier === selectedProductId,
+        }),
     );
   });
 }
@@ -4344,10 +6102,37 @@ function createProductInsightSideSummary(product) {
   summary.className = "product-insight-side-summary";
   const controls = createProductInsightSoldControls();
   summary.append(controls);
+
+  if (product) {
+    const heading = document.createElement("div");
+    heading.className = "product-insight-side-summary__copy";
+    const title = document.createElement("h3");
+    title.textContent = product.name || "Unnamed Product";
+    const context = document.createElement("p");
+    context.textContent = getProductInsightCategoryList(product).join(", ");
+    heading.append(title, context);
+
+    const metrics = document.createElement("div");
+    metrics.className = "product-insight-side-summary__metrics";
+    metrics.append(
+      createMetricItem(
+        getProductInsightSoldRangeLabel(soldRangeFilter),
+        `${formatProductInsightInteger(getProductInsightSoldCount(product, soldRangeFilter))} sold`,
+      ),
+      createMetricItem(
+        "Total Income",
+        formatProductInsightCurrency(getProductInsightIncomeAmount(product, soldRangeFilter)),
+      ),
+      createMetricItem("Rating", formatRating(getRating(product))),
+    );
+    summary.append(heading, metrics);
+  }
+
   return summary;
 }
 
-function createProductInsightIncomeChartSummary(product) {
+function createProductInsightIncomeChartSummary(product, options = {}) {
+  const { includeControls = true } = options;
   const summary = document.createElement("div");
   summary.className = "product-insight-side-summary product-insight-income-chart-summary";
   const incomeChartRange = getProductInsightIncomeChartRange(soldRangeFilter);
@@ -4373,9 +6158,85 @@ function createProductInsightIncomeChartSummary(product) {
   });
   chart.classList.add("product-insight-income-chart-summary__chart");
 
-  controls.appendChild(overview);
-  topRow.appendChild(controls);
+  if (includeControls) {
+    controls.appendChild(overview);
+    topRow.appendChild(controls);
+  } else {
+    topRow.appendChild(overview);
+  }
   summary.append(topRow, chart);
+  return summary;
+}
+
+function createProductInsightTrendMetric(label, value) {
+  const metric = document.createElement("div");
+  metric.className = "product-insight-trend-summary__metric";
+
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = value;
+  metric.append(labelEl, valueEl);
+  return metric;
+}
+
+function createProductInsightTrendSummary(product) {
+  const summary = document.createElement("div");
+  summary.className = "product-insight-side-summary product-insight-trend-summary";
+  const trendRange = soldRangeFilter === "all"
+    ? "weekly"
+    : normalizeProductInsightChartRange(soldRangeFilter);
+  const controls = createProductInsightSoldControls({
+    includeOverall: false,
+    value: trendRange,
+    ariaLabel: "Filter sales trend by timeframe",
+  });
+  const snapshot = getListingInsightTrendSnapshot(product, trendRange);
+  const visibleSeries = snapshot.series.slice(-12);
+  const firstPoint = visibleSeries[0] ?? null;
+  const lastPoint = visibleSeries[visibleSeries.length - 1] ?? null;
+
+  const overview = document.createElement("section");
+  overview.className = "product-insight-trend-summary__overview";
+  const overviewCopy = document.createElement("div");
+  overviewCopy.className = "product-insight-trend-summary__overview-copy";
+  const eyebrow = document.createElement("span");
+  eyebrow.textContent = "Latest units sold";
+  const value = document.createElement("strong");
+  value.textContent = formatProductInsightInteger(snapshot.currentValue);
+  overviewCopy.append(eyebrow, value);
+  overview.append(overviewCopy, createListingInsightChange(snapshot));
+
+  const chart = document.createElement("div");
+  chart.className = "product-insight-trend-summary__chart";
+  chart.appendChild(createListingInsightSparkline(snapshot));
+
+  const chartLabels = document.createElement("div");
+  chartLabels.className = "product-insight-trend-summary__chart-labels";
+  const firstLabel = document.createElement("span");
+  firstLabel.textContent = firstPoint?.fullLabel || firstPoint?.label || "Previous";
+  const lastLabel = document.createElement("span");
+  lastLabel.textContent = lastPoint?.fullLabel || lastPoint?.label || "Current";
+  chartLabels.append(firstLabel, lastLabel);
+
+  const metrics = document.createElement("div");
+  metrics.className = "product-insight-trend-summary__metrics";
+  metrics.append(
+    createProductInsightTrendMetric(
+      "Previous point",
+      formatProductInsightInteger(snapshot.previousValue),
+    ),
+    createProductInsightTrendMetric(
+      "Current point",
+      formatProductInsightInteger(snapshot.currentValue),
+    ),
+    createProductInsightTrendMetric(
+      "Revenue",
+      formatProductInsightCurrency(getProductInsightIncomeAmount(product, trendRange)),
+    ),
+  );
+
+  summary.append(controls, overview, chart, chartLabels, metrics);
   return summary;
 }
 
@@ -4450,7 +6311,11 @@ function createProductInsightReviewSummary(product, options = {}) {
       commentsList.appendChild(createProductInsightReviewCommentCard(review));
     });
   } else {
-    commentsList.appendChild(createEmptyState("No matching comment reviews found."));
+    commentsList.appendChild(
+      searchTerm && window.GMS_ADMIN_SEARCH_NOT_FOUND
+        ? window.GMS_ADMIN_SEARCH_NOT_FOUND.create({ compact: true })
+        : createEmptyState("No matching comment reviews found."),
+    );
   }
 
   panel.append(controls, hero, commentsHeading, commentsList);
@@ -4472,19 +6337,17 @@ function renderProductInsightSideDetail(product) {
 
     sideDetailEl.appendChild(
       createEmptyState(
-        activeProductInsightSideView === "reviews"
-          ? "Click a product card to review rating details."
-          : activeProductInsightSideView === "income"
-            ? "Click a product card to review income chart details."
-            : "Click a product card to review sold details.",
+        activeProductInsightSideView === "trend"
+          ? "Click a product row to review its sales trend."
+          : "Click a product row to review its income details.",
       ),
     );
     return;
   }
 
   sideDetailEl.appendChild(
-    activeProductInsightSideView === "reviews"
-      ? createProductInsightReviewSummary(product, { searchTerm: reviewSearchTerm })
+    activeProductInsightSideView === "trend"
+      ? createProductInsightTrendSummary(product)
       : activeProductInsightSideView === "income"
         ? createProductInsightIncomeChartSummary(product)
         : createProductInsightSideSummary(product),
@@ -4531,6 +6394,9 @@ function renderLeaders(soldProducts, ratedProducts) {
 
 function setActiveTimeframeFilter(value) {
   soldRangeFilter = normalizeProductInsightSoldRange(value);
+  if (listingInsightDetailRangeSelect instanceof HTMLSelectElement) {
+    listingInsightDetailRangeSelect.value = soldRangeFilter;
+  }
   timeframeFilterButtons.forEach((button) => {
     const isActive =
       normalizeProductInsightSoldRange(button.dataset.productInsightRangeFilter)
@@ -4541,8 +6407,8 @@ function setActiveTimeframeFilter(value) {
 }
 
 function setActiveProductInsightSideView(value) {
-  activeProductInsightSideView = value === "reviews"
-    ? "reviews"
+  activeProductInsightSideView = value === "trend"
+    ? "trend"
     : value === "income"
       ? "income"
       : "sold";
@@ -4551,6 +6417,13 @@ function setActiveProductInsightSideView(value) {
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
+}
+
+function setListingInsightDetailOpen(isOpen) {
+  if (!listingInsightEmbeddedMode) {
+    return;
+  }
+  document.body.classList.toggle("listing-insight-detail-open", Boolean(isOpen));
 }
 
 function syncProductInsightReviewSearchState(product) {
@@ -4568,10 +6441,14 @@ function syncProductInsightReviewSearchState(product) {
 function renderProductInsight(products) {
   soldRangeFilter = normalizeProductInsightSoldRange(soldRangeFilter);
   soldMetricFilter = normalizeProductInsightMetricFilter(soldMetricFilter);
+  syncListingInsightRankingModePresentation();
   setActiveTimeframeFilter(soldRangeFilter);
   renderSoldMetricFilterOptions();
 
-  const soldProducts = [...products]
+  const visibleProducts = listingInsightEmbeddedMode
+    ? (Array.isArray(products) ? products : []).filter(shouldShowProductInListingInsight)
+    : (Array.isArray(products) ? products : []);
+  const soldProducts = [...visibleProducts]
     .filter((product) => getProductInsightSoldCount(product) > 0)
     .sort((left, right) => {
       const soldDiff = getProductInsightSoldCount(right) - getProductInsightSoldCount(left);
@@ -4587,7 +6464,7 @@ function renderProductInsight(products) {
       return String(left.name || "").localeCompare(String(right.name || ""));
     });
 
-  const ratedProducts = [...products]
+  const ratedProducts = [...visibleProducts]
     .filter((product) => getRating(product) > 0)
     .sort((left, right) => {
       const ratingDiff = getRating(right) - getRating(left);
@@ -4603,18 +6480,40 @@ function renderProductInsight(products) {
       return String(left.name || "").localeCompare(String(right.name || ""));
     });
 
-  const metricRankProducts = getProductInsightRankedProducts(products, soldMetricFilter);
-  renderSoldCategoryFilterOptions(metricRankProducts);
-
+  renderSoldCategoryFilterOptions();
   const soldSearchTerm = normalizeProductInsightSearch(soldSearchInput?.value);
+  renderSummary(visibleProducts, soldProducts, ratedProducts);
+
+  if (listingInsightEmbeddedMode && activeListingInsightRankingMode === "overall") {
+    setActiveProductInsightSideView(activeProductInsightSideView);
+    syncProductInsightReviewSearchState(null);
+    renderProductInsightSideDetail(null);
+    renderPrimaryListingInsightOverallRanking(soldSearchTerm);
+    requestProductInsightSoldSpacerScrollState();
+    requestProductInsightScrollProxyUpdate();
+    return;
+  }
+
+  const metricRankProducts = getProductInsightRankedProducts(
+    visibleProducts,
+    soldMetricFilter,
+    { includeZeroMetricProducts: listingInsightEmbeddedMode },
+  );
   const hasSoldCategoryFilter = Boolean(
     normalizeProductInsightCategoryFilter(soldCategoryFilter),
   );
+  const hasListingAvailabilityFilter =
+    normalizeListingInsightAvailabilityFilter(listingInsightAvailabilityFilter) !== "all";
   const filteredSoldProducts = metricRankProducts.filter((product) =>
     matchesProductInsightSearch(product, soldSearchTerm)
-    && matchesProductInsightCategory(product, soldCategoryFilter),
+    && matchesProductInsightCategory(product, soldCategoryFilter)
+    && matchesListingInsightAvailability(product),
   );
-  const rankedSoldProducts = getProductInsightRankedProducts(filteredSoldProducts, soldMetricFilter).slice(0, 10);
+  const rankedSoldProducts = getProductInsightRankedProducts(
+    filteredSoldProducts,
+    soldMetricFilter,
+    { includeZeroMetricProducts: listingInsightEmbeddedMode },
+  ).slice(0, 10);
   const soldRankMap = new Map(
     rankedSoldProducts.map((product, index) => [getProductInsightProductIdentifier(product), index + 1]),
   );
@@ -4622,44 +6521,106 @@ function renderProductInsight(products) {
     (product) => getProductInsightProductIdentifier(product) === selectedSoldProductId,
   ) || null;
 
+  if (!selectedProduct) {
+    setListingInsightDetailOpen(false);
+  }
+
   setActiveProductInsightSideView(activeProductInsightSideView);
   syncProductInsightReviewSearchState(selectedProduct);
-  renderSummary(products, soldProducts, ratedProducts);
+  setListingInsightVisibleCount(rankedSoldProducts.length);
   renderRankList(
     soldListEl,
     rankedSoldProducts,
-    soldSearchTerm || hasSoldCategoryFilter
-      ? "No matching sold products found."
-      : "No sold data available yet.",
+    soldSearchTerm || hasSoldCategoryFilter || hasListingAvailabilityFilter
+      ? (
+          listingInsightEmbeddedMode
+            ? "No matching listing insights found."
+            : "No matching sold products found."
+        )
+      : (
+          listingInsightEmbeddedMode
+            ? "No active listing history yet."
+            : "No sold data available yet."
+        ),
     (product) => buildProductInsightRankMetric(product, soldMetricFilter),
     {
       interactive: true,
       selectedProductId: selectedSoldProductId,
       rankMap: soldRankMap,
+      searchEmpty: Boolean(soldSearchTerm),
     },
   );
   requestProductInsightSoldSpacerScrollState();
   requestProductInsightScrollProxyUpdate();
   renderProductInsightSideDetail(selectedProduct);
+
+  if (document.body.classList.contains("listing-insight-product-open")) {
+    const detailProduct = visibleProducts.find(
+      (product) => getProductInsightProductIdentifier(product) === selectedListingInsightProductId,
+    ) || null;
+    if (detailProduct) {
+      renderListingInsightProductDetail(detailProduct);
+    } else {
+      setListingInsightProductOpen(false);
+    }
+  }
 }
 
-async function loadProductInsight() {
+function openRequestedListingInsightProduct() {
+  if (listingInsightRequestedProductOpened || !listingInsightRequestedProductId) {
+    return;
+  }
+
+  const product = currentProductInsightProducts.find(
+    (item) => getProductInsightProductIdentifier(item) === listingInsightRequestedProductId,
+  );
+  if (!product) {
+    return;
+  }
+
+  listingInsightRequestedProductOpened = true;
+  setListingInsightProductOpen(true, product);
+}
+
+async function loadProductInsight(options = {}) {
+  const quiet = options?.quiet === true;
   try {
-    const [productsPayload, ordersPayload] = await Promise.all([
+    const [productsPayload, ordersPayload, categoriesPayload] = await Promise.all([
       loadProductInsightJson("/api/products"),
       loadProductInsightJson("/api/orders"),
+      loadProductInsightJson("/api/categories").catch((error) => {
+        console.error("Unable to load business type categories.", error);
+        return quiet
+          ? {
+              businessType: productInsightBusinessType,
+              categories: productInsightBusinessCategories,
+            }
+          : { businessType: "", categories: [] };
+      }),
     ]);
     const products = Array.isArray(productsPayload.products) ? productsPayload.products : [];
     const orders = Array.isArray(ordersPayload.orders) ? ordersPayload.orders : [];
 
+    setProductInsightBusinessCategories(categoriesPayload, products);
     currentProductInsightProducts = attachProductInsightOrderMetrics(products, orders);
     renderProductInsight(currentProductInsightProducts);
+    openRequestedListingInsightProduct();
+    notifyMainListingInsightFilterOptions();
+    return true;
   } catch (error) {
     console.error(error);
+    if (quiet) {
+      return false;
+    }
     const message = "Unable to load product insight data right now.";
+    setListingInsightVisibleCount(0);
 
     if (soldListEl) {
       soldListEl.replaceChildren(createEmptyState(message));
+    }
+
+    if (listingInsightOverallRankingViewEl) {
+      listingInsightOverallRankingViewEl.replaceChildren(createEmptyState(message));
     }
 
     syncProductInsightReviewSearchState(null);
@@ -4695,10 +6656,54 @@ async function loadProductInsight() {
     }
 
     requestProductInsightScrollProxyUpdate();
+    return false;
   }
 }
 
+async function refreshProductInsightFromRealtime() {
+  if (productInsightRealtimeRefreshInFlight) {
+    productInsightRealtimeRefreshQueued = true;
+    return;
+  }
+
+  productInsightRealtimeRefreshInFlight = true;
+  try {
+    await loadProductInsight({ quiet: true });
+  } finally {
+    productInsightRealtimeRefreshInFlight = false;
+    if (productInsightRealtimeRefreshQueued) {
+      productInsightRealtimeRefreshQueued = false;
+      scheduleProductInsightRealtimeRefresh();
+    }
+  }
+}
+
+function scheduleProductInsightRealtimeRefresh() {
+  window.clearTimeout(productInsightRealtimeRefreshTimer);
+  productInsightRealtimeRefreshTimer = window.setTimeout(() => {
+    productInsightRealtimeRefreshTimer = 0;
+    void refreshProductInsightFromRealtime();
+  }, 220);
+}
+
+function handleProductInsightRealtimeChange(event) {
+  const detail = event?.detail;
+  const isReconnect = detail?.type === "ready" && detail?.reconnected === true;
+  if (detail?.type !== "data-change" && !isReconnect) {
+    return;
+  }
+
+  const topics = (Array.isArray(detail?.topics) ? detail.topics : [])
+    .map((topic) => String(topic || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (!isReconnect && !topics.some((topic) => productInsightRealtimeTopics.has(topic))) {
+    return;
+  }
+  scheduleProductInsightRealtimeRefresh();
+}
+
 window.addEventListener("gms:products-updated", loadProductInsight);
+window.addEventListener("gms:realtime-change", handleProductInsightRealtimeChange);
 window.addEventListener("resize", requestProductInsightScrollProxyUpdate);
 document.addEventListener("wheel", handleProductInsightPageWheel, { passive: false });
 
@@ -4736,6 +6741,37 @@ reviewSearchInput?.addEventListener("input", () => {
   }, 500);
 });
 
+function findProductInsightProductByIdentifier(productIdentifier) {
+  const normalizedIdentifier = String(productIdentifier ?? "").trim();
+  if (!normalizedIdentifier) {
+    return null;
+  }
+  return currentProductInsightProducts.find(
+    (item) => getProductInsightProductIdentifier(item) === normalizedIdentifier,
+  ) || null;
+}
+
+function openListingInsightProductFromRankCard(card) {
+  if (!(card instanceof HTMLElement)) {
+    return false;
+  }
+
+  const productIdentifier = String(card.dataset.productInsightProductId ?? "").trim();
+  if (!productIdentifier) {
+    return false;
+  }
+
+  selectedSoldProductId = productIdentifier;
+  const product = productInsightRankCardProducts.get(card)
+    || findProductInsightProductByIdentifier(productIdentifier);
+  if (!product || !listingInsightProductDetailEl) {
+    return false;
+  }
+
+  setListingInsightProductOpen(true, product);
+  return true;
+}
+
 soldListEl?.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
@@ -4746,9 +6782,9 @@ soldListEl?.addEventListener("click", (event) => {
     return;
   }
 
-  selectedSoldProductId = String(card.dataset.productInsightProductId ?? "").trim();
-  setActiveProductInsightSideView("reviews");
-  renderProductInsight(currentProductInsightProducts);
+  event.preventDefault();
+  event.stopPropagation();
+  openListingInsightProductFromRankCard(card);
 });
 
 soldListEl?.addEventListener("keydown", (event) => {
@@ -4756,15 +6792,65 @@ soldListEl?.addEventListener("keydown", (event) => {
     return;
   }
 
-  const card = event.target.closest(".product-insight-rank-card[data-product-insight-product-id]");
+  const target = event.target instanceof Element ? event.target : null;
+  const card = target?.closest(".product-insight-rank-card[data-product-insight-product-id]");
   if (!card || !soldListEl.contains(card)) {
     return;
   }
 
   event.preventDefault();
-  selectedSoldProductId = String(card.dataset.productInsightProductId ?? "").trim();
-  setActiveProductInsightSideView("reviews");
+  event.stopPropagation();
+  openListingInsightProductFromRankCard(card);
+});
+
+listingInsightCloseButtons.forEach((button) => {
+  button.addEventListener("click", () => setListingInsightDetailOpen(false));
+});
+
+listingInsightDetailBackButton?.addEventListener("click", () => {
+  setListingInsightProductOpen(false);
+  soldListEl
+    ?.querySelector(`[data-product-insight-product-id="${CSS.escape(selectedSoldProductId)}"]`)
+    ?.focus();
+});
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin || event.source !== window.parent) {
+    return;
+  }
+  if (event.data?.type === "gms-main-listing-insight-ranking-mode") {
+    setActiveListingInsightRankingMode(event.data.mode);
+    return;
+  }
+  if (event.data?.type === "gms-main-listing-insight-filters") {
+    setMainListingInsightFilters(event.data.filters);
+    return;
+  }
+  if (event.data?.type === "gms-main-listing-insight-detail-modal-close") {
+    setListingInsightProductOpen(false);
+    soldListEl
+      ?.querySelector(`[data-product-insight-product-id="${CSS.escape(selectedSoldProductId)}"]`)
+      ?.focus();
+  }
+});
+
+window.addEventListener("pagehide", () => {
+  notifyMainListingInsightDetailModalState(false);
+});
+
+listingInsightDetailRangeSelect?.addEventListener("change", () => {
+  setActiveTimeframeFilter(listingInsightDetailRangeSelect.value || "all");
   renderProductInsight(currentProductInsightProducts);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && document.body.classList.contains("listing-insight-product-open")) {
+    setListingInsightProductOpen(false);
+    return;
+  }
+  if (event.key === "Escape" && document.body.classList.contains("listing-insight-detail-open")) {
+    setListingInsightDetailOpen(false);
+  }
 });
 
 soldCategoryFilterTrigger?.addEventListener("click", () => {
@@ -4826,7 +6912,12 @@ document.addEventListener("keydown", (event) => {
 
 syncSoldCategoryFilterSummary();
 syncSoldMetricFilterSummary();
+setActiveListingInsightRankingMode(activeListingInsightRankingMode, {
+  notify: false,
+  render: false,
+});
 renderSoldMetricFilterOptions();
 setActiveTimeframeFilter(soldRangeFilter);
 setActiveProductInsightSideView(activeProductInsightSideView);
+syncListingInsightDetailViewControls();
 loadProductInsight();

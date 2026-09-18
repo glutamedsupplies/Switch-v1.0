@@ -1,0 +1,9 @@
+{
+  "name": "Soft Confirm",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 587, "duration": 140 },
+    { "frequency": 0, "duration": 40 },
+    { "frequency": 784, "duration": 240 }
+  ]
+}

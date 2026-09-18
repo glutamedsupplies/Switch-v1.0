@@ -134,6 +134,7 @@ let employeeEvaluationRatingModalCloseTimer = 0;
 let employeeAttendanceRecordsModalRefs = null;
 let employeeAttendanceRecordsCloseTimer = 0;
 let employeeAccountRefreshTimer = 0;
+let employeeAccountRefreshPreserveOnError = false;
 let employeeAttendanceCalendarMonth = new Date();
 let employeeAttendanceSelectedDateKey = "";
 let employeeSearchQuery = "";
@@ -820,7 +821,7 @@ function createActionsCell(account) {
   editButton.className = "employee-data-table__action-button";
   editButton.setAttribute("aria-label", "Edit employee");
   editButton.title = "Edit";
-  editButton.innerHTML = '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>';
+  editButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
   editButton.addEventListener("click", (event) => {
     event.stopPropagation();
     openEmployeeEditModal(account);
@@ -831,7 +832,7 @@ function createActionsCell(account) {
   deleteButton.className = "employee-data-table__action-button employee-data-table__action-button--danger";
   deleteButton.setAttribute("aria-label", "Delete employee");
   deleteButton.title = "Delete";
-  deleteButton.innerHTML = '<i class="fa-regular fa-trash-can" aria-hidden="true"></i>';
+  deleteButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
   deleteButton.addEventListener("click", (event) => {
     event.stopPropagation();
     deleteEmployeeAccount(account, deleteButton);
@@ -4127,7 +4128,7 @@ function createEmployeeDeleteModal() {
           role="presentation"
           tabindex="-1"
         >
-          <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </div>
       </div>
       <div class="validation-modal__body">
@@ -4545,7 +4546,7 @@ async function confirmEmployeeDelete() {
   }
 }
 
-async function loadAccounts() {
+async function loadAccounts(options = {}) {
   try {
     const response = await fetch("/api/accounts", {
       cache: "no-store",
@@ -4561,6 +4562,10 @@ async function loadAccounts() {
     const employeeAccounts = accounts.filter((account) => account.source === "web");
     renderAccounts(employeeAccounts);
   } catch (error) {
+    if (options?.preserveOnError === true) {
+      console.warn("Unable to refresh employee accounts in the background.", error);
+      return;
+    }
     console.error(error);
     currentEmployeeAccounts = [];
     selectedEmployeeAccessAccountId = "";
@@ -4674,19 +4679,50 @@ function refreshEmployeeLeaveRequestUi() {
   }
 }
 
-function scheduleEmployeeAccountRefresh() {
+function scheduleEmployeeAccountRefresh(options = {}) {
+  if (options?.preserveOnError === true) {
+    employeeAccountRefreshPreserveOnError = true;
+  }
+
   if (employeeAccountRefreshTimer) {
     window.clearTimeout(employeeAccountRefreshTimer);
   }
 
   employeeAccountRefreshTimer = window.setTimeout(() => {
     employeeAccountRefreshTimer = 0;
-    void loadAccounts();
+    const preserveOnError = employeeAccountRefreshPreserveOnError;
+    employeeAccountRefreshPreserveOnError = false;
+    void loadAccounts({ preserveOnError });
   }, 120);
+}
+
+function handleEmployeeAccountRealtimeChange(event) {
+  const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+  if (detail.type === "ready") {
+    if (detail.reconnected !== true) {
+      return;
+    }
+  } else if (detail.type === "data-change") {
+    const topics = Array.isArray(detail.topics)
+      ? detail.topics.map((topic) => String(topic || "").trim().toLowerCase())
+      : [];
+    const refreshAccounts = topics.includes("all")
+      || topics.includes("accounts")
+      || topics.includes("employees")
+      || (topics.includes("admins") && !topics.includes("presence"));
+    if (!refreshAccounts) {
+      return;
+    }
+  } else {
+    return;
+  }
+
+  scheduleEmployeeAccountRefresh({ preserveOnError: true });
 }
 
 window.addEventListener(employeeLeaveRequestsChangedEventName, refreshEmployeeLeaveRequestUi);
 window.addEventListener(employeeAccountUpdatedEventName, scheduleEmployeeAccountRefresh);
+window.addEventListener("gms:realtime-change", handleEmployeeAccountRealtimeChange);
 window.addEventListener("storage", (event) => {
   if (event.key === employeeLeaveRequestsStorageKey) {
     refreshEmployeeLeaveRequestUi();
@@ -4699,4 +4735,4 @@ window.addEventListener("storage", (event) => {
 
 setupEmployeeDataSettingsControlsObserver();
 setupEmployeeLeaveNavBadgeObserver();
-loadAccounts();
+void loadAccounts();

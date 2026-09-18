@@ -1,0 +1,10 @@
+{
+  "name": "Quick Sparkle",
+  "use": "Fingerprint success",
+  "notes": [
+    { "frequency": 1047, "duration": 60 },
+    { "frequency": 1319, "duration": 60 },
+    { "frequency": 1568, "duration": 70 },
+    { "frequency": 2093, "duration": 150 }
+  ]
+}

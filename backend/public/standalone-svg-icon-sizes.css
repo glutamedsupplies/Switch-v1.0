@@ -1,0 +1,53 @@
+/* Standalone SVG icon sizing overrides */
+/* You can set these CSS variables per page or globally:
+   :root {
+     --clipboard-pen-width: 18px;
+     --clipboard-pen-height: 18px;
+     --clipboard-check-width: 18px;
+     --clipboard-check-height: 18px;
+     --clipboard-off-width: 18px;
+     --clipboard-off-height: 18px;
+     --clipboard-x-width: 18px;
+     --clipboard-x-height: 18px;
+     --clipboard-clock-width: 18px;
+     --clipboard-clock-height: 18px;
+     --arrow-up-width: 18px;
+     --arrow-up-height: 18px;
+     --stock-new-icon-width: 18px;
+     --stock-new-icon-height: 18px;
+     --stock-low-icon-width: 18px;
+     --stock-low-icon-height: 18px;
+   }
+*/
+
+.lucide-list,
+.lucide-list-icon .lucide-clipboard-check,
+.lucide-clipboard-check-icon, .icon-tabler-clipboard-off,
+.icon-tabler-clipboard-off-icon, .lucide-clipboard-x,
+.lucide-clipboard-x-icon, .lucide-clipboard-clock, 
+.lucide-clipboard-clock-icon {
+  width: var(--clipboard-pen-width, 30px) !important;
+  height: var(--clipboard-pen-height, 30px) !important;
+  flex: 0 0 auto;
+}
+
+
+.lucide-arrow-up,
+.lucide-arrow-up-icon {
+  width: var(--arrow-up-width, 35px) !important;
+  height: var(--arrow-up-height, 35px) !important;
+  flex: 0 0 auto;
+}
+
+.main-section-heading__action .lucide-arrow-up,
+.main-section-heading__action .lucide-arrow-up-icon {
+  width: var(--employee-add-arrow-up-width, var(--arrow-up-width, 24px)) !important;
+  height: var(--employee-add-arrow-up-height, var(--arrow-up-height, 24px)) !important;
+}
+
+.stock-summary-card__icon--low-stock,
+.stock-summary-card__icon--low-stock.lucide-arrow-down,
+.stock-summary-card__icon--low-stock.lucide-arrow-down-icon {
+  width: var(--stock-low-icon-width, var(--arrow-up-width, 35px)) !important;
+  height: var(--stock-low-icon-height, var(--arrow-up-height, 35px)) !important;
+}

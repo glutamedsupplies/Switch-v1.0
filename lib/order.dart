@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:gms_shopping/comment_rate.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/order_store.dart';
 import 'package:gms_shopping/place_order.dart';
@@ -9,7 +10,9 @@ import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/tacking.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
 
 class OrderPage extends StatefulWidget {
   const OrderPage({
@@ -86,8 +89,7 @@ class _OrderPageState extends State<OrderPage> {
       label: 'To Pay',
       icon: Icons.payments_outlined,
       emptyTitle: 'No pending payments',
-      emptyMessage:
-          'Orders waiting for payment confirmation will appear here.',
+      emptyMessage: 'Orders waiting for payment confirmation will appear here.',
       stageKey: OrderStageKey.toPay,
     ),
     _OrderStage(
@@ -117,7 +119,8 @@ class _OrderPageState extends State<OrderPage> {
       label: 'To Review',
       icon: Icons.stars_outlined,
       emptyTitle: 'No items to review',
-      emptyMessage: 'Completed orders waiting for your feedback will appear here.',
+      emptyMessage:
+          'Completed orders waiting for your feedback will appear here.',
       showsFiveStars: true,
       stageKey: OrderStageKey.toReview,
     ),
@@ -217,19 +220,20 @@ class _OrderPageState extends State<OrderPage> {
         }
       }
 
-      final reviewOrders = <_StoredOrderGroup>[
-        for (final entry in latestReviewEntryByProductId.values)
-          buildStoredOrderGroup(
-            <OrderEntryData>[entry],
-            createdAtEpochMs: entry.createdAtEpochMs,
-            resolvedStage: OrderStageKey.toReview,
-            showsCancelledState: false,
-            cancelDisplayExpiresAtEpochMs: 0,
-          ),
-      ]..sort(
-          (left, right) =>
-              right.createdAtEpochMs.compareTo(left.createdAtEpochMs),
-        );
+      final reviewOrders =
+          <_StoredOrderGroup>[
+            for (final entry in latestReviewEntryByProductId.values)
+              buildStoredOrderGroup(
+                <OrderEntryData>[entry],
+                createdAtEpochMs: entry.createdAtEpochMs,
+                resolvedStage: OrderStageKey.toReview,
+                showsCancelledState: false,
+                cancelDisplayExpiresAtEpochMs: 0,
+              ),
+          ]..sort(
+            (left, right) =>
+                right.createdAtEpochMs.compareTo(left.createdAtEpochMs),
+          );
 
       return List<_StoredOrderGroup>.unmodifiable(reviewOrders);
     }
@@ -240,48 +244,49 @@ class _OrderPageState extends State<OrderPage> {
       final shouldIncludeEntry =
           entry.stage == stageKey ||
           (stageKey == OrderStageKey.toPrepare &&
-              _isCancelledPrepareEntryVisible(
-                entry,
-                nowEpochMs: nowEpochMs,
-              ));
+              _isCancelledPrepareEntryVisible(entry, nowEpochMs: nowEpochMs));
       if (!shouldIncludeEntry) {
         continue;
       }
-      groupedEntries.putIfAbsent(
-        entry.createdAtEpochMs,
-        () => <OrderEntryData>[],
-      ).add(entry);
+      groupedEntries
+          .putIfAbsent(entry.createdAtEpochMs, () => <OrderEntryData>[])
+          .add(entry);
     }
 
-    final orders = groupedEntries.entries.map((bucket) {
-      final orderEntries = bucket.value;
-      final firstEntry = orderEntries.first;
-      final showsCancelledState =
-          stageKey == OrderStageKey.toPrepare &&
-          _isCancelledPrepareEntryVisible(
-            firstEntry,
-            nowEpochMs: nowEpochMs,
-          );
+    final orders =
+        groupedEntries.entries
+            .map((bucket) {
+              final orderEntries = bucket.value;
+              final firstEntry = orderEntries.first;
+              final showsCancelledState =
+                  stageKey == OrderStageKey.toPrepare &&
+                  _isCancelledPrepareEntryVisible(
+                    firstEntry,
+                    nowEpochMs: nowEpochMs,
+                  );
 
-      return buildStoredOrderGroup(
-        orderEntries,
-        createdAtEpochMs: bucket.key,
-        resolvedStage:
-            showsCancelledState ? OrderStageKey.toPrepare : firstEntry.stage,
-        showsCancelledState: showsCancelledState,
-        cancelDisplayExpiresAtEpochMs:
-            showsCancelledState ? _cancelledPrepareExpiryEpochMs(firstEntry) : 0,
-      );
-    }).toList(growable: false)
-      ..sort((left, right) {
-        final cancelledStateCompare = (left.showsCancelledState ? 1 : 0)
-            .compareTo(right.showsCancelledState ? 1 : 0);
-        if (cancelledStateCompare != 0) {
-          return cancelledStateCompare;
-        }
+              return buildStoredOrderGroup(
+                orderEntries,
+                createdAtEpochMs: bucket.key,
+                resolvedStage: showsCancelledState
+                    ? OrderStageKey.toPrepare
+                    : firstEntry.stage,
+                showsCancelledState: showsCancelledState,
+                cancelDisplayExpiresAtEpochMs: showsCancelledState
+                    ? _cancelledPrepareExpiryEpochMs(firstEntry)
+                    : 0,
+              );
+            })
+            .toList(growable: false)
+          ..sort((left, right) {
+            final cancelledStateCompare = (left.showsCancelledState ? 1 : 0)
+                .compareTo(right.showsCancelledState ? 1 : 0);
+            if (cancelledStateCompare != 0) {
+              return cancelledStateCompare;
+            }
 
-        return right.createdAtEpochMs.compareTo(left.createdAtEpochMs);
-      });
+            return right.createdAtEpochMs.compareTo(left.createdAtEpochMs);
+          });
 
     return orders;
   }
@@ -315,12 +320,10 @@ class _OrderPageState extends State<OrderPage> {
     final usesEdgeToEdgeStageShell = _usesEdgeToEdgeOrderStageShell(
       selectedStage.stageKey,
     );
-    final contentPadding =
-        usesEdgeToEdgeStageShell
+    final contentPadding = usesEdgeToEdgeStageShell
         ? const EdgeInsets.fromLTRB(0, 0, 0, 0)
         : const EdgeInsets.fromLTRB(10, 0, 10, 0);
-    final listPadding =
-        usesEdgeToEdgeStageShell
+    final listPadding = usesEdgeToEdgeStageShell
         ? const EdgeInsets.only(top: 12)
         : EdgeInsets.zero;
 
@@ -371,18 +374,19 @@ class _OrderPageState extends State<OrderPage> {
                               duration: appMotionFrames(13),
                               switchInCurve: Curves.easeOutCubic,
                               switchOutCurve: Curves.easeInCubic,
-                              layoutBuilder: (
-                                Widget? currentChild,
-                                List<Widget> previousChildren,
-                              ) {
-                                return Stack(
-                                  alignment: Alignment.topCenter,
-                                  children: <Widget>[
-                                    ...previousChildren,
-                                    ?currentChild,
-                                  ],
-                                );
-                              },
+                              layoutBuilder:
+                                  (
+                                    Widget? currentChild,
+                                    List<Widget> previousChildren,
+                                  ) {
+                                    return Stack(
+                                      alignment: Alignment.topCenter,
+                                      children: <Widget>[
+                                        ...previousChildren,
+                                        ?currentChild,
+                                      ],
+                                    );
+                                  },
                               child: stageOrders.isEmpty
                                   ? SizedBox(
                                       key: ValueKey<String>(
@@ -404,9 +408,11 @@ class _OrderPageState extends State<OrderPage> {
                                       padding: listPadding,
                                       child: Column(
                                         children: [
-                                          for (var index = 0;
-                                              index < stageOrders.length;
-                                              index++) ...[
+                                          for (
+                                            var index = 0;
+                                            index < stageOrders.length;
+                                            index++
+                                          ) ...[
                                             if (index > 0)
                                               const SizedBox(height: 12),
                                             _OrderSummaryCard(
@@ -470,10 +476,7 @@ int _cancelledPrepareExpiryEpochMs(OrderEntryData entry) {
   return anchorEpochMs + _cancelledPrepareRetentionDuration.inMilliseconds;
 }
 
-bool _isCancelledPrepareEntryVisible(
-  OrderEntryData entry, {
-  int? nowEpochMs,
-}) {
+bool _isCancelledPrepareEntryVisible(OrderEntryData entry, {int? nowEpochMs}) {
   if (entry.stage != OrderStageKey.cancelled) {
     return false;
   }
@@ -486,8 +489,7 @@ bool _isCancelledPrepareEntryVisible(
     return false;
   }
 
-  final now =
-      nowEpochMs ?? DateTime.now().millisecondsSinceEpoch;
+  final now = nowEpochMs ?? DateTime.now().millisecondsSinceEpoch;
   return now < expiresAtEpochMs;
 }
 
@@ -563,11 +565,13 @@ class _StoredOrderGroup {
     return '$createdAtEpochMs-${stage.name}-$firstEntryId';
   }
 
-  int get itemCount => entries.fold<int>(0, (total, entry) => total + entry.quantity);
+  int get itemCount =>
+      entries.fold<int>(0, (total, entry) => total + entry.quantity);
 
   bool get hasOutstandingBalance => remainingBalanceAmount > 0.009;
 
-  bool get isCodOrder => paymentOptionLabel.trim().toLowerCase().startsWith('cod');
+  bool get isCodOrder =>
+      paymentOptionLabel.trim().toLowerCase().startsWith('cod');
 
   bool get isCancelRequestPending =>
       cancelRequestStatus.trim().toLowerCase() == 'pending';
@@ -647,11 +651,7 @@ class _OrderEmptyState extends StatelessWidget {
                         );
                       }),
                     )
-                  : Icon(
-                      stage.icon,
-                      size: 34,
-                      color: primaryColor,
-                    ),
+                  : Icon(stage.icon, size: 34, color: primaryColor),
               const SizedBox(height: 18),
               Text(
                 stage.emptyTitle,
@@ -739,7 +739,8 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
     if (_ratedOrderEntryCount == 0) {
       return 'Rate';
     }
-    if (order.entries.length == 1 && order.entries.first.isHighRatingReviewLocked) {
+    if (order.entries.length == 1 &&
+        order.entries.first.isHighRatingReviewLocked) {
       return 'Rated';
     }
     if (_ratedOrderEntryCount >= order.entries.length) {
@@ -775,7 +776,9 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         child: Text(
-          _showsAllOrderItems ? 'Show less' : 'Show all (${order.entries.length})',
+          _showsAllOrderItems
+              ? 'Show less'
+              : 'Show all (${order.entries.length})',
           style: theme.textTheme.labelLarge?.copyWith(
             color: primaryColor,
             fontWeight: FontWeight.w700,
@@ -853,7 +856,8 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
                     const SizedBox(height: 14),
                     ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.45,
+                        maxHeight:
+                            MediaQuery.sizeOf(dialogContext).height * 0.45,
                       ),
                       child: SingleChildScrollView(
                         child: Column(
@@ -921,7 +925,6 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
                                 onChanged: (_) => setDialogState(() {}),
                                 decoration: const InputDecoration(
                                   labelText: 'Other reason',
-                                  hintText: 'Type your reason here',
                                 ),
                               ),
                             ],
@@ -946,7 +949,8 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
                           child: SizedBox(
                             height: 44,
                             child: OutlinedButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: theme.colorScheme.primary,
                                 side: BorderSide(
@@ -980,7 +984,9 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
                                 ),
                               ),
                               child: Text(
-                                isPrepareStage ? 'Send Request' : 'Cancel Order',
+                                isPrepareStage
+                                    ? 'Send Request'
+                                    : 'Cancel Order',
                               ),
                             ),
                           ),
@@ -1030,10 +1036,7 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
       return;
     }
 
-    AppSnackBar.showSuccess(
-      context,
-      message: 'Payment recorded.',
-    );
+    AppSnackBar.showSuccess(context, message: 'Payment recorded.');
   }
 
   Future<void> _handleReorder(BuildContext context) async {
@@ -1133,7 +1136,8 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
 
     AppSnackBar.showSuccess(
       context,
-      message: 'Order received confirmed. This stays in To Receive as your record.',
+      message:
+          'Order received confirmed. This stays in To Receive as your record.',
     );
   }
 
@@ -1158,9 +1162,7 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
 
     final didSaveReview = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => CommentRatePage(
-          entry: order.entries.first,
-        ),
+        builder: (_) => CommentRatePage(entry: order.entries.first),
       ),
     );
 
@@ -1168,10 +1170,7 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
       return;
     }
 
-    AppSnackBar.showSuccess(
-      context,
-      message: 'Product review saved.',
-    );
+    AppSnackBar.showSuccess(context, message: 'Product review saved.');
   }
 
   Widget _buildToReceiveCard(BuildContext context) {
@@ -1185,8 +1184,9 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
         : order.paymentOptionLabel.trim().isNotEmpty
         ? '${order.paymentOptionLabel.trim()} | $stageLabel'
         : stageLabel;
-    final paymentStageBadgeColor =
-        hasConfirmedReceipt ? const Color(0xFF2F7D4F) : primaryColor;
+    final paymentStageBadgeColor = hasConfirmedReceipt
+        ? const Color(0xFF2F7D4F)
+        : primaryColor;
 
     return Container(
       decoration: BoxDecoration(
@@ -1362,20 +1362,17 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
     final String? headerSubtitle = usesToReceiveHeaderFormat
         ? null
         : _formatOrderTimestamp(order.createdAtEpochMs);
-    final cancelVisibilityUntilLabel =
-        order.cancelDisplayExpiresAtEpochMs > 0
+    final cancelVisibilityUntilLabel = order.cancelDisplayExpiresAtEpochMs > 0
         ? _formatOrderTimestamp(order.cancelDisplayExpiresAtEpochMs)
         : '';
-    final headerBadgeLabel =
-        isCancelledInPrepareGracePeriod
+    final headerBadgeLabel = isCancelledInPrepareGracePeriod
         ? 'Cancelled'
         : order.stage == OrderStageKey.toReview
         ? 'Completed'
         : paymentStagePrefixLabel.isNotEmpty
         ? '$paymentStagePrefixLabel | $stageLabel'
         : stageLabel;
-    final headerBadgeColor =
-        isCancelledInPrepareGracePeriod
+    final headerBadgeColor = isCancelledInPrepareGracePeriod
         ? errorColor
         : order.stage == OrderStageKey.toReview
         ? completedColor
@@ -1445,10 +1442,7 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
                       ),
                       if (headerSubtitle != null) ...[
                         const SizedBox(height: 4),
-                        Text(
-                          headerSubtitle,
-                          style: headerMetaStyle,
-                        ),
+                        Text(headerSubtitle, style: headerMetaStyle),
                       ],
                     ],
                   ),
@@ -1536,23 +1530,17 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
                         child: Text.rich(
                           TextSpan(
                             children: [
+                              TextSpan(text: 'Pay ', style: payButtonTextStyle),
                               TextSpan(
-                                text: 'Pay ',
-                                style: payButtonTextStyle,
-                              ),
-                              TextSpan(
-                                text: '\u20B1',
-                                style: payButtonTextStyle?.copyWith(
-                                  fontSize:
-                                      (payButtonTextStyle.fontSize ?? 14) *
-                                      0.75,
-                                ),
-                              ),
-                              TextSpan(
-                                text: formatCurrencyAmount(
+                                text: formatPesoCurrency(
                                   order.amountNeededToProceed,
                                 ),
-                                style: payButtonTextStyle,
+                                style: GoogleFonts.roboto(
+                                  color: payButtonTextStyle?.color,
+                                  fontSize: payButtonTextStyle?.fontSize,
+                                  fontWeight: payButtonTextStyle?.fontWeight,
+                                  height: payButtonTextStyle?.height ?? 1,
+                                ),
                               ),
                             ],
                           ),
@@ -1702,8 +1690,7 @@ const List<String> _cancelOrderReasonOptions = <String>[
 const String _cancelOrderOtherReasonOption = 'Other';
 
 bool _usesFullWidthOrderStageLayout(OrderStageKey? stageKey) {
-  return stageKey == OrderStageKey.toPay ||
-      stageKey == OrderStageKey.toPrepare;
+  return stageKey == OrderStageKey.toPay || stageKey == OrderStageKey.toPrepare;
 }
 
 bool _usesEdgeToEdgeOrderStageShell(OrderStageKey? stageKey) {
@@ -1715,10 +1702,7 @@ bool _usesEdgeToEdgeOrderStageShell(OrderStageKey? stageKey) {
 }
 
 class _OrderStageBadge extends StatelessWidget {
-  const _OrderStageBadge({
-    required this.label,
-    required this.color,
-  });
+  const _OrderStageBadge({required this.label, required this.color});
 
   final String label;
   final Color color;
@@ -1734,9 +1718,9 @@ class _OrderStageBadge extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w800,
-            ),
+          color: color,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -1761,9 +1745,7 @@ class _OrderProductItemTile extends StatelessWidget {
     final imageUrl = entry.productImageUrl.trim();
 
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -1775,21 +1757,24 @@ class _OrderProductItemTile extends StatelessWidget {
                 width: 54,
                 height: 54,
                 child: imageUrl.isNotEmpty
-                    ? Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: primaryColor.withOpacity(0.14),
-                            ),
-                            child: Icon(
-                              Icons.inventory_2_outlined,
-                              color: primaryColor,
-                              size: 20,
-                            ),
-                          );
-                        },
+                    ? ColoredBox(
+                        color: Colors.white,
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: primaryColor.withOpacity(0.14),
+                              ),
+                              child: Icon(
+                                Icons.inventory_2_outlined,
+                                color: primaryColor,
+                                size: 20,
+                              ),
+                            );
+                          },
+                        ),
                       )
                     : DecoratedBox(
                         decoration: BoxDecoration(
@@ -1959,89 +1944,93 @@ class _OrderStagesCarousel extends StatelessWidget {
       ),
       child: SizedBox(
         height: height,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          scrollDirection: Axis.horizontal,
-          itemCount: stages.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 10),
-          itemBuilder: (context, index) {
-            final isActive = selectedIndex == index;
-            final stageCount = _countForIndex(index);
-            final foregroundColor = isActive ? activeColor : inactiveColor;
-            final badgeBackgroundColor =
-                isActive ? activeColor.withOpacity(0.14) : inactiveColor.withOpacity(0.12);
+        child: HorizontalEndFade(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 0, 24, 0),
+            scrollDirection: Axis.horizontal,
+            itemCount: stages.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final isActive = selectedIndex == index;
+              final stageCount = _countForIndex(index);
+              final foregroundColor = isActive ? activeColor : inactiveColor;
+              final badgeBackgroundColor = isActive
+                  ? activeColor.withOpacity(0.14)
+                  : inactiveColor.withOpacity(0.12);
 
-            return InkWell(
-              onTap: () => onTap(index),
-              borderRadius: BorderRadius.circular(4),
-              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-              splashFactory: NoSplash.splashFactory,
-              highlightColor: Colors.transparent,
-              splashColor: Colors.transparent,
-              hoverColor: Colors.transparent,
-              focusColor: Colors.transparent,
-              child: AnimatedContainer(
-                duration: appMotionFrames(11),
-                padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: isActive ? activeColor : Colors.transparent,
-                      width: 2,
+              return InkWell(
+                onTap: () => onTap(index),
+                borderRadius: BorderRadius.circular(4),
+                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+                splashFactory: NoSplash.splashFactory,
+                highlightColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+                focusColor: Colors.transparent,
+                child: AnimatedContainer(
+                  duration: appMotionFrames(11),
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isActive ? activeColor : Colors.transparent,
+                        width: 2,
+                      ),
                     ),
                   ),
-                ),
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        stages[index].label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textHeightBehavior: const TextHeightBehavior(
-                          applyHeightToFirstAscent: false,
-                          applyHeightToLastDescent: false,
-                        ),
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: foregroundColor,
-                              fontWeight: FontWeight.w700,
-                              height: 1,
-                            ),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        constraints: const BoxConstraints(minWidth: 18),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: badgeBackgroundColor,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '$stageCount',
-                          textAlign: TextAlign.center,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          stages[index].label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           textHeightBehavior: const TextHeightBehavior(
                             applyHeightToFirstAscent: false,
                             applyHeightToLastDescent: false,
                           ),
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: foregroundColor,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1,
-                                  ),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: foregroundColor,
+                                fontWeight: FontWeight.w700,
+                                height: 1,
+                              ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Container(
+                          constraints: const BoxConstraints(minWidth: 18),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: badgeBackgroundColor,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '$stageCount',
+                            textAlign: TextAlign.center,
+                            textHeightBehavior: const TextHeightBehavior(
+                              applyHeightToFirstAscent: false,
+                              applyHeightToLastDescent: false,
+                            ),
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: foregroundColor,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -2049,33 +2038,14 @@ class _OrderStagesCarousel extends StatelessWidget {
 }
 
 class _OrderPriceText extends StatelessWidget {
-  const _OrderPriceText({
-    required this.amount,
-    this.style,
-  });
+  const _OrderPriceText({required this.amount, this.style});
 
   final double amount;
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedStyle = DefaultTextStyle.of(context).style.merge(style);
-    final symbolFontSize = (resolvedStyle.fontSize ?? 14) * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: resolvedStyle.copyWith(fontSize: symbolFontSize),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: resolvedStyle,
-          ),
-        ],
-      ),
-    );
+    return AppPriceText(amount: amount, style: style);
   }
 }
 

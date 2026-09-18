@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:gms_shopping/place_order.dart';
@@ -9,17 +10,48 @@ import 'package:gms_shopping/favorite_products_store.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/product_details.dart';
 import 'package:gms_shopping/search_bar.dart';
+import 'package:gms_shopping/services/flash_deals_service.dart';
 import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
 import 'package:gms_shopping/utils/auth_session.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:gms_shopping/widgets/search_not_found_art.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum CartPageAction { openShop }
 
-Future<CartPageAction?> openCartPage(BuildContext context) async {
-  await CartStore.instance.ensureLoaded();
+/// Normalizes buyer platform ids used to scope carts (shop vs food, etc.).
+String normalizeCartPlatformId(String? platformId) {
+  final id = (platformId ?? '').trim().toLowerCase();
+  if (id.isEmpty || id == 'none') {
+    return 'shop';
+  }
+  return id;
+}
+
+String cartPlatformDisplayName(String? platformId) {
+  switch (normalizeCartPlatformId(platformId)) {
+    case 'food':
+      return 'Food';
+    case 'shop':
+      return 'Shop';
+    default:
+      final id = normalizeCartPlatformId(platformId);
+      return id[0].toUpperCase() + id.substring(1);
+  }
+}
+
+Future<CartPageAction?> openCartPage(
+  BuildContext context, {
+  String platformId = '',
+}) async {
+  if (platformId.trim().isNotEmpty) {
+    await CartStore.instance.setActivePlatform(platformId);
+  } else {
+    await CartStore.instance.ensureLoaded();
+  }
 
   if (!context.mounted) {
     return null;
@@ -27,7 +59,9 @@ Future<CartPageAction?> openCartPage(BuildContext context) async {
 
   return Navigator.of(context).push<CartPageAction>(
     MaterialPageRoute<CartPageAction>(
-      builder: (_) => const CartPage(),
+      builder: (_) => CartPage(
+        platformId: CartStore.instance.activePlatformId,
+      ),
     ),
   );
 }
@@ -59,6 +93,10 @@ BookingLineItem _bookingLineItemFromCartItem(CartItemData item) {
     productRating: item.productRating,
     showsTopBrand: item.showsTopBrand,
     availableStock: item.availableStock,
+    companyName: item.companyName,
+    flashDealId: item.flashDealId,
+    flashReservationId: item.flashReservationId,
+    reservationExpiresAt: item.reservationExpiresAt,
   );
 }
 
@@ -67,23 +105,25 @@ bool _isCartProductInTopSelling(
   List<Product> products, {
   int limit = 10,
 }) {
-  final rankedProducts = [
-    ...filterVisibleProducts(products).where((product) => product.sold > 0),
-  ]..sort((first, second) {
-    final soldCompare = second.sold.compareTo(first.sold);
-    if (soldCompare != 0) {
-      return soldCompare;
-    }
+  final rankedProducts =
+      [...filterVisibleProducts(products).where((product) => product.sold > 0)]
+        ..sort((first, second) {
+          final soldCompare = second.sold.compareTo(first.sold);
+          if (soldCompare != 0) {
+            return soldCompare;
+          }
 
-    final ratingCompare = second.rating.compareTo(first.rating);
-    if (ratingCompare != 0) {
-      return ratingCompare;
-    }
+          final ratingCompare = second.rating.compareTo(first.rating);
+          if (ratingCompare != 0) {
+            return ratingCompare;
+          }
 
-    return first.name.compareTo(second.name);
-  });
+          return first.name.compareTo(second.name);
+        });
 
-  return rankedProducts.take(limit).any((candidate) => candidate.id == product.id);
+  return rankedProducts
+      .take(limit)
+      .any((candidate) => candidate.id == product.id);
 }
 
 class CartItemData {
@@ -104,6 +144,10 @@ class CartItemData {
     this.productRating = 0,
     this.showsTopBrand = false,
     this.availableStock = 0,
+    this.companyName = '',
+    this.flashDealId = '',
+    this.flashReservationId = '',
+    this.reservationExpiresAt = '',
   });
 
   final String productId;
@@ -122,16 +166,31 @@ class CartItemData {
   final double productRating;
   final bool showsTopBrand;
   final int availableStock;
+  final String companyName;
+  final String flashDealId;
+  final String flashReservationId;
+  final String reservationExpiresAt;
 
   String get entryKey =>
       '${adminId.trim()}::${productId.trim()}::${variantId.trim()}';
 
   bool get hasVariant => variantName.trim().isNotEmpty;
   bool get hasStock => availableStock > 0;
+  bool get hasFlashLock =>
+      flashDealId.trim().isNotEmpty && flashReservationId.trim().isNotEmpty;
   bool get hasDiscount =>
       unitPrice >= 0 && originalUnitPrice > 0 && unitPrice < originalUnitPrice;
   bool get showsTopReviews => productRating >= 4.5 && productRating <= 5;
   String get stockLabel => hasStock ? 'Stock: $availableStock' : 'Sold out';
+  DateTime? get reservationExpiresAtDate =>
+      DateTime.tryParse(reservationExpiresAt.trim());
+  bool get isFlashReservationExpired {
+    if (!hasFlashLock) return false;
+    final expiresAt = reservationExpiresAtDate;
+    if (expiresAt == null) return true;
+    return !expiresAt.toUtc().isAfter(DateTime.now().toUtc());
+  }
+
   int? get discountPercent {
     if (!hasDiscount || originalUnitPrice <= 0) {
       return null;
@@ -141,6 +200,7 @@ class CartItemData {
         (((originalUnitPrice - unitPrice) / originalUnitPrice) * 100).round();
     return percent > 0 ? percent : null;
   }
+
   double get totalPrice => unitPrice * quantity;
   double get totalOriginalPrice => originalUnitPrice * quantity;
 
@@ -161,6 +221,11 @@ class CartItemData {
     double? productRating,
     bool? showsTopBrand,
     int? availableStock,
+    String? companyName,
+    String? flashDealId,
+    String? flashReservationId,
+    String? reservationExpiresAt,
+    bool clearFlashLock = false,
   }) {
     return CartItemData(
       adminId: adminId ?? this.adminId,
@@ -179,6 +244,14 @@ class CartItemData {
       productRating: productRating ?? this.productRating,
       showsTopBrand: showsTopBrand ?? this.showsTopBrand,
       availableStock: availableStock ?? this.availableStock,
+      companyName: companyName ?? this.companyName,
+      flashDealId: clearFlashLock ? '' : (flashDealId ?? this.flashDealId),
+      flashReservationId: clearFlashLock
+          ? ''
+          : (flashReservationId ?? this.flashReservationId),
+      reservationExpiresAt: clearFlashLock
+          ? ''
+          : (reservationExpiresAt ?? this.reservationExpiresAt),
     );
   }
 
@@ -208,12 +281,17 @@ class CartItemData {
       'productRating': productRating,
       'showsTopBrand': showsTopBrand,
       'availableStock': availableStock,
+      'companyName': companyName,
+      'flashDealId': flashDealId,
+      'flashReservationId': flashReservationId,
+      'reservationExpiresAt': reservationExpiresAt,
     };
   }
 
   factory CartItemData.fromJson(Map<String, dynamic> json) {
     return CartItemData(
-      adminId: json['adminId']?.toString() ??
+      adminId:
+          json['adminId']?.toString() ??
           json['tenantId']?.toString() ??
           json['ownerAdminId']?.toString() ??
           '',
@@ -237,15 +315,25 @@ class CartItemData {
       variantName: json['variantName']?.toString() ?? '',
       variantAddOns: (json['variantAddOns'] as List<dynamic>? ?? const [])
           .whereType<Map>()
-          .map((entry) => ProductVariantAddOn.fromJson(Map<String, dynamic>.from(entry)))
-          .where((addOn) => addOn.id.trim().isNotEmpty && addOn.name.trim().isNotEmpty)
+          .map(
+            (entry) =>
+                ProductVariantAddOn.fromJson(Map<String, dynamic>.from(entry)),
+          )
+          .where(
+            (addOn) =>
+                addOn.id.trim().isNotEmpty && addOn.name.trim().isNotEmpty,
+          )
           .toList(growable: false),
       productRating: (json['productRating'] as num?)?.toDouble() ?? 0,
       showsTopBrand: json['showsTopBrand'] == true,
+      companyName: json['companyName']?.toString() ?? '',
       availableStock:
           (json['availableStock'] as num?)?.toInt() ??
           (json['stock'] as num?)?.toInt() ??
           0,
+      flashDealId: json['flashDealId']?.toString() ?? '',
+      flashReservationId: json['flashReservationId']?.toString() ?? '',
+      reservationExpiresAt: json['reservationExpiresAt']?.toString() ?? '',
     );
   }
 }
@@ -282,7 +370,9 @@ bool _areStringListsEqual(List<String> left, List<String> right) {
   return true;
 }
 
-Future<List<CartItemData>> _decodeStoredCartItemsInBackground(String rawCartItems) {
+Future<List<CartItemData>> _decodeStoredCartItemsInBackground(
+  String rawCartItems,
+) {
   return compute(_decodeStoredCartItems, rawCartItems);
 }
 
@@ -307,6 +397,26 @@ class CartStore {
   bool _hasLoaded = false;
   String? _lastAccountId;
   String? _lastEmail;
+  String _activePlatformId = 'shop';
+
+  String get activePlatformId => _activePlatformId;
+
+  /// Switches the in-memory cart to [platformId] (shop/food/…).
+  /// Shop and Food keep separate persisted carts and never mix.
+  Future<void> setActivePlatform(String platformId) async {
+    final next = normalizeCartPlatformId(platformId);
+    if (_hasLoaded && next == _activePlatformId) {
+      return;
+    }
+
+    if (next != _activePlatformId) {
+      _activePlatformId = next;
+      _hasLoaded = false;
+      cartItemsNotifier.value = const <CartItemData>[];
+    }
+
+    await ensureLoaded();
+  }
 
   /// Force reload cart for the current account.
   /// Call this after login/logout to ensure correct cart is loaded.
@@ -318,10 +428,7 @@ class CartStore {
     await ensureLoaded();
   }
 
-  /// Builds the per-account storage key.
-  /// Uses accountId if available, falls back to email hash for guests.
-  /// This ensures each user (including guests) has their own cart.
-  Future<String> _resolveStorageKey() async {
+  Future<String> _resolveAccountKeyPrefix() async {
     final accountId = await AuthSession.getAccountId();
     if (accountId != null && accountId.trim().isNotEmpty) {
       return 'cart_items_${accountId.trim()}';
@@ -333,6 +440,17 @@ class CartStore {
     }
     // Final fallback: use a random guest identifier
     return 'cart_items_guest_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// Builds the per-account + per-platform storage key.
+  Future<String> _resolveStorageKey() async {
+    final prefix = await _resolveAccountKeyPrefix();
+    return '${prefix}_p_${normalizeCartPlatformId(_activePlatformId)}';
+  }
+
+  /// Pre-platform-scoping key (shared cart). Used once to migrate into Shop.
+  Future<String> _resolveLegacyStorageKey() async {
+    return _resolveAccountKeyPrefix();
   }
 
   Future<List<CartItemData>> _hydrateItemsFromCatalog(
@@ -349,36 +467,43 @@ class CartStore {
       }
 
       final productsById = <String, Product>{
-        for (final product in catalogProducts) product.id.trim().toLowerCase(): product,
+        for (final product in catalogProducts)
+          product.id.trim().toLowerCase(): product,
       };
 
-      return items.map((item) {
-        final catalogProduct = productsById[item.productId.trim().toLowerCase()];
-        if (catalogProduct == null) {
-          return item;
-        }
-        final variant = findProductVariantById(catalogProduct, item.variantId);
-        final availableStock = resolveProductAvailableStock(
-          catalogProduct,
-          variant: variant,
-          catalogProducts: catalogProducts,
-        );
+      return items
+          .map((item) {
+            final catalogProduct =
+                productsById[item.productId.trim().toLowerCase()];
+            if (catalogProduct == null) {
+              return item;
+            }
+            final variant = findProductVariantById(
+              catalogProduct,
+              item.variantId,
+            );
+            final availableStock = resolveProductAvailableStock(
+              catalogProduct,
+              variant: variant,
+              catalogProducts: catalogProducts,
+            );
 
-        return item.copyWith(
-          productRating: catalogProduct.rating,
-          showsTopBrand: _isCartProductInTopSelling(
-            catalogProduct,
-            catalogProducts,
-          ),
-          availableStock: availableStock,
-          deliveryPartnerIds: catalogProduct.deliveryPartnerIds,
-          paymentPartnerIds: catalogProduct.paymentPartnerIds,
-          quantity: _normalizeCartQuantity(
-            item.quantity,
-            availableStock: availableStock,
-          ),
-        );
-      }).toList(growable: false);
+            return item.copyWith(
+              productRating: catalogProduct.rating,
+              showsTopBrand: _isCartProductInTopSelling(
+                catalogProduct,
+                catalogProducts,
+              ),
+              availableStock: availableStock,
+              deliveryPartnerIds: catalogProduct.deliveryPartnerIds,
+              paymentPartnerIds: catalogProduct.paymentPartnerIds,
+              quantity: _normalizeCartQuantity(
+                item.quantity,
+                availableStock: availableStock,
+              ),
+            );
+          })
+          .toList(growable: false);
     } catch (_) {
       return items;
     }
@@ -424,9 +549,11 @@ class CartStore {
     // If the account changed, clear the cart and reload with the new key.
     // This ensures each account has its own separate cart.
     // Handle null comparisons properly - different null states mean different users
-    final accountChanged = trimmedAccountId != lastTrimmedAccountId ||
+    final accountChanged =
+        trimmedAccountId != lastTrimmedAccountId ||
         (trimmedAccountId == null) != (lastTrimmedAccountId == null);
-    final emailChanged = trimmedEmail != lastTrimmedEmail ||
+    final emailChanged =
+        trimmedEmail != lastTrimmedEmail ||
         (trimmedEmail == null) != (lastTrimmedEmail == null);
 
     if (_hasLoaded && (accountChanged || emailChanged)) {
@@ -441,10 +568,25 @@ class CartStore {
 
     _lastAccountId = accountId;
     _lastEmail = email;
+    _activePlatformId = normalizeCartPlatformId(_activePlatformId);
 
     final storageKey = await _resolveStorageKey();
     final preferences = await SharedPreferences.getInstance();
-    final rawCartItems = preferences.getString(storageKey);
+    var rawCartItems = preferences.getString(storageKey);
+
+    // One-time migration: old shared cart → Shop cart only.
+    if ((rawCartItems == null || rawCartItems.trim().isEmpty) &&
+        _activePlatformId == 'shop') {
+      final legacyKey = await _resolveLegacyStorageKey();
+      if (legacyKey != storageKey) {
+        final legacyRaw = preferences.getString(legacyKey);
+        if (legacyRaw != null && legacyRaw.trim().isNotEmpty) {
+          rawCartItems = legacyRaw;
+          await preferences.setString(storageKey, legacyRaw);
+          await preferences.remove(legacyKey);
+        }
+      }
+    }
 
     if (rawCartItems == null || rawCartItems.trim().isEmpty) {
       cartItemsNotifier.value = const <CartItemData>[];
@@ -453,7 +595,9 @@ class CartStore {
     }
 
     try {
-      final loadedItems = await _decodeStoredCartItemsInBackground(rawCartItems);
+      final loadedItems = await _decodeStoredCartItemsInBackground(
+        rawCartItems,
+      );
       final hydratedItems = await _hydrateItemsFromCatalog(loadedItems);
 
       cartItemsNotifier.value = List<CartItemData>.unmodifiable(hydratedItems);
@@ -473,38 +617,111 @@ class CartStore {
     ProductVariant? selectedVariant,
     List<Product> catalogProducts = const <Product>[],
     bool showsTopBrand = false,
+    String platformId = '',
   }) async {
-    await ensureLoaded();
+    if (platformId.trim().isNotEmpty) {
+      await setActivePlatform(platformId);
+    } else {
+      await ensureLoaded();
+    }
 
     final variant = selectedVariant;
-    final unitPrice = variant?.displayPrice ??
-        ((product.salesPrice != null &&
-                product.salesPrice! >= 0 &&
-                product.salesPrice! < product.originalPrice)
-            ? product.salesPrice!
-            : product.originalPrice);
     final originalPrice = variant?.originalPrice ?? product.originalPrice;
     final availableStock = resolveProductAvailableStock(
       product,
       variant: variant,
       catalogProducts: catalogProducts,
     );
-    final normalizedQuantity = _normalizeCartQuantity(
+    var normalizedQuantity = _normalizeCartQuantity(
       quantity,
       availableStock: availableStock,
     );
 
+    var unitPrice =
+        variant?.displayPrice ??
+        ((product.salesPrice != null &&
+                product.salesPrice! >= 0 &&
+                product.salesPrice! < product.originalPrice)
+            ? product.salesPrice!
+            : product.originalPrice);
+    var flashDealId = '';
+    var flashReservationId = '';
+    var reservationExpiresAt = '';
+
+    final scopedPlatform = platformId.trim().isNotEmpty
+        ? platformId
+        : activePlatformId;
+    final liveDeal = await productLiveFlashDeal(
+      productId: product.id,
+      platformId: scopedPlatform,
+      variantId: variant?.id,
+    );
+
+    final nextItems = List<CartItemData>.from(cartItemsNotifier.value);
+    final provisionalKey =
+        '${product.adminId.trim()}::${product.id.trim()}::${variant?.id.trim() ?? ''}';
+    final existingIndex = nextItems.indexWhere(
+      (item) => item.entryKey == provisionalKey,
+    );
+    final existingItem =
+        existingIndex >= 0 ? nextItems[existingIndex] : null;
+    final targetQuantity = existingItem == null
+        ? normalizedQuantity
+        : _normalizeCartQuantity(
+            existingItem.quantity + normalizedQuantity,
+            availableStock: availableStock,
+          );
+
+    if (liveDeal != null &&
+        liveDeal.isLive &&
+        liveDeal.flashPrice >= 0 &&
+        liveDeal.flashPrice < originalPrice) {
+      final cappedByDeal = liveDeal.dealStockRemaining > 0
+          ? math.min(targetQuantity, liveDeal.dealStockRemaining)
+          : targetQuantity;
+      final cappedByBuyer = liveDeal.perBuyerLimit > 0
+          ? math.min(cappedByDeal, liveDeal.perBuyerLimit)
+          : cappedByDeal;
+      final reserveQty = cappedByBuyer < 1 ? 1 : cappedByBuyer;
+
+      try {
+        final reservation = await reserveFlashDealStock(
+          dealId: liveDeal.id,
+          quantity: reserveQty,
+          variantId: variant?.id ?? '',
+          replaceReservationId: existingItem?.flashReservationId ?? '',
+        );
+        unitPrice = reservation.lockedUnitPrice > 0
+            ? reservation.lockedUnitPrice
+            : liveDeal.flashPrice;
+        flashDealId = reservation.dealId;
+        flashReservationId = reservation.id;
+        reservationExpiresAt = reservation.expiresAt.toUtc().toIso8601String();
+        normalizedQuantity = reserveQty;
+      } on FlashDealReserveException {
+        rethrow;
+      } catch (_) {
+        throw FlashDealReserveException(
+          'Unable to lock Flash Deal price right now.',
+        );
+      }
+    }
+
     final nextItem = CartItemData(
       adminId: product.adminId.trim(),
       productId: product.id.trim(),
-      productName: product.name.trim().isEmpty ? 'Unnamed Product' : product.name,
+      productName: product.name.trim().isEmpty
+          ? 'Unnamed Product'
+          : product.name,
       productImageUrl: (variant?.imageUrl.trim().isNotEmpty ?? false)
           ? variant!.imageUrl
           : product.imageUrl,
       category: product.category,
       deliveryPartnerIds: product.deliveryPartnerIds,
       paymentPartnerIds: product.paymentPartnerIds,
-      quantity: normalizedQuantity,
+      quantity: flashReservationId.isNotEmpty
+          ? normalizedQuantity
+          : targetQuantity,
       unitPrice: unitPrice,
       originalUnitPrice: originalPrice,
       variantId: variant?.id ?? '',
@@ -513,20 +730,16 @@ class CartStore {
       productRating: product.rating,
       showsTopBrand: showsTopBrand,
       availableStock: availableStock,
-    );
-
-    final nextItems = List<CartItemData>.from(cartItemsNotifier.value);
-    final existingIndex = nextItems.indexWhere(
-      (item) => item.entryKey == nextItem.entryKey,
+      companyName: product.companyName.trim(),
+      flashDealId: flashDealId,
+      flashReservationId: flashReservationId,
+      reservationExpiresAt: reservationExpiresAt,
     );
 
     if (existingIndex >= 0) {
-      final existingItem = nextItems[existingIndex];
-      nextItems[existingIndex] = existingItem.copyWith(
-        quantity: _normalizeCartQuantity(
-          existingItem.quantity + normalizedQuantity,
-          availableStock: nextItem.availableStock,
-        ),
+      final existing = nextItems[existingIndex];
+      nextItems[existingIndex] = existing.copyWith(
+        quantity: nextItem.quantity,
         unitPrice: nextItem.unitPrice,
         originalUnitPrice: nextItem.originalUnitPrice,
         productImageUrl: nextItem.productImageUrl,
@@ -537,6 +750,12 @@ class CartStore {
         productRating: nextItem.productRating,
         showsTopBrand: nextItem.showsTopBrand,
         availableStock: nextItem.availableStock,
+        companyName: nextItem.companyName,
+        flashDealId: nextItem.flashDealId,
+        flashReservationId: nextItem.flashReservationId,
+        reservationExpiresAt: nextItem.reservationExpiresAt,
+        clearFlashLock: nextItem.flashReservationId.isEmpty &&
+            existing.flashReservationId.isNotEmpty,
       );
     } else {
       nextItems.insert(0, nextItem);
@@ -554,13 +773,43 @@ class CartStore {
       return;
     }
 
+    final current = nextItems[itemIndex];
     final normalizedQuantity = _normalizeCartQuantity(
       quantity,
-      availableStock: nextItems[itemIndex].availableStock,
+      availableStock: current.availableStock,
     );
-    nextItems[itemIndex] = nextItems[itemIndex].copyWith(
-      quantity: normalizedQuantity,
-    );
+
+    if (current.hasFlashLock &&
+        current.flashDealId.isNotEmpty &&
+        normalizedQuantity != current.quantity) {
+      try {
+        final reservation = await reserveFlashDealStock(
+          dealId: current.flashDealId,
+          quantity: normalizedQuantity,
+          variantId: current.variantId,
+          replaceReservationId: current.flashReservationId,
+        );
+        nextItems[itemIndex] = current.copyWith(
+          quantity: reservation.quantity > 0
+              ? reservation.quantity
+              : normalizedQuantity,
+          unitPrice: reservation.lockedUnitPrice > 0
+              ? reservation.lockedUnitPrice
+              : current.unitPrice,
+          flashDealId: reservation.dealId,
+          flashReservationId: reservation.id,
+          reservationExpiresAt:
+              reservation.expiresAt.toUtc().toIso8601String(),
+        );
+      } on FlashDealReserveException {
+        // Keep previous quantity/lock if re-reserve fails.
+        return;
+      } catch (_) {
+        return;
+      }
+    } else {
+      nextItems[itemIndex] = current.copyWith(quantity: normalizedQuantity);
+    }
 
     await _persist(nextItems);
   }
@@ -580,6 +829,15 @@ class CartStore {
       return;
     }
 
+    final removed = cartItemsNotifier.value
+        .where((item) => normalizedEntryKeys.contains(item.entryKey))
+        .toList(growable: false);
+    for (final item in removed) {
+      if (item.flashReservationId.trim().isNotEmpty) {
+        unawaited(releaseFlashDealReservation(item.flashReservationId));
+      }
+    }
+
     final nextItems = cartItemsNotifier.value
         .where((item) => !normalizedEntryKeys.contains(item.entryKey))
         .toList(growable: false);
@@ -590,8 +848,55 @@ class CartStore {
     await _persist(nextItems);
   }
 
+  /// Extends held flash locks before checkout; reverts price if hold is lost.
+  Future<List<String>> prepareCheckoutFlashLocks() async {
+    await ensureLoaded();
+    final nextItems = List<CartItemData>.from(cartItemsNotifier.value);
+    final warnings = <String>[];
+    var changed = false;
+
+    for (var index = 0; index < nextItems.length; index++) {
+      final item = nextItems[index];
+      if (!item.hasFlashLock) continue;
+
+      final extended = await extendFlashDealReservation(item.flashReservationId);
+      if (extended != null && extended.isHeld) {
+        nextItems[index] = item.copyWith(
+          unitPrice: extended.lockedUnitPrice > 0
+              ? extended.lockedUnitPrice
+              : item.unitPrice,
+          flashReservationId: extended.id,
+          reservationExpiresAt: extended.expiresAt.toUtc().toIso8601String(),
+          quantity: extended.quantity > 0 ? extended.quantity : item.quantity,
+        );
+        changed = true;
+        continue;
+      }
+
+      await releaseFlashDealReservation(item.flashReservationId);
+      nextItems[index] = item.copyWith(
+        unitPrice: item.originalUnitPrice,
+        clearFlashLock: true,
+      );
+      warnings.add(
+        '${item.productName} flash price expired — reverted to regular price.',
+      );
+      changed = true;
+    }
+
+    if (changed) {
+      await _persist(nextItems);
+    }
+    return warnings;
+  }
+
   Future<void> clear() async {
     await ensureLoaded();
+    for (final item in cartItemsNotifier.value) {
+      if (item.flashReservationId.trim().isNotEmpty) {
+        unawaited(releaseFlashDealReservation(item.flashReservationId));
+      }
+    }
     await _persist(const <CartItemData>[]);
   }
 
@@ -603,15 +908,15 @@ class CartStore {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
       storageKey,
-      jsonEncode([
-        for (final item in normalizedItems) item.toJson(),
-      ]),
+      jsonEncode([for (final item in normalizedItems) item.toJson()]),
     );
   }
 }
 
 class CartPage extends StatefulWidget {
-  const CartPage({super.key});
+  const CartPage({super.key, this.platformId = ''});
+
+  final String platformId;
 
   @override
   State<CartPage> createState() => _CartPageState();
@@ -629,19 +934,31 @@ class _CartPageState extends State<CartPage> {
   bool _isEditingCart = false;
   bool _hasInitializedSelection = false;
 
+  String get _platformId => normalizeCartPlatformId(
+    widget.platformId.isNotEmpty
+        ? widget.platformId
+        : CartStore.instance.activePlatformId,
+  );
+
+  String get _platformLabel => cartPlatformDisplayName(_platformId);
+
   @override
   void initState() {
     super.initState();
     _productRepository = createProductRepository();
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
-    CartStore.instance.cartItemsNotifier.addListener(_syncSelectionWithCartItems);
+    CartStore.instance.cartItemsNotifier.addListener(
+      _syncSelectionWithCartItems,
+    );
     _syncSelectionWithCartItems();
   }
 
   @override
   void dispose() {
-    CartStore.instance.cartItemsNotifier.removeListener(_syncSelectionWithCartItems);
+    CartStore.instance.cartItemsNotifier.removeListener(
+      _syncSelectionWithCartItems,
+    );
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -681,10 +998,18 @@ class _CartPageState extends State<CartPage> {
     final nextSelectedEntryKeys = _selectedEntryKeys
         .where(currentEntryKeys.contains)
         .toSet();
-    nextSelectedEntryKeys.addAll(currentEntryKeys.difference(_knownCartEntryKeys));
+    nextSelectedEntryKeys.addAll(
+      currentEntryKeys.difference(_knownCartEntryKeys),
+    );
 
-    final selectionChanged = !_sameKeySet(_selectedEntryKeys, nextSelectedEntryKeys);
-    final knownKeysChanged = !_sameKeySet(_knownCartEntryKeys, currentEntryKeys);
+    final selectionChanged = !_sameKeySet(
+      _selectedEntryKeys,
+      nextSelectedEntryKeys,
+    );
+    final knownKeysChanged = !_sameKeySet(
+      _knownCartEntryKeys,
+      currentEntryKeys,
+    );
     _selectedEntryKeys
       ..clear()
       ..addAll(nextSelectedEntryKeys);
@@ -736,7 +1061,9 @@ class _CartPageState extends State<CartPage> {
   void _cancelSearch() {
     _searchFocusNode.unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
-    if (_searchController.text.isEmpty && _searchQuery.isEmpty && !_isSearching) {
+    if (_searchController.text.isEmpty &&
+        _searchQuery.isEmpty &&
+        !_isSearching) {
       return;
     }
 
@@ -861,6 +1188,7 @@ class _CartPageState extends State<CartPage> {
         context,
         product,
         source: ProductDetailsEntrySource.cart,
+        platformId: _platformId,
       );
     } catch (_) {
       if (!mounted) {
@@ -875,6 +1203,14 @@ class _CartPageState extends State<CartPage> {
   }
 
   Future<void> _openCheckoutPage() async {
+    final warnings = await CartStore.instance.prepareCheckoutFlashLocks();
+    if (!mounted) {
+      return;
+    }
+    if (warnings.isNotEmpty) {
+      AppSnackBar.showError(context, message: warnings.first);
+    }
+
     final selectedItems = CartStore.instance.cartItemsNotifier.value
         .where((item) => _selectedEntryKeys.contains(item.entryKey))
         .toList(growable: false);
@@ -888,6 +1224,7 @@ class _CartPageState extends State<CartPage> {
         for (final item in selectedItems) _bookingLineItemFromCartItem(item),
       ],
       source: BookingFlowSource.cartCheckout,
+      platformId: _platformId,
     );
 
     if (!mounted || bookingAction != BookingPageAction.orderPlaced) {
@@ -945,11 +1282,13 @@ class _CartPageState extends State<CartPage> {
       return items;
     }
 
-    return items.where((item) {
-      return item.productName.toLowerCase().contains(query) ||
-          item.category.toLowerCase().contains(query) ||
-          item.variantName.toLowerCase().contains(query);
-    }).toList(growable: false);
+    return items
+        .where((item) {
+          return item.productName.toLowerCase().contains(query) ||
+              item.category.toLowerCase().contains(query) ||
+              item.variantName.toLowerCase().contains(query);
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -1016,7 +1355,6 @@ class _CartPageState extends State<CartPage> {
                         iconColor: primaryColor,
                         textColor: theme.colorScheme.onSurface,
                         backgroundColor: fieldBackgroundColor,
-                        hintText: 'Search cart items',
                       ),
                     )
                   : ValueListenableBuilder<List<CartItemData>>(
@@ -1025,7 +1363,8 @@ class _CartPageState extends State<CartPage> {
                       builder: (context, items, _) {
                         final selectedItemCount = cartTotalItemCount(
                           items.where(
-                            (item) => _selectedEntryKeys.contains(item.entryKey),
+                            (item) =>
+                                _selectedEntryKeys.contains(item.entryKey),
                           ),
                         );
 
@@ -1036,7 +1375,7 @@ class _CartPageState extends State<CartPage> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                'Cart',
+                                '$_platformLabel Cart',
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -1085,6 +1424,7 @@ class _CartPageState extends State<CartPage> {
             return _CartEmptyState(
               primaryColor: primaryColor,
               secondaryColor: secondaryColor,
+              platformLabel: _platformLabel,
             );
           }
 
@@ -1095,7 +1435,6 @@ class _CartPageState extends State<CartPage> {
 
           if (visibleItems.isEmpty) {
             return _CartSearchEmptyState(
-              primaryColor: primaryColor,
               secondaryColor: secondaryColor,
             );
           }
@@ -1127,7 +1466,10 @@ class _CartPageState extends State<CartPage> {
                         item: item,
                         isSelected: _selectedEntryKeys.contains(item.entryKey),
                         onSelectionChanged: (isSelected) {
-                          _handleItemSelectionChanged(item.entryKey, isSelected);
+                          _handleItemSelectionChanged(
+                            item.entryKey,
+                            isSelected,
+                          );
                         },
                         onOpenProduct: () {
                           unawaited(_openCartItemProductDetails(item));
@@ -1166,14 +1508,19 @@ class _CartEmptyState extends StatelessWidget {
   const _CartEmptyState({
     required this.primaryColor,
     required this.secondaryColor,
+    required this.platformLabel,
   });
 
   final Color primaryColor;
   final Color secondaryColor;
+  final String platformLabel;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final browseLabel = platformLabel.toLowerCase() == 'food'
+        ? 'Start browsing food'
+        : 'Start shopping';
 
     return Center(
       child: Padding(
@@ -1181,14 +1528,10 @@ class _CartEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.shopping_cart_outlined,
-              size: 34,
-              color: primaryColor,
-            ),
+            Icon(Icons.shopping_cart_outlined, size: 34, color: primaryColor),
             const SizedBox(height: 14),
             Text(
-              'Your cart is empty',
+              'Your $platformLabel cart is empty',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -1196,7 +1539,7 @@ class _CartEmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add products from the product details page and they will appear here.',
+              'Add products from $platformLabel and they will appear here only.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: secondaryColor,
                 height: 1.5,
@@ -1210,7 +1553,7 @@ class _CartEmptyState extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).pop(CartPageAction.openShop);
                 },
-                child: const Text('Start shopping'),
+                child: Text(browseLabel),
               ),
             ),
           ],
@@ -1222,11 +1565,9 @@ class _CartEmptyState extends StatelessWidget {
 
 class _CartSearchEmptyState extends StatelessWidget {
   const _CartSearchEmptyState({
-    required this.primaryColor,
     required this.secondaryColor,
   });
 
-  final Color primaryColor;
   final Color secondaryColor;
 
   @override
@@ -1239,12 +1580,8 @@ class _CartSearchEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 34,
-              color: primaryColor,
-            ),
-            const SizedBox(height: 14),
+            const SearchNotFoundArt(size: 120),
+            const SizedBox(height: 12),
             Text(
               'No matching cart items',
               style: theme.textTheme.titleMedium?.copyWith(
@@ -1309,9 +1646,7 @@ class _CartItemCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: homeDashboardCardColor,
-      ),
+      decoration: BoxDecoration(color: homeDashboardCardColor),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1347,18 +1682,19 @@ class _CartItemCard extends StatelessWidget {
                       Expanded(
                         child: LayoutBuilder(
                           builder: (context, constraints) {
-                            final productNameLineCount = _measureCartTextLineCount(
-                              context,
-                              text: item.productName,
-                              style: productNameStyle,
-                              maxWidth: constraints.maxWidth,
-                              maxLines: 2,
-                            );
+                            final productNameLineCount =
+                                _measureCartTextLineCount(
+                                  context,
+                                  text: item.productName,
+                                  style: productNameStyle,
+                                  maxWidth: constraints.maxWidth,
+                                  maxLines: 2,
+                                );
                             final priceTopSpacing = variantName.isNotEmpty
                                 ? 4.0
                                 : productNameLineCount <= 1
-                                    ? 4.0
-                                    : 6.0;
+                                ? 4.0
+                                : 6.0;
                             final stockSection = item.hasStock
                                 ? Row(
                                     children: [
@@ -1373,10 +1709,11 @@ class _CartItemCard extends StatelessWidget {
                                           item.stockLabel,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: secondaryColor,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: secondaryColor,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                         ),
                                       ),
                                     ],
@@ -1404,30 +1741,34 @@ class _CartItemCard extends StatelessWidget {
                                 children: [
                                   _CartQuantityButton(
                                     icon: Icons.remove_rounded,
-                                    onTap: () => CartStore.instance.updateQuantity(
-                                      item.entryKey,
-                                      item.quantity - 1,
-                                    ),
+                                    onTap: () =>
+                                        CartStore.instance.updateQuantity(
+                                          item.entryKey,
+                                          item.quantity - 1,
+                                        ),
                                   ),
                                   SizedBox(
                                     width: 28,
                                     child: Center(
                                       child: Text(
                                         '${item.quantity}',
-                                        style: theme.textTheme.titleSmall?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                        ),
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
                                       ),
                                     ),
                                   ),
                                   _CartQuantityButton(
                                     icon: Icons.add_rounded,
-                                    onTap: item.hasStock &&
+                                    onTap:
+                                        item.hasStock &&
                                             item.quantity < item.availableStock
-                                        ? () => CartStore.instance.updateQuantity(
-                                              item.entryKey,
-                                              item.quantity + 1,
-                                            )
+                                        ? () =>
+                                              CartStore.instance.updateQuantity(
+                                                item.entryKey,
+                                                item.quantity + 1,
+                                              )
                                         : null,
                                   ),
                                 ],
@@ -1454,32 +1795,40 @@ class _CartItemCard extends StatelessWidget {
                                                 color: primaryColor,
                                                 icon: Icons.grid_view_outlined,
                                               ),
-                                            if (item.category.trim().isNotEmpty &&
+                                            if (item.category
+                                                    .trim()
+                                                    .isNotEmpty &&
                                                 (item.discountPercent != null ||
                                                     item.showsTopBrand ||
                                                     item.showsTopReviews))
                                               const SizedBox(width: 6),
-                                            if (item.discountPercent != null) ...[
+                                            if (item.discountPercent !=
+                                                null) ...[
                                               _CartInfoChip(
-                                                label: '-${item.discountPercent}%',
+                                                label:
+                                                    '-${item.discountPercent}%',
                                                 color: const Color(0xFFC62828),
-                                                icon: Icons.local_offer_outlined,
-                                                backgroundColor:
-                                                    const Color(0xFFD32F2F),
+                                                icon:
+                                                    Icons.local_offer_outlined,
+                                                backgroundColor: const Color(
+                                                  0xFFD32F2F,
+                                                ),
                                                 labelColor: Colors.white,
                                                 iconColor: Colors.white,
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                  horizontal: 10,
-                                                  vertical: 6,
-                                                ),
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
                                                 labelStyle: theme
-                                                    .textTheme.labelSmall
+                                                    .textTheme
+                                                    .labelSmall
                                                     ?.copyWith(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 9,
-                                                ),
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 9,
+                                                    ),
                                               ),
                                             ],
                                             if (item.showsTopBrand) ...[
@@ -1493,54 +1842,62 @@ class _CartItemCard extends StatelessWidget {
                                                   194,
                                                   176,
                                                 ),
-                                                icon: Icons.workspace_premium_outlined,
+                                                icon: Icons
+                                                    .workspace_premium_outlined,
                                                 backgroundColor:
                                                     const Color.fromARGB(
-                                                  255,
-                                                  15,
-                                                  194,
-                                                  176,
-                                                ),
+                                                      255,
+                                                      15,
+                                                      194,
+                                                      176,
+                                                    ),
                                                 labelColor: Colors.white,
                                                 iconColor: Colors.white,
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                  horizontal: 10,
-                                                  vertical: 6,
-                                                ),
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
                                                 labelStyle: theme
-                                                    .textTheme.labelSmall
+                                                    .textTheme
+                                                    .labelSmall
                                                     ?.copyWith(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 9,
-                                                ),
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 9,
+                                                    ),
                                               ),
                                             ],
                                             if (item.showsTopReviews) ...[
-                                              if (item.discountPercent != null ||
+                                              if (item.discountPercent !=
+                                                      null ||
                                                   item.showsTopBrand)
                                                 const SizedBox(width: 6),
                                               _CartInfoChip(
                                                 label: 'Top Rating',
                                                 color: const Color(0xFFF9A825),
-                                                icon: Icons.star_outline_rounded,
-                                                backgroundColor:
-                                                    const Color(0xFFF9A825),
+                                                icon:
+                                                    Icons.star_outline_rounded,
+                                                backgroundColor: const Color(
+                                                  0xFFF9A825,
+                                                ),
                                                 labelColor: Colors.white,
                                                 iconColor: Colors.white,
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                  horizontal: 10,
-                                                  vertical: 6,
-                                                ),
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
                                                 labelStyle: theme
-                                                    .textTheme.labelSmall
+                                                    .textTheme
+                                                    .labelSmall
                                                     ?.copyWith(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 9,
-                                                ),
+                                                      color: Colors.white,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      fontSize: 9,
+                                                    ),
                                               ),
                                             ],
                                           ],
@@ -1575,33 +1932,37 @@ class _CartItemCard extends StatelessWidget {
                                       children: [
                                         _CartPriceText(
                                           amount: item.totalPrice,
-                                          style: theme.textTheme.titleMedium?.copyWith(
-                                            color: primaryColor,
-                                            fontWeight: FontWeight.w800,
-                                          ),
+                                          style: theme.textTheme.titleMedium
+                                              ?.copyWith(
+                                                color: primaryColor,
+                                                fontWeight: FontWeight.w800,
+                                              ),
                                         ),
                                         if (item.hasDiscount) ...[
                                           const SizedBox(width: 8),
                                           _CartPriceText(
                                             amount: item.totalOriginalPrice,
-                                            style: theme.textTheme.bodySmall?.copyWith(
-                                              color: secondaryColor,
-                                              decoration:
-                                                  TextDecoration.lineThrough,
-                                            ),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: secondaryColor,
+                                                  decoration: TextDecoration
+                                                      .lineThrough,
+                                                ),
                                           ),
                                         ],
                                       ],
                                     ),
                                   ),
                                 ),
+                                if (item.hasFlashLock) ...[
+                                  const SizedBox(height: 6),
+                                  _CartFlashHoldBadge(item: item),
+                                ],
                                 const SizedBox(height: 4),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    Expanded(
-                                      child: stockSection,
-                                    ),
+                                    Expanded(child: stockSection),
                                     const SizedBox(width: 12),
                                     quantitySection,
                                   ],
@@ -1624,10 +1985,7 @@ class _CartItemCard extends StatelessWidget {
 }
 
 class _CartItemImage extends StatelessWidget {
-  const _CartItemImage({
-    required this.item,
-    required this.primaryColor,
-  });
+  const _CartItemImage({required this.item, required this.primaryColor});
 
   final CartItemData item;
   final Color primaryColor;
@@ -1647,19 +2005,19 @@ class _CartItemImage extends StatelessWidget {
           width: 88,
           height: 88,
           child: imageUrl.isEmpty
-              ? _CartImageFallback(
-                  primaryColor: primaryColor,
-                  initial: initial,
-                )
-              : Image.network(
-                  imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _CartImageFallback(
-                      primaryColor: primaryColor,
-                      initial: initial,
-                    );
-                  },
+              ? _CartImageFallback(primaryColor: primaryColor, initial: initial)
+              : ColoredBox(
+                  color: Colors.white,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _CartImageFallback(
+                        primaryColor: primaryColor,
+                        initial: initial,
+                      );
+                    },
+                  ),
                 ),
         ),
       ),
@@ -1668,10 +2026,7 @@ class _CartItemImage extends StatelessWidget {
 }
 
 class _CartImageFallback extends StatelessWidget {
-  const _CartImageFallback({
-    required this.primaryColor,
-    required this.initial,
-  });
+  const _CartImageFallback({required this.primaryColor, required this.initial});
 
   final Color primaryColor;
   final String initial;
@@ -1684,9 +2039,9 @@ class _CartImageFallback extends StatelessWidget {
       child: Text(
         initial,
         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: primaryColor,
-              fontWeight: FontWeight.w800,
-            ),
+          color: primaryColor,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -1720,7 +2075,8 @@ class _CartInfoChip extends StatelessWidget {
     final resolvedIconColor = iconColor ?? resolvedLabelColor;
 
     return Container(
-      padding: padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: resolvedBackgroundColor,
         borderRadius: BorderRadius.circular(8),
@@ -1729,11 +2085,7 @@ class _CartInfoChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: 12,
-              color: resolvedIconColor,
-            ),
+            Icon(icon, size: 12, color: resolvedIconColor),
             const SizedBox(width: 4),
           ],
           Text(
@@ -1759,19 +2111,14 @@ class _CartInfoChip extends StatelessWidget {
 }
 
 class _CartDiscountSummaryBadge extends StatelessWidget {
-  const _CartDiscountSummaryBadge({
-    required this.label,
-  });
+  const _CartDiscountSummaryBadge({required this.label});
 
   final String label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFFD32F2F),
         borderRadius: BorderRadius.circular(8),
@@ -1779,19 +2126,16 @@ class _CartDiscountSummaryBadge extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
 }
 
 class _CartQuantityButton extends StatelessWidget {
-  const _CartQuantityButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _CartQuantityButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback? onTap;
@@ -1861,14 +2205,15 @@ class _CartSummaryBar extends StatelessWidget {
     final bottomPadding = mediaPadding.bottom;
     final footerTargetHeight = mediaPadding.top + kToolbarHeight;
     final minimumHeight = bottomPadding + 64.0;
-    final resolvedHeight =
-        footerTargetHeight > minimumHeight ? footerTargetHeight : minimumHeight;
+    final resolvedHeight = footerTargetHeight > minimumHeight
+        ? footerTargetHeight
+        : minimumHeight;
     final contentHeight = resolvedHeight - bottomPadding;
     final controlHeight = contentHeight <= 52
         ? 52.0
         : contentHeight >= 56
-            ? 56.0
-            : contentHeight;
+        ? 56.0
+        : contentHeight;
     final actionButtonHeight = controlHeight - 8;
 
     return SizedBox(
@@ -1981,7 +2326,9 @@ class _CartSummaryBar extends StatelessWidget {
                           width: actionButtonHeight,
                           height: actionButtonHeight,
                           child: IconButton(
-                            onPressed: itemCount <= 0 ? null : onMoveToFavorites,
+                            onPressed: itemCount <= 0
+                                ? null
+                                : onMoveToFavorites,
                             tooltip: 'Move selected items to favorites',
                             style: IconButton.styleFrom(
                               foregroundColor: primaryColor,
@@ -2076,10 +2423,7 @@ int _measureCartTextLineCount(
   return lineCount > maxLines ? maxLines : lineCount;
 }
 
-int _normalizeCartQuantity(
-  int quantity, {
-  required int availableStock,
-}) {
+int _normalizeCartQuantity(int quantity, {required int availableStock}) {
   final normalizedQuantity = quantity.clamp(1, 999).toInt();
   if (availableStock > 0 && normalizedQuantity > availableStock) {
     return availableStock;
@@ -2088,33 +2432,104 @@ int _normalizeCartQuantity(
   return normalizedQuantity;
 }
 
+class _CartFlashHoldBadge extends StatefulWidget {
+  const _CartFlashHoldBadge({required this.item});
+
+  final CartItemData item;
+
+  @override
+  State<_CartFlashHoldBadge> createState() => _CartFlashHoldBadgeState();
+}
+
+class _CartFlashHoldBadgeState extends State<_CartFlashHoldBadge> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  @override
+  void didUpdateWidget(covariant _CartFlashHoldBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.reservationExpiresAt !=
+        widget.item.reservationExpiresAt) {
+      _tick();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _tick() {
+    final expiresAt = widget.item.reservationExpiresAtDate;
+    final next = expiresAt == null
+        ? Duration.zero
+        : expiresAt.difference(DateTime.now());
+    if (!mounted) return;
+    setState(() {
+      _remaining = next.isNegative ? Duration.zero : next;
+    });
+  }
+
+  String _format(Duration value) {
+    final totalSeconds = value.inSeconds;
+    if (totalSeconds <= 0) return 'expired';
+    final minutes = value.inMinutes;
+    final seconds = value.inSeconds.remainder(60);
+    if (minutes >= 60) {
+      final hours = value.inHours;
+      final mins = value.inMinutes.remainder(60);
+      return '${hours}h ${mins}m';
+    }
+    return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final expired = _remaining <= Duration.zero;
+    return Row(
+      children: [
+        Icon(
+          Icons.bolt_rounded,
+          size: 14,
+          color: expired ? const Color(0xFF94A3B8) : const Color(0xFFD97706),
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            expired
+                ? 'Flash hold expired — refresh at checkout'
+                : 'Flash price locked · ${_format(_remaining)}',
+            style: TextStyle(
+              color: expired
+                  ? const Color(0xFF64748B)
+                  : const Color(0xFFB45309),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CartPriceText extends StatelessWidget {
-  const _CartPriceText({
-    required this.amount,
-    this.style,
-  });
+  const _CartPriceText({required this.amount, this.style});
 
   final double amount;
   final TextStyle? style;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedStyle = DefaultTextStyle.of(context).style.merge(style);
-    final symbolFontSize = (resolvedStyle.fontSize ?? 14) * 0.75;
-
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: '\u20B1',
-            style: resolvedStyle.copyWith(fontSize: symbolFontSize),
-          ),
-          TextSpan(
-            text: formatCurrencyAmount(amount),
-            style: resolvedStyle,
-          ),
-        ],
-      ),
-    );
+    return AppPriceText(amount: amount, style: style);
   }
 }

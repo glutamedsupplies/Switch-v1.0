@@ -1,0 +1,438 @@
+/* Shared Super Admin summary card design for Admin Seller workspaces. */
+
+:root {
+  --admin-seller-summary-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
+  --admin-seller-summary-shadow-hover: 0 18px 36px rgba(15, 23, 42, 0.1);
+  --admin-seller-summary-shadow-active: 0 18px 36px rgba(var(--accent-rgb, 37, 99, 235), 0.12);
+  --admin-seller-summary-border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.super-admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.super-admin-stat {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas:
+    "icon label"
+    "icon value"
+    "icon trend";
+  column-gap: 12px;
+  row-gap: 5px;
+  align-items: center;
+  min-width: 0;
+  padding: 16px;
+  border: var(--admin-seller-summary-border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--admin-seller-summary-shadow);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.super-admin-stat span {
+  color: var(--text-secondary, #52607a);
+  font-size: 12px;
+  margin-right: 4px;
+  font-weight: 500;
+}
+
+.super-admin-stat__label {
+  grid-area: label;
+  align-self: end;
+  line-height: 1.2;
+}
+
+.super-admin-stat .super-admin-stat__icon {
+  grid-area: icon;
+  display: inline-grid;
+  place-items: center;
+  align-self: start;
+  width: 44px;
+  height: 44px;
+  padding-top: 19px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--accent, #2563eb);
+  text-transform: none;
+}
+
+.super-admin-stat .super-admin-stat__icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.super-admin-stat strong {
+  grid-area: value;
+  align-self: start;
+  color: var(--text-primary, #162033);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.super-admin-stat__trend {
+  grid-area: trend;
+  align-self: start;
+  min-width: 0;
+}
+
+.super-admin-stat__trend-value,
+.super-admin-stat__trend-period {
+  display: inline;
+}
+
+.super-admin-stat__trend.is-neutral .super-admin-stat__trend-value {
+  margin-right: 4px;
+}
+
+.super-admin-stat .super-admin-stat__trend.is-up .super-admin-stat__trend-value {
+  color: #15803d;
+  margin-right: 4px;
+}
+
+.super-admin-stat .super-admin-stat__trend.is-down .super-admin-stat__trend-value {
+  color: #b91c1c;
+  margin-right: 4px;
+}
+
+button.super-admin-stat {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  appearance: none;
+  color: inherit;
+}
+
+button.super-admin-stat:hover,
+button.super-admin-stat:focus-visible {
+  border-color: rgba(var(--accent-rgb, 37, 99, 235), 0.24);
+  outline: none;
+  box-shadow: var(--admin-seller-summary-shadow-hover);
+}
+
+button.super-admin-stat.is-active {
+  border-color: rgba(var(--accent-rgb, 37, 99, 235), 0.34);
+  box-shadow: var(--admin-seller-summary-shadow-active);
+}
+
+.super-admin-stat[data-admin-summary-tone="total"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="all"] .super-admin-stat__icon {
+  color: var(--accent, #2563eb);
+}
+
+.super-admin-stat[data-admin-summary-tone="active"] .super-admin-stat__icon {
+  color: #15803d;
+}
+
+.super-admin-stat[data-admin-summary-tone="inactive"] .super-admin-stat__icon {
+  color: #64748b;
+}
+
+.super-admin-stat[data-admin-summary-tone="online"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="live"] .super-admin-stat__icon {
+  color: #346e90;
+}
+
+.super-admin-stat[data-admin-summary-tone="pending"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="review"] .super-admin-stat__icon {
+  color: #b45309;
+}
+
+.super-admin-stat[data-admin-summary-tone="revision"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="restricted"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="banned"] .super-admin-stat__icon {
+  color: #b91c1c;
+}
+
+.super-admin-stat[data-admin-summary-tone="processing"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="progress"] .super-admin-stat__icon {
+  color: #b45309;
+}
+
+.super-admin-stat[data-admin-summary-tone="delivery"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="ready"] .super-admin-stat__icon {
+  color: #7c3aed;
+}
+
+.super-admin-stat[data-admin-summary-tone="completed"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="shipped"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="new"] .super-admin-stat__icon {
+  color: #15803d;
+}
+
+.super-admin-stat[data-admin-summary-tone="leave"] .super-admin-stat__icon {
+  color: #b45309;
+}
+
+.super-admin-stat[data-admin-summary-tone="new-stock"] .super-admin-stat__icon {
+  color: #15803d;
+}
+
+.super-admin-stat[data-admin-summary-tone="low-stock"] .super-admin-stat__icon {
+  color: #b45309;
+}
+
+.super-admin-stat[data-admin-summary-tone="out-of-stock"] .super-admin-stat__icon {
+  color: #b91c1c;
+}
+
+.super-admin-stat[data-admin-summary-tone="near-expiry"] .super-admin-stat__icon {
+  color: #c2410c;
+}
+
+.super-admin-stat[data-admin-summary-tone="expired"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="expired-product"] .super-admin-stat__icon {
+  color: #b91c1c;
+}
+
+.super-admin-stat[data-admin-summary-tone="dashboard"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="company"] .super-admin-stat__icon {
+  color: var(--accent, #2563eb);
+}
+
+.super-admin-stat[data-admin-summary-tone="listing"] .super-admin-stat__icon,
+.super-admin-stat[data-admin-summary-tone="tools"] .super-admin-stat__icon {
+  color: #346e90;
+}
+
+.super-admin-stat[data-admin-summary-tone="settings"] .super-admin-stat__icon {
+  color: #64748b;
+}
+
+.main-summary.super-admin-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.product-listing-summary.super-admin-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin: 4px 0 2px;
+}
+
+.product-listing-summary .super-admin-stat {
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--admin-seller-font, "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif);
+}
+
+.product-listing-summary .super-admin-stat:hover,
+.product-listing-summary .super-admin-stat:focus-visible,
+.product-listing-summary .super-admin-stat.is-active {
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: var(--admin-seller-summary-shadow);
+  outline: none;
+}
+
+/* Legacy Admin Seller summary cards — same Super Admin shadow treatment. */
+.employee-summary-card,
+.stock-summary-card,
+.main-orders-summary-card {
+  border: var(--admin-seller-summary-border) !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  box-shadow: var(--admin-seller-summary-shadow) !important;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease !important;
+}
+
+.stock-summary-card::after {
+  display: none !important;
+}
+
+body.stock-main-inventory-embedded.stock-inventory-table-view .stock-summary-card,
+body.main-orders-embedded .main-orders-summary-card {
+  border: var(--admin-seller-summary-border) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--admin-seller-summary-shadow) !important;
+  transform: none !important;
+}
+
+body.stock-main-inventory-embedded.stock-inventory-table-view .stock-summary-grid.super-admin-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 18px;
+}
+
+body.stock-main-inventory-embedded.stock-inventory-table-view .stock-summary-grid.super-admin-stats .stock-summary-card {
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+}
+
+body.stock-main-inventory-embedded.stock-inventory-table-view .stock-summary-grid.super-admin-stats .stock-summary-card:hover,
+body.stock-main-inventory-embedded.stock-inventory-table-view .stock-summary-grid.super-admin-stats .stock-summary-card:focus-visible,
+body.stock-main-inventory-embedded.stock-inventory-table-view .stock-summary-grid.super-admin-stats .stock-summary-card.is-active {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: var(--admin-seller-summary-shadow) !important;
+  outline: none !important;
+  transform: none !important;
+}
+
+.stock-summary-card:hover,
+.stock-summary-card:focus-visible,
+.stock-summary-card.is-active {
+  border-color: rgba(var(--accent-rgb, 37, 99, 235), 0.24) !important;
+  box-shadow: var(--admin-seller-summary-shadow-hover) !important;
+  outline: none !important;
+  transform: none !important;
+}
+
+.employee-summary.super-admin-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stock-summary-grid.super-admin-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas:
+    "icon label"
+    "icon value"
+    "icon trend";
+  column-gap: 12px;
+  row-gap: 5px;
+  align-items: center;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 16px;
+  gap: 0;
+  flex-direction: unset;
+  overflow: visible;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card__icon {
+  grid-area: icon;
+  display: inline-grid;
+  place-items: center;
+  align-self: start;
+  width: 44px;
+  height: 44px;
+  padding-top: 19px;
+  border-radius: 999px;
+  background: #ffffff;
+  flex: unset;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card__copy {
+  display: contents;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card__label {
+  grid-area: label;
+  align-self: end;
+  line-height: 1.2;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card__copy strong {
+  grid-area: value;
+  align-self: start;
+  color: var(--text-primary, #162033);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card__copy span:last-child {
+  grid-area: trend;
+  align-self: start;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card--all .stock-summary-card__icon {
+  color: var(--accent, #2563eb);
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card--new .stock-summary-card__icon {
+  color: #15803d;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card--low .stock-summary-card__icon {
+  color: #b45309;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card--out .stock-summary-card__icon {
+  color: #b91c1c;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card--near .stock-summary-card__icon {
+  color: #c2410c;
+}
+
+.stock-summary-grid.super-admin-stats .stock-summary-card--expired .stock-summary-card__icon {
+  color: #b91c1c;
+}
+
+.packing-admin-summary.super-admin-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.main-orders-summary.super-admin-stats {
+  margin-bottom: 14px;
+}
+
+.super-admin-dashboard-stats.super-admin-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 1200px) {
+  .product-listing-summary.super-admin-stats,
+  .stock-summary-grid.super-admin-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .employee-summary.super-admin-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .main-summary.super-admin-stats,
+  .packing-admin-summary.super-admin-stats,
+  .super-admin-dashboard-stats.super-admin-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-listing-summary.super-admin-stats,
+  .stock-summary-grid.super-admin-stats,
+  .employee-summary.super-admin-stats,
+  .main-orders-summary.super-admin-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .main-summary.super-admin-stats,
+  .product-listing-summary.super-admin-stats,
+  .stock-summary-grid.super-admin-stats,
+  .employee-summary.super-admin-stats,
+  .packing-admin-summary.super-admin-stats,
+  .main-orders-summary.super-admin-stats,
+  .super-admin-dashboard-stats.super-admin-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

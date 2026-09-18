@@ -3,12 +3,9 @@
 //
 // User address and contact details management page.
 // Allows users to save, edit, delete, and select from multiple saved address
-// entries. Includes an embedded Google Maps preview for each address.
+// entries. Includes a native Google Maps preview for each address.
 // Uses SharedPreferences for per-account persistent storage.
 // ============================================================================
-
-// dart:async — Provides Timer for debounced map reload scheduling.
-import 'dart:async';
 
 // dart:convert — Provides jsonEncode/jsonDecode for serializing/deserializing
 // saved entries to/from SharedPreferences storage.
@@ -17,16 +14,9 @@ import 'dart:convert';
 // flutter/cupertino — Provides CupertinoSwitch for the "Set as default" toggle.
 import 'package:flutter/cupertino.dart';
 
-// flutter/foundation — Provides HtmlEscape for safely embedding the Google Maps
-// URL into the HTML iframe source attribute.
-import 'package:flutter/foundation.dart';
-
-// flutter/gestures — Provides gesture recognizer factories used by the WebView
-// to enable touch/scroll interactions inside the embedded map.
-import 'package:flutter/gestures.dart';
-
 // flutter/material — Core Flutter UI framework.
 import 'package:flutter/material.dart';
+import 'package:gms_shopping/widgets/skeleton_loading.dart';
 
 // app_snack_bar — Custom snack bar utility for showing success/error messages.
 import 'package:gms_shopping/theme/app_snack_bar.dart';
@@ -35,11 +25,11 @@ import 'package:gms_shopping/theme/app_snack_bar.dart';
 // per-user SharedPreferences key so each account's saved entries are isolated.
 import 'package:gms_shopping/utils/auth_session.dart';
 
+// google_maps_embed_preview — Native Google Maps address preview.
+import 'package:gms_shopping/widgets/google_maps_embed_preview.dart';
+
 // shared_preferences — Flutter plugin for persistent key-value storage on disk.
 import 'package:shared_preferences/shared_preferences.dart';
-
-// webview_flutter — Flutter plugin for embedding the Google Maps iframe preview.
-import 'package:webview_flutter/webview_flutter.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -50,79 +40,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 const BorderRadius _userDetailsFieldBorderRadius = BorderRadius.all(
   Radius.circular(8),
 );
-
-// ============================================================================
-// GOOGLE MAPS EMBED HELPERS
-// ============================================================================
-
-// _userDetailsGoogleMapEmbedUrl — Builds a Google Maps embed URL for the given
-// address. If the address is empty, defaults to the Philippines at zoom level 6.
-// Otherwise appends "Philippines" if not already present and sets zoom to 17.
-String _userDetailsGoogleMapEmbedUrl(String address) {
-  final trimmedAddress = address.trim();
-  final query = trimmedAddress.isEmpty
-      ? 'Philippines'
-      : trimmedAddress.toLowerCase().contains('philippines')
-          ? trimmedAddress
-          : '$trimmedAddress, Philippines';
-  return Uri.https(
-    'www.google.com',
-    '/maps',
-    <String, String>{
-      'q': query,
-      'z': trimmedAddress.isEmpty ? '6' : '17',
-      'output': 'embed',
-    },
-  ).toString();
-}
-
-// _userDetailsGoogleMapHtml — Generates a self-contained HTML document that
-// embeds the Google Maps iframe. The map URL is HTML-escaped before insertion
-// to prevent attribute injection. The iframe fills the entire viewport with
-// no border, scrolling, or margins for a clean preview appearance.
-String _userDetailsGoogleMapHtml(String mapUrl) {
-  final escapedMapUrl =
-      const HtmlEscape(HtmlEscapeMode.attribute).convert(mapUrl);
-
-  return '''
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <style>
-      html,
-      body {
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        overflow: hidden;
-        background: #eef2f7;
-        font-family: Arial, sans-serif;
-      }
-
-      iframe {
-        position: fixed;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        border: 0;
-        background: #eef2f7;
-      }
-    </style>
-  </head>
-  <body>
-    <iframe
-      src="$escapedMapUrl"
-      title="Google Maps address preview"
-      loading="eager"
-      allowfullscreen
-      referrerpolicy="no-referrer-when-downgrade">
-    </iframe>
-  </body>
-</html>
-''';
-}
 
 // ============================================================================
 // UserDetailsResult
@@ -655,7 +572,7 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
             )
           : null,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonFormPanel()
           : _savedEntries.isEmpty
               ? _UserDetailsEmptyState(
                   primaryColor: primaryColor,
@@ -1033,8 +950,6 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
               context,
               const InputDecoration(
                 labelText: 'Client Name',
-                hintText: 'Enter full name',
-                prefixIcon: Icon(Icons.person_outline_rounded),
               ),
             ),
           ),
@@ -1047,8 +962,6 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
               context,
               const InputDecoration(
                 labelText: 'Contact Number',
-                hintText: 'e.g. 09171234567',
-                prefixIcon: Icon(Icons.call_outlined),
               ),
             ),
           ),
@@ -1065,15 +978,19 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
               context,
               const InputDecoration(
                 labelText: 'Address',
-                hintText: 'Enter delivery address',
                 alignLabelWithHint: true,
-                prefixIcon: Icon(Icons.location_on_outlined),
               ),
             ),
           ),
           const SizedBox(height: 14),
-          _UserDetailsMapPreview(
-            addressPreview: _addressController.text.trim(),
+          AspectRatio(
+            aspectRatio: 1,
+            child: GoogleMapsEmbedPreview(
+              address: _addressController.text.trim(),
+              borderRadius: 8,
+              height: null,
+              primaryColor: theme.colorScheme.primary,
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1083,8 +1000,6 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
               context,
               const InputDecoration(
                 labelText: 'Address Code',
-                hintText: 'Landmark (optional)',
-                prefixIcon: Icon(Icons.home_outlined),
               ),
             ),
           ),
@@ -1327,215 +1242,6 @@ class _UserDetailsAirmailBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _UserDetailsAirmailBorderPainter oldDelegate) =>
       oldDelegate.backgroundColor != backgroundColor;
-}
-
-// ========================================================================
-// _UserDetailsMapPreview
-//
-// A StatefulWidget that wraps a WebView to display a live Google Maps embed
-// for the given address string. It shows a loading progress bar while the
-// map is loading and an error state with a reload button if the map fails.
-// The map automatically reloads when the address changes (debounced by 450ms).
-// ========================================================================
-class _UserDetailsMapPreview extends StatefulWidget {
-  const _UserDetailsMapPreview({
-    required this.addressPreview,
-  });
-
-  // addressPreview — The full address string used to generate the Google Maps embed URL.
-  final String addressPreview;
-  // borderRadius — Corner radius for the map container. Defaults to 8 logical pixels.
-  final double borderRadius;
-
-  @override
-  State<_UserDetailsMapPreview> createState() => _UserDetailsMapPreviewState();
-}
-
-// ========================================================================
-// _UserDetailsMapPreviewState
-//
-// Manages the WebViewController for the embedded map, tracks loading progress,
-// handles navigation errors, and schedules map reloads when the address changes.
-// Uses a 3-second fallback timer to dismiss the progress bar if the map stalls.
-// ========================================================================
-class _UserDetailsMapPreviewState extends State<_UserDetailsMapPreview> {
-  late final WebViewController _mapController;
-  Timer? _reloadTimer;           // Debounce timer for address-change reloads.
-  Timer? _loadingFallbackTimer;  // Fallback timer to clear progress bar if map stalls.
-  String _loadedMapUrl = '';     // Tracks the currently loaded map URL to skip redundant loads.
-  int _loadProgress = 0;         // WebView loading progress (0–100).
-  bool _hasMapError = false;     // Set to true when the main frame fails to load.
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize the WebViewController with unrestricted JavaScript (required for Maps embed)
-    // and transparent background so the container color shows through.
-    _mapController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.transparent)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          // onProgress — Updates _loadProgress as the page loads (0–100).
-          onProgress: (progress) {
-            if (!mounted) return;
-            setState(() => _loadProgress = progress);
-          },
-          // onPageStarted — Resets progress and error state when a new page load begins.
-          onPageStarted: (_) {
-            _loadingFallbackTimer?.cancel();
-            if (!mounted) return;
-            setState(() {
-              _loadProgress = 0;
-              _hasMapError = false;
-            });
-          },
-          // onPageFinished — Marks loading as complete (100%) when the page finishes.
-          onPageFinished: (_) {
-            _loadingFallbackTimer?.cancel();
-            if (!mounted) return;
-            setState(() => _loadProgress = 100);
-          },
-          // onWebResourceError — Sets _hasMapError only for main-frame errors (ignore sub-resource errors).
-          onWebResourceError: (error) {
-            if (error.isForMainFrame == false) return;
-            if (!mounted) return;
-            setState(() => _hasMapError = true);
-          },
-        ),
-      );
-    _loadMap(widget.addressPreview);
-  }
-
-  // didUpdateWidget — Detects when the address prop changes and schedules a debounced reload.
-  @override
-  void didUpdateWidget(covariant _UserDetailsMapPreview oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.addressPreview.trim() != widget.addressPreview.trim()) {
-      _scheduleMapReload();
-    }
-  }
-
-  @override
-  void dispose() {
-    _reloadTimer?.cancel();
-    _loadingFallbackTimer?.cancel();
-    super.dispose();
-  }
-
-  // _scheduleMapReload — Cancels any pending reload and schedules a new one after 450ms.
-  // This debounces rapid address changes (e.g., while the user is typing).
-  void _scheduleMapReload() {
-    _reloadTimer?.cancel();
-    _reloadTimer = Timer(const Duration(milliseconds: 450), () {
-      if (mounted) _loadMap(widget.addressPreview);
-    });
-  }
-
-  // _loadMap — Generates the embed URL from the address and loads it into the WebView.
-  // Skips the load if the URL hasn't changed. Resets progress/error state and starts
-  // a 3-second fallback timer to clear the progress bar if the map stalls.
-  void _loadMap(String address) {
-    final nextMapUrl = _userDetailsGoogleMapEmbedUrl(address);
-    if (_loadedMapUrl == nextMapUrl) return; // Skip if URL unchanged.
-    _loadedMapUrl = nextMapUrl;
-    if (mounted) {
-      setState(() {
-        _loadProgress = 0;
-        _hasMapError = false;
-      });
-    }
-    _loadingFallbackTimer?.cancel();
-    // Fallback: if progress hasn't reached 100% after 3 seconds, force it to 100%
-    // to dismiss the progress bar (prevents it from being stuck on slow connections).
-    _loadingFallbackTimer = Timer(const Duration(seconds: 3), () {
-      if (!mounted || _loadProgress >= 100) return;
-      setState(() => _loadProgress = 100);
-    });
-    unawaited(
-      _mapController.loadHtmlString(
-        _userDetailsGoogleMapHtml(nextMapUrl),
-        baseUrl: 'https://www.google.com',
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
-    final surfaceColor =
-        theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface;
-
-    return SizedBox(
-      width: double.infinity,
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaceColor,
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              // The WebView widget filling the entire container.
-              Positioned.fill(
-                child: WebViewWidget(
-                  controller: _mapController,
-                  gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                    Factory<OneSequenceGestureRecognizer>(
-                      () => EagerGestureRecognizer(),
-                    ),
-                  },
-                ),
-              ),
-              // Linear progress bar shown while the map is loading (before 100% and no error).
-              if (_loadProgress < 100 && !_hasMapError)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: LinearProgressIndicator(
-                    minHeight: 3,
-                    value: _loadProgress <= 0 ? null : _loadProgress / 100,
-                    color: primaryColor,
-                    backgroundColor: primaryColor.withOpacity(0.12),
-                  ),
-                ),
-              // Error overlay — shown when the main frame fails to load.
-              // Displays a semi-transparent background with a refresh button.
-              if (_hasMapError)
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: surfaceColor.withOpacity(0.94),
-                    ),
-                    child: Center(
-                      child: IconButton(
-                        onPressed: () => _loadMap(widget.addressPreview),
-                        icon: Icon(
-                          Icons.refresh_rounded,
-                          color: primaryColor,
-                        ),
-                        tooltip: 'Reload map',
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ========================================================================

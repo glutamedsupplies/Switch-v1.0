@@ -1,0 +1,7 @@
+{
+  "preset": "large",
+  "name": "GMS Large Billboard",
+  "font": "large",
+  "style": "large",
+  "note": "Switches the OLED text mode to FreeSans Bold 12pt — big billboard style on the SH1106."
+}

@@ -29,7 +29,11 @@ class _WebAccountRegistrationService implements AccountRegistrationService {
     required String countryCode,
     required String mobileNumber,
     required String email,
-    required String password,
+    String password = '',
+    required String verificationToken,
+    String verificationChannel = 'email',
+    String? preferredLanguage,
+    Map<String, dynamic>? googleProfile,
   }) async {
     try {
       final response = await HttpRequest.request(
@@ -48,6 +52,11 @@ class _WebAccountRegistrationService implements AccountRegistrationService {
           'password': password.trim(),
           'source': 'app',
           'faceVerified': false,
+          'verificationToken': verificationToken.trim(),
+          'verificationChannel': verificationChannel.trim(),
+          if (preferredLanguage != null && preferredLanguage.trim().isNotEmpty)
+            'preferredLanguage': preferredLanguage.trim(),
+          if (googleProfile != null) 'googleProfile': googleProfile,
         })),
       );
 
@@ -68,13 +77,4 @@ class _WebAccountRegistrationService implements AccountRegistrationService {
       );
     }
   }
-}
-
-class AccountRegistrationException implements Exception {
-  const AccountRegistrationException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
 }
