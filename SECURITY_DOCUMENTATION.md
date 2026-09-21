@@ -19,7 +19,7 @@ The signed claims bind `accountId`, role, email, and seller `adminId`. Legacy id
 - `tenantId`
 - `workspaceId`
 
-These values no longer select the authorized account or tenant. A mismatch against the signed session returns `403`; a missing, forged, or expired session returns `401` on protected routes.
+These values no longer select the authorized account or tenant. A mismatch against the signed session returns `403`; a missing, forged, or expired session returns `401` on protected routes. A valid session with the wrong role also returns `403`.
 
 Super admin APIs require a signed, expiring `x-gms-super-admin-token`, which is returned by the super admin login endpoint. The token signature uses `ADMIN_API_SESSION_SECRET`; invalid, forged, and expired sessions receive `401`.
 
@@ -46,10 +46,7 @@ Operational requirements:
 - Confirm a second dry run reports `plaintext=0` before starting the updated backend.
 - Plaintext JSON records are intentionally unable to log in until migrated.
 
-Remaining recommendations:
-
-- Add login rate limiting and account lockout.
-- Never log or return password fields.
+Login endpoints apply per-IP and per-identifier lockout. Too many failed attempts return `429` with `Retry-After` and code `LOGIN_LOCKED`. Never log or return password fields.
 
 ## Signed Sessions
 
@@ -70,21 +67,34 @@ Current API protections include:
 - Some validation for required fields and duplicate records.
 - Session-derived account and tenant filtering for migrated routes.
 - Super admin token checks on privileged endpoints.
-- Upload size limits.
-- CORS preflight handling.
+- Upload size limits and signed-session checks on upload routes.
+- CORS allowlist (never `*`).
+- Login lockout plus rate limits on uploads, AI reply, and visual search.
+
+### CORS allowlist
+
+`Access-Control-Allow-Origin` is never `*`. The server reflects the request `Origin` only when it is a localhost Flutter/admin origin:
+
+| Host | Scheme | Ports | Typical use |
+| --- | --- | --- | --- |
+| `localhost` | `http` or `https` | any | Flutter Chrome (`flutter run -d chrome`), local admin |
+| `127.0.0.1` | `http` or `https` | any | Backend-served admin at `http://127.0.0.1:8080` |
+| `[::1]` | `http` or `https` | any | IPv6 loopback |
+
+Add extra exact origins with `CORS_ALLOWED_ORIGINS` (comma-separated). Requests that send a non-allowlisted `Origin` to `/api/*` receive `403` (`CORS_ORIGIN_FORBIDDEN`). Same-origin, curl, and native Flutter clients that omit `Origin` are unchanged.
+
+### Listen address
+
+The HTTP server binds `BIND_HOST` (default `127.0.0.1`). Override with `BIND_HOST=0.0.0.0` to listen on all NICs for LAN devices.
 
 Risks:
 
-- `Access-Control-Allow-Origin` is currently `*`.
 - Some non-critical legacy routes still need migration to the central app-session policy.
-- Many upload endpoints lack explicit auth checks inside the handler.
-- There is no global rate limiting.
 - There is no CSRF protection for browser-based admin actions.
 
 Recommendations:
 
-- Restrict CORS to trusted origins.
-- Require signed auth for every non-public API.
+- Require signed auth for every remaining non-public API.
 - Add CSRF protection if cookie sessions are used.
 - Validate roles and permissions server-side.
 - Add audit logs for privileged actions.
@@ -127,11 +137,11 @@ Risks:
 - Public uploads can expose sensitive documents.
 - MIME type and extension checks are not enough for malware protection.
 - Large uploads can consume disk space.
-- No per-user upload authorization was found in upload handlers.
+
+`/api/uploads`, `/api/chat-uploads`, `/api/review-uploads`, and `/api/document-uploads` require a valid signed session (or super-admin token) **before** the body is read or validated. Unauthenticated callers receive `401`, not `400`.
 
 Recommendations:
 
-- Require auth for uploads.
 - Store employee documents outside public static storage.
 - Scan uploads for malware.
 - Enforce strict allowlists and content sniffing.
@@ -140,15 +150,23 @@ Recommendations:
 
 ## Rate Limiting
 
-No rate limiter was found.
+In-memory limiters (per process) cover:
 
-Endpoints needing rate limits:
+| Area | Default | Env |
+| --- | --- | --- |
+| Login lockout per IP + identifier | 5 failures / 15 min | `LOGIN_RATE_LIMIT_MAX`, `LOGIN_RATE_LIMIT_WINDOW_MS` |
+| Login cap per IP | 40 failures / 15 min | `LOGIN_RATE_LIMIT_IP_MAX` |
+| Uploads | 30 / 15 min per session or IP | `UPLOAD_RATE_LIMIT_MAX` |
+| AI reply / image enhancement | 20 / 10 min | `AI_RATE_LIMIT_MAX` |
+| Visual search | 30 / 10 min | `VISUAL_SEARCH_RATE_LIMIT_MAX` |
 
-- Login endpoints
-- Upload endpoints
-- AI reply endpoint
-- Visual search endpoint
-- Product/account/order write endpoints
+Exceeded limits return `429` with `Retry-After`. Login lockout uses code `LOGIN_LOCKED`.
+
+## PayMongo seller checkout
+
+`POST /api/payments/paymongo/seller-webhook` always requires `PAYMONGO_WEBHOOK_SECRET`. Missing secret → `503`. Missing or invalid `paymongo-signature` → `401`. Unsigned webhooks never activate a seller.
+
+`POST /api/account/become-seller/confirm-payment` requires a signed app session (`401` if missing). When PayMongo hosted checkout is enabled (`PAYMONGO_SECRET_KEY` set), that route will not activate a seller until the webhook has marked the checkout intent paid (`409` / `PAYMONGO_WEBHOOK_REQUIRED`). Manual/free local onboarding still works for an authenticated session when PayMongo is not enabled.
 
 ## Potential Security Risks
 
@@ -156,8 +174,8 @@ Endpoints needing rate limits:
 | --- | --- | --- |
 | High | Public file uploads can expose media/documents. | `backend/public/uploads`, upload handlers |
 | Medium | Some non-critical legacy routes are not yet covered by central app-session policy. | Backend route dispatcher |
-| Medium | CORS allows all origins. | `backend/server.js` |
-| Medium | No rate limiting or brute-force protection. | Backend API |
+| Medium | CORS is loopback-only by default; production needs `CORS_ALLOWED_ORIGINS`. | `backend/security/cors.js` |
+| Medium | Rate limits are in-memory per process. | `backend/security/rateLimit.js` |
 | Medium | No CSRF protection for browser admin actions. | Admin web console |
 | Medium | JSON file database has no transaction/locking protections. | `backend/data` helpers |
 | Low | Browser local/session storage can be tampered with by scripts running on the same origin. | `backend/public/*.js` |
@@ -166,8 +184,7 @@ Endpoints needing rate limits:
 
 1. Extend central session policy to remaining non-critical legacy routes.
 2. Implement server-side RBAC/permission checks.
-3. Restrict CORS and add CSRF protection.
-4. Protect uploads and move documents to private storage.
-5. Add rate limiting and request size controls per endpoint.
-6. Add structured audit logs for admin/super admin actions.
-7. Move from JSON files to a database with constraints and backups.
+3. Add CSRF protection for cookie admin flows.
+4. Move documents to private storage.
+5. Add structured audit logs for admin/super admin actions.
+6. Move from JSON files to a database with constraints and backups.

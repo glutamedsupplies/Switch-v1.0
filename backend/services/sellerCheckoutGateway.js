@@ -136,8 +136,17 @@ function parsePaymongoSignatureHeader(value) {
   return parsed;
 }
 
+function signaturesMatch(expectedHex, receivedHex) {
+  const expected = String(expectedHex || "");
+  const received = String(receivedHex || "");
+  if (!expected || !received || expected.length !== received.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+}
+
 function verifyPaymongoWebhook({ rawBody, signatureHeader, webhookSecret, livemode }) {
-  if (!webhookSecret) {
+  if (!webhookSecret || !signatureHeader) {
     return false;
   }
   const parsed = parsePaymongoSignatureHeader(signatureHeader);
@@ -148,11 +157,15 @@ function verifyPaymongoWebhook({ rawBody, signatureHeader, webhookSecret, livemo
     .createHmac("sha256", webhookSecret)
     .update(`${parsed.t}.${rawBody}`)
     .digest("hex");
-  const received = livemode ? parsed.li : parsed.te;
-  if (!received || received.length !== expected.length) {
-    return false;
+
+  if (livemode === true) {
+    return signaturesMatch(expected, parsed.li);
   }
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+  if (livemode === false) {
+    return signaturesMatch(expected, parsed.te);
+  }
+
+  return signaturesMatch(expected, parsed.te) || signaturesMatch(expected, parsed.li);
 }
 
 module.exports = {
