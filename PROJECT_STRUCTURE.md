@@ -100,6 +100,9 @@ Each service generally has a base interface, an IO implementation, a web impleme
 | Path | Purpose |
 | --- | --- |
 | `backend/server.js` | Node.js HTTP server, API handlers, JSON file storage helpers, uploads, visual search, AI chat calls, and static file serving. |
+| `backend/services/analyticsApi.js` | Auth-gated analytics ingest, funnel, and GMV summary over PostgreSQL. |
+| `backend/db/migrations/` | Numbered Postgres schema, including `021_analytics_events.sql`. |
+| `ANALYTICS.md` | Funnel event taxonomy and API notes. |
 | `backend/package.json` | Backend package metadata and `sharp` dependency. |
 | `backend/package-lock.json` | Locked backend dependency versions. |
 | `backend/README.md` | Backend run instructions and basic product API notes. |

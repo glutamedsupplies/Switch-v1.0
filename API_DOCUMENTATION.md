@@ -179,6 +179,18 @@ Order line objects include stable `id` / `orderGroupId` plus funnel timestamps (
 | `POST` | `/api/orders/{groupId}/cancel` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional empty body | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/cancel` |
 | `POST` | `/api/orders/{groupId}/cancel-request/{accept\|reject}` | Group ID and decision path | Optional empty body | `{ "decision": "accept", "message": "Cancellation request accepted." }` | Admin scope | `POST /api/orders/1780000000000/cancel-request/accept` |
 
+### Analytics
+
+Append-only funnel events. Taxonomy and math: [ANALYTICS.md](ANALYTICS.md). Computed from PostgreSQL `analytics_events` plus `orders` / `order_items` (not browser JSON). Default range is 7 days.
+
+| Method | URL | Parameters | Request Body | Response | Auth | Example |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST` | `/api/analytics/events` | None | One event or `{ "events": [ ... ] }` with allowlisted `eventName` | `{ "accepted": 1, "events": [ { "id": "ae_…", "eventName": "product_view" } ] }` | Signed buyer/seller/employee session | `POST /api/analytics/events` |
+| `GET` | `/api/analytics/funnel` | Optional `days` (default 7), `from`, `to`; Super Admin may pass `adminId` | None | `{ "range": { "from", "to", "days" }, "stages": [ { "eventName", "count", "conversionFromPrevious" } ], "cancel": { "count", "rate" } }` | Seller/employee session or super admin token | `GET /api/analytics/funnel?days=7` |
+| `GET` | `/api/analytics/summary` | Same range params as funnel | None | `{ "gmv": 0, "aov": 0, "paidOrderCount": 0, "placedOrderCount": 0, "cancelledOrderCount": 0, "cancelRate": 0, "currency": "PHP" }` | Seller/employee session or super admin token | `GET /api/analytics/summary?days=7` |
+
+Unknown `eventName` values return `400`. Missing session returns `401`. Buyer sessions cannot read funnel/summary (`403`). Without Postgres the routes return `503 ANALYTICS_UNAVAILABLE`. Pack/ship/cancel and order writes also record `place_order` / `payment_*` / `pack` / `ship` / `cancel` server-side.
+
 ### Chat Support
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |

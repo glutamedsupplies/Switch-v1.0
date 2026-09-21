@@ -8,6 +8,7 @@ Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, st
 | --- | --- | --- |
 | Accounts / auth / trending searches | PostgreSQL (`001`–`012`) | JSON only if Postgres is unset or unreachable |
 | Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`019`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
+| Marketplace analytics events + funnel/GMV | PostgreSQL (`021`) | none (append-only events; no JSON fallback) |
 | Chat, partners, activity, followers, and similar | JSON files | n/a (Phase B will move chat) |
 
 `npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`.
@@ -55,7 +56,9 @@ erDiagram
   PRODUCTS ||--o{ ORDER_ITEMS : ordered_product
   PRODUCTS ||--o{ INVENTORY_MOVEMENTS : stock_ledger
   ORDERS ||--o{ ORDER_ITEMS : contains
+  ORDERS ||--o{ ANALYTICS_EVENTS : funnel
   ORDERS ||--o{ INVENTORY_MOVEMENTS : fulfillment
+  PRODUCTS ||--o{ ANALYTICS_EVENTS : viewed_or_carted
   STORE_TYPES ||--o{ ACCOUNTS : business_type
   ACCOUNTS ||--o{ FOLLOWERS : seller_followed
   ACCOUNTS ||--o{ ACTIVITY_LOG : actor_or_scope
@@ -79,7 +82,7 @@ erDiagram
 PostgreSQL (when configured):
 
 - Unique: `accounts.email`, seller `admin_id`, employee `(admin_id, employee_id)`, `store_types.name_normalized`, category name per store type or admin workspace, product `(admin_id, barcode)` when barcode is non-empty, `orders.order_group_id`.
-- Indexes include `admin_id`, `account_id`, `product_id`, `approval_status`, `created_at`, and order/product lifecycle times (`paid_at`, `packed_at`, `shipped_at`, `submitted_at`, `approved_at`).
+- Indexes include `admin_id`, `account_id`, `product_id`, `approval_status`, `created_at`, order/product lifecycle times (`paid_at`, `packed_at`, `shipped_at`, `submitted_at`, `approved_at`), and analytics `(event_name, created_at)`, `order_id`, `product_id`, `admin_id`.
 - Catalog writes run in a SQL transaction per sync. JSON backups are not transactional.
 - `adminId` remains the primary multi-tenant scope. Product/order rows do not FK to `accounts` so JSON imports can run before every seller/buyer exists in Postgres.
 
@@ -90,7 +93,7 @@ JSON fallback (when `DATABASE_URL` is unset):
 
 ## PostgreSQL tables (Phase A catalog / orders)
 
-Applied by `013_store_types.sql` through `019_order_payment_tracking.sql`.
+Applied by `013_store_types.sql` through `019_order_payment_tracking.sql`, plus `021_analytics_events.sql`.
 
 ### `store_types`
 
@@ -132,6 +135,23 @@ Step 6 payment / tracking columns (migration `019`) live on the **group** (`orde
 | `payment_reference` | Merchant reference |
 | `payment_provider` / `payment_status` | e.g. `paymongo` |
 | `tracking_number` | Optional ship/pack tracking no. |
+
+### `analytics_events`
+
+Append-only funnel events (migration `021`). See [ANALYTICS.md](ANALYTICS.md) for the taxonomy (`product_view`, `add_to_cart`, `begin_checkout`, `place_order`, `payment_initiated`, `payment_succeeded`, `payment_failed`, `pack`, `ship`, `cancel`).
+
+| Column | Notes |
+| --- | --- |
+| `id` | Application key (`ae_*`). |
+| `admin_id` | Seller tenant. Forced from the signed session for seller/employee ingest. |
+| `user_id` / `session_id` | Nullable buyer account and client session. |
+| `event_name` | Allowlisted taxonomy value. |
+| `product_id` | Nullable; indexed, not FK (views survive listing deletion). |
+| `order_id` | Nullable FK to `orders(id)` `ON DELETE SET NULL`. Unknown ids are stored as NULL. |
+| `properties` | JSONB extras (`quantity`, `variantId`, `source`, …). |
+| `created_at` | Ingest time. |
+
+`GET /api/analytics/funnel` and `GET /api/analytics/summary` read this table plus `orders` / `order_items` (GMV is the sum of paid line totals). There is no JSON file fallback.
 
 ### `inventory_movements`
 

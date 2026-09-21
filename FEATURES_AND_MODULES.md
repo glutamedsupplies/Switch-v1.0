@@ -89,8 +89,8 @@
 - **Purpose:** Shows store operational metrics, sales/order charts, low/dead stock, staff/user counts, top selling/top reviewed products, and follower counts.
 - **Main files:** `backend/public/admin_dashboard.html/js`, `backend/public/insight.html/js`, `backend/public/product_insight.html/js`, `backend/public/employee_order_insight.html`.
 - **User flow:** Admin opens dashboard or insights, scripts fetch orders/products/accounts/chat/partner data and render summary panels.
-- **Dependencies:** `/api/orders`, `/api/products`, `/api/accounts`, `/api/admin-followers-count`, `/api/chat-support`.
-- **Future improvements:** Move expensive aggregation logic server-side and add date-range export APIs.
+- **Dependencies:** `/api/orders`, `/api/products`, `/api/accounts`, `/api/admin-followers-count`, `/api/chat-support`, `/api/analytics/funnel`, `/api/analytics/summary`.
+- **Future improvements:** Surface the server funnel/GMV endpoints on dashboard cards and add CSV export.
 
 ### Products and Listing Approval
 
@@ -113,8 +113,16 @@
 - **Purpose:** Supports operational order processing from order review through packing, shipping, tracking, cancellation, and concern handling.
 - **Main files:** `backend/public/packing_dashboard.html/js`, `backend/public/traking.html/js`, `backend/public/concern.html/js`, `backend/public/employee_dashboard.html/js`.
 - **User flow:** Admin/employee reviews orders, packs orders, ships orders, handles cancellation requests, and monitors tracking.
-- **Dependencies:** `/api/orders`, `/api/orders/{group}/pack`, `/api/orders/{group}/ship`, `/api/orders/{group}/cancel`, `/api/orders/{group}/cancel-request/{decision}`.
+- **Dependencies:** `/api/orders`, `/api/orders/{group}/pack`, `/api/orders/{group}/ship`, `/api/orders/{group}/cancel`, `/api/orders/{group}/cancel-request/{decision}`. Pack/ship/cancel also append analytics events.
 - **Future improvements:** Integrate real courier APIs and use explicit shipment/tracking records.
+
+### Marketplace analytics (funnel + GMV)
+
+- **Purpose:** Pre-launch baseline so launch day has browse → cart → checkout → order → payment → pack/ship/cancel visibility.
+- **Main files:** `backend/db/migrations/021_analytics_events.sql`, `backend/services/analyticsApi.js`, `ANALYTICS.md`.
+- **User flow:** Clients POST `product_view` / `add_to_cart` / `begin_checkout`. Order writes and pack/ship/cancel record the remaining stages. Seller/super-admin GET funnel conversion rates and GMV/AOV/cancel rate.
+- **Dependencies:** Signed app session, PostgreSQL `analytics_events` + `orders`.
+- **Future improvements:** Wire Flutter product/cart/checkout screens to the ingest API and chart the funnel in the admin dashboard.
 
 ### Employee and User Management
 
