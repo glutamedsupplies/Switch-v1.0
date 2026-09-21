@@ -2,13 +2,13 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/services/product_repository.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 
 const int _maxReviewVideoBytes = 50 * 1024 * 1024;
 const double _reviewMediaTileSize = 86;

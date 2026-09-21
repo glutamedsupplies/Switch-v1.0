@@ -1,32 +1,32 @@
 import 'dart:async';
 
-import 'package:gms_shopping/add_to_cart.dart';
-import 'package:gms_shopping/place_order.dart';
-import 'package:gms_shopping/buy.dart';
-import 'package:gms_shopping/cart.dart';
-import 'package:gms_shopping/chat_support.dart';
+import 'package:switch_app/add_to_cart.dart';
+import 'package:switch_app/place_order.dart';
+import 'package:switch_app/buy.dart';
+import 'package:switch_app/cart.dart';
+import 'package:switch_app/chat_support.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gms_shopping/customer_review.dart';
-import 'package:gms_shopping/favorite_products_store.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/login_redirect.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
-import 'package:gms_shopping/utils/own_listing.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/search_bar.dart' as app_search;
-import 'package:gms_shopping/services/product_repository.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/utils/session_image_cache.dart';
-import 'package:gms_shopping/widgets/bouncing_dots_loader.dart';
+import 'package:switch_app/customer_review.dart';
+import 'package:switch_app/favorite_products_store.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/login_redirect.dart';
+import 'package:switch_app/utils/auth_session.dart';
+import 'package:switch_app/utils/own_listing.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/search_bar.dart' as app_search;
+import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/utils/session_image_cache.dart';
+import 'package:switch_app/widgets/bouncing_dots_loader.dart';
 import 'package:video_player/video_player.dart';
-import 'package:gms_shopping/widgets/product_company_identity.dart';
-import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
-import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
+import 'package:switch_app/widgets/product_company_identity.dart';
+import 'package:switch_app/widgets/product_card_tap_lift.dart';
+import 'package:switch_app/widgets/horizontal_end_fade.dart';
 
 enum ProductDetailsEntrySource { standard, cart }
 
