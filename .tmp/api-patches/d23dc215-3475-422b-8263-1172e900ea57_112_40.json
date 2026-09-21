@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\d23dc215-3475-422b-8263-1172e900ea57\\d23dc215-3475-422b-8263-1172e900ea57.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\admin_biometric_settings.js",
-  "old": "            <button type=\"button\" class=\"admin-biometric-button is-secondary\" data-biometric-action=\"fetch-device-settings\">Fetch from device</button>\n          </span>\n        </header>",
-  "neu": "            <button type=\"button\" class=\"admin-biometric-button is-secondary\" data-biometric-action=\"fetch-device-settings\">Fetch from device</button>\n            <button type=\"button\" class=\"admin-biometric-wrench\" data-biometric-action=\"toggle-settings\" aria-expanded=\"false\" title=\"Show settings\">\n              <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\">\n                <path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z\"/>\n              </svg>\n            </button>\n          </span>\n        </header>\n\n        <div class=\"admin-biometric-settings__panel\" data-biometric-settings-panel hidden>"
-}

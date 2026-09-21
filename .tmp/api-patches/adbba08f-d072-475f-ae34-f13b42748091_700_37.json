@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\adbba08f-d072-475f-ae34-f13b42748091\\adbba08f-d072-475f-ae34-f13b42748091.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\main.js",
-  "old": "    elements.body.classList.toggle(\"main-packing-active\", nextView === \"packing\");\n    elements.body.classList.toggle(\"super-admin-dashboard-active\", nextView === \"dashboard\");\n    elements.body.classList.toggle(\"super-admin-companies-active\", nextView === \"orders\" || nextView === \"inventory\" || nextView === \"employees\");\n    elements.body.classList.toggle(\"super-admin-product-requests-active\", nextView === \"listing\" || nextView === \"listing-insight\");\n    elements.body.classList.toggle(\"super-admin-payment-partners-active\", nextView === \"packing\");\n    elements.body.classList.toggle(\"super-admin-ai-integration-active\", nextView === \"live-chat\");",
-  "neu": "    elements.body.classList.toggle(\"main-packing-active\", nextView === \"packing\");"
-}

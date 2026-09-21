@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\0aa71baa-609a-470d-8865-0ce3ba0288fe\\0aa71baa-609a-470d-8865-0ce3ba0288fe.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
-  "old": "const CHAT_WALLPAPERS_FILE = path.join(DATA_DIR, \"chat_wallpapers.json\");\nconst MAX_CHAT_WALLPAPERS = 24;",
-  "neu": "const CHAT_WALLPAPERS_FILE = path.join(DATA_DIR, \"chat_wallpapers.json\");\nconst PLATFORM_FEEDBACK_FILE = path.join(DATA_DIR, \"platform_feedback.json\");\nconst MAX_CHAT_WALLPAPERS = 24;\nconst MAX_PLATFORM_FEEDBACK_ENTRIES = 5_000;\nconst MAX_PLATFORM_FEEDBACK_MESSAGE_LENGTH = 1_000;"
-}

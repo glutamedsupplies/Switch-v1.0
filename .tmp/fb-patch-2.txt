@@ -1,4 +1,0 @@
-{
-  "old": "  try {\n    await fsPromises.access(SUPER_ADMIN_NOTIFICATIONS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(SUPER_ADMIN_NOTIFICATIONS_FILE, \"[]\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(ACCOUNTS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(ACCOUNTS_FILE, \"[]\\n\", \"utf8\");\n  }",
-  "new": "  try {\n    await fsPromises.access(SUPER_ADMIN_NOTIFICATIONS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(SUPER_ADMIN_NOTIFICATIONS_FILE, \"[]\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(PLATFORM_FEEDBACK_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(PLATFORM_FEEDBACK_FILE, \"[]\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(ACCOUNTS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(ACCOUNTS_FILE, \"[]\\n\", \"utf8\");\n  }"
-}

@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\4bc616fb-a8f7-4c05-a56a-3711ca373cf4\\4bc616fb-a8f7-4c05-a56a-3711ca373cf4.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\super_admin.html",
-  "old": "              <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n                <circle cx=\"7.5\" cy=\"15.5\" r=\"5.5\" />\n                <path d=\"m21 2-9.6 9.6\" />\n                <path d=\"m15.5 7.5 2 2L20 7l-2-2\" />\n              </svg>\n            </span>\n            <div>\n              <h2 class=\"validation-modal__title\" id=\"ai-integration-api-key-modal-title\">Enter AI API Key</h2>",
-  "neu": "              <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n                <path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"></path>\n                <circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"></circle>\n              </svg>\n            </span>\n            <div>\n              <h2 class=\"validation-modal__title\" id=\"ai-integration-api-key-modal-title\">Enter AI API Key</h2>"
-}

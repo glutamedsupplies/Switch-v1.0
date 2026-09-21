@@ -1,4 +1,0 @@
-{
-  "old": "    buzzer: {\n      preset: ADMIN_BIOMETRIC_BUZZER_PRESETS.has(requestedBuzzerPreset)\n        ? requestedBuzzerPreset\n        : \"success\",\n      melodyName: String(buzzerInput.melodyName ?? previousBuzzer.melodyName ?? \"\")\n        .replace(/\\s+/g, \" \")\n        .trim()\n        .slice(0, 80),\n      notes: melodyNotes,\n    },",
-  "neu": "    buzzer: normalizeAdminBiometricBuzzerSettings(buzzerInput, previousBuzzer),"
-}

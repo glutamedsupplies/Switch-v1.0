@@ -1,0 +1,18 @@
+# Scan the current tree. Git history still contains .tmp chrome-profile blobs
+# until a follow-up BFG / git-filter-repo purge; do not enable history detect
+# in CI until that rewrite lands.
+title = "Switch"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Example templates and ignored scratch/deps trees"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)maps_api_key\.example\.js$''',
+  '''(^|/)MapsSecrets\.xcconfig\.example$''',
+  '''(^|/)\.tmp/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)hardware/.*/build/''',
+]

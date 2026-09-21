@@ -1,1 +1,0 @@
-<span><strong id="admin-biometric-firmware-title">Firmware update</strong><small>Edit the project .ino in any editor, then flash from Chrome — no Arduino IDE needed to upload.</small></span>
