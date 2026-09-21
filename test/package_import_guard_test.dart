@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('lib and test dart files do not import package:gms_shopping', () {
+  test('lib and test dart files do not import the retired package name', () {
+    const retiredPackage = 'gms_shopping';
+    final needle = 'package:$retiredPackage/';
     final hits = <String>[];
+
     for (final root in <Directory>[Directory('lib'), Directory('test')]) {
       if (!root.existsSync()) {
         continue;
@@ -15,8 +18,11 @@ void main() {
         }
         final lines = entity.readAsLinesSync();
         for (var i = 0; i < lines.length; i++) {
-          if (lines[i].contains('package:gms_shopping/')) {
-            hits.add('${entity.path}:${i + 1}: ${lines[i].trim()}');
+          final trimmed = lines[i].trimLeft();
+          final isDirective =
+              trimmed.startsWith('import ') || trimmed.startsWith('export ');
+          if (isDirective && trimmed.contains(needle)) {
+            hits.add('${entity.path}:${i + 1}: ${trimmed}');
           }
         }
       }
@@ -26,7 +32,7 @@ void main() {
       hits,
       isEmpty,
       reason:
-          'Leftover package:gms_shopping imports; use package:switch_app instead:\n'
+          'Leftover $needle imports; use package:switch_app instead:\n'
           '${hits.join('\n')}',
     );
   });
