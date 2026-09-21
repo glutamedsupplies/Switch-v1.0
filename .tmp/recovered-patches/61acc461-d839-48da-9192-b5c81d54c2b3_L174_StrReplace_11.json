@@ -1,0 +1,10 @@
+{
+  "line": 174,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\super_admin.js",
+  "old_string": "      const response = await fetch(\"/api/super-admin/ai-integration/detect\", {\n        method: \"POST\",\n        headers: rootHeaders({\n          Accept: \"application/json\",\n          \"Content-Type\": \"application/json\",\n        }),\n        body: JSON.stringify({ apiKey }),\n      });",
+  "new_string": "      const response = await fetch(\"/api/super-admin/ai-integration/detect\", {\n        method: \"POST\",\n        headers: rootHeaders({\n          Accept: \"application/json\",\n          \"Content-Type\": \"application/json\",\n        }),\n        body: JSON.stringify(\n          state.imageEnhancementApiKeyMode === \"replace\" && state.imageEnhancementEditingId\n            ? { id: state.imageEnhancementEditingId, apiKey }\n            : { apiKey },\n        ),\n      });",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 460
+}

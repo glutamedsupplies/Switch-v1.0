@@ -1,0 +1,10 @@
+{
+  "line": 523,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\admin_biometric_settings.js",
+  "old_string": "      sendButton: root.querySelector(\"[data-biometric-action='send-settings']\"),\n      saveButton: root.querySelector(\"[data-biometric-action='save-settings']\"),\n      settingsPanel: root.querySelector(\"[data-biometric-settings-panel]\"),",
+  "new_string": "      sendButton: root.querySelector(\"[data-biometric-action='send-settings']\"),\n      settingsPanel: root.querySelector(\"[data-biometric-settings-panel]\"),",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 156
+}

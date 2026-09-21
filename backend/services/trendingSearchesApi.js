@@ -18,6 +18,7 @@ function createTrendingSearchesApi(deps) {
     requireSuperAdmin,
     sendJson,
     parseRequestBody,
+    getRequestAccountIdentifier,
   } = deps;
 
   const TRENDING_FILE = path.join(DATA_DIR, "trending_searches.json");
@@ -1643,7 +1644,7 @@ function createTrendingSearchesApi(deps) {
         if (!term) {
           throw new Error("Search term is required.");
         }
-        const accountId = String(payload.accountId ?? "").trim();
+        const accountId = String(getRequestAccountIdentifier(request, requestUrl).id).trim();
         const clientKey = String(payload.clientKey ?? payload.deviceKey ?? "").trim();
         const context = normalizeSearchContext(payload);
         const hit = await recordSearchHit(term, {
@@ -1674,7 +1675,7 @@ function createTrendingSearchesApi(deps) {
     if (pathname === "/api/recent-searches" && request.method === "GET") {
       try {
         const recent = await listRecentSearches({
-          accountId: requestUrl.searchParams.get("accountId") || "",
+          accountId: getRequestAccountIdentifier(request, requestUrl).id,
           clientKey:
             requestUrl.searchParams.get("clientKey") ||
             requestUrl.searchParams.get("deviceKey") ||
@@ -1695,8 +1696,7 @@ function createTrendingSearchesApi(deps) {
         const payload = await parseRequestBody(request).catch(() => ({}));
         const recent = await deleteRecentSearch({
           term: payload.term ?? requestUrl.searchParams.get("term") ?? "",
-          accountId:
-            payload.accountId ?? requestUrl.searchParams.get("accountId") ?? "",
+          accountId: getRequestAccountIdentifier(request, requestUrl).id,
           clientKey:
             payload.clientKey ??
             payload.deviceKey ??

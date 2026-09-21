@@ -1,0 +1,1469 @@
+const loginWorkspaceColorStorageKey = "gms-workspace-color";
+
+applyLoginWorkspaceColor();
+window.addEventListener("storage", (event) => {
+  if (event.key === loginWorkspaceColorStorageKey) {
+    applyLoginWorkspaceColor();
+  }
+});
+
+const loginPanelTitle = document.getElementById("login-panel-title");
+const loginFeedback = document.getElementById("login-feedback");
+const loginForm = document.getElementById("login-form");
+const identifierLabel = document.getElementById("login-identifier-label");
+const identifierText = document.getElementById("login-identifier-text");
+const identifierInput = document.getElementById("login-identifier-input");
+const identifierMessage = document.getElementById("login-identifier-message");
+const employeeIdStatus = document.getElementById("login-employee-id-status");
+const passwordText = document.getElementById("login-password-text");
+const passwordLabel = document.getElementById("login-password-label");
+const passwordInput = document.getElementById("login-password-input");
+const passwordMessage = document.getElementById("login-password-message");
+const loginMetaRow = document.getElementById("login-meta-row");
+const rememberText = document.getElementById("login-remember-text");
+const helpLink = document.getElementById("login-help-link");
+const submitButton = document.getElementById("login-submit-button");
+const submitButtonLabel = submitButton?.querySelector("[data-login-submit-label]");
+const roleButtons = Array.from(document.querySelectorAll("[data-login-role-button]"));
+const adminBannedModalOverlay = document.getElementById("admin-banned-modal-overlay");
+const adminBannedModal = adminBannedModalOverlay?.querySelector(".admin-banned-modal");
+const adminBannedModalCopy = document.getElementById("admin-banned-modal-copy");
+const adminBannedModalMore = document.getElementById("admin-banned-modal-more");
+const adminBannedModalReason = document.getElementById("admin-banned-modal-reason");
+const adminBannedModalXClose = document.getElementById("admin-banned-modal-x-close");
+const adminBannedCloseButton = document.getElementById("admin-banned-close-button");
+const adminBannedSupportButton = document.getElementById("admin-banned-support-button");
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const employeeIdPattern = /^(?:\d{1,6}|[A-Z0-9]{2,8}-\d{1,6}|[A-Z0-9]{2,8}\d{1,6})$/i;
+const mainWorkspacePath = "/main.html";
+let activeRole = "admin";
+let loginValidationFocusTarget = null;
+let employeeIdValidationTimer = 0;
+let adminEmailValidationTimer = 0;
+let employeeIdValidationRequestId = 0;
+let adminEmailValidationRequestId = 0;
+let employeeIdentifierValidAccount = null;
+let adminIdentifierValidAccount = null;
+let adminIdentifierValidEmail = "";
+let lastInvalidEmployeeIdPopupValue = "";
+let lastInvalidAdminEmailPopupValue = "";
+let loginValidationLottie = null;
+
+const loginSuccessAnimationPath = "/animations/check-mark.json";
+const loginValidationErrorIconMarkup = `
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <circle cx="12" cy="12" r="10"></circle>
+    <path d="M12 8v4"></path>
+    <path d="M12 16h.01"></path>
+  </svg>
+`;
+
+function parseLoginHexColor(color) {
+  const match = String(color || "").trim().match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    r: Number.parseInt(match[1], 16),
+    g: Number.parseInt(match[2], 16),
+    b: Number.parseInt(match[3], 16),
+  };
+}
+
+function getSavedLoginWorkspaceColor() {
+  try {
+    const savedColor = String(
+      window.localStorage.getItem(loginWorkspaceColorStorageKey) || "",
+    ).trim().toLowerCase();
+    return parseLoginHexColor(savedColor) ? savedColor : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function mixLoginColor(rgb, amount) {
+  return {
+    r: Math.max(0, Math.round(rgb.r * (1 - amount))),
+    g: Math.max(0, Math.round(rgb.g * (1 - amount))),
+    b: Math.max(0, Math.round(rgb.b * (1 - amount))),
+  };
+}
+
+function toLoginRgbValue(rgb) {
+  return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+}
+
+function getLoginContrastColor(rgb) {
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+  return brightness >= 150 ? "#111827" : "#ffffff";
+}
+
+function syncLoginAccentVariables(color) {
+  const rgb = parseLoginHexColor(color);
+  if (!rgb) {
+    return;
+  }
+
+  const hoverRgb = mixLoginColor(rgb, 0.18);
+  const root = document.documentElement;
+  root.style.setProperty("--accent", toLoginRgbValue(rgb));
+  root.style.setProperty("--accent-rgb", `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+  root.style.setProperty("--accent-strong", toLoginRgbValue(hoverRgb));
+  root.style.setProperty("--accent-text", toLoginRgbValue(hoverRgb));
+  root.style.setProperty("--accent-button-bg", toLoginRgbValue(rgb));
+  root.style.setProperty("--accent-button-hover-bg", toLoginRgbValue(hoverRgb));
+  root.style.setProperty("--accent-contrast", getLoginContrastColor(rgb));
+}
+
+function applyLoginWorkspaceColor() {
+  const savedColor = getSavedLoginWorkspaceColor();
+  if (!savedColor) {
+    return;
+  }
+
+  if (window.WebTheme?.applyTheme && window.WebTheme?.hexToTheme) {
+    window.WebTheme.applyTheme({
+      mode: "solid",
+      theme: window.WebTheme.hexToTheme(savedColor),
+    });
+    return;
+  }
+
+  syncLoginAccentVariables(savedColor);
+}
+
+const loginRoles = {
+  admin: {
+    title: "Login to Continue",
+    idleMessage: "",
+    identifierLabel: "Seller email or Employee ID",
+    identifierName: "identifier",
+    identifierType: "text",
+    identifierPlaceholder: "Seller email or employee ID",
+    identifierAutocomplete: "username",
+    identifierReadOnly: false,
+    autoGenerateIdentifier: false,
+    passwordLabel: "Password",
+    passwordPlaceholder: "Enter your password",
+    passwordAutocomplete: "current-password",
+    rememberText: "Keep me signed in",
+    helpText: "Forgot password?",
+    submitText: "Sign in",
+    showLoginMeta: true,
+    showSecondaryAction: false,
+  },
+  employee: {
+    title: "Login to Continue",
+    idleMessage: "",
+    identifierLabel: "Seller email or Employee ID",
+    identifierName: "identifier",
+    identifierType: "text",
+    identifierPlaceholder: "Seller email or employee ID",
+    identifierAutocomplete: "username",
+    identifierReadOnly: false,
+    passwordLabel: "Password",
+    passwordPlaceholder: "Enter your password",
+    passwordAutocomplete: "current-password",
+    rememberText: "Remember me",
+    helpText: "Need account help?",
+    submitText: "Sign in",
+    showLoginMeta: true,
+    showSecondaryAction: false,
+  },
+};
+
+function setFeedback(message, mode) {
+  loginFeedback.textContent = message;
+  loginFeedback.className = "feedback-note";
+  if (mode) {
+    loginFeedback.classList.add(mode);
+  }
+}
+
+function stopLoginValidationLottie() {
+  if (loginValidationLottie?.destroy) {
+    loginValidationLottie.destroy();
+  }
+  loginValidationLottie = null;
+  employeeIdStatus?.classList.remove("has-lottie");
+}
+
+function playLoginValidationSuccessLottie() {
+  const target = employeeIdStatus?.querySelector("[data-login-validation-lottie]");
+  if (!target) {
+    return;
+  }
+
+  stopLoginValidationLottie();
+  target.innerHTML = "";
+  if (!window.lottie?.loadAnimation) {
+    return;
+  }
+
+  try {
+    loginValidationLottie = window.lottie.loadAnimation({
+      container: target,
+      renderer: "svg",
+      loop: false,
+      autoplay: true,
+      path: loginSuccessAnimationPath,
+    });
+    employeeIdStatus?.classList.add("has-lottie");
+  } catch (error) {
+    loginValidationLottie = null;
+  }
+}
+
+function normalizeLoginModalText(value, fallback = "") {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized || fallback;
+}
+
+function formatAdminBanDescription(description) {
+  const normalized = normalizeLoginModalText(description);
+  if (!normalized) {
+    return "Your account has been suspended.";
+  }
+  return /^your account\b/i.test(normalized)
+    ? normalized
+    : `Your account has been banned due to ${normalized}`;
+}
+
+function clearLoginSessions() {
+  try {
+    window.sessionStorage.removeItem("gms-admin-session");
+    window.sessionStorage.removeItem("gms-employee-session");
+    window.sessionStorage.removeItem("gms-super-admin-session");
+  } catch (error) {
+    console.warn("Unable to clear login sessions.", error);
+  }
+
+  clearActiveAdminScope();
+}
+
+function openAdminBannedModal(options = {}) {
+  const reason = normalizeLoginModalText(
+    options.reason,
+    "Multiple policy violations detected",
+  );
+  const description = formatAdminBanDescription(options.description);
+
+  if (adminBannedModalReason) {
+    adminBannedModalReason.textContent = reason;
+  }
+
+  if (adminBannedModalCopy) {
+    adminBannedModalCopy.textContent = description;
+  }
+
+  adminBannedModal?.classList.remove("is-description-expanded");
+  if (adminBannedModalMore) {
+    adminBannedModalMore.textContent = "More";
+    adminBannedModalMore.hidden = true;
+  }
+
+  clearLoginSessions();
+  setFeedback("");
+
+  if (!adminBannedModalOverlay) {
+    return;
+  }
+
+  adminBannedModalOverlay.hidden = false;
+  adminBannedModalOverlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+
+  window.requestAnimationFrame(() => {
+    adminBannedModalOverlay.classList.add("is-open");
+    updateAdminBannedModalMoreButton();
+    adminBannedModal?.focus();
+  });
+}
+
+function updateAdminBannedModalMoreButton() {
+  if (!adminBannedModalCopy || !adminBannedModalMore) {
+    return;
+  }
+
+  const isExpanded = adminBannedModal?.classList.contains("is-description-expanded");
+  adminBannedModalMore.hidden = !isExpanded && adminBannedModalCopy.scrollHeight <= adminBannedModalCopy.clientHeight + 1;
+}
+
+function closeAdminBannedModal() {
+  if (!adminBannedModalOverlay) {
+    return;
+  }
+
+  adminBannedModalOverlay.classList.remove("is-open");
+  adminBannedModalOverlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+  window.setTimeout(() => {
+    adminBannedModalOverlay.hidden = true;
+  }, 180);
+}
+
+function isAdminBannedLoginError(error) {
+  const data = error?.data && typeof error.data === "object" ? error.data : {};
+  const accountStatus = String(
+    data.accountStatus ?? data.status ?? data.accountState ?? "",
+  ).trim().toLowerCase();
+  const message = String(error?.message ?? "");
+  return error?.status === 403 && (
+    accountStatus === "banned" ||
+    data.isBanned === true ||
+    /\bbanned\b/i.test(message)
+  );
+}
+
+function getAdminBanReasonFromError(error) {
+  const data = error?.data && typeof error.data === "object" ? error.data : {};
+  return normalizeLoginModalText(
+    data.banReason ?? data.reason ?? data.lastBanReason,
+    "Multiple policy violations detected",
+  );
+}
+
+function getAdminBanDescriptionFromError(error) {
+  const data = error?.data && typeof error.data === "object" ? error.data : {};
+  return normalizeLoginModalText(
+    data.banDescription ?? data.description ?? data.banDetails,
+  );
+}
+
+function normalizeLoginEmployeeId(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeLoginEmployeeIdNumber(value) {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 6);
+}
+
+function parseLoginEmployeeId(value) {
+  const normalized = normalizeLoginEmployeeId(value).replace(/\s+/g, "");
+  const dashedMatch = normalized.match(/^([A-Z0-9]{2,8})-(\d{1,6})$/);
+  if (dashedMatch) {
+    return {
+      acronym: dashedMatch[1],
+      number: dashedMatch[2].padStart(6, "0"),
+      hasAcronym: true,
+    };
+  }
+
+  const compactMatch = normalized.match(/^([A-Z0-9]*?[A-Z][A-Z0-9]*?)(\d{1,6})$/);
+  if (compactMatch) {
+    return {
+      acronym: compactMatch[1],
+      number: compactMatch[2].padStart(6, "0"),
+      hasAcronym: true,
+    };
+  }
+
+  const number = normalizeLoginEmployeeIdNumber(normalized);
+  return {
+    acronym: "",
+    number: number ? number.padStart(6, "0") : "",
+    hasAcronym: false,
+  };
+}
+
+function getLoginEmployeeIdNumber(value) {
+  return parseLoginEmployeeId(value).number;
+}
+
+function isLoginEmployeeIdentifierMatch(inputValue, accountValue) {
+  const inputId = parseLoginEmployeeId(inputValue);
+  const accountId = parseLoginEmployeeId(accountValue);
+  if (!inputId.number || !accountId.number) {
+    return false;
+  }
+
+  if (inputId.hasAcronym) {
+    return inputId.acronym === accountId.acronym && inputId.number === accountId.number;
+  }
+
+  return inputId.number === accountId.number;
+}
+
+function normalizeLoginEmail(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeLoginAdminScope(value, fallback = "") {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
+function getAccountAdminScope(account, fallback = "admin") {
+  if (!account || typeof account !== "object") {
+    return fallback;
+  }
+
+  return normalizeLoginAdminScope(
+    account.adminId ??
+      account.ownerAdminId ??
+      account.tenantId ??
+      account.workspaceId ??
+      account.storeAdminId ??
+      account.id ??
+      account.accountCode,
+    fallback,
+  );
+}
+
+function saveActiveAdminScope(adminId) {
+  const normalizedAdminId = normalizeLoginAdminScope(adminId, "");
+  if (!normalizedAdminId) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem("gms-admin-id", normalizedAdminId);
+  } catch (error) {
+    console.warn("Unable to save admin scope.", error);
+  }
+}
+
+function clearActiveAdminScope() {
+  try {
+    window.localStorage.removeItem("gms-admin-id");
+  } catch (error) {
+    console.warn("Unable to clear admin scope.", error);
+  }
+}
+
+function getEmployeeAccountIdentifier(account) {
+  return normalizeLoginEmployeeId(account?.employeeId ?? account?.accountCode ?? "");
+}
+
+function isCurrentAdminIdentifierMatched() {
+  if (activeRole !== "admin") {
+    return true;
+  }
+
+  const currentAdminEmail = normalizeLoginEmail(identifierInput.value);
+  return Boolean(
+    currentAdminEmail &&
+    currentAdminEmail === adminIdentifierValidEmail &&
+    adminIdentifierValidAccount,
+  );
+}
+
+function isCurrentEmployeeIdentifierMatched() {
+  if (activeRole !== "employee") {
+    return true;
+  }
+
+  const currentEmployeeId = normalizeLoginEmployeeId(identifierInput.value);
+  const matchedEmployeeId = getEmployeeAccountIdentifier(employeeIdentifierValidAccount);
+  return isLoginEmployeeIdentifierMatch(currentEmployeeId, matchedEmployeeId);
+}
+
+function setLoginMetaVisibility() {
+  const roleConfig = loginRoles[activeRole];
+  const shouldShowMeta = Boolean(roleConfig?.showLoginMeta)
+    && (activeRole !== "employee" || Boolean(employeeIdentifierValidAccount));
+  loginMetaRow.hidden = !shouldShowMeta;
+}
+
+function setLoginSubmitAvailability(options = {}) {
+  const { submitting = false } = options;
+  const isIdentifierReady =
+    (activeRole === "admin" && isCurrentAdminIdentifierMatched())
+    || (activeRole === "employee" && isCurrentEmployeeIdentifierMatched());
+  const isDisabled = submitting || !isIdentifierReady;
+  submitButton.disabled = isDisabled;
+  submitButton.setAttribute("aria-disabled", String(isDisabled));
+  submitButton.classList.toggle("is-login-ready", isIdentifierReady && !submitting);
+}
+
+function setEmployeePasswordVisible(isVisible, options = {}) {
+  const { clearPassword = false } = options;
+  passwordLabel.classList.toggle("is-hidden", !isVisible);
+  passwordLabel.setAttribute("aria-hidden", String(!isVisible));
+  passwordInput.disabled = !isVisible;
+  passwordInput.required = isVisible;
+
+  if (!isVisible && clearPassword) {
+    passwordInput.value = "";
+    passwordInput.type = "password";
+    setLoginPasswordState("");
+  }
+
+  setLoginMetaVisibility();
+  setLoginSubmitAvailability();
+}
+
+function setLoginFieldMessage(fieldShell, input, messageElement, mode = "", message = "") {
+  if (!(fieldShell instanceof HTMLElement) || !(input instanceof HTMLElement) || !(messageElement instanceof HTMLElement)) {
+    return;
+  }
+
+  const normalizedMessage = String(message || "").trim();
+  fieldShell.classList.remove("has-validation-error");
+  messageElement.textContent = "";
+  input.removeAttribute("aria-invalid");
+  input.removeAttribute("aria-describedby");
+
+  if (mode !== "invalid" || !normalizedMessage) {
+    return;
+  }
+
+  fieldShell.classList.add("has-validation-error");
+  messageElement.textContent = normalizedMessage;
+  input.setAttribute("aria-invalid", "true");
+  input.setAttribute("aria-describedby", messageElement.id);
+}
+
+function setLoginPasswordState(mode = "", message = "") {
+  passwordInput.classList.remove("login-password-invalid");
+  setLoginFieldMessage(passwordLabel, passwordInput, passwordMessage, mode, message);
+  if (mode === "invalid") {
+    passwordInput.classList.add("login-password-invalid");
+  }
+}
+
+function setLoginIdentifierState(mode = "", message = "Invalid Employee ID") {
+  const fallbackIcon = employeeIdStatus?.querySelector(".login-validation-fallback");
+  identifierInput.classList.remove("login-employee-id-valid", "login-employee-id-invalid");
+  employeeIdStatus.classList.remove("is-valid", "is-invalid", "is-checking");
+  stopLoginValidationLottie();
+  if (fallbackIcon) {
+    fallbackIcon.innerHTML = "";
+  }
+  setLoginFieldMessage(identifierLabel, identifierInput, identifierMessage);
+  delete employeeIdStatus.dataset.employeeTooltip;
+  employeeIdStatus.removeAttribute("aria-label");
+  employeeIdStatus.removeAttribute("tabindex");
+
+  if (activeRole !== "admin" && activeRole !== "employee") {
+    return;
+  }
+
+  if (mode === "valid") {
+    identifierInput.classList.add("login-employee-id-valid");
+    employeeIdStatus.classList.add("is-valid");
+    employeeIdStatus.setAttribute("aria-label", "Account verified");
+    playLoginValidationSuccessLottie();
+  }
+
+  if (mode === "checking") {
+    employeeIdStatus.classList.add("is-checking");
+    employeeIdStatus.setAttribute("aria-label", "Checking account");
+  }
+
+  if (mode === "invalid") {
+    identifierInput.classList.add("login-employee-id-invalid");
+    employeeIdStatus.classList.add("is-invalid");
+    employeeIdStatus.setAttribute("aria-label", message);
+    setLoginFieldMessage(identifierLabel, identifierInput, identifierMessage, "invalid", message);
+    if (fallbackIcon) {
+      fallbackIcon.innerHTML = loginValidationErrorIconMarkup;
+    }
+  }
+}
+
+function setEmployeeIdentifierState(mode = "", message = "Invalid Employee ID") {
+  setLoginIdentifierState(mode, message);
+}
+
+function resetEmployeeIdentifierState(options = {}) {
+  const { hidePassword = true, clearPassword = false } = options;
+  window.clearTimeout(employeeIdValidationTimer);
+  window.clearTimeout(adminEmailValidationTimer);
+  employeeIdValidationRequestId += 1;
+  employeeIdentifierValidAccount = null;
+  adminIdentifierValidAccount = null;
+  adminIdentifierValidEmail = "";
+  lastInvalidEmployeeIdPopupValue = "";
+  lastInvalidAdminEmailPopupValue = "";
+  setLoginIdentifierState("");
+  setEmployeePasswordVisible(!hidePassword, { clearPassword });
+}
+
+async function findEmployeeAccountById(employeeId) {
+  const normalizedEmployeeId = normalizeLoginEmployeeId(employeeId);
+  const response = await fetch(
+    `/api/employee-lookup?employeeId=${encodeURIComponent(normalizedEmployeeId)}`,
+    {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(data?.message || "Unable to check employee ID.");
+  }
+
+  const account = data?.account && typeof data.account === "object" ? data.account : null;
+  if (String(account?.role ?? "").trim().toLowerCase() !== "employee") {
+    return null;
+  }
+
+  return account;
+}
+
+function showEmployeeIdValidationModal(message, employeeId, options = {}) {
+  const { force = false, openDialog = false } = options;
+  setEmployeeIdentifierState("invalid", message);
+  employeeIdentifierValidAccount = null;
+  setEmployeePasswordVisible(false, { clearPassword: true });
+
+  const normalizedEmployeeId = normalizeLoginEmployeeId(employeeId);
+  if (!force && normalizedEmployeeId === lastInvalidEmployeeIdPopupValue) {
+    return;
+  }
+
+  lastInvalidEmployeeIdPopupValue = normalizedEmployeeId;
+  if (!openDialog) {
+    return;
+  }
+
+  openLoginValidationModal(message, {
+    title: "Invalid Employee ID",
+    actionLabel: "Review Employee ID",
+    focusTarget: identifierInput,
+  });
+}
+
+function showAdminEmailValidationPopup(message, email, options = {}) {
+  const { force = false, openDialog = false } = options;
+  setLoginIdentifierState("invalid", message);
+  adminIdentifierValidAccount = null;
+  adminIdentifierValidEmail = "";
+  setEmployeePasswordVisible(false, { clearPassword: true });
+
+  const normalizedEmail = normalizeLoginEmail(email);
+  if (!force && normalizedEmail === lastInvalidAdminEmailPopupValue) {
+    return;
+  }
+
+  lastInvalidAdminEmailPopupValue = normalizedEmail;
+  if (!openDialog) {
+    return;
+  }
+
+  openLoginValidationModal(message, {
+    title: "Invalid Seller Email",
+    actionLabel: "Review Seller Email",
+    focusTarget: identifierInput,
+  });
+}
+
+async function findAdminAccountByEmail(email) {
+  const normalizedEmail = normalizeLoginEmail(email);
+  const response = await fetch(
+    `/api/admin-lookup?email=${encodeURIComponent(normalizedEmail)}`,
+    {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const lookupError = new Error(data?.message || "Unable to check seller account.");
+    lookupError.status = response.status;
+    lookupError.data = data && typeof data === "object" ? data : {};
+    throw lookupError;
+  }
+
+  return data?.account && typeof data.account === "object" ? data.account : null;
+}
+
+async function validateAdminIdentifier(options = {}) {
+  const { showModal = false, forcePopup = false } = options;
+
+  if (activeRole !== "admin") {
+    return { valid: true, email: "" };
+  }
+
+  const adminEmail = normalizeLoginEmail(identifierInput.value);
+  identifierInput.value = adminEmail;
+
+  if (isCurrentAdminIdentifierMatched()) {
+    setFeedback("");
+    setLoginIdentifierState("valid");
+    setEmployeePasswordVisible(true);
+    return { valid: true, email: adminEmail };
+  }
+
+  const requestId = ++adminEmailValidationRequestId;
+
+  if (!adminEmail) {
+    adminIdentifierValidAccount = null;
+    adminIdentifierValidEmail = "";
+    setLoginIdentifierState("");
+    setEmployeePasswordVisible(false, { clearPassword: true });
+    return { valid: false, message: "Please enter seller email address." };
+  }
+
+  if (!emailPattern.test(adminEmail)) {
+    const message = "Invalid Seller Email";
+    if (showModal) {
+      showAdminEmailValidationPopup(message, adminEmail, { force: forcePopup });
+    } else {
+      setLoginIdentifierState("invalid", message);
+      setEmployeePasswordVisible(false, { clearPassword: true });
+    }
+    return { valid: false, message };
+  }
+
+  try {
+    setFeedback("");
+    setLoginIdentifierState("checking");
+    const adminAccount = await findAdminAccountByEmail(adminEmail);
+    if (requestId !== adminEmailValidationRequestId) {
+      return { valid: false, stale: true, message: "" };
+    }
+
+    if (!adminAccount) {
+      const message = "Registered seller account not found.";
+      if (showModal) {
+        showAdminEmailValidationPopup(message, adminEmail, { force: forcePopup });
+      } else {
+        setLoginIdentifierState("invalid", message);
+        setEmployeePasswordVisible(false, { clearPassword: true });
+      }
+      return { valid: false, message };
+    }
+
+    adminIdentifierValidAccount = adminAccount;
+    adminIdentifierValidEmail = adminEmail;
+    lastInvalidAdminEmailPopupValue = "";
+    setLoginIdentifierState("valid");
+    setEmployeePasswordVisible(true);
+    setLoginSubmitAvailability();
+    return { valid: true, email: adminEmail, account: adminAccount };
+  } catch (error) {
+    console.warn("Unable to check seller account.", error);
+    setFeedback("");
+    if (requestId === adminEmailValidationRequestId && showModal) {
+      openLoginValidationModal(
+        error instanceof Error ? error.message : "Unable to check seller account.",
+        {
+          title: "Seller Account Check Failed",
+          actionLabel: "Try Again",
+          focusTarget: identifierInput,
+        },
+      );
+    }
+    setLoginIdentifierState("invalid", error instanceof Error ? error.message : "Unable to check seller account.");
+    setEmployeePasswordVisible(false, { clearPassword: true });
+    return {
+      valid: false,
+      message: error instanceof Error ? error.message : "Unable to check seller account.",
+    };
+  }
+}
+
+function scheduleAdminIdentifierValidation() {
+  if (activeRole !== "admin") {
+    return;
+  }
+
+  const adminEmail = normalizeLoginEmail(identifierInput.value);
+  identifierInput.value = adminEmail;
+  window.clearTimeout(adminEmailValidationTimer);
+  adminEmailValidationRequestId += 1;
+  adminIdentifierValidAccount = null;
+  adminIdentifierValidEmail = "";
+  lastInvalidAdminEmailPopupValue = "";
+  setLoginIdentifierState("");
+  setEmployeePasswordVisible(false, { clearPassword: true });
+  setFeedback("");
+
+  if (!adminEmail) {
+    setLoginSubmitAvailability();
+    return;
+  }
+
+  adminEmailValidationTimer = window.setTimeout(() => {
+    void validateAdminIdentifier({
+      showModal: adminEmail.includes("@") && adminEmail.includes("."),
+    });
+  }, 360);
+}
+
+function inferLoginRoleFromIdentifier(value) {
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) {
+    return "admin";
+  }
+
+  if (rawValue.includes("@")) {
+    return "admin";
+  }
+
+  const normalizedEmployeeId = normalizeLoginEmployeeId(rawValue);
+  const employeeIdNumber = normalizeLoginEmployeeIdNumber(normalizedEmployeeId);
+  if (employeeIdPattern.test(normalizedEmployeeId) && employeeIdNumber.length >= 6) {
+    return "employee";
+  }
+
+  return "admin";
+}
+
+function scheduleLoginIdentifierValidation() {
+  const currentValue = identifierInput.value;
+  const nextRole = inferLoginRoleFromIdentifier(currentValue);
+  if (nextRole !== activeRole) {
+    setActiveRole(nextRole, {
+      preserveCredentials: true,
+      quiet: true,
+    });
+    identifierInput.value = nextRole === "employee"
+      ? normalizeLoginEmployeeId(currentValue)
+      : currentValue;
+  }
+
+  if (nextRole === "employee") {
+    scheduleEmployeeIdentifierValidation();
+    return;
+  }
+
+  scheduleAdminIdentifierValidation();
+}
+
+async function verifyAdminLogin(email, password) {
+  try {
+    const response = await fetch("/api/admin-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 404) {
+      return { connected: false };
+    }
+
+    if (!response.ok) {
+      const loginError = new Error(
+        response.status === 401
+          ? data.message || "Admin email or password is incorrect."
+          : data.message || "Unable to sign in admin.",
+      );
+      loginError.status = response.status;
+      loginError.data = data && typeof data === "object" ? data : {};
+      throw loginError;
+    }
+
+    return { connected: true, data };
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return { connected: false };
+    }
+
+    throw error;
+  }
+}
+
+async function validateEmployeeIdentifier(options = {}) {
+  const { showModal = false, forcePopup = false } = options;
+
+  if (activeRole !== "employee") {
+    return { valid: true, account: null };
+  }
+
+  const employeeId = normalizeLoginEmployeeId(identifierInput.value);
+  identifierInput.value = employeeId;
+
+  if (isCurrentEmployeeIdentifierMatched()) {
+    setFeedback("");
+    setEmployeeIdentifierState("valid");
+    setEmployeePasswordVisible(true);
+    return { valid: true, account: employeeIdentifierValidAccount };
+  }
+
+  const requestId = ++employeeIdValidationRequestId;
+
+  if (!employeeId) {
+    employeeIdentifierValidAccount = null;
+    setEmployeeIdentifierState("");
+    setEmployeePasswordVisible(false, { clearPassword: true });
+    return { valid: false, message: "Please enter employee ID." };
+  }
+
+  if (!employeeIdPattern.test(employeeId)) {
+    const message = "Invalid Employee ID";
+    if (showModal) {
+      showEmployeeIdValidationModal(message, employeeId, { force: forcePopup });
+    } else {
+      setEmployeeIdentifierState("invalid", message);
+      setEmployeePasswordVisible(false, { clearPassword: true });
+    }
+    return { valid: false, message };
+  }
+
+  try {
+    setFeedback("");
+    setEmployeeIdentifierState("checking");
+    const employeeAccount = await findEmployeeAccountById(employeeId);
+    if (requestId !== employeeIdValidationRequestId) {
+      return { valid: false, stale: true, message: "" };
+    }
+
+    setFeedback("");
+
+    if (!employeeAccount) {
+      const message = "Invalid Employee ID";
+      if (showModal) {
+        showEmployeeIdValidationModal(message, employeeId, { force: forcePopup });
+      } else {
+        setEmployeeIdentifierState("invalid", message);
+        setEmployeePasswordVisible(false, { clearPassword: true });
+      }
+      return { valid: false, message };
+    }
+
+    employeeIdentifierValidAccount = employeeAccount;
+    lastInvalidEmployeeIdPopupValue = "";
+    setEmployeeIdentifierState("valid");
+    setEmployeePasswordVisible(true);
+    return { valid: true, account: employeeAccount };
+  } catch (error) {
+    console.warn("Unable to check employee ID.", error);
+    setFeedback("");
+    if (requestId === employeeIdValidationRequestId && showModal) {
+      openLoginValidationModal(
+        error instanceof Error ? error.message : "Unable to check employee ID.",
+        {
+          title: "Employee ID Check Failed",
+          actionLabel: "Try Again",
+          focusTarget: identifierInput,
+        },
+      );
+    }
+    return {
+      valid: false,
+      message: error instanceof Error ? error.message : "Unable to check employee ID.",
+    };
+  }
+}
+
+function scheduleEmployeeIdentifierValidation() {
+  if (activeRole !== "employee") {
+    return;
+  }
+
+  const employeeId = normalizeLoginEmployeeId(identifierInput.value);
+  identifierInput.value = employeeId;
+  window.clearTimeout(employeeIdValidationTimer);
+  employeeIdValidationRequestId += 1;
+  employeeIdentifierValidAccount = null;
+  lastInvalidEmployeeIdPopupValue = "";
+  setEmployeeIdentifierState("");
+  setEmployeePasswordVisible(false, { clearPassword: true });
+  setFeedback("");
+
+  if (
+    !employeeId ||
+    (employeeId.includes("-") && employeeId.length < 10) ||
+    (!employeeId.includes("-") && normalizeLoginEmployeeIdNumber(employeeId).length < 6)
+  ) {
+    return;
+  }
+
+  employeeIdValidationTimer = window.setTimeout(() => {
+    void validateEmployeeIdentifier({ showModal: true });
+  }, 450);
+}
+
+function closeLoginValidationModal(options = {}) {
+  const { restoreFocus = true } = options;
+
+  if (restoreFocus && loginValidationFocusTarget instanceof HTMLElement) {
+    window.setTimeout(() => {
+      loginValidationFocusTarget.focus();
+    }, 0);
+  }
+
+  loginValidationFocusTarget = null;
+}
+
+function openLoginValidationModal(message, options = {}) {
+  const {
+    title = "Error",
+    focusTarget = null,
+  } = options;
+
+  loginValidationFocusTarget = focusTarget instanceof HTMLElement ? focusTarget : null;
+  setFeedback("");
+
+  window.setTimeout(() => {
+    loginValidationFocusTarget?.focus();
+  }, 0);
+}
+
+function openPasswordValidationModal(message, options = {}) {
+  setLoginPasswordState("invalid", message);
+  openLoginValidationModal(message, {
+    title: "Invalid Password",
+    actionLabel: "Review Password",
+    focusTarget: passwordInput,
+    ...options,
+  });
+}
+
+function getEmployeeDashboardPath(accountOrPosition) {
+  const account = accountOrPosition && typeof accountOrPosition === "object"
+    ? accountOrPosition
+    : null;
+  const normalizedPosition =
+    String(account?.position ?? accountOrPosition ?? "").trim().toLowerCase();
+  const permissionPaths = [
+    ["live-chat", "/live_chat.html"],
+    ["admin-dashboard", "/admin_dashboard.html"],
+    ["insight", "/insight.html"],
+    ["product-insight", "/product_insight.html"],
+    ["products", "/product_panel.html"],
+    ["admin-inventory", "/stock.html"],
+    ["employee-data", "/Employee_data.html"],
+    ["register", "/register.html"],
+    ["employee-dashboard", "/employee_dashboard.html"],
+  ];
+
+  if (
+    Array.isArray(account?.accessPermissions)
+    && (account.accessPermissionsConfigured || account.accessPermissions.length > 0)
+  ) {
+    const accessPermissions = account.accessPermissions.map((permission) =>
+      String(permission ?? "").trim().toLowerCase(),
+    );
+    if (normalizedPosition === "packing") {
+      return accessPermissions.includes("packing-dashboard")
+        ? "/packing_dashboard.html"
+        : "/employee_access_pending.html";
+    }
+    const matchedPermission = permissionPaths.find(([permission]) =>
+      accessPermissions.includes(permission),
+    );
+    return matchedPermission?.[1] || "/employee_access_pending.html";
+  }
+
+  if (normalizedPosition === "packing") {
+    return "/packing_dashboard.html";
+  }
+  if (normalizedPosition) {
+    return "/employee_dashboard.html";
+  }
+
+  return "/employee_access_pending.html";
+}
+
+function readActiveEmployeeSession() {
+  try {
+    const rawSession = window.sessionStorage.getItem("gms-employee-session");
+    return rawSession ? JSON.parse(rawSession) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function redirectAuthenticatedEmployeeFromLogin(role) {
+  if (role !== "employee") {
+    return false;
+  }
+
+  const employeeSession = readActiveEmployeeSession();
+  if (!employeeSession || typeof employeeSession !== "object") {
+    return false;
+  }
+
+  const redirectPath =
+    String(employeeSession.dashboardPath ?? "").trim()
+    || getEmployeeDashboardPath(employeeSession);
+  if (redirectPath !== String(employeeSession.dashboardPath ?? "").trim()) {
+    try {
+      window.sessionStorage.setItem(
+        "gms-employee-session",
+        JSON.stringify({
+          ...employeeSession,
+          dashboardPath: redirectPath,
+        }),
+      );
+    } catch (error) {
+      console.warn("Unable to update employee dashboard path.", error);
+    }
+  }
+  window.location.replace(mainWorkspacePath);
+  return true;
+}
+
+function setActiveRole(role, options = {}) {
+  const { preserveCredentials = false, quiet = false } = options;
+  const roleConfig = loginRoles[role];
+  if (!roleConfig) {
+    return;
+  }
+
+  const currentIdentifierValue = identifierInput.value;
+  const currentPasswordValue = passwordInput.value;
+  closeLoginValidationModal({ restoreFocus: false });
+  activeRole = role;
+  loginForm.classList.toggle("is-admin-login", role === "admin");
+  loginForm.classList.toggle("is-employee-login", role === "employee");
+
+  roleButtons.forEach((button) => {
+    const isActive = button.dataset.role === role;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+
+  loginPanelTitle.textContent = roleConfig.title;
+  identifierText.textContent = roleConfig.identifierLabel;
+  identifierInput.type = roleConfig.identifierType;
+  identifierInput.name = roleConfig.identifierName;
+  identifierInput.placeholder = roleConfig.identifierPlaceholder;
+  identifierInput.autocomplete = roleConfig.identifierAutocomplete;
+  identifierInput.readOnly = Boolean(roleConfig.identifierReadOnly);
+  passwordText.textContent = roleConfig.passwordLabel;
+  passwordInput.placeholder = roleConfig.passwordPlaceholder;
+  passwordInput.autocomplete = roleConfig.passwordAutocomplete;
+  identifierInput.value = preserveCredentials ? currentIdentifierValue : "";
+  passwordInput.value = preserveCredentials ? currentPasswordValue : "";
+  rememberText.textContent = roleConfig.rememberText;
+  helpLink.textContent = roleConfig.helpText;
+  if (submitButtonLabel) {
+    submitButtonLabel.textContent = roleConfig.submitText;
+  } else {
+    submitButton.textContent = roleConfig.submitText;
+  }
+  resetEmployeeIdentifierState({
+    hidePassword: true,
+    clearPassword: !preserveCredentials,
+  });
+  if (preserveCredentials) {
+    identifierInput.value = currentIdentifierValue;
+    passwordInput.value = currentPasswordValue;
+  }
+  setLoginMetaVisibility();
+  if (!quiet) {
+    setFeedback(roleConfig.idleMessage);
+  }
+}
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const formData = new FormData(loginForm);
+  const identifier = String(identifierInput.value ?? "").trim();
+  const password = String(formData.get("password") ?? "").trim();
+  const submittedRole = inferLoginRoleFromIdentifier(identifier);
+  if (submittedRole !== activeRole) {
+    setActiveRole(submittedRole, {
+      preserveCredentials: true,
+      quiet: true,
+    });
+    identifierInput.value = submittedRole === "employee"
+      ? normalizeLoginEmployeeId(identifier)
+      : identifier;
+  }
+
+  if (activeRole === "admin") {
+    if (!identifier) {
+      showAdminEmailValidationPopup("Registered seller account not found.", identifier, { force: true });
+      identifierInput.focus();
+      return;
+    }
+
+    const adminEmailValidationState = await validateAdminIdentifier({
+      showModal: true,
+      forcePopup: true,
+    });
+    if (!adminEmailValidationState.valid) {
+      return;
+    }
+
+    if (!password) {
+      openPasswordValidationModal("Please enter your seller password.", {
+        title: "Password Required",
+        actionLabel: "Enter Password",
+      });
+      return;
+    }
+  }
+
+  if (activeRole === "employee") {
+    if (!identifier) {
+      showEmployeeIdValidationModal("Invalid Employee ID", identifier, { force: true });
+      identifierInput.focus();
+      return;
+    }
+
+    const employeeIdValidationState = await validateEmployeeIdentifier({
+      showModal: true,
+      forcePopup: true,
+    });
+    if (!employeeIdValidationState.valid) {
+      return;
+    }
+
+    if (!password) {
+      openPasswordValidationModal("Please enter your employee password.", {
+        title: "Password Required",
+        actionLabel: "Enter Password",
+      });
+      return;
+    }
+  }
+
+  if (password.length < 6) {
+    openPasswordValidationModal("Password must be at least 6 characters long.");
+    return;
+  }
+
+  if (activeRole === "admin") {
+    const adminEmail = normalizeLoginEmail(identifierInput.value);
+    setLoginSubmitAvailability({ submitting: true });
+    setFeedback("Checking seller account...");
+
+    try {
+      const adminLoginState = await verifyAdminLogin(adminEmail, password);
+
+      if (!adminLoginState.connected) {
+        setLoginSubmitAvailability();
+        setFeedback(
+          "Seller login validation is ready. Connect /api/admin-login when the database is available.",
+        );
+        return;
+      }
+
+      const dashboardPath =
+        String(
+          adminLoginState.data?.dashboardPath ??
+            adminLoginState.data?.redirectPath ??
+            "/admin_dashboard.html",
+        ).trim() || "/admin_dashboard.html";
+      const redirectPath = mainWorkspacePath;
+      setFeedback(
+        adminLoginState.data?.message || "Seller login successful.",
+        "success",
+      );
+
+      try {
+        const adminData = adminLoginState.data?.admin || {};
+        const adminScopeId = getAccountAdminScope(adminData, "admin");
+        const adminSession = {
+          ...adminData,
+          role: "admin",
+          adminId: adminScopeId,
+          email: adminEmail,
+          dashboardPath,
+          signedInAt: new Date().toISOString(),
+        };
+        window.sessionStorage.removeItem("gms-employee-session");
+        window.sessionStorage.removeItem("gms-super-admin-session");
+        saveActiveAdminScope(adminScopeId);
+        window.sessionStorage.setItem(
+          "gms-admin-session",
+          JSON.stringify(adminSession),
+        );
+        window.dispatchEvent(
+          new CustomEvent("gms-admin-session-updated", {
+            detail: { session: adminSession },
+          }),
+        );
+      } catch (storageError) {
+        console.warn("Unable to save admin session.", storageError);
+      }
+
+      if (redirectPath) {
+        window.location.href = redirectPath;
+      } else {
+        setLoginSubmitAvailability();
+      }
+    } catch (error) {
+      setLoginSubmitAvailability();
+      const adminErrorMessage = error instanceof Error
+        ? error.message
+        : "Unable to sign in admin.";
+      const isPasswordError = error?.status === 401 || /password/i.test(adminErrorMessage);
+
+      if (isAdminBannedLoginError(error)) {
+        openAdminBannedModal({
+          reason: getAdminBanReasonFromError(error),
+          description: getAdminBanDescriptionFromError(error),
+        });
+      } else if (isPasswordError) {
+        openPasswordValidationModal(adminErrorMessage);
+      } else {
+        openLoginValidationModal(adminErrorMessage, {
+          title: "Seller Login Error",
+          actionLabel: "Try Again",
+          focusTarget: identifierInput,
+        });
+      }
+    }
+    return;
+  }
+
+  if (activeRole === "employee") {
+    setLoginSubmitAvailability({ submitting: true });
+    setFeedback("Checking employee account...");
+    const resolvedEmployeeId =
+      getEmployeeAccountIdentifier(employeeIdentifierValidAccount) || normalizeLoginEmployeeId(identifier);
+
+    try {
+      const response = await fetch("/api/employee-login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          employeeId: resolvedEmployeeId,
+          password,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const loginError = new Error(
+          response.status === 401
+            ? "Incorrect password. Please try again."
+            : data.message || "Unable to sign in employee.",
+        );
+        loginError.status = response.status;
+        throw loginError;
+      }
+
+      const employeeAccount = data.account || {
+        employeeId: resolvedEmployeeId,
+        position: "",
+      };
+      const dashboardPath =
+        String(data.dashboardPath ?? data.redirectPath ?? "").trim()
+        || getEmployeeDashboardPath(employeeAccount);
+      const redirectPath = mainWorkspacePath;
+
+      try {
+        const employeeAdminScopeId = normalizeLoginAdminScope(
+          data.adminId,
+          getAccountAdminScope(employeeAccount, "admin"),
+        );
+        const employeeSession = {
+          ...employeeAccount,
+          adminId: employeeAdminScopeId,
+          dashboardPath,
+          signedInAt: new Date().toISOString(),
+        };
+        window.sessionStorage.removeItem("gms-admin-session");
+        window.sessionStorage.removeItem("gms-super-admin-session");
+        saveActiveAdminScope(employeeAdminScopeId);
+        window.sessionStorage.setItem(
+          "gms-employee-session",
+          JSON.stringify(employeeSession),
+        );
+        window.dispatchEvent(
+          new CustomEvent("gms-employee-session-updated", {
+            detail: { session: employeeSession },
+          }),
+        );
+      } catch (storageError) {
+        console.warn("Unable to save employee session.", storageError);
+      }
+
+      setFeedback("Employee login successful. Redirecting...", "success");
+      window.location.replace(redirectPath);
+    } catch (error) {
+      setLoginSubmitAvailability();
+      const loginErrorMessage = error instanceof Error
+        ? error.message
+        : "Unable to sign in employee.";
+      const isPasswordError = employeeIdentifierValidAccount
+        && (error?.status === 401 || /password/i.test(loginErrorMessage));
+
+      if (isPasswordError) {
+        openPasswordValidationModal(loginErrorMessage);
+      } else {
+        openLoginValidationModal(loginErrorMessage, {
+          title: "Employee Login Error",
+          actionLabel: "Try Again",
+          focusTarget: identifierInput,
+        });
+      }
+    }
+    return;
+  }
+
+  setFeedback("");
+});
+
+adminBannedCloseButton?.addEventListener("click", () => {
+  closeAdminBannedModal();
+  identifierInput.focus();
+});
+
+adminBannedModalXClose?.addEventListener("click", () => {
+  closeAdminBannedModal();
+  identifierInput.focus();
+});
+
+adminBannedModalMore?.addEventListener("click", () => {
+  const isExpanded = adminBannedModal?.classList.toggle("is-description-expanded");
+  adminBannedModalMore.textContent = isExpanded ? "Show less" : "More";
+  updateAdminBannedModalMoreButton();
+});
+
+adminBannedSupportButton?.addEventListener("click", () => {
+  const email = normalizeLoginEmail(identifierInput.value);
+  const subject = encodeURIComponent("Admin account ban review");
+  const body = encodeURIComponent(
+    email
+      ? `Hello support,\n\nPlease review the banned admin account for ${email}.\n\nThank you.`
+      : "Hello support,\n\nPlease review my banned admin account.\n\nThank you.",
+  );
+  window.location.href = `mailto:support@gmsshopping.com?subject=${subject}&body=${body}`;
+});
+
+roleButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setActiveRole(button.dataset.role);
+  });
+});
+
+identifierInput.addEventListener("input", () => {
+  scheduleLoginIdentifierValidation();
+});
+
+passwordInput.addEventListener("input", () => {
+  setLoginPasswordState("");
+  setLoginSubmitAvailability();
+});
+
+identifierInput.addEventListener("blur", () => {
+  if (activeRole === "admin" && identifierInput.value.trim() && !isCurrentAdminIdentifierMatched()) {
+    void validateAdminIdentifier({ showModal: true });
+  } else if (activeRole === "employee" && identifierInput.value.trim() && !isCurrentEmployeeIdentifierMatched()) {
+    void validateEmployeeIdentifier({ showModal: true });
+  }
+});
+
+const initialSearchParams = new URLSearchParams(window.location.search);
+const requestedInitialRole = initialSearchParams.get("role");
+const initialRole = loginRoles[requestedInitialRole] ? requestedInitialRole : "admin";
+if (!redirectAuthenticatedEmployeeFromLogin(initialRole)) {
+  setActiveRole(initialRole);
+}

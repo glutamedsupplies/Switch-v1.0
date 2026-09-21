@@ -1,0 +1,4 @@
+{
+  "old": "const fsPromises = require(\"fs/promises\");\nlet sharp = null;\n\ntry {\n  sharp = require(\"sharp\");\n} catch (_) {\n  sharp = null;\n}",
+  "neu": "const fsPromises = require(\"fs/promises\");\nlet sharp = null;\nlet biometricFirmwareCompile = null;\n\ntry {\n  sharp = require(\"sharp\");\n} catch (_) {\n  sharp = null;\n}\n\ntry {\n  biometricFirmwareCompile = require(\"./services/biometricFirmwareCompile\");\n} catch (_) {\n  biometricFirmwareCompile = null;\n}"
+}

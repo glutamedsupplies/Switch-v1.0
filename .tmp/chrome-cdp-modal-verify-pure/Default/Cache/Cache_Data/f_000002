@@ -1,0 +1,3183 @@
+(function () {
+  const mainPath = "/main.html";
+  const adminSessionKey = "gms-admin-session";
+  const employeeSessionKey = "gms-employee-session";
+  const superAdminSessionKey = "gms-super-admin-session";
+  const adminScopeStorageKey = "gms-admin-id";
+  const liveChatNavBadgeRefreshIntervalMs = 5000;
+  const liveChatDocumentSrc = "/live_chat.html?__gms_admin_spa_frame=1";
+  const liveChatControllerSrc = "/employee_dashboard.js?v=main-live-chat-embed-3";
+  const ordersDocumentSrc = "/insight.html?__gms_admin_spa_frame=1&main_orders=1&v=main-orders-detail-3";
+  const listingInsightDocumentSrc = "/product_insight.html?__gms_admin_spa_frame=1&main_listing_insight=1&v=listing-insight-3";
+  const productListingDocumentSrc = "/product_panel.html?__gms_admin_spa_frame=1&v=listing-composer-portal-2";
+  const inventoryDocumentSrc = "/stock.html?__gms_admin_spa_frame=1&main_inventory=1";
+  const employeesDocumentSrc = "/employees.html?__gms_admin_spa_frame=1&main_employees=1&v=employee-workspace-1";
+  const packingDocumentSrc = "/packing_admin.html?__gms_admin_spa_frame=1&main_packing=1&v=packing-admin-1";
+  const productListingFrameStylesheetHref = "/admin_spa.css?v=admin-spa-shell-2";
+  let liveChatUnreadCount = 0;
+  let liveChatNavBadgeRefreshInFlight = false;
+  let liveChatNavBadgeRefreshTimer = 0;
+  let liveChatLoadPromise = null;
+  let ordersLoadStarted = false;
+  let ordersLoadFailureTimer = 0;
+  let listingInsightLoadStarted = false;
+  let listingInsightLoadFailureTimer = 0;
+  let productListingLoadStarted = false;
+  let productListingLoadFailureTimer = 0;
+  let productListingFrameResizeTimer = 0;
+  let productListingFrameResizeObserver = null;
+  let productListingFrameMutationObserver = null;
+  let productListingFrameAbortController = null;
+  let productListingFrameLastHeight = 0;
+  let inventoryLoadStarted = false;
+  let inventoryLoadFailureTimer = 0;
+  let employeesLoadStarted = false;
+  let employeesLoadFailureTimer = 0;
+  let packingLoadStarted = false;
+  let packingLoadFailureTimer = 0;
+  const mainEmbeddedFrameHeightSyncs = new Map();
+  let dashboardSearchQuery = "";
+  let liveChatSearchQuery = "";
+  let ordersSearchQuery = "";
+  let listingInsightSearchQuery = "";
+  let productListingSearchQuery = "";
+  let inventorySearchQuery = "";
+  let employeesSearchQuery = "";
+  let packingSearchQuery = "";
+  let inventoryPriorityFilter = "all";
+  let expandedMainNavKey = "";
+  let collapseMainNavTimer = 0;
+  let brandMarqueeFrame = 0;
+  let brandMarqueeTimeout = 0;
+
+  const inventoryFilterItems = Object.freeze([
+    { title: "All", filter: "all" },
+    { title: "New Stock", filter: "new-stock" },
+    { title: "Low Stock", filter: "low-stock" },
+    { title: "Out of Stock", filter: "out-of-stock" },
+    { title: "Near Expiry", filter: "near-expiry" },
+    { title: "Expired", filter: "expired-product" },
+  ]);
+
+  const elements = {
+    body: document.body,
+    sidebar: document.querySelector("[data-main-sidebar]"),
+    backdrop: document.querySelector("[data-main-backdrop]"),
+    sidebarToggle: document.querySelector("[data-main-sidebar-toggle]"),
+    name: document.querySelector("[data-main-name]"),
+    nameText: document.querySelector("[data-main-name-text]"),
+    subtitle: document.querySelector("[data-main-subtitle]"),
+    logo: document.querySelector("[data-main-logo]"),
+    fallback: document.querySelector("[data-main-fallback]"),
+    nav: document.querySelector("[data-main-nav]"),
+    search: document.querySelector("[data-main-search]"),
+    filter: document.querySelector("[data-main-filter]"),
+    content: document.querySelector("[data-main-content]"),
+    dashboardView: document.querySelector("[data-main-dashboard-view]"),
+    liveChatView: document.querySelector("[data-main-live-chat-view]"),
+    liveChatMount: document.querySelector("[data-main-live-chat-mount]"),
+    liveChatSearchBridge: document.querySelector("[data-employee-chat-search]"),
+    ordersView: document.querySelector("[data-main-orders-view]"),
+    ordersFrame: document.querySelector("[data-main-orders-frame]"),
+    ordersLoading: document.querySelector("[data-main-orders-loading]"),
+    ordersError: document.querySelector("[data-main-orders-error]"),
+    listingInsightView: document.querySelector("[data-main-listing-insight-view]"),
+    listingInsightFrame: document.querySelector("[data-main-listing-insight-frame]"),
+    listingInsightLoading: document.querySelector("[data-main-listing-insight-loading]"),
+    listingInsightError: document.querySelector("[data-main-listing-insight-error]"),
+    listingView: document.querySelector("[data-main-listing-view]"),
+    listingFrame: document.querySelector("[data-main-listing-frame]"),
+    listingLoading: document.querySelector("[data-main-listing-loading]"),
+    listingError: document.querySelector("[data-main-listing-error]"),
+    inventoryView: document.querySelector("[data-main-inventory-view]"),
+    inventoryFrame: document.querySelector("[data-main-inventory-frame]"),
+    inventoryLoading: document.querySelector("[data-main-inventory-loading]"),
+    inventoryError: document.querySelector("[data-main-inventory-error]"),
+    employeesView: document.querySelector("[data-main-employees-view]"),
+    employeesFrame: document.querySelector("[data-main-employees-frame]"),
+    employeesLoading: document.querySelector("[data-main-employees-loading]"),
+    employeesError: document.querySelector("[data-main-employees-error]"),
+    packingView: document.querySelector("[data-main-packing-view]"),
+    packingFrame: document.querySelector("[data-main-packing-frame]"),
+    packingLoading: document.querySelector("[data-main-packing-loading]"),
+    packingError: document.querySelector("[data-main-packing-error]"),
+    title: document.querySelector("[data-main-title]"),
+    description: document.querySelector("[data-main-description]"),
+    breadcrumb: document.querySelector("[data-main-breadcrumb]"),
+    summary: document.querySelector("[data-main-summary]"),
+    links: document.querySelector("[data-main-links]"),
+    openDashboard: document.querySelector("[data-main-open-dashboard]"),
+  };
+
+  const mainEmbeddedFrameConfigs = Object.freeze({
+    orders: {
+      view: "orders",
+      frameKey: "ordersFrame",
+      cssVar: "--main-orders-frame-height",
+      minHeight: 720,
+      measureSelectors: [
+        ".order-insight-shell",
+        ".dashboard-layout",
+        ".dashboard-content",
+        ".insight-main-grid",
+        ".insight-order-list-shell",
+        ".insight-order-list-container",
+        ".insight-order-list",
+      ],
+      embeddedStyles: `
+        html.main-edge-scroll-frame body.main-orders-embedded .order-insight-shell.page-shell,
+        html.main-edge-scroll-frame body.main-orders-embedded .dashboard-layout,
+        html.main-edge-scroll-frame body.main-orders-embedded .dashboard-content,
+        html.main-edge-scroll-frame body.main-orders-embedded .insight-main-grid {
+          display: block !important;
+          width: 100% !important;
+          max-width: none !important;
+          height: auto !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: visible !important;
+        }
+
+        html.main-edge-scroll-frame body.main-orders-embedded .insight-main-grid > .insight-order-list-shell.dashboard-panel {
+          height: auto !important;
+          min-height: 720px !important;
+          overflow: visible !important;
+          grid-template-rows: auto auto auto auto auto auto !important;
+        }
+
+        html.main-edge-scroll-frame body.main-orders-embedded .insight-order-list-container,
+        html.main-edge-scroll-frame body.main-orders-embedded .insight-main-grid .insight-order-list {
+          height: auto !important;
+          max-height: none !important;
+          min-height: 260px !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+      `,
+    },
+    "listing-insight": {
+      view: "listing-insight",
+      frameKey: "listingInsightFrame",
+      cssVar: "--main-listing-insight-frame-height",
+      minHeight: 720,
+      measureSelectors: [
+        ".product-insight-shell",
+        ".dashboard-layout",
+        ".dashboard-content",
+        ".product-insight-main-grid",
+        ".product-insight-sold-list-shell",
+        ".product-insight-sold-rank-list",
+      ],
+      embeddedStyles: `
+        html.main-edge-scroll-frame body.product-insight-page.listing-insight-embedded .product-insight-shell.page-shell,
+        html.main-edge-scroll-frame body.product-insight-page.listing-insight-embedded .dashboard-layout,
+        html.main-edge-scroll-frame body.product-insight-page.listing-insight-embedded .dashboard-content,
+        html.main-edge-scroll-frame body.product-insight-page.listing-insight-embedded .product-insight-main-grid {
+          display: block !important;
+          width: 100% !important;
+          max-width: none !important;
+          height: auto !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: visible !important;
+        }
+
+        html.main-edge-scroll-frame body.product-insight-page.listing-insight-embedded .product-insight-main-grid > .product-insight-sold-list-shell.dashboard-panel {
+          height: auto !important;
+          min-height: 720px !important;
+          overflow: visible !important;
+          grid-template-rows: auto auto auto auto !important;
+        }
+
+        html.main-edge-scroll-frame body.product-insight-page.listing-insight-embedded .product-insight-sold-rank-list {
+          height: auto !important;
+          max-height: none !important;
+          min-height: 360px !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+      `,
+    },
+    inventory: {
+      view: "inventory",
+      frameKey: "inventoryFrame",
+      cssVar: "--main-inventory-frame-height",
+      minHeight: 720,
+      measureSelectors: [
+        ".stock-monitor-shell",
+        ".dashboard-layout",
+        ".dashboard-content",
+        ".stock-summary-grid",
+        ".stock-main-grid",
+        ".stock-list-shell",
+        ".stock-product-list",
+      ],
+      embeddedStyles: `
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .stock-monitor-shell.page-shell,
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .stock-monitor-shell .dashboard-layout,
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .stock-monitor-shell .dashboard-content,
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .dashboard-main-grid.stock-main-grid,
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .stock-list-shell.dashboard-panel {
+          width: 100% !important;
+          max-width: none !important;
+          height: auto !important;
+          max-height: none !important;
+          min-height: 0 !important;
+          margin: 0 !important;
+          overflow: visible !important;
+        }
+
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .stock-monitor-shell .dashboard-content {
+          display: grid !important;
+          grid-template-rows: auto auto !important;
+          gap: 14px !important;
+          padding: 16px !important;
+        }
+
+        html.main-edge-scroll-frame body.stock-main-inventory-embedded .stock-list-shell > .stock-product-list {
+          height: auto !important;
+          max-height: none !important;
+          min-height: 360px !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+      `,
+    },
+    employees: {
+      view: "employees",
+      frameKey: "employeesFrame",
+      cssVar: "--main-employees-frame-height",
+      minHeight: 720,
+      measureSelectors: [
+        ".employee-workspace",
+        ".employee-summary",
+        ".employee-directory",
+        ".employee-table-shell",
+        ".employee-table__body",
+      ],
+      embeddedStyles: `
+        html.main-edge-scroll-frame body.employee-workspace-page,
+        html.main-edge-scroll-frame body.employee-workspace-page .employee-workspace,
+        html.main-edge-scroll-frame body.employee-workspace-page .employee-directory,
+        html.main-edge-scroll-frame body.employee-workspace-page .employee-table-shell {
+          height: auto !important;
+          max-height: none !important;
+          min-height: 0 !important;
+          overflow-y: visible !important;
+        }
+      `,
+    },
+    packing: {
+      view: "packing",
+      frameKey: "packingFrame",
+      cssVar: "--main-packing-frame-height",
+      minHeight: 720,
+      measureSelectors: [
+        ".packing-admin-workspace",
+        ".packing-admin-summary",
+        ".packing-admin-board",
+        ".packing-admin-station",
+        ".packing-admin-queue",
+        ".packing-admin-feed",
+        ".packing-admin-feed__list",
+      ],
+      embeddedStyles: `
+        html.main-edge-scroll-frame body.packing-admin-page,
+        html.main-edge-scroll-frame body.packing-admin-page .packing-admin-workspace,
+        html.main-edge-scroll-frame body.packing-admin-page .packing-admin-board,
+        html.main-edge-scroll-frame body.packing-admin-page .packing-admin-station,
+        html.main-edge-scroll-frame body.packing-admin-page .packing-admin-feed {
+          height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
+        }
+
+        html.main-edge-scroll-frame body.packing-admin-page .packing-admin-queue,
+        html.main-edge-scroll-frame body.packing-admin-page .packing-admin-feed__list {
+          height: auto !important;
+          max-height: none !important;
+          min-height: 0 !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+        }
+      `,
+    },
+  });
+
+  const icons = {
+    dashboard: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-dashboard" aria-hidden="true">
+        <rect width="7" height="9" x="3" y="3" rx="1" />
+        <rect width="7" height="5" x="14" y="3" rx="1" />
+        <rect width="7" height="9" x="14" y="12" rx="1" />
+        <rect width="7" height="5" x="3" y="16" rx="1" />
+      </svg>`,
+    company: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 21V7l8-4 8 4v14" />
+        <path d="M8 21v-8h8v8M8 8h.01M12 8h.01M16 8h.01" stroke-linecap="round" />
+      </svg>`,
+    listing: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" />
+        <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
+        <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />
+      </svg>`,
+    type: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 21V9l7-5 7 5v12" />
+        <path d="M9 21v-7h6v7M8 10h.01M12 10h.01M16 10h.01" stroke-linecap="round" />
+      </svg>`,
+    payment: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3.5 6.5h17v11h-17z" />
+        <path d="M3.5 10h17M7 15h4" stroke-linecap="round" />
+      </svg>`,
+    delivery: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 7h11v9H3zM14 10h3.5l3.5 4v2h-7z" />
+        <circle cx="7" cy="18" r="2" />
+        <circle cx="18" cy="18" r="2" />
+      </svg>`,
+    user: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <circle cx="12" cy="9" r="2.5" />
+        <path d="M8 17a4 4 0 0 1 8 0" stroke-linecap="round" />
+      </svg>`,
+    settings: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 8.2a3.8 3.8 0 1 1 0 7.6 3.8 3.8 0 0 1 0-7.6Z" />
+        <path d="m19.4 15.1 1.1 1.9-2 3.4-2.2-.8a8 8 0 0 1-1.8 1l-.4 2.4h-4l-.4-2.4a8 8 0 0 1-1.8-1l-2.2.8-2-3.4 1.1-1.9a8.4 8.4 0 0 1 0-2.2L3.7 11l2-3.4 2.2.8a8 8 0 0 1 1.8-1L10.1 5h4l.4 2.4a8 8 0 0 1 1.8 1l2.2-.8 2 3.4-1.1 1.9a8.4 8.4 0 0 1 0 2.2Z" />
+      </svg>`,
+    signOut: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10 17 15 12l-5-5" />
+        <path d="M15 12H3" />
+        <path d="M12 3h7v18h-7" />
+      </svg>`,
+    chat: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-messages-square-icon lucide-messages-square" aria-hidden="true">
+        <path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+        <path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1" />
+      </svg>`,
+    orders: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shopping-bag" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+        <path d="M3 6h18" />
+        <path d="M16 10a4 4 0 0 1-8 0" />
+      </svg>`,
+    insight: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chart-no-axes-combined" aria-hidden="true">
+        <path d="M12 16v5" />
+        <path d="M16 14v7" />
+        <path d="M20 10v11" />
+        <path d="m22 3-8.65 8.65a.5.5 0 0 1-.71 0l-2.29-2.29a.5.5 0 0 0-.71 0L2 17" />
+        <path d="M4 18v3" />
+        <path d="M8 14v7" />
+      </svg>`,
+    stock: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 7h16v13H4zM4 7l2-3h12l2 3" />
+        <path d="M9 12h6" stroke-linecap="round" />
+      </svg>`,
+    employees: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users-round" aria-hidden="true">
+        <path d="M18 21a8 8 0 0 0-16 0" />
+        <circle cx="10" cy="8" r="5" />
+        <path d="M22 20c0-3.37-2-6.5-5-8a5 5 0 0 0-.45-8.3" />
+      </svg>`,
+    packing: `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-package-check" aria-hidden="true">
+        <path d="m16 16 2 2 4-4" />
+        <path d="M21 10.5V8l-9-5-9 5v8l9 5 3.5-1.94" />
+        <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+      </svg>`,
+  };
+
+  function readJsonSession(key) {
+    try {
+      const rawValue = window.sessionStorage.getItem(key);
+      return rawValue ? JSON.parse(rawValue) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeJsonSession(key, value) {
+    try {
+      window.sessionStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn("Unable to update session.", error);
+    }
+  }
+
+  function normalizeText(value) {
+    return String(value ?? "").replace(/\s+/g, " ").trim();
+  }
+
+  function firstText(candidates, fallback = "") {
+    return candidates.map(normalizeText).find(Boolean) || fallback;
+  }
+
+  function firstUrl(candidates) {
+    return candidates.map((value) => String(value ?? "").trim()).find(Boolean) || "";
+  }
+
+  function getInitials(value, fallback = "SC") {
+    const words = normalizeText(value).split(/\s+/).filter(Boolean);
+    const initials = words.length > 1
+      ? `${words[0][0] || ""}${words[1][0] || ""}`
+      : String(words[0] || fallback).slice(0, 2);
+    return initials.toUpperCase() || fallback;
+  }
+
+  function getSessionAdminId(session) {
+    return firstText([
+      session?.adminId,
+      session?.ownerAdminId,
+      session?.tenantId,
+      session?.workspaceId,
+      session?.storeAdminId,
+      session?.id,
+      session?.accountCode,
+    ]);
+  }
+
+  function hasAdminSession(session) {
+    return Boolean(
+      session &&
+      typeof session === "object" &&
+      (normalizeText(session.role).toLowerCase() === "admin" || session.adminId || session.email || session.id),
+    );
+  }
+
+  function hasEmployeeSession(session) {
+    return Boolean(
+      session &&
+      typeof session === "object" &&
+      (session.employeeId || session.accountCode || normalizeText(session.role).toLowerCase() === "employee"),
+    );
+  }
+
+  function getAuthState() {
+    const adminSession = readJsonSession(adminSessionKey);
+    if (hasAdminSession(adminSession)) {
+      return { role: "seller", session: adminSession };
+    }
+
+    const employeeSession = readJsonSession(employeeSessionKey);
+    if (hasEmployeeSession(employeeSession)) {
+      return { role: "employee", session: employeeSession };
+    }
+
+    return null;
+  }
+
+  let authState = getAuthState();
+  if (!authState) {
+    window.location.replace("/login.html");
+    return;
+  }
+
+  function getMainViewFromHash() {
+    const hash = window.location.hash.toLowerCase();
+    if (hash === "#live-chat") {
+      return "live-chat";
+    }
+    if (hash === "#orders") {
+      return "orders";
+    }
+    if (hash === "#listing-insight") {
+      return "listing-insight";
+    }
+    if (hash === "#listing") {
+      return "listing";
+    }
+    if (hash === "#inventory") {
+      return "inventory";
+    }
+    if (hash === "#employees") {
+      return "employees";
+    }
+    if (hash === "#packing") {
+      return "packing";
+    }
+    return "dashboard";
+  }
+
+  function getMainViewTitle(view) {
+    if (view === "live-chat") {
+      return "Live Chat";
+    }
+    if (view === "orders") {
+      return "Orders";
+    }
+    if (view === "listing-insight") {
+      return "Listing Insight";
+    }
+    if (view === "listing") {
+      return "Product Listing";
+    }
+    if (view === "inventory") {
+      return "Inventory";
+    }
+    if (view === "employees") {
+      return "Employees";
+    }
+    if (view === "packing") {
+      return "Packing";
+    }
+    return "Main";
+  }
+
+  function normalizeInventoryPriorityFilter(value) {
+    const normalizedValue = normalizeText(value).toLowerCase();
+    return inventoryFilterItems.some((item) => item.filter === normalizedValue)
+      ? normalizedValue
+      : "all";
+  }
+
+  let activeMainView = getMainViewFromHash();
+
+  function getEmployeeDashboardPath(session) {
+    const position = normalizeText(session?.position).toLowerCase();
+    const storedPath = normalizeText(session?.dashboardPath);
+    if (storedPath && storedPath !== mainPath) {
+      return storedPath;
+    }
+    if (position === "packing") {
+      return "/packing_dashboard.html";
+    }
+    return position ? "/employee_dashboard.html" : "/employee_access_pending.html";
+  }
+
+  function getDashboardPath() {
+    if (authState.role === "seller") {
+      const storedPath = normalizeText(authState.session?.dashboardPath);
+      return storedPath && storedPath !== mainPath ? storedPath : "/admin_dashboard.html";
+    }
+
+    return getEmployeeDashboardPath(authState.session);
+  }
+
+  function getIdentity() {
+    const session = authState.session || {};
+    if (authState.role === "seller") {
+      const name = firstText([
+        session.companyName,
+        session.storeName,
+        session.businessName,
+        session.sellerName,
+        session.shopName,
+        session.company?.name,
+        session.store?.name,
+        session.displayName,
+        session.name,
+        session.email,
+      ], "Company Seller");
+      const subtitle = firstText([
+        session.businessType,
+        session.storeType,
+        session.storeTypeName,
+        session.businessCategory,
+        session.company?.businessType,
+        session.store?.businessType,
+      ], "Business Type");
+      const logoUrl = firstUrl([
+        session.logoUrl,
+        session.companyLogoUrl,
+        session.companyPictureUrl,
+        session.companyProfileImageUrl,
+        session.businessLogoUrl,
+        session.storeLogoUrl,
+        session.profileImageUrl,
+        session.avatarUrl,
+        session.photoUrl,
+      ]);
+      return { name, subtitle, logoUrl, fallback: getInitials(name, "CS") };
+    }
+
+    const fullName = [session.firstName, session.lastName].map(normalizeText).filter(Boolean).join(" ");
+    const name = firstText([
+      fullName,
+      session.name,
+      session.displayName,
+      session.employeeName,
+      session.email,
+      session.employeeId,
+    ], "Employee");
+    const subtitle = firstText([session.position, session.role], "Employee");
+    const logoUrl = firstUrl([
+      session.profileImageUrl,
+      session.avatarUrl,
+      session.photoUrl,
+      session.profilePhotoUrl,
+      session.employeePhotoUrl,
+      session.pictureUrl,
+      session.imageUrl,
+    ]);
+    return { name, subtitle, logoUrl, fallback: getInitials(name, "EM") };
+  }
+
+  function getPermissionSet() {
+    const permissions = Array.isArray(authState.session?.accessPermissions)
+      ? authState.session.accessPermissions
+      : [];
+    const hasStoredPermissions = permissions.length > 0 || authState.session?.accessPermissionsConfigured;
+    const fallbackPermissions = [];
+    const position = normalizeText(authState.session?.position).toLowerCase();
+
+    if (!hasStoredPermissions) {
+      if (position === "admin employee") {
+        fallbackPermissions.push("employee-dashboard", "live-chat");
+      } else if (position === "packing") {
+        fallbackPermissions.push("packing-dashboard");
+      } else if (position) {
+        fallbackPermissions.push("employee-dashboard");
+      }
+    }
+
+    return new Set(
+      (hasStoredPermissions ? permissions : fallbackPermissions)
+        .map((permission) => normalizeText(permission).toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  function hasPermission(permission) {
+    const permissionSet = getPermissionSet();
+    return permissionSet.has(permission);
+  }
+
+  function canAccessLiveChat() {
+    return authState.role === "seller" || hasPermission("live-chat");
+  }
+
+  function canAccessProductListing() {
+    return authState.role === "seller" || hasPermission("products");
+  }
+
+  function canAccessOrders() {
+    return authState.role === "seller";
+  }
+
+  function canAccessListingInsight() {
+    return authState.role === "seller";
+  }
+
+  function canAccessInventory() {
+    return authState.role === "seller" || hasPermission("admin-inventory") || hasPermission("employee-inventory");
+  }
+
+  function canAccessEmployees() {
+    return authState.role === "seller";
+  }
+
+  function canAccessPacking() {
+    return authState.role === "seller";
+  }
+
+  function getSellerNavItems() {
+    return [
+      {
+        key: "dashboard",
+        title: "Dashboard",
+        view: "dashboard",
+        icon: "dashboard",
+        description: "Store overview, notices, and account activity.",
+        children: [
+          { title: "Overview", view: "dashboard" },
+        ],
+      },
+      { key: "live-chat", title: "Live Chat", view: "live-chat", icon: "chat", description: "Open customer conversations and support messages." },
+      { key: "orders", title: "Orders", view: "orders", icon: "orders", description: "Monitor live customer orders and fulfillment status." },
+      { key: "listing-insight", title: "Listing Insight", view: "listing-insight", icon: "insight", description: "Review top products, sold units, revenue, and sales movement." },
+      { key: "listing", title: "Listing", view: "listing", icon: "listing", description: "Manage product listings and item details." },
+      {
+        key: "inventory",
+        title: "Inventory",
+        view: "inventory",
+        icon: "stock",
+        description: "Track stock levels, expiry status, and stock records.",
+        children: inventoryFilterItems.map((item) => ({
+          title: item.title,
+          view: "inventory",
+          inventoryFilter: item.filter,
+        })),
+      },
+      { key: "employees", title: "Employees", view: "employees", icon: "employees", description: "Manage employee records, access, and work information." },
+      { key: "packing", title: "Packing", view: "packing", icon: "packing", description: "Scan, pack, and hand orders over to couriers." },
+      { key: "sign-out", title: "Sign out", action: "sign-out", icon: "signOut", danger: true },
+    ];
+  }
+
+  function getEmployeeNavItems() {
+    const dashboardPath = getDashboardPath();
+    const items = [
+      {
+        key: "dashboard",
+        title: "Dashboard",
+        view: "dashboard",
+        icon: "dashboard",
+        description: "Employee overview and assigned workspace.",
+        children: [
+          { title: "Overview", view: "dashboard" },
+          { title: "Access", href: "/employee_access_pending.html" },
+        ],
+      },
+    ];
+
+    if (hasPermission("live-chat")) {
+      items.push({ key: "live-chat", title: "Live Chat", view: "live-chat", icon: "chat", description: "Open assigned live chat workspace." });
+    }
+    if (hasPermission("employee-order")) {
+      items.push({ key: "orders", title: "Orders", href: "/employee_order_insight.html", icon: "listing", description: "Open assigned order activity." });
+    }
+    if (hasPermission("employee-inventory") || hasPermission("admin-inventory")) {
+      items.push({ key: "inventory", title: "Inventory", href: "/employee_stock.html", icon: "stock", description: "Open assigned stock workspace." });
+    }
+    if (normalizeText(authState.session?.position).toLowerCase() === "packing" || hasPermission("packing-dashboard")) {
+      items.push({ key: "packing", title: "Packing", href: "/packing_dashboard.html", icon: "delivery", description: "Open packing dashboard." });
+    }
+
+    items.push(
+      { key: "profile", title: "User Data", href: dashboardPath, icon: "user", description: "Open employee account workspace." },
+      { key: "settings", title: "Settings", href: dashboardPath, icon: "settings", description: "Open employee settings." },
+      { key: "sign-out", title: "Sign out", action: "sign-out", icon: "signOut", danger: true },
+    );
+    return items;
+  }
+
+  function getNavItems() {
+    return authState.role === "seller" ? getSellerNavItems() : getEmployeeNavItems();
+  }
+
+  function getBrandNameTextElement() {
+    if (!elements.name) {
+      return null;
+    }
+
+    if (elements.nameText instanceof HTMLElement && elements.name.contains(elements.nameText)) {
+      return elements.nameText;
+    }
+
+    const existingText = elements.name.querySelector("[data-main-name-text]");
+    if (existingText instanceof HTMLElement) {
+      elements.nameText = existingText;
+      return existingText;
+    }
+
+    const text = document.createElement("span");
+    text.className = "main-brand__marquee-text";
+    text.dataset.mainNameText = "true";
+    text.textContent = normalizeText(elements.name.textContent) || "Swift Cart";
+    elements.name.replaceChildren(text);
+    elements.nameText = text;
+    return text;
+  }
+
+  function syncBrandMarquee() {
+    const name = elements.name;
+    const text = getBrandNameTextElement();
+    if (!name || !text) {
+      return;
+    }
+
+    name.classList.remove("is-marquee");
+    text.style.removeProperty("--main-brand-marquee-distance");
+    text.style.removeProperty("--main-brand-marquee-duration");
+
+    if (!isSidebarOpen()) {
+      return;
+    }
+
+    const availableWidth = name.clientWidth;
+    const overflow = text.scrollWidth - availableWidth;
+    if (availableWidth <= 0 || overflow <= 4) {
+      return;
+    }
+
+    const distance = Math.ceil(overflow + 20);
+    const duration = Math.max(7, Math.min(18, distance / 12));
+    name.classList.add("is-marquee");
+    text.style.setProperty("--main-brand-marquee-distance", `-${distance}px`);
+    text.style.setProperty("--main-brand-marquee-duration", `${duration.toFixed(2)}s`);
+  }
+
+  function queueBrandMarqueeSync() {
+    if (brandMarqueeFrame) {
+      window.cancelAnimationFrame(brandMarqueeFrame);
+    }
+    brandMarqueeFrame = window.requestAnimationFrame(() => {
+      brandMarqueeFrame = 0;
+      syncBrandMarquee();
+    });
+  }
+
+  function renderIdentity() {
+    const identity = getIdentity();
+    document.title = `${identity.name} - ${getMainViewTitle(activeMainView)}`;
+    const nameText = getBrandNameTextElement();
+    if (nameText) {
+      nameText.textContent = identity.name;
+      if (elements.name) {
+        elements.name.title = identity.name;
+      }
+    } else if (elements.name) {
+      elements.name.textContent = identity.name;
+      elements.name.title = identity.name;
+    }
+    if (elements.subtitle) {
+      elements.subtitle.textContent = identity.subtitle;
+    }
+    if (elements.fallback) {
+      elements.fallback.textContent = identity.fallback;
+      elements.fallback.hidden = Boolean(identity.logoUrl);
+    }
+    if (elements.logo instanceof HTMLImageElement) {
+      if (identity.logoUrl) {
+        elements.logo.onerror = () => {
+          elements.logo.hidden = true;
+          if (elements.fallback) {
+            elements.fallback.hidden = false;
+          }
+        };
+        elements.logo.src = identity.logoUrl;
+        elements.logo.alt = `${identity.name} logo`;
+        elements.logo.hidden = false;
+      } else {
+        elements.logo.onerror = null;
+        elements.logo.removeAttribute("src");
+        elements.logo.alt = "";
+        elements.logo.hidden = true;
+      }
+    }
+    queueBrandMarqueeSync();
+  }
+
+  function renderNav() {
+    const items = getNavItems();
+    if (!elements.nav) {
+      return;
+    }
+
+    elements.nav.innerHTML = items.map((item) => {
+      const isChildActive = (child) => {
+        if (child?.inventoryFilter) {
+          return activeMainView === "inventory"
+            && normalizeInventoryPriorityFilter(child.inventoryFilter) === inventoryPriorityFilter;
+        }
+        return child?.view === activeMainView;
+      };
+      const hasActiveChild = Array.isArray(item.children)
+        && item.children.some(isChildActive);
+      const isActive = hasActiveChild || (item.view ? item.view === activeMainView : item.key === activeMainView);
+      const hasChildren = Array.isArray(item.children) && item.children.length;
+      const isExpanded = hasChildren && item.key === expandedMainNavKey;
+      const children = hasChildren
+        ? `<div
+            class="main-nav__sublist${isExpanded ? " is-open" : ""}"
+            data-main-nav-sublist
+            aria-hidden="${isExpanded ? "false" : "true"}"
+          >
+            ${item.children.map((child, index) => `
+              <button
+                type="button"
+                class="main-nav__subitem${isChildActive(child) ? " is-active" : ""}"
+                tabindex="${isExpanded ? "0" : "-1"}"
+                ${child.href ? `data-main-route="${child.href}"` : ""}
+                ${child.view ? `data-main-view="${child.view}"` : ""}
+                ${child.inventoryFilter ? `data-main-inventory-filter="${child.inventoryFilter}"` : ""}
+                data-main-search-text="${normalizeText(`${child.title} ${item.title}`).toLowerCase()}"
+              >${child.title}</button>
+            `).join("")}
+          </div>`
+        : "";
+      return `
+        <div
+          class="main-nav__group${isExpanded ? " is-expanded" : ""}"
+          data-main-nav-group
+          data-main-nav-group-key="${item.key}"
+          data-main-search-text="${normalizeText(`${item.title} ${item.description || ""}`).toLowerCase()}"
+        >
+          <button
+            type="button"
+            class="main-nav__item${isActive ? " is-active" : ""}${item.key === "live-chat" ? " main-nav__item--live-chat" : ""}${item.danger ? " main-nav__item--danger" : ""}"
+            data-main-nav-key="${item.key}"
+            ${item.href ? `data-main-route="${item.href}"` : ""}
+            ${item.view ? `data-main-view="${item.view}"` : ""}
+            ${item.action ? `data-main-action="${item.action}"` : ""}
+            ${hasChildren ? `aria-expanded="${isExpanded ? "true" : "false"}"` : ""}
+            ${isActive ? 'aria-current="page"' : ""}
+          >
+            ${icons[item.icon] || icons.dashboard}
+            <span class="main-nav__label">${item.title}</span>
+            ${item.key === "live-chat" ? '<span class="main-nav__badge" data-main-live-chat-badge hidden aria-hidden="true"></span>' : ""}
+          </button>
+          ${children}
+        </div>`;
+    }).join("");
+    syncLiveChatNavBadge();
+  }
+
+  function syncMainNavExpansion() {
+    if (!elements.nav) {
+      return;
+    }
+
+    elements.nav.querySelectorAll("[data-main-nav-group]").forEach((group) => {
+      const groupKey = normalizeText(group.dataset.mainNavGroupKey).toLowerCase();
+      const isExpanded = Boolean(groupKey && groupKey === expandedMainNavKey);
+      group.classList.toggle("is-expanded", isExpanded);
+
+      const navButton = group.querySelector("[data-main-nav-key]");
+      if (navButton) {
+        if (group.querySelector("[data-main-nav-sublist]")) {
+          navButton.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+        } else {
+          navButton.removeAttribute("aria-expanded");
+        }
+      }
+
+      const sublist = group.querySelector("[data-main-nav-sublist]");
+      if (sublist) {
+        sublist.classList.toggle("is-open", isExpanded);
+        sublist.setAttribute("aria-hidden", isExpanded ? "false" : "true");
+        sublist.querySelectorAll(".main-nav__subitem").forEach((subitem) => {
+          subitem.tabIndex = isExpanded ? 0 : -1;
+        });
+      }
+    });
+  }
+
+  function setExpandedMainNavKey(key, options = {}) {
+    const nextKey = normalizeText(key).toLowerCase();
+    if (nextKey && collapseMainNavTimer) {
+      window.clearTimeout(collapseMainNavTimer);
+      collapseMainNavTimer = 0;
+    }
+    if (expandedMainNavKey === nextKey) {
+      return;
+    }
+
+    expandedMainNavKey = nextKey;
+    if (options.render === true) {
+      renderNav();
+      return;
+    }
+
+    syncMainNavExpansion();
+  }
+
+  function scheduleMainNavCollapseOnBlur(relatedTarget = null) {
+    if (relatedTarget === null) {
+      return;
+    }
+
+    if (collapseMainNavTimer) {
+      window.clearTimeout(collapseMainNavTimer);
+    }
+
+    collapseMainNavTimer = window.setTimeout(() => {
+      collapseMainNavTimer = 0;
+      if (
+        !elements.nav?.contains(document.activeElement)
+        && (!relatedTarget || !elements.nav?.contains(relatedTarget))
+      ) {
+        setExpandedMainNavKey("");
+      }
+    }, 90);
+  }
+
+  function getLatestCustomerChatMessageTimestamp(thread) {
+    const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.isFromSupport === true) {
+        continue;
+      }
+
+      const timestamp = normalizeText(message?.timestamp);
+      if (timestamp) {
+        return timestamp;
+      }
+    }
+    return "";
+  }
+
+  function hasUnreadCustomerChatMessage(thread) {
+    const latestCustomerTimestamp = getLatestCustomerChatMessageTimestamp(thread);
+    if (!latestCustomerTimestamp) {
+      return false;
+    }
+
+    const latestCustomerDate = new Date(latestCustomerTimestamp);
+    if (Number.isNaN(latestCustomerDate.getTime())) {
+      return false;
+    }
+
+    const supportReadAt = normalizeText(thread?.supportReadAt);
+    if (!supportReadAt) {
+      return true;
+    }
+
+    const supportReadDate = new Date(supportReadAt);
+    return Number.isNaN(supportReadDate.getTime())
+      || latestCustomerDate.getTime() > supportReadDate.getTime();
+  }
+
+  function syncLiveChatNavBadge() {
+    const badge = elements.nav?.querySelector("[data-main-live-chat-badge]");
+    if (!badge) {
+      return;
+    }
+    badge.hidden = liveChatUnreadCount <= 0;
+  }
+
+  async function refreshLiveChatNavBadge() {
+    if (!elements.nav?.querySelector("[data-main-nav-key='live-chat']")) {
+      return;
+    }
+    if (liveChatNavBadgeRefreshInFlight) {
+      return;
+    }
+
+    liveChatNavBadgeRefreshInFlight = true;
+    try {
+      const response = await fetch("/api/chat-support", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to load live chat unread count.");
+      }
+
+      liveChatUnreadCount = (Array.isArray(data?.threads) ? data.threads : [])
+        .filter(hasUnreadCustomerChatMessage)
+        .length;
+    } catch (_) {
+      liveChatUnreadCount = Math.max(0, liveChatUnreadCount);
+    } finally {
+      liveChatNavBadgeRefreshInFlight = false;
+      syncLiveChatNavBadge();
+    }
+  }
+
+  function startLiveChatNavBadgeMonitoring() {
+    if (!elements.nav?.querySelector("[data-main-nav-key='live-chat']")) {
+      if (liveChatNavBadgeRefreshTimer) {
+        window.clearInterval(liveChatNavBadgeRefreshTimer);
+        liveChatNavBadgeRefreshTimer = 0;
+      }
+      liveChatUnreadCount = 0;
+      return;
+    }
+    syncLiveChatNavBadge();
+    void refreshLiveChatNavBadge();
+    if (!liveChatNavBadgeRefreshTimer) {
+      liveChatNavBadgeRefreshTimer = window.setInterval(
+        refreshLiveChatNavBadge,
+        liveChatNavBadgeRefreshIntervalMs,
+      );
+    }
+  }
+
+  function renderSummary() {
+    const identity = getIdentity();
+    const dashboardPath = getDashboardPath();
+    const navItems = getNavItems().filter((item) => item.action !== "sign-out");
+    const summary = [
+      { label: "Workspace", value: authState.role === "seller" ? "Seller" : "Employee", note: identity.subtitle, icon: "company" },
+      { label: "Dashboard", value: "Ready", note: dashboardPath.replace("/", ""), icon: "dashboard" },
+      { label: "Tools", value: String(navItems.length), note: "Available links", icon: "listing" },
+      { label: "Status", value: "Online", note: "Live session", icon: "settings" },
+    ];
+
+    if (elements.summary) {
+      elements.summary.innerHTML = summary.map((item) => `
+        <article class="main-stat" data-main-search-text="${normalizeText(`${item.label} ${item.value} ${item.note}`).toLowerCase()}">
+          <span class="main-stat__icon">${icons[item.icon] || icons.dashboard}</span>
+          <span>
+            <p class="main-stat__label">${item.label}</p>
+            <p class="main-stat__value">${item.value}</p>
+            <p class="main-stat__note">${item.note}</p>
+          </span>
+        </article>
+      `).join("");
+    }
+
+    if (elements.links) {
+      elements.links.innerHTML = navItems.map((item) => `
+        <a
+          class="main-tool"
+          href="${item.view ? (item.view === "dashboard" ? "#dashboard" : `#${item.view}`) : item.href || dashboardPath}"
+          ${item.view ? `data-main-view="${item.view}"` : ""}
+          data-main-search-text="${normalizeText(`${item.title} ${item.description || ""}`).toLowerCase()}"
+        >
+          <span class="main-tool__top">
+            <span class="main-tool__icon">${icons[item.icon] || icons.dashboard}</span>
+            <span class="main-tool__status">Open</span>
+          </span>
+          <span>
+            <h2>${item.title}</h2>
+            <p>${item.description || "Open workspace tool."}</p>
+          </span>
+        </a>
+      `).join("");
+    }
+
+    if (elements.openDashboard) {
+      elements.openDashboard.href = dashboardPath;
+    }
+    if (elements.title) {
+      elements.title.textContent = authState.role === "seller" ? "Seller Workspace" : "Employee Workspace";
+    }
+    if (elements.description) {
+      elements.description.textContent = authState.role === "seller"
+        ? "Monitor seller activity, listings, partners, and employee records."
+        : "Monitor assigned tools, session status, and employee workspace access.";
+    }
+    if (elements.breadcrumb) {
+      elements.breadcrumb.textContent = authState.role === "seller"
+        ? "Dashboard / Seller / Main"
+        : "Dashboard / Employee / Main";
+    }
+    if (elements.search instanceof HTMLInputElement && activeMainView === "dashboard") {
+      elements.search.placeholder = authState.role === "seller" ? "Search Seller Workspace" : "Search Employee Workspace";
+    }
+  }
+
+  function isSidebarOpen() {
+    return elements.body.classList.contains("main-sidebar-open");
+  }
+
+  function syncSidebarToggleState() {
+    const isOpen = isSidebarOpen();
+    if (elements.sidebarToggle) {
+      elements.sidebarToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      elements.sidebarToggle.setAttribute("aria-label", isOpen ? "Close navigation" : "Open navigation");
+      elements.sidebarToggle.setAttribute("title", isOpen ? "Close navigation" : "Open navigation");
+    }
+  }
+
+  function setSidebarOpen(isOpen) {
+    elements.body.classList.toggle("main-sidebar-open", Boolean(isOpen));
+    if (!isOpen) {
+      setExpandedMainNavKey("");
+    }
+    syncSidebarToggleState();
+    queueBrandMarqueeSync();
+    if (brandMarqueeTimeout) {
+      window.clearTimeout(brandMarqueeTimeout);
+    }
+    brandMarqueeTimeout = window.setTimeout(() => {
+      brandMarqueeTimeout = 0;
+      queueBrandMarqueeSync();
+    }, 260);
+  }
+
+  function filterWorkspace(query) {
+    const normalizedQuery = normalizeText(query).toLowerCase();
+    const searchableItems = document.querySelectorAll("[data-main-search-text]");
+    let visibleTools = 0;
+
+    searchableItems.forEach((item) => {
+      const isVisible = !normalizedQuery || normalizeText(item.dataset.mainSearchText).includes(normalizedQuery);
+      item.hidden = !isVisible;
+      if (item.classList.contains("main-tool") && isVisible) {
+        visibleTools += 1;
+      }
+    });
+
+    const existingEmpty = elements.links?.querySelector("[data-main-empty]");
+    if (existingEmpty) {
+      existingEmpty.remove();
+    }
+    if (elements.links && normalizedQuery && visibleTools === 0) {
+      const empty = document.createElement("div");
+      empty.className = "main-empty";
+      empty.dataset.mainEmpty = "true";
+      empty.textContent = "No matching tools";
+      elements.links.appendChild(empty);
+    }
+  }
+
+  function syncLiveChatSearch(query) {
+    liveChatSearchQuery = String(query ?? "");
+    if (!(elements.liveChatSearchBridge instanceof HTMLInputElement)) {
+      return;
+    }
+
+    elements.liveChatSearchBridge.value = liveChatSearchQuery;
+    elements.liveChatSearchBridge.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function syncListingInsightSearch(query) {
+    listingInsightSearchQuery = String(query ?? "");
+    const frame = elements.listingInsightFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const searchInput = frame.contentDocument?.getElementById("product-insight-sold-search");
+      const inputConstructor = frame.contentWindow?.HTMLInputElement;
+      if (!inputConstructor || !(searchInput instanceof inputConstructor)) {
+        return;
+      }
+      searchInput.value = listingInsightSearchQuery;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      // The iframe may still be navigating; the search is synced again on load.
+    }
+  }
+
+  function syncOrdersSearch(query) {
+    ordersSearchQuery = String(query ?? "");
+    const frame = elements.ordersFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const searchInput = frame.contentDocument?.getElementById("insight-order-search");
+      const inputConstructor = frame.contentWindow?.HTMLInputElement;
+      if (!inputConstructor || !(searchInput instanceof inputConstructor)) {
+        return;
+      }
+      searchInput.value = ordersSearchQuery;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      // The iframe may still be navigating; the search is synced again on load.
+    }
+  }
+
+  function syncProductListingSearch(query) {
+    productListingSearchQuery = String(query ?? "");
+    const frame = elements.listingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const searchInput = frame.contentDocument?.getElementById("product-search-input");
+      const inputConstructor = frame.contentWindow?.HTMLInputElement;
+      if (!inputConstructor || !(searchInput instanceof inputConstructor)) {
+        return;
+      }
+      searchInput.value = productListingSearchQuery;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      // The iframe may still be navigating; the search is synced again on load.
+    }
+  }
+
+  function syncInventorySearch(query) {
+    inventorySearchQuery = String(query ?? "");
+    const frame = elements.inventoryFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const searchInput = frame.contentDocument?.getElementById("stock-search-input");
+      const inputConstructor = frame.contentWindow?.HTMLInputElement;
+      if (!inputConstructor || !(searchInput instanceof inputConstructor)) {
+        return;
+      }
+      searchInput.value = inventorySearchQuery;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      // The iframe may still be navigating; the search is synced again on load.
+    }
+  }
+
+  function syncEmployeesSearch(query) {
+    employeesSearchQuery = String(query ?? "");
+    const frame = elements.employeesFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const searchInput = frame.contentDocument?.getElementById("employee-workspace-search");
+      const inputConstructor = frame.contentWindow?.HTMLInputElement;
+      if (!inputConstructor || !(searchInput instanceof inputConstructor)) {
+        return;
+      }
+      searchInput.value = employeesSearchQuery;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      // The iframe may still be navigating; the search is synced again on load.
+    }
+  }
+
+  function syncPackingSearch(query) {
+    packingSearchQuery = String(query ?? "");
+    const frame = elements.packingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const searchInput = frame.contentDocument?.getElementById("packing-workspace-search");
+      const inputConstructor = frame.contentWindow?.HTMLInputElement;
+      if (!inputConstructor || !(searchInput instanceof inputConstructor)) {
+        return;
+      }
+      searchInput.value = packingSearchQuery;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (error) {
+      // The iframe may still be navigating; the search is synced again on load.
+    }
+  }
+
+  function syncInventoryPriorityFilter(filter = inventoryPriorityFilter) {
+    inventoryPriorityFilter = normalizeInventoryPriorityFilter(filter);
+    const frame = elements.inventoryFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const filterButton = Array.from(
+        frameDocument?.querySelectorAll("[data-stock-priority-filter]") || [],
+      ).find((button) =>
+        normalizeInventoryPriorityFilter(button?.dataset?.stockPriorityFilter) === inventoryPriorityFilter,
+      );
+      const buttonConstructor = frame.contentWindow?.HTMLButtonElement;
+      if (!buttonConstructor || !(filterButton instanceof buttonConstructor)) {
+        return;
+      }
+
+      const isActive = filterButton.classList.contains("is-active")
+        || filterButton.getAttribute("aria-pressed") === "true";
+      if (!isActive) {
+        filterButton.click();
+      }
+    } catch (error) {
+      // The iframe may still be navigating; the filter is synced again on load.
+    }
+  }
+
+  function loadScriptOnce(src, markerAttribute) {
+    const existingScript = document.querySelector(`script[${markerAttribute}]`);
+    if (existingScript) {
+      if (existingScript.dataset.loaded === "true") {
+        return Promise.resolve();
+      }
+      return new Promise((resolve, reject) => {
+        existingScript.addEventListener("load", resolve, { once: true });
+        existingScript.addEventListener("error", reject, { once: true });
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.setAttribute(markerAttribute, "true");
+      script.addEventListener("load", () => {
+        script.dataset.loaded = "true";
+        resolve();
+      }, { once: true });
+      script.addEventListener("error", () => reject(new Error("Unable to load the Live Chat controller.")), { once: true });
+      document.body.appendChild(script);
+    });
+  }
+
+  function getMainEmbeddedFrameConfig(view) {
+    return mainEmbeddedFrameConfigs[view] || null;
+  }
+
+  function getMainEmbeddedFrame(frameConfig) {
+    const frame = elements[frameConfig?.frameKey];
+    return frame instanceof HTMLIFrameElement ? frame : null;
+  }
+
+  function getMainEmbeddedFrameSyncState(view) {
+    let state = mainEmbeddedFrameHeightSyncs.get(view);
+    if (!state) {
+      state = {
+        resizeTimer: 0,
+        resizeObserver: null,
+        mutationObserver: null,
+        abortController: null,
+        lastHeight: 0,
+      };
+      mainEmbeddedFrameHeightSyncs.set(view, state);
+    }
+    return state;
+  }
+
+  function disconnectMainEmbeddedFrameHeightSync(view) {
+    const state = mainEmbeddedFrameHeightSyncs.get(view);
+    if (!state) {
+      return;
+    }
+
+    window.clearTimeout(state.resizeTimer);
+    state.resizeTimer = 0;
+    state.resizeObserver?.disconnect();
+    state.resizeObserver = null;
+    state.mutationObserver?.disconnect();
+    state.mutationObserver = null;
+    state.abortController?.abort();
+    state.abortController = null;
+    state.lastHeight = 0;
+  }
+
+  function resetMainEmbeddedFrameHeight(view) {
+    const frameConfig = getMainEmbeddedFrameConfig(view);
+    const frame = getMainEmbeddedFrame(frameConfig);
+    disconnectMainEmbeddedFrameHeightSync(view);
+    if (!frame || !frameConfig) {
+      return;
+    }
+
+    frame.style.removeProperty(frameConfig.cssVar);
+    frame.style.removeProperty("height");
+    frame.removeAttribute("scrolling");
+  }
+
+  function installMainEmbeddedFrameEdgeScrollStyles(frameDocument, frameConfig) {
+    const frameWindow = frameDocument.defaultView;
+    if (!frameWindow || !frameDocument.documentElement) {
+      return;
+    }
+
+    frameDocument.documentElement.classList.add("main-edge-scroll-frame");
+    frameDocument.documentElement.dataset.mainEdgeScrollFrame = frameConfig.view;
+    frameDocument.body?.classList.add("main-edge-scroll-frame-body");
+
+    let style = frameDocument.querySelector(`style[data-main-edge-scroll-styles="${frameConfig.view}"]`);
+    if (!(style instanceof frameWindow.HTMLStyleElement)) {
+      style = frameDocument.createElement("style");
+      style.dataset.mainEdgeScrollStyles = frameConfig.view;
+      frameDocument.head?.appendChild(style);
+    }
+
+    style.textContent = `
+      html.main-edge-scroll-frame,
+      html.main-edge-scroll-frame body.main-edge-scroll-frame-body {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: hidden !important;
+        scrollbar-gutter: auto !important;
+      }
+
+      html.main-edge-scroll-frame body.main-edge-scroll-frame-body {
+        margin: 0 !important;
+      }
+
+      ${frameConfig.embeddedStyles || ""}
+    `;
+  }
+
+  function collectMainEmbeddedFrameHeightCandidates(frameDocument, frameConfig) {
+    const frameWindow = frameDocument.defaultView;
+    const candidates = new Set();
+    const pushElement = (element) => {
+      if (
+        frameWindow
+        && element instanceof frameWindow.HTMLElement
+        && element !== frameDocument.documentElement
+        && element !== frameDocument.body
+      ) {
+        candidates.add(element);
+      }
+    };
+
+    Array.from(frameDocument.body?.children || []).forEach(pushElement);
+    (frameConfig.measureSelectors || []).forEach((selector) => {
+      frameDocument.querySelectorAll(selector).forEach(pushElement);
+    });
+    Array.from(candidates).forEach((element) => {
+      Array.from(element.children || []).forEach(pushElement);
+    });
+    return Array.from(candidates);
+  }
+
+  function getMainEmbeddedFrameContentHeight(frameDocument, frameConfig) {
+    const frameWindow = frameDocument.defaultView;
+    if (!frameWindow) {
+      return frameConfig.minHeight;
+    }
+
+    const candidates = collectMainEmbeddedFrameHeightCandidates(frameDocument, frameConfig);
+    const contentHeight = candidates.reduce((height, element) => {
+      const style = frameWindow.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || style.position === "fixed") {
+        return height;
+      }
+
+      const rect = element.getBoundingClientRect();
+      return Math.max(
+        height,
+        Math.ceil(rect.bottom + frameWindow.scrollY),
+        element.scrollHeight,
+        element.offsetHeight,
+      );
+    }, 0);
+
+    if (contentHeight > 0) {
+      return Math.max(frameConfig.minHeight, contentHeight + 2);
+    }
+
+    return Math.max(
+      frameConfig.minHeight,
+      frameDocument.body?.scrollHeight || 0,
+      frameDocument.documentElement?.scrollHeight || 0,
+    );
+  }
+
+  function syncMainEmbeddedFrameHeight(view) {
+    const frameConfig = getMainEmbeddedFrameConfig(view);
+    const frame = getMainEmbeddedFrame(frameConfig);
+    if (!frame || !frameConfig || activeMainView !== frameConfig.view) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow || frameWindow.location.href === "about:blank") {
+        return;
+      }
+
+      installMainEmbeddedFrameEdgeScrollStyles(frameDocument, frameConfig);
+      const nextHeightValue = getMainEmbeddedFrameContentHeight(frameDocument, frameConfig);
+      const state = getMainEmbeddedFrameSyncState(view);
+      if (Math.abs(nextHeightValue - state.lastHeight) < 4) {
+        return;
+      }
+
+      state.lastHeight = nextHeightValue;
+      const nextHeight = `${nextHeightValue}px`;
+      frame.style.setProperty(frameConfig.cssVar, nextHeight);
+      frame.style.height = nextHeight;
+      frame.setAttribute("scrolling", "no");
+    } catch (error) {
+      // The iframe can be between navigations during a reload.
+    }
+  }
+
+  function queueMainEmbeddedFrameHeightSync(view, delay = 0) {
+    const frameConfig = getMainEmbeddedFrameConfig(view);
+    if (!frameConfig) {
+      return;
+    }
+
+    const state = getMainEmbeddedFrameSyncState(view);
+    window.clearTimeout(state.resizeTimer);
+    state.resizeTimer = window.setTimeout(() => {
+      state.resizeTimer = 0;
+      window.requestAnimationFrame(() => syncMainEmbeddedFrameHeight(view));
+    }, delay);
+  }
+
+  function queueActiveMainEmbeddedFrameHeightSync(delay = 0) {
+    if (getMainEmbeddedFrameConfig(activeMainView)) {
+      queueMainEmbeddedFrameHeightSync(activeMainView, delay);
+    }
+  }
+
+  function installMainEmbeddedFrameHeightSync(view, frameDocument) {
+    const frameConfig = getMainEmbeddedFrameConfig(view);
+    const frameWindow = frameDocument.defaultView;
+    if (!frameConfig || !frameWindow) {
+      return;
+    }
+
+    disconnectMainEmbeddedFrameHeightSync(view);
+    installMainEmbeddedFrameEdgeScrollStyles(frameDocument, frameConfig);
+
+    const state = getMainEmbeddedFrameSyncState(view);
+    state.abortController = new AbortController();
+    const { signal } = state.abortController;
+    const observedElements = [
+      frameDocument.body,
+      ...collectMainEmbeddedFrameHeightCandidates(frameDocument, frameConfig),
+    ].filter((element) => element instanceof frameWindow.HTMLElement);
+
+    if (typeof frameWindow.ResizeObserver === "function") {
+      state.resizeObserver = new frameWindow.ResizeObserver(() => {
+        queueMainEmbeddedFrameHeightSync(view);
+      });
+      observedElements.forEach((element) => state.resizeObserver.observe(element));
+    }
+
+    if (typeof frameWindow.MutationObserver === "function" && frameDocument.body) {
+      state.mutationObserver = new frameWindow.MutationObserver(() => {
+        queueMainEmbeddedFrameHeightSync(view, 40);
+      });
+      state.mutationObserver.observe(frameDocument.body, {
+        attributes: true,
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    frameWindow.addEventListener("resize", () => queueMainEmbeddedFrameHeightSync(view), { signal });
+    frameDocument.addEventListener("load", () => queueMainEmbeddedFrameHeightSync(view), {
+      capture: true,
+      signal,
+    });
+    frameDocument.addEventListener("transitionend", () => queueMainEmbeddedFrameHeightSync(view), {
+      capture: true,
+      signal,
+    });
+
+    if (frameDocument.fonts?.ready) {
+      void frameDocument.fonts.ready
+        .then(() => queueMainEmbeddedFrameHeightSync(view))
+        .catch(() => {});
+    }
+    queueMainEmbeddedFrameHeightSync(view);
+    window.setTimeout(() => queueMainEmbeddedFrameHeightSync(view), 180);
+    window.setTimeout(() => queueMainEmbeddedFrameHeightSync(view), 700);
+  }
+
+  async function loadLiveChatWorkspace() {
+    if (!elements.liveChatMount || elements.liveChatMount.dataset.mainLiveChatReady === "true") {
+      return;
+    }
+
+    elements.liveChatMount.setAttribute("aria-busy", "true");
+    try {
+      const response = await fetch(liveChatDocumentSrc, {
+        cache: "no-store",
+        headers: { Accept: "text/html" },
+      });
+      if (!response.ok) {
+        throw new Error("Unable to load the Live Chat workspace.");
+      }
+
+      const sourceDocument = new DOMParser().parseFromString(await response.text(), "text/html");
+      const sourceBoard = sourceDocument.querySelector(".live-chat-board");
+      if (!sourceBoard) {
+        throw new Error("The Live Chat workspace is unavailable.");
+      }
+
+      const board = document.importNode(sourceBoard, true);
+      elements.liveChatMount.replaceChildren(board);
+      elements.liveChatMount.dataset.mainLiveChatReady = "true";
+
+      ["[data-chat-media-modal]", "[data-chat-delete-modal-overlay]"].forEach((selector) => {
+        if (elements.liveChatView?.querySelector(selector)) {
+          return;
+        }
+        const sourceModal = sourceDocument.querySelector(selector);
+        if (sourceModal) {
+          elements.liveChatView?.appendChild(document.importNode(sourceModal, true));
+        }
+      });
+
+      await loadScriptOnce(liveChatControllerSrc, "data-main-live-chat-controller");
+      syncLiveChatSearch(liveChatSearchQuery);
+    } catch (error) {
+      elements.liveChatMount.dataset.mainLiveChatReady = "false";
+      elements.liveChatMount.innerHTML = `
+        <div class="main-live-chat-error" role="alert">
+          <strong>Unable to load conversations</strong>
+          <p>Please refresh or try again.</p>
+          <button type="button" data-main-live-chat-retry>Try again</button>
+        </div>`;
+      throw error;
+    } finally {
+      elements.liveChatMount.removeAttribute("aria-busy");
+    }
+  }
+
+  function ensureLiveChatWorkspace() {
+    if (!liveChatLoadPromise) {
+      liveChatLoadPromise = loadLiveChatWorkspace().catch((error) => {
+        liveChatLoadPromise = null;
+        throw error;
+      });
+    }
+    return liveChatLoadPromise;
+  }
+
+  function getListingInsightFrameSrc(forceReload = false) {
+    const url = new URL(listingInsightDocumentSrc, window.location.origin);
+    if (forceReload) {
+      url.searchParams.set("_", String(Date.now()));
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function getOrdersFrameSrc(forceReload = false) {
+    const url = new URL(ordersDocumentSrc, window.location.origin);
+    if (forceReload) {
+      url.searchParams.set("_", String(Date.now()));
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function showOrdersFrameError() {
+    window.clearTimeout(ordersLoadFailureTimer);
+    disconnectMainEmbeddedFrameHeightSync("orders");
+    if (elements.ordersLoading) {
+      elements.ordersLoading.hidden = true;
+    }
+    if (elements.ordersError) {
+      elements.ordersError.hidden = false;
+    }
+    elements.ordersFrame?.classList.remove("is-ready");
+  }
+
+  function handleOrdersFrameLoad() {
+    const frame = elements.ordersFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow || frameWindow.location.href === "about:blank") {
+        return;
+      }
+
+      window.clearTimeout(ordersLoadFailureTimer);
+      if (elements.ordersLoading) {
+        elements.ordersLoading.hidden = true;
+      }
+      if (elements.ordersError) {
+        elements.ordersError.hidden = true;
+      }
+      frame.classList.add("is-ready");
+      installMainEmbeddedFrameHeightSync("orders", frameDocument);
+      syncOrdersSearch(ordersSearchQuery);
+      queueMainEmbeddedFrameHeightSync("orders");
+    } catch (error) {
+      showOrdersFrameError();
+    }
+  }
+
+  function ensureOrdersWorkspace(options = {}) {
+    const frame = elements.ordersFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    const forceReload = options.force === true;
+    if (ordersLoadStarted && !forceReload) {
+      syncOrdersSearch(ordersSearchQuery);
+      queueMainEmbeddedFrameHeightSync("orders");
+      return;
+    }
+
+    ordersLoadStarted = true;
+    resetMainEmbeddedFrameHeight("orders");
+    frame.classList.remove("is-ready");
+    if (elements.ordersLoading) {
+      elements.ordersLoading.hidden = false;
+    }
+    if (elements.ordersError) {
+      elements.ordersError.hidden = true;
+    }
+
+    window.clearTimeout(ordersLoadFailureTimer);
+    ordersLoadFailureTimer = window.setTimeout(showOrdersFrameError, 15000);
+    frame.src = getOrdersFrameSrc(forceReload);
+  }
+
+  function showListingInsightFrameError() {
+    window.clearTimeout(listingInsightLoadFailureTimer);
+    disconnectMainEmbeddedFrameHeightSync("listing-insight");
+    if (elements.listingInsightLoading) {
+      elements.listingInsightLoading.hidden = true;
+    }
+    if (elements.listingInsightError) {
+      elements.listingInsightError.hidden = false;
+    }
+    elements.listingInsightFrame?.classList.remove("is-ready");
+  }
+
+  function handleListingInsightFrameLoad() {
+    const frame = elements.listingInsightFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow || frameWindow.location.href === "about:blank") {
+        return;
+      }
+
+      window.clearTimeout(listingInsightLoadFailureTimer);
+      if (elements.listingInsightLoading) {
+        elements.listingInsightLoading.hidden = true;
+      }
+      if (elements.listingInsightError) {
+        elements.listingInsightError.hidden = true;
+      }
+      frame.classList.add("is-ready");
+      installMainEmbeddedFrameHeightSync("listing-insight", frameDocument);
+      syncListingInsightSearch(listingInsightSearchQuery);
+      queueMainEmbeddedFrameHeightSync("listing-insight");
+    } catch (error) {
+      showListingInsightFrameError();
+    }
+  }
+
+  function ensureListingInsightWorkspace(options = {}) {
+    const frame = elements.listingInsightFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    const forceReload = options.force === true;
+    if (listingInsightLoadStarted && !forceReload) {
+      syncListingInsightSearch(listingInsightSearchQuery);
+      queueMainEmbeddedFrameHeightSync("listing-insight");
+      return;
+    }
+
+    listingInsightLoadStarted = true;
+    resetMainEmbeddedFrameHeight("listing-insight");
+    frame.classList.remove("is-ready");
+    if (elements.listingInsightLoading) {
+      elements.listingInsightLoading.hidden = false;
+    }
+    if (elements.listingInsightError) {
+      elements.listingInsightError.hidden = true;
+    }
+
+    window.clearTimeout(listingInsightLoadFailureTimer);
+    listingInsightLoadFailureTimer = window.setTimeout(showListingInsightFrameError, 15000);
+    frame.src = getListingInsightFrameSrc(forceReload);
+  }
+
+  function getProductListingFrameSrc(forceReload = false) {
+    const url = new URL(productListingDocumentSrc, window.location.origin);
+    if (forceReload) {
+      url.searchParams.set("_", String(Date.now()));
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function syncProductListingFrameViewportMode() {
+    const frame = elements.listingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      frame.contentDocument?.documentElement.classList.toggle(
+        "admin-spa-frame-mobile",
+        window.matchMedia("(max-width: 860px)").matches,
+      );
+    } catch (error) {
+      // The iframe may still be navigating.
+    }
+  }
+
+  function disconnectProductListingFrameHeightSync() {
+    window.clearTimeout(productListingFrameResizeTimer);
+    productListingFrameResizeTimer = 0;
+    productListingFrameResizeObserver?.disconnect();
+    productListingFrameResizeObserver = null;
+    productListingFrameMutationObserver?.disconnect();
+    productListingFrameMutationObserver = null;
+    productListingFrameAbortController?.abort();
+    productListingFrameAbortController = null;
+    productListingFrameLastHeight = 0;
+  }
+
+  function getProductListingFrameContentHeight(frameDocument) {
+    const frameWindow = frameDocument.defaultView;
+    const dashboardContent = frameDocument.querySelector(".dashboard-content");
+    const contentRoot = dashboardContent instanceof frameWindow.HTMLElement
+      ? dashboardContent
+      : frameDocument.body;
+    const candidates = [
+      frameDocument.querySelector(".product-panel-grid"),
+      frameDocument.querySelector(".product-panel-grid__inventory"),
+      frameDocument.querySelector(".product-list"),
+      ...frameDocument.querySelectorAll(
+        ".dashboard-content > *, .product-panel-grid__inventory > *, .product-list > *",
+      ),
+    ].filter((element) => {
+      return element instanceof frameWindow.HTMLElement
+        && element !== frameDocument.documentElement
+        && element !== frameDocument.body;
+    });
+
+    const contentHeight = candidates.reduce((height, element) => {
+      const style = frameWindow.getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || style.position === "fixed") {
+        return height;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const bottom = rect.bottom + frameWindow.scrollY;
+      return Math.max(
+        height,
+        Math.ceil(bottom),
+        element.scrollHeight,
+        element.offsetHeight,
+      );
+    }, 0);
+
+    const rootRect = contentRoot?.getBoundingClientRect?.();
+    const rootOffset = rootRect ? Math.max(0, Math.ceil(rootRect.top + frameWindow.scrollY)) : 0;
+    return Math.max(720, rootOffset + contentHeight + 24);
+  }
+
+  function syncProductListingFrameHeight() {
+    const frame = elements.listingFrame;
+    if (
+      !(frame instanceof HTMLIFrameElement)
+      || activeMainView !== "listing"
+      || elements.body.classList.contains("main-product-composer-open")
+    ) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow || frameWindow.location.href === "about:blank") {
+        return;
+      }
+
+      const contentHeight = getProductListingFrameContentHeight(frameDocument);
+      if (Math.abs(contentHeight - productListingFrameLastHeight) < 4) {
+        return;
+      }
+
+      productListingFrameLastHeight = contentHeight;
+      const nextHeight = `${contentHeight}px`;
+      frame.style.setProperty("--main-listing-frame-height", nextHeight);
+      frame.style.height = nextHeight;
+      frame.setAttribute("scrolling", "no");
+    } catch (error) {
+      // The iframe can be between navigations during a reload.
+    }
+  }
+
+  function queueProductListingFrameHeightSync(delay = 0) {
+    window.clearTimeout(productListingFrameResizeTimer);
+    productListingFrameResizeTimer = window.setTimeout(() => {
+      productListingFrameResizeTimer = 0;
+      window.requestAnimationFrame(syncProductListingFrameHeight);
+    }, delay);
+  }
+
+  function installProductListingFrameHeightSync(frameDocument) {
+    const frameWindow = frameDocument.defaultView;
+    if (!frameWindow) {
+      return;
+    }
+
+    disconnectProductListingFrameHeightSync();
+    productListingFrameAbortController = new AbortController();
+    const { signal } = productListingFrameAbortController;
+    const observedElements = [
+      frameDocument.querySelector(".dashboard-content"),
+      frameDocument.querySelector(".product-panel-grid"),
+      frameDocument.querySelector(".product-panel-grid__inventory"),
+      frameDocument.querySelector(".product-list"),
+      ...frameDocument.querySelectorAll(".product-list > *"),
+    ].filter((element) => element instanceof frameWindow.HTMLElement);
+
+    if (typeof frameWindow.ResizeObserver === "function") {
+      productListingFrameResizeObserver = new frameWindow.ResizeObserver(() => {
+        queueProductListingFrameHeightSync();
+      });
+      observedElements.forEach((element) => productListingFrameResizeObserver.observe(element));
+    }
+
+    if (typeof frameWindow.MutationObserver === "function" && frameDocument.body) {
+      productListingFrameMutationObserver = new frameWindow.MutationObserver(() => {
+        queueProductListingFrameHeightSync(40);
+      });
+      productListingFrameMutationObserver.observe(frameDocument.body, {
+        attributes: true,
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    frameWindow.addEventListener("resize", () => queueProductListingFrameHeightSync(), { signal });
+    frameDocument.addEventListener("load", () => queueProductListingFrameHeightSync(), {
+      capture: true,
+      signal,
+    });
+    frameDocument.addEventListener("transitionend", () => queueProductListingFrameHeightSync(), {
+      capture: true,
+      signal,
+    });
+
+    if (frameDocument.fonts?.ready) {
+      void frameDocument.fonts.ready
+        .then(() => queueProductListingFrameHeightSync())
+        .catch(() => {});
+    }
+    queueProductListingFrameHeightSync();
+    window.setTimeout(() => queueProductListingFrameHeightSync(), 180);
+    window.setTimeout(() => queueProductListingFrameHeightSync(), 700);
+  }
+
+  function installProductListingFrameStyles(frameDocument) {
+    frameDocument.documentElement.classList.add("admin-spa-frame-document");
+    frameDocument.documentElement.classList.add("main-listing-frame-document");
+    frameDocument.documentElement.classList.toggle(
+      "admin-spa-frame-mobile",
+      window.matchMedia("(max-width: 860px)").matches,
+    );
+    frameDocument.body?.classList.add("admin-spa-frame-document");
+    frameDocument.body?.classList.add("main-listing-embedded");
+
+    let stylesheet = frameDocument.querySelector("link[data-main-listing-frame-styles]");
+    const embeddedStyles = installProductListingEmbeddedStyles(frameDocument);
+    if (String(stylesheet?.tagName || "").toLowerCase() === "link") {
+      return embeddedStyles;
+    }
+
+    stylesheet = frameDocument.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = productListingFrameStylesheetHref;
+    stylesheet.dataset.mainListingFrameStyles = "true";
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finish = () => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        resolve();
+      };
+      stylesheet.addEventListener("load", finish, { once: true });
+      stylesheet.addEventListener("error", finish, { once: true });
+      frameDocument.head?.appendChild(stylesheet);
+      window.setTimeout(finish, 500);
+    }).then(() => installProductListingEmbeddedStyles(frameDocument));
+  }
+
+  function installProductListingEmbeddedStyles(frameDocument) {
+    let style = frameDocument.querySelector("style[data-main-listing-embedded-styles]");
+    if (!(style instanceof frameDocument.defaultView.HTMLStyleElement)) {
+      style = frameDocument.createElement("style");
+      style.dataset.mainListingEmbeddedStyles = "true";
+      frameDocument.head?.appendChild(style);
+    }
+
+    style.textContent = `
+      html.main-listing-frame-document,
+      html.main-listing-frame-document body.main-listing-embedded {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: hidden !important;
+        background: var(--dashboard-page-background, #f3f4f6) !important;
+      }
+
+      html.main-listing-frame-document .dashboard-sidebar,
+      html.main-listing-frame-document #product-dashboard-sidebar,
+      html.main-listing-frame-document [data-dashboard-sidebar-backdrop],
+      html.main-listing-frame-document .product-panel-toolbar__nav-backdrop,
+      html.main-listing-frame-document .dashboard-content > .hero,
+      html.main-listing-frame-document .dashboard-content > .product-panel-toolbar,
+      html.main-listing-frame-document .dashboard-content > .admin-super-header,
+      html.main-listing-frame-document body.admin-super-header-enabled:not(.super-admin-page)
+        .dashboard-content > .hero.admin-super-header {
+        display: none !important;
+      }
+
+      html.main-listing-frame-document .dashboard-shell--panel-nav.page-shell,
+      html.main-listing-frame-document .dashboard-shell.page-shell,
+      html.main-listing-frame-document .product-status-shell {
+        width: 100% !important;
+        max-width: none !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+
+      html.main-listing-frame-document .dashboard-layout,
+      html.main-listing-frame-document body.admin-super-sidebar-enabled
+        .dashboard-shell--panel-nav > .dashboard-layout {
+        display: block !important;
+        width: 100% !important;
+        max-width: none !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        gap: 0 !important;
+        overflow: visible !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+      }
+
+      html.main-listing-frame-document .dashboard-content,
+      html.main-listing-frame-document body.admin-super-sidebar-enabled
+        .dashboard-shell--panel-nav > .dashboard-layout > .dashboard-content {
+        width: 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 0 24px !important;
+        overflow-x: hidden !important;
+        overflow-y: visible !important;
+        overscroll-behavior: auto !important;
+        scrollbar-gutter: auto !important;
+        grid-column: 1 !important;
+      }
+
+      html.main-listing-frame-document .dashboard-content > :not(.hero):not(.product-panel-toolbar),
+      html.main-listing-frame-document body.admin-super-sidebar-enabled
+        .dashboard-content > :not(.hero.admin-super-header) {
+        margin-left: 0 !important;
+      }
+
+      html.main-listing-frame-document .product-panel-grid {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      html.main-listing-frame-document .product-panel-grid__inventory {
+        width: 100% !important;
+        margin: 0 !important;
+      }
+
+      html.main-listing-frame-document .product-panel-grid__inventory-tools {
+        display: none !important;
+      }
+
+      html.main-listing-frame-document.main-listing-composer-portal,
+      html.main-listing-frame-document.main-listing-composer-portal body.main-listing-embedded {
+        width: 100vw !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        overflow: hidden !important;
+        background: transparent !important;
+      }
+
+      html.main-listing-frame-document.main-listing-composer-portal .dashboard-shell,
+      html.main-listing-frame-document.main-listing-composer-portal .dashboard-layout,
+      html.main-listing-frame-document.main-listing-composer-portal .dashboard-content,
+      html.main-listing-frame-document.main-listing-composer-portal .product-panel-grid {
+        width: 100vw !important;
+        max-width: none !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        transform: none !important;
+      }
+
+      html.main-listing-frame-document.main-listing-composer-portal
+        .product-panel-grid > :not(.product-composer-modal-overlay) {
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        transform: none !important;
+      }
+
+      html.main-listing-frame-document.main-listing-composer-portal .product-composer-modal-overlay {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 24px !important;
+        background: transparent !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        animation: none !important;
+      }
+
+      html.main-listing-frame-document.main-listing-composer-portal .product-composer-modal--workspace {
+        width: min(1480px, calc(100vw - 48px)) !important;
+        max-width: 1480px !important;
+        height: min(900px, calc(100vh - 48px)) !important;
+        max-height: calc(100vh - 48px) !important;
+        transform: translateY(0) !important;
+        animation: main-listing-composer-dialog-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+      }
+
+      @keyframes main-listing-composer-dialog-in {
+        from {
+          opacity: 0;
+          transform: translateY(18px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 820px) {
+        html.main-listing-frame-document.main-listing-composer-portal .product-composer-modal-overlay {
+          padding: 14px !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+
+        html.main-listing-frame-document.main-listing-composer-portal .product-composer-modal--workspace {
+          width: calc(100vw - 28px) !important;
+          max-width: none !important;
+          height: calc(100vh - 28px) !important;
+          max-height: calc(100vh - 28px) !important;
+          border: 1px solid #dfe4ea !important;
+          border-radius: 7px !important;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html.main-listing-frame-document.main-listing-composer-portal .product-composer-modal--workspace {
+          animation: none !important;
+        }
+      }
+    `;
+    frameDocument.head?.appendChild(style);
+
+    return Promise.resolve();
+  }
+
+  function showProductListingFrameError() {
+    window.clearTimeout(productListingLoadFailureTimer);
+    if (elements.listingLoading) {
+      elements.listingLoading.hidden = true;
+    }
+    if (elements.listingError) {
+      elements.listingError.hidden = false;
+    }
+    elements.listingFrame?.classList.remove("is-ready");
+  }
+
+  function setProductListingComposerPortalOpen(isOpen, { force = false } = {}) {
+    let shouldOpen = Boolean(isOpen);
+    if (!shouldOpen && !force && isProductListingComposerOpenInFrame()) {
+      shouldOpen = true;
+    }
+    elements.body?.classList.toggle("main-product-composer-open", shouldOpen);
+
+    const frame = elements.listingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      if (shouldOpen && frameDocument) {
+        frameDocument.documentElement.classList.add("main-listing-frame-document");
+        frameDocument.body?.classList.add("main-listing-embedded");
+        void installProductListingEmbeddedStyles(frameDocument);
+      }
+      frameDocument?.documentElement?.classList.toggle(
+        "main-listing-composer-portal",
+        shouldOpen,
+      );
+      frameDocument?.body?.classList.toggle("main-listing-composer-portal", shouldOpen);
+    } catch (error) {
+      // If the frame is reloading, the next load/message will restore the correct state.
+    }
+  }
+
+  function isProductListingComposerOpenInFrame() {
+    const frame = elements.listingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return false;
+    }
+
+    try {
+      const modal = frame.contentDocument?.getElementById("product-composer-modal");
+      return modal instanceof HTMLElement && !modal.hidden;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function syncProductListingComposerPortalFromFrame() {
+    setProductListingComposerPortalOpen(isProductListingComposerOpenInFrame());
+  }
+
+  window.__gmsSetProductListingComposerPortalOpen = setProductListingComposerPortalOpen;
+
+  async function handleProductListingFrameLoad() {
+    const frame = elements.listingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow || frameWindow.location.href === "about:blank") {
+        return;
+      }
+
+      await installProductListingFrameStyles(frameDocument);
+      installProductListingFrameHeightSync(frameDocument);
+      window.clearTimeout(productListingLoadFailureTimer);
+      if (elements.listingLoading) {
+        elements.listingLoading.hidden = true;
+      }
+      if (elements.listingError) {
+        elements.listingError.hidden = true;
+      }
+      frame.classList.add("is-ready");
+      syncProductListingComposerPortalFromFrame();
+      syncProductListingSearch(productListingSearchQuery);
+      queueProductListingFrameHeightSync();
+    } catch (error) {
+      showProductListingFrameError();
+    }
+  }
+
+  function ensureProductListingWorkspace(options = {}) {
+    const frame = elements.listingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    const forceReload = options.force === true;
+    if (productListingLoadStarted && !forceReload) {
+      syncProductListingSearch(productListingSearchQuery);
+      queueProductListingFrameHeightSync();
+      return;
+    }
+
+    productListingLoadStarted = true;
+    disconnectProductListingFrameHeightSync();
+    frame.style.removeProperty("--main-listing-frame-height");
+    frame.style.removeProperty("height");
+    frame.classList.remove("is-ready");
+    if (elements.listingLoading) {
+      elements.listingLoading.hidden = false;
+    }
+    if (elements.listingError) {
+      elements.listingError.hidden = true;
+    }
+
+    window.clearTimeout(productListingLoadFailureTimer);
+    productListingLoadFailureTimer = window.setTimeout(showProductListingFrameError, 15000);
+    frame.src = getProductListingFrameSrc(forceReload);
+  }
+
+  function getInventoryFrameSrc(forceReload = false) {
+    const url = new URL(inventoryDocumentSrc, window.location.origin);
+    if (forceReload) {
+      url.searchParams.set("_", String(Date.now()));
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function syncInventoryFrameViewportMode() {
+    const frame = elements.inventoryFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      frame.contentDocument?.documentElement.classList.toggle(
+        "admin-spa-frame-mobile",
+        window.matchMedia("(max-width: 860px)").matches,
+      );
+    } catch (error) {
+      // The iframe may still be navigating.
+    }
+  }
+
+  function installInventoryEmbeddedStyles(frameDocument) {
+    let style = frameDocument.querySelector("style[data-main-inventory-embedded-styles]");
+    if (!(style instanceof frameDocument.defaultView.HTMLStyleElement)) {
+      style = frameDocument.createElement("style");
+      style.dataset.mainInventoryEmbeddedStyles = "true";
+      frameDocument.head?.appendChild(style);
+    }
+
+    style.textContent = `
+      html.main-inventory-frame-document,
+      html.main-inventory-frame-document body.main-inventory-embedded {
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 100% !important;
+        overflow: hidden !important;
+        background: var(--dashboard-page-background, #f3f4f6) !important;
+      }
+
+      html.main-inventory-frame-document .dashboard-sidebar,
+      html.main-inventory-frame-document [data-dashboard-sidebar-backdrop],
+      html.main-inventory-frame-document .dashboard-content > .hero {
+        display: none !important;
+      }
+
+      html.main-inventory-frame-document .stock-monitor-shell.page-shell,
+      html.main-inventory-frame-document .dashboard-layout,
+      html.main-inventory-frame-document .dashboard-content {
+        width: 100% !important;
+        max-width: none !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+      }
+
+      html.main-inventory-frame-document .dashboard-layout {
+        display: block !important;
+      }
+    `;
+
+    return Promise.resolve();
+  }
+
+  function installInventoryFrameStyles(frameDocument) {
+    frameDocument.documentElement.classList.add("admin-spa-frame-document");
+    frameDocument.documentElement.classList.add("main-inventory-frame-document");
+    frameDocument.documentElement.classList.toggle(
+      "admin-spa-frame-mobile",
+      window.matchMedia("(max-width: 860px)").matches,
+    );
+    frameDocument.body?.classList.add("admin-spa-frame-document");
+    frameDocument.body?.classList.add("main-inventory-embedded");
+    frameDocument.body?.classList.add("stock-main-inventory-embedded");
+
+    let stylesheet = frameDocument.querySelector("link[data-main-inventory-frame-styles]");
+    const embeddedStyles = installInventoryEmbeddedStyles(frameDocument);
+    if (String(stylesheet?.tagName || "").toLowerCase() === "link") {
+      return embeddedStyles;
+    }
+
+    stylesheet = frameDocument.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = productListingFrameStylesheetHref;
+    stylesheet.dataset.mainInventoryFrameStyles = "true";
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finish = () => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        resolve();
+      };
+      stylesheet.addEventListener("load", finish, { once: true });
+      stylesheet.addEventListener("error", finish, { once: true });
+      frameDocument.head?.appendChild(stylesheet);
+      window.setTimeout(finish, 500);
+    }).then(() => installInventoryEmbeddedStyles(frameDocument));
+  }
+
+  function showInventoryFrameError() {
+    window.clearTimeout(inventoryLoadFailureTimer);
+    disconnectMainEmbeddedFrameHeightSync("inventory");
+    if (elements.inventoryLoading) {
+      elements.inventoryLoading.hidden = true;
+    }
+    if (elements.inventoryError) {
+      elements.inventoryError.hidden = false;
+    }
+    elements.inventoryFrame?.classList.remove("is-ready");
+  }
+
+  async function handleInventoryFrameLoad() {
+    const frame = elements.inventoryFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      const frameDocument = frame.contentDocument;
+      const frameWindow = frame.contentWindow;
+      if (!frameDocument || !frameWindow || frameWindow.location.href === "about:blank") {
+        return;
+      }
+
+      await installInventoryFrameStyles(frameDocument);
+      installMainEmbeddedFrameHeightSync("inventory", frameDocument);
+      window.clearTimeout(inventoryLoadFailureTimer);
+      if (elements.inventoryLoading) {
+        elements.inventoryLoading.hidden = true;
+      }
+      if (elements.inventoryError) {
+        elements.inventoryError.hidden = true;
+      }
+      frame.classList.add("is-ready");
+      syncInventorySearch(inventorySearchQuery);
+      syncInventoryPriorityFilter(inventoryPriorityFilter);
+      queueMainEmbeddedFrameHeightSync("inventory");
+    } catch (error) {
+      showInventoryFrameError();
+    }
+  }
+
+  function ensureInventoryWorkspace(options = {}) {
+    const frame = elements.inventoryFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    const forceReload = options.force === true;
+    if (inventoryLoadStarted && !forceReload) {
+      syncInventorySearch(inventorySearchQuery);
+      syncInventoryPriorityFilter(inventoryPriorityFilter);
+      queueMainEmbeddedFrameHeightSync("inventory");
+      return;
+    }
+
+    inventoryLoadStarted = true;
+    resetMainEmbeddedFrameHeight("inventory");
+    frame.classList.remove("is-ready");
+    if (elements.inventoryLoading) {
+      elements.inventoryLoading.hidden = false;
+    }
+    if (elements.inventoryError) {
+      elements.inventoryError.hidden = true;
+    }
+
+    window.clearTimeout(inventoryLoadFailureTimer);
+    inventoryLoadFailureTimer = window.setTimeout(showInventoryFrameError, 15000);
+    frame.src = getInventoryFrameSrc(forceReload);
+  }
+
+  function getEmployeesFrameSrc(forceReload = false) {
+    const url = new URL(employeesDocumentSrc, window.location.origin);
+    if (forceReload) {
+      url.searchParams.set("_", String(Date.now()));
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function showEmployeesFrameError() {
+    window.clearTimeout(employeesLoadFailureTimer);
+    disconnectMainEmbeddedFrameHeightSync("employees");
+    if (elements.employeesLoading) {
+      elements.employeesLoading.hidden = true;
+    }
+    if (elements.employeesError) {
+      elements.employeesError.hidden = false;
+    }
+    elements.employeesFrame?.classList.remove("is-ready");
+  }
+
+  function handleEmployeesFrameLoad() {
+    const frame = elements.employeesFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      if (!frame.contentDocument || !frame.contentWindow || frame.contentWindow.location.href === "about:blank") {
+        return;
+      }
+      installMainEmbeddedFrameHeightSync("employees", frame.contentDocument);
+      window.clearTimeout(employeesLoadFailureTimer);
+      if (elements.employeesLoading) {
+        elements.employeesLoading.hidden = true;
+      }
+      if (elements.employeesError) {
+        elements.employeesError.hidden = true;
+      }
+      frame.classList.add("is-ready");
+      syncEmployeesSearch(employeesSearchQuery);
+      queueMainEmbeddedFrameHeightSync("employees");
+    } catch (error) {
+      showEmployeesFrameError();
+    }
+  }
+
+  function ensureEmployeesWorkspace(options = {}) {
+    const frame = elements.employeesFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    const forceReload = options.force === true;
+    if (employeesLoadStarted && !forceReload) {
+      syncEmployeesSearch(employeesSearchQuery);
+      queueMainEmbeddedFrameHeightSync("employees");
+      return;
+    }
+
+    employeesLoadStarted = true;
+    resetMainEmbeddedFrameHeight("employees");
+    frame.classList.remove("is-ready");
+    if (elements.employeesLoading) {
+      elements.employeesLoading.hidden = false;
+    }
+    if (elements.employeesError) {
+      elements.employeesError.hidden = true;
+    }
+
+    window.clearTimeout(employeesLoadFailureTimer);
+    employeesLoadFailureTimer = window.setTimeout(showEmployeesFrameError, 15000);
+    frame.src = getEmployeesFrameSrc(forceReload);
+  }
+
+  function getPackingFrameSrc(forceReload = false) {
+    const url = new URL(packingDocumentSrc, window.location.origin);
+    if (forceReload) {
+      url.searchParams.set("_", String(Date.now()));
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  function showPackingFrameError() {
+    window.clearTimeout(packingLoadFailureTimer);
+    disconnectMainEmbeddedFrameHeightSync("packing");
+    if (elements.packingLoading) {
+      elements.packingLoading.hidden = true;
+    }
+    if (elements.packingError) {
+      elements.packingError.hidden = false;
+    }
+    elements.packingFrame?.classList.remove("is-ready");
+  }
+
+  function handlePackingFrameLoad() {
+    const frame = elements.packingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    try {
+      if (!frame.contentDocument || !frame.contentWindow || frame.contentWindow.location.href === "about:blank") {
+        return;
+      }
+      installMainEmbeddedFrameHeightSync("packing", frame.contentDocument);
+      window.clearTimeout(packingLoadFailureTimer);
+      if (elements.packingLoading) {
+        elements.packingLoading.hidden = true;
+      }
+      if (elements.packingError) {
+        elements.packingError.hidden = true;
+      }
+      frame.classList.add("is-ready");
+      syncPackingSearch(packingSearchQuery);
+      queueMainEmbeddedFrameHeightSync("packing");
+    } catch (error) {
+      showPackingFrameError();
+    }
+  }
+
+  function ensurePackingWorkspace(options = {}) {
+    const frame = elements.packingFrame;
+    if (!(frame instanceof HTMLIFrameElement)) {
+      return;
+    }
+
+    const forceReload = options.force === true;
+    if (packingLoadStarted && !forceReload) {
+      syncPackingSearch(packingSearchQuery);
+      queueMainEmbeddedFrameHeightSync("packing");
+      return;
+    }
+
+    packingLoadStarted = true;
+    resetMainEmbeddedFrameHeight("packing");
+    frame.classList.remove("is-ready");
+    if (elements.packingLoading) {
+      elements.packingLoading.hidden = false;
+    }
+    if (elements.packingError) {
+      elements.packingError.hidden = true;
+    }
+
+    window.clearTimeout(packingLoadFailureTimer);
+    packingLoadFailureTimer = window.setTimeout(showPackingFrameError, 15000);
+    frame.src = getPackingFrameSrc(forceReload);
+  }
+
+  function setMainView(requestedView, options = {}) {
+    const requested = normalizeText(requestedView).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(options, "inventoryFilter")) {
+      inventoryPriorityFilter = normalizeInventoryPriorityFilter(options.inventoryFilter);
+    }
+    let nextView = "dashboard";
+    if (requested === "live-chat" && canAccessLiveChat()) {
+      nextView = "live-chat";
+    } else if (requested === "orders" && canAccessOrders()) {
+      nextView = "orders";
+    } else if (requested === "listing-insight" && canAccessListingInsight()) {
+      nextView = "listing-insight";
+    } else if (requested === "listing" && canAccessProductListing()) {
+      nextView = "listing";
+    } else if (requested === "inventory" && canAccessInventory()) {
+      nextView = "inventory";
+    } else if (requested === "employees" && canAccessEmployees()) {
+      nextView = "employees";
+    } else if (requested === "packing" && canAccessPacking()) {
+      nextView = "packing";
+    }
+    if (nextView !== "inventory") {
+      expandedMainNavKey = "";
+    }
+    activeMainView = nextView;
+
+    elements.body.dataset.mainView = nextView;
+    elements.body.classList.toggle("main-dashboard-active", nextView === "dashboard");
+    elements.body.classList.toggle("main-live-chat-active", nextView === "live-chat");
+    elements.body.classList.toggle("main-orders-active", nextView === "orders");
+    elements.body.classList.toggle("main-listing-insight-active", nextView === "listing-insight");
+    elements.body.classList.toggle("main-listing-active", nextView === "listing");
+    elements.body.classList.toggle("main-inventory-active", nextView === "inventory");
+    elements.body.classList.toggle("main-employees-active", nextView === "employees");
+    elements.body.classList.toggle("main-packing-active", nextView === "packing");
+    if (nextView !== "listing") {
+      setProductListingComposerPortalOpen(false, { force: true });
+    }
+    if (elements.dashboardView) {
+      elements.dashboardView.hidden = nextView !== "dashboard";
+    }
+    if (elements.liveChatView) {
+      elements.liveChatView.hidden = nextView !== "live-chat";
+    }
+    if (elements.ordersView) {
+      elements.ordersView.hidden = nextView !== "orders";
+    }
+    if (elements.listingInsightView) {
+      elements.listingInsightView.hidden = nextView !== "listing-insight";
+    }
+    if (elements.listingView) {
+      elements.listingView.hidden = nextView !== "listing";
+    }
+    if (elements.inventoryView) {
+      elements.inventoryView.hidden = nextView !== "inventory";
+    }
+    if (elements.employeesView) {
+      elements.employeesView.hidden = nextView !== "employees";
+    }
+    if (elements.packingView) {
+      elements.packingView.hidden = nextView !== "packing";
+    }
+    elements.content?.classList.toggle("main-content--live-chat", nextView === "live-chat");
+    elements.content?.classList.toggle("main-content--orders", nextView === "orders");
+    elements.content?.classList.toggle("main-content--listing-insight", nextView === "listing-insight");
+    elements.content?.classList.toggle("main-content--listing", nextView === "listing");
+    elements.content?.classList.toggle("main-content--inventory", nextView === "inventory");
+    elements.content?.classList.toggle("main-content--employees", nextView === "employees");
+    elements.content?.classList.toggle("main-content--packing", nextView === "packing");
+    if (elements.filter) {
+      elements.filter.hidden = nextView !== "dashboard";
+    }
+
+    if (elements.search instanceof HTMLInputElement) {
+      elements.search.value = nextView === "live-chat"
+        ? liveChatSearchQuery
+        : nextView === "orders"
+          ? ordersSearchQuery
+        : nextView === "listing-insight"
+          ? listingInsightSearchQuery
+        : nextView === "listing"
+          ? productListingSearchQuery
+          : nextView === "inventory"
+            ? inventorySearchQuery
+            : nextView === "employees"
+              ? employeesSearchQuery
+              : nextView === "packing"
+                ? packingSearchQuery
+                : dashboardSearchQuery;
+      elements.search.placeholder = nextView === "live-chat"
+        ? "Search conversations..."
+        : nextView === "orders"
+          ? "Search orders, customers, products..."
+        : nextView === "listing-insight"
+          ? "Search listing insight..."
+        : nextView === "listing"
+          ? "Search product listing..."
+          : nextView === "inventory"
+            ? "Search inventory..."
+            : nextView === "employees"
+              ? "Search employees..."
+              : nextView === "packing"
+                ? "Search packing orders..."
+                : authState.role === "seller"
+                  ? "Search Seller Workspace"
+                  : "Search Employee Workspace";
+    }
+
+    const identity = getIdentity();
+    document.title = `${identity.name} - ${getMainViewTitle(nextView)}`;
+    renderNav();
+
+    if (nextView === "live-chat") {
+      void ensureLiveChatWorkspace().catch(() => {});
+    } else if (nextView === "orders") {
+      ensureOrdersWorkspace();
+    } else if (nextView === "listing-insight") {
+      ensureListingInsightWorkspace();
+    } else if (nextView === "listing") {
+      ensureProductListingWorkspace();
+    } else if (nextView === "inventory") {
+      ensureInventoryWorkspace();
+    } else if (nextView === "employees") {
+      ensureEmployeesWorkspace();
+    } else if (nextView === "packing") {
+      ensurePackingWorkspace();
+    } else {
+      filterWorkspace(dashboardSearchQuery);
+    }
+
+    if (options.updateHistory) {
+      const url = new URL(window.location.href);
+      url.hash = nextView === "dashboard" ? "" : nextView;
+      window.history.pushState({ mainView: nextView }, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    if (
+      window.matchMedia("(max-width: 860px)").matches
+      && !(nextView === "inventory" && expandedMainNavKey === "inventory")
+    ) {
+      setSidebarOpen(false);
+    }
+  }
+
+  function clearSessions() {
+    try {
+      window.sessionStorage.removeItem(adminSessionKey);
+      window.sessionStorage.removeItem(employeeSessionKey);
+      window.sessionStorage.removeItem(superAdminSessionKey);
+      window.sessionStorage.removeItem("gms-face-verification-context");
+      window.sessionStorage.removeItem("gms-face-verification-result");
+      window.localStorage.removeItem(adminScopeStorageKey);
+    } catch (error) {
+      console.warn("Unable to clear sessions.", error);
+    }
+  }
+
+  function markSellerOffline() {
+    if (authState.role !== "seller") {
+      return;
+    }
+
+    const session = authState.session || {};
+    const payload = JSON.stringify({
+      adminId: getSessionAdminId(session),
+      id: session.id,
+      accountCode: session.accountCode,
+      email: session.email,
+      isOnline: false,
+    });
+
+    try {
+      if (navigator.sendBeacon) {
+        const body = new Blob([payload], { type: "application/json" });
+        if (navigator.sendBeacon("/api/admin-presence", body)) {
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn("Unable to send seller presence beacon.", error);
+    }
+
+    try {
+      void fetch("/api/admin-presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    } catch (error) {
+      console.warn("Unable to update seller presence.", error);
+    }
+  }
+
+  function signOut() {
+    const loginPath = authState.role === "employee" ? "/login.html?role=employee" : "/login.html?role=admin";
+    markSellerOffline();
+    clearSessions();
+    window.location.replace(loginPath);
+  }
+
+  async function refreshSellerProfile() {
+    if (authState.role !== "seller") {
+      return;
+    }
+
+    const adminId = getSessionAdminId(authState.session);
+    try {
+      const response = await fetch("/api/admin-account", {
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          ...(adminId ? { "X-GMS-Admin-ID": adminId } : {}),
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.admin || typeof data.admin !== "object") {
+        return;
+      }
+      authState = {
+        ...authState,
+        session: {
+          ...authState.session,
+          ...data.admin,
+          role: "admin",
+          dashboardPath: getDashboardPath(),
+        },
+      };
+      writeJsonSession(adminSessionKey, authState.session);
+      renderIdentity();
+      renderSummary();
+    } catch (error) {
+      console.warn("Unable to refresh seller profile.", error);
+    }
+  }
+
+  elements.sidebarToggle?.addEventListener("click", () => {
+    setSidebarOpen(!isSidebarOpen());
+  });
+
+  elements.backdrop?.addEventListener("click", () => setSidebarOpen(false));
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && elements.nav && !elements.nav.contains(target)) {
+      setExpandedMainNavKey("");
+    }
+
+    const retryButton = target?.closest("[data-main-live-chat-retry]");
+    if (retryButton) {
+      liveChatLoadPromise = null;
+      if (elements.liveChatMount) {
+        elements.liveChatMount.innerHTML = `
+          <div class="main-live-chat-loading" role="status">
+            <span class="main-live-chat-loading__spinner" aria-hidden="true"></span>
+            <strong>Loading conversations...</strong>
+          </div>`;
+      }
+      void ensureLiveChatWorkspace().catch(() => {});
+      return;
+    }
+
+    const listingRetryButton = target?.closest("[data-main-listing-retry]");
+    if (listingRetryButton) {
+      ensureProductListingWorkspace({ force: true });
+      return;
+    }
+
+    const ordersRetryButton = target?.closest("[data-main-orders-retry]");
+    if (ordersRetryButton) {
+      ensureOrdersWorkspace({ force: true });
+      return;
+    }
+
+    const listingInsightRetryButton = target?.closest("[data-main-listing-insight-retry]");
+    if (listingInsightRetryButton) {
+      ensureListingInsightWorkspace({ force: true });
+      return;
+    }
+
+    const inventoryRetryButton = target?.closest("[data-main-inventory-retry]");
+    if (inventoryRetryButton) {
+      ensureInventoryWorkspace({ force: true });
+      return;
+    }
+
+    const employeesRetryButton = target?.closest("[data-main-employees-retry]");
+    if (employeesRetryButton) {
+      ensureEmployeesWorkspace({ force: true });
+      return;
+    }
+
+    const packingRetryButton = target?.closest("[data-main-packing-retry]");
+    if (packingRetryButton) {
+      ensurePackingWorkspace({ force: true });
+      return;
+    }
+
+    const viewButton = target?.closest("[data-main-view]");
+    if (!viewButton) {
+      return;
+    }
+
+    event.preventDefault();
+    setMainView(viewButton.dataset.mainView, {
+      updateHistory: true,
+      ...(viewButton.dataset.mainInventoryFilter
+        ? { inventoryFilter: viewButton.dataset.mainInventoryFilter }
+        : {}),
+    });
+  });
+
+  elements.nav?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const inventoryFilterButton = target?.closest("[data-main-inventory-filter]");
+    if (inventoryFilterButton) {
+      setExpandedMainNavKey("inventory");
+    } else {
+      const navButton = target?.closest("[data-main-nav-key]");
+      const navKey = normalizeText(navButton?.dataset.mainNavKey).toLowerCase();
+      setExpandedMainNavKey(navKey === "inventory" ? "inventory" : "");
+    }
+
+    const actionButton = target?.closest("[data-main-action]");
+    if (actionButton?.dataset.mainAction === "sign-out") {
+      signOut();
+      return;
+    }
+
+    const routeButton = target?.closest("[data-main-route]");
+    const route = normalizeText(routeButton?.dataset.mainRoute);
+    if (route) {
+      window.location.href = route;
+    }
+  });
+
+  elements.nav?.addEventListener("focusin", () => {
+    if (collapseMainNavTimer) {
+      window.clearTimeout(collapseMainNavTimer);
+      collapseMainNavTimer = 0;
+    }
+  });
+
+  elements.nav?.addEventListener("focusout", (event) => {
+    const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (relatedTarget && elements.nav?.contains(relatedTarget)) {
+      return;
+    }
+    scheduleMainNavCollapseOnBlur(relatedTarget);
+  });
+
+  elements.search?.addEventListener("input", () => {
+    if (!(elements.search instanceof HTMLInputElement)) {
+      return;
+    }
+    if (activeMainView === "live-chat") {
+      syncLiveChatSearch(elements.search.value);
+      return;
+    }
+    if (activeMainView === "orders") {
+      syncOrdersSearch(elements.search.value);
+      return;
+    }
+    if (activeMainView === "listing-insight") {
+      syncListingInsightSearch(elements.search.value);
+      return;
+    }
+    if (activeMainView === "listing") {
+      syncProductListingSearch(elements.search.value);
+      return;
+    }
+    if (activeMainView === "inventory") {
+      syncInventorySearch(elements.search.value);
+      return;
+    }
+    if (activeMainView === "employees") {
+      syncEmployeesSearch(elements.search.value);
+      return;
+    }
+    if (activeMainView === "packing") {
+      syncPackingSearch(elements.search.value);
+      return;
+    }
+    dashboardSearchQuery = elements.search.value;
+    filterWorkspace(dashboardSearchQuery);
+  });
+
+  window.addEventListener("hashchange", () => {
+    setMainView(getMainViewFromHash());
+  });
+
+  elements.listingFrame?.addEventListener("load", () => {
+    void handleProductListingFrameLoad();
+  });
+
+  elements.listingInsightFrame?.addEventListener("load", handleListingInsightFrameLoad);
+
+  elements.ordersFrame?.addEventListener("load", handleOrdersFrameLoad);
+
+  elements.inventoryFrame?.addEventListener("load", () => {
+    void handleInventoryFrameLoad();
+  });
+
+  elements.employeesFrame?.addEventListener("load", handleEmployeesFrameLoad);
+
+  elements.packingFrame?.addEventListener("load", handlePackingFrameLoad);
+
+  window.addEventListener("resize", () => {
+    queueBrandMarqueeSync();
+    syncProductListingFrameViewportMode();
+    queueProductListingFrameHeightSync();
+    syncInventoryFrameViewportMode();
+    queueActiveMainEmbeddedFrameHeightSync();
+  });
+
+  window.addEventListener("message", (event) => {
+    if (
+      event.origin !== window.location.origin
+      || event.data?.type !== "gms-product-composer-state"
+    ) {
+      return;
+    }
+
+    const isOpen = event.data.isOpen === true;
+    setProductListingComposerPortalOpen(isOpen);
+    if (!isOpen) {
+      queueProductListingFrameHeightSync(80);
+    }
+  });
+
+  if (document.fonts?.ready) {
+    void document.fonts.ready.then(queueBrandMarqueeSync).catch(() => {});
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setSidebarOpen(false);
+    }
+  });
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== adminSessionKey && event.key !== employeeSessionKey) {
+      return;
+    }
+    const nextAuthState = getAuthState();
+    if (!nextAuthState) {
+      window.location.replace("/login.html");
+      return;
+    }
+    authState = nextAuthState;
+    renderIdentity();
+    renderSummary();
+    setMainView(activeMainView);
+    startLiveChatNavBadgeMonitoring();
+  });
+
+  window.addEventListener("focus", () => {
+    void refreshLiveChatNavBadge();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void refreshLiveChatNavBadge();
+    }
+  });
+
+  elements.body.dataset.mainRole = authState.role;
+  renderIdentity();
+  renderSummary();
+  setMainView(activeMainView);
+  startLiveChatNavBadgeMonitoring();
+  syncSidebarToggleState();
+  queueBrandMarqueeSync();
+  void refreshSellerProfile();
+}());

@@ -9,7 +9,9 @@ The system currently uses separate login endpoints:
 - Employee login: `/api/employee-login`
 - Super admin login: `/api/super-admin-login`
 
-Browser admin sessions are stored in browser `sessionStorage`/`localStorage`. The backend uses request headers and query parameters to determine workspace scope, especially:
+Successful buyer, seller, employee, and Google login responses now issue an HMAC-signed, expiring app session. Browsers receive the session in an `HttpOnly`, `SameSite=Lax` cookie; API clients can send the returned `sessionToken` in `x-switch-session` or `Authorization: Bearer <token>`.
+
+The signed claims bind `accountId`, role, email, and seller `adminId`. Legacy identity inputs remain accepted only as compatibility hints:
 
 - `x-gms-admin-id`
 - `x-admin-id`
@@ -17,18 +19,21 @@ Browser admin sessions are stored in browser `sessionStorage`/`localStorage`. Th
 - `tenantId`
 - `workspaceId`
 
+These values no longer select the authorized account or tenant. A mismatch against the signed session returns `403`; a missing, forged, or expired session returns `401` on protected routes.
+
 Super admin APIs require a signed, expiring `x-gms-super-admin-token`, which is returned by the super admin login endpoint. The token signature uses `ADMIN_API_SESSION_SECRET`; invalid, forged, and expired sessions receive `401`.
 
 ## Authorization
 
-Current authorization is mostly handler-specific, with a central guard for all `/api/super-admin/*` routes:
+Authorization uses central signed-session guards plus handler-specific permission checks:
 
 - Super admin routes and handlers call `requireSuperAdmin`.
-- Product/order/account/admin resources use `adminId` scope checks.
+- Product writes, orders, employee accounts, seller account settings, and buyer self-account routes derive identity from the verified app session.
+- Buyer order reads/writes are forced to the session account; seller/employee order and product operations are forced to the session tenant.
 - Employee page access is partly enforced in browser JavaScript through `employee_access_guard.js`.
 - Customer ownership is checked in selected flows such as seller follow and chat message deletion.
 
-There is no shared role policy layer or signed session verification for most non-super-admin endpoints.
+Migrated route groups include `/api/products` writes, `/api/products/{id}` writes, `/api/orders`, `/api/orders/*`, `/api/accounts` administration, `/api/admin-account*`, `/api/auth/session`, `/api/auth/switch-role`, `/api/account/roles`, `/api/account/profile-image`, buyer password/deletion/language routes, devices, and delivery addresses.
 
 ## Password Security
 
@@ -46,15 +51,15 @@ Remaining recommendations:
 - Add login rate limiting and account lockout.
 - Never log or return password fields.
 
-## JWT and Sessions
+## Signed Sessions
 
-Super admin authentication uses short-lived HMAC-signed tokens sent in a custom header. Admin and employee sessions are primarily browser-stored client data and do not yet use the same signed-session model.
+Super admin authentication uses its separate short-lived HMAC token. Buyer, seller, and employee authentication uses `backend/security/appSessionAuth.js`, with domain-separated HMAC signing even when `ADMIN_API_SESSION_SECRET` is used as the fallback secret.
+
+Set `APP_SESSION_SECRET` to a dedicated random value in production. `APP_SESSION_TTL_SECONDS` defaults to 24 hours and is capped at 30 days. Production and `REQUIRE_SECRETS=1` fail closed when neither app-session nor admin-session signing secret is configured.
 
 Recommendations:
 
-- Use signed HTTP-only secure cookies or short-lived JWT access tokens plus refresh tokens.
-- Store roles/permissions server-side or in signed claims.
-- Validate tokens for every protected endpoint.
+- Add server-side revocation or rotating refresh tokens for immediate invalidation.
 - Add logout/session invalidation.
 
 ## API Protection
@@ -63,7 +68,7 @@ Current API protections include:
 
 - Per-handler method checks.
 - Some validation for required fields and duplicate records.
-- Admin scope filtering by `adminId`.
+- Session-derived account and tenant filtering for migrated routes.
 - Super admin token checks on privileged endpoints.
 - Upload size limits.
 - CORS preflight handling.
@@ -71,7 +76,7 @@ Current API protections include:
 Risks:
 
 - `Access-Control-Allow-Origin` is currently `*`.
-- Tenant scope is accepted from caller-controlled headers/query parameters.
+- Some non-critical legacy routes still need migration to the central app-session policy.
 - Many upload endpoints lack explicit auth checks inside the handler.
 - There is no global rate limiting.
 - There is no CSRF protection for browser-based admin actions.
@@ -149,11 +154,8 @@ Endpoints needing rate limits:
 
 | Severity | Risk | Files/Area |
 | --- | --- | --- |
-| Critical | Plaintext password storage and string comparison. | `backend/server.js`, `backend/data/accounts.json` |
-| Critical | Default super admin credentials exist in code. | `backend/server.js` |
-| High | Caller-controlled `adminId` headers/query parameters are trusted for tenant scope. | `backend/server.js`, admin JS clients |
 | High | Public file uploads can expose media/documents. | `backend/public/uploads`, upload handlers |
-| High | No centralized auth middleware for protected APIs. | `backend/server.js` |
+| Medium | Some non-critical legacy routes are not yet covered by central app-session policy. | Backend route dispatcher |
 | Medium | CORS allows all origins. | `backend/server.js` |
 | Medium | No rate limiting or brute-force protection. | Backend API |
 | Medium | No CSRF protection for browser admin actions. | Admin web console |
@@ -162,12 +164,10 @@ Endpoints needing rate limits:
 
 ## Recommended Security Roadmap
 
-1. Hash all existing passwords and migrate login comparisons.
-2. Replace default super admin credentials with required environment configuration.
-3. Add central authentication middleware.
-4. Implement server-side RBAC/permission checks.
-5. Restrict CORS and add CSRF protection.
-6. Protect uploads and move documents to private storage.
-7. Add rate limiting and request size controls per endpoint.
-8. Add structured audit logs for admin/super admin actions.
-9. Move from JSON files to a database with constraints and backups.
+1. Extend central session policy to remaining non-critical legacy routes.
+2. Implement server-side RBAC/permission checks.
+3. Restrict CORS and add CSRF protection.
+4. Protect uploads and move documents to private storage.
+5. Add rate limiting and request size controls per endpoint.
+6. Add structured audit logs for admin/super admin actions.
+7. Move from JSON files to a database with constraints and backups.

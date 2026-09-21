@@ -1,0 +1,4 @@
+{
+  "old": "    buzzer: normalizeAdminBiometricBuzzerSettings(buzzerInput, previousBuzzer),\n    fingerprintLed: {",
+  "neu": "    buzzer: normalizeAdminBiometricBuzzerSettings(buzzerInput, previousBuzzer),\n    lighting: normalizeAdminBiometricLightingSettings(lightingInput, previousLighting),\n    fingerprintLed: {"
+}

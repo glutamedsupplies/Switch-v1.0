@@ -1,0 +1,10 @@
+{
+  "line": 59,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "    await persistSuperAdminNotification(\n      createPersistentLinkedNotification({\n        type: type === \"seller\" ? \"seller-feedback\" : \"user-feedback\",\n        audience: \"super_admin\",\n        title: `${typeLabel} feedback received`,\n        reason: `${rating}/5 from ${submitterName || typeLabel}${category ? ` · ${category}` : \"\"}${attachments.length ? ` · ${attachments.length} attachment${attachments.length === 1 ? \"\" : \"s\"}` : \"\"}`,\n        message: message.slice(0, 240),\n        adminId,\n        companyName,\n        storeName: companyName,\n        businessName: companyName,\n        createdBy: submitterName || typeLabel,\n        targetUrl: type === \"seller\" ? \"/super_admin.html#seller-feedback\" : \"/super_admin.html#user-feedback\",\n        createdAt,\n      }),\n    );",
+  "new_string": "    await persistSuperAdminNotification(\n      createPersistentLinkedNotification({\n        type: type === \"seller\" ? \"seller-feedback\" : \"user-feedback\",\n        audience: \"super_admin\",\n        title: `${typeLabel} feedback received`,\n        reason: `${rating}/5 from ${submitterName || typeLabel}${category ? ` · ${category}` : \"\"}${attachments.length ? ` · ${attachments.length} attachment${attachments.length === 1 ? \"\" : \"s\"}` : \"\"}`,\n        message: message.slice(0, 240),\n        feedbackId: feedbackEntry.id,\n        adminId,\n        companyName,\n        storeName: companyName,\n        businessName: companyName,\n        createdBy: submitterName || typeLabel,\n        targetUrl: type === \"seller\" ? \"/super_admin.html#seller-feedback\" : \"/super_admin.html#user-feedback\",\n        createdAt,\n      }),\n    );",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 819
+}

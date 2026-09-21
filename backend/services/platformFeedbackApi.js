@@ -16,6 +16,7 @@ function createPlatformFeedbackApi(deps) {
     writeJsonFileAtomically,
     readAccounts,
     findAdminAccountByScopeId,
+    getExplicitRequestAdminId,
     requireSuperAdmin,
     sendJson,
     parseRequestBody,
@@ -141,10 +142,8 @@ function createPlatformFeedbackApi(deps) {
   }
 
   async function requireSellerFeedbackSession(request, response) {
-    const headerAdminId = String(
-      request.headers["x-gms-admin-id"] ?? request.headers["x-admin-id"] ?? "",
-    ).trim();
-    if (!headerAdminId) {
+    const sessionAdminId = String(getExplicitRequestAdminId(request)).trim();
+    if (!sessionAdminId) {
       sendJson(response, 401, {
         message: "A valid seller admin session is required to send feedback.",
       });
@@ -152,7 +151,7 @@ function createPlatformFeedbackApi(deps) {
     }
 
     const accounts = await readAccounts();
-    const account = findAdminAccountByScopeId(accounts, headerAdminId);
+    const account = findAdminAccountByScopeId(accounts, sessionAdminId);
     if (!account || String(account.role ?? "").toLowerCase() !== "admin") {
       sendJson(response, 401, {
         message: "Your seller account could not be verified. Please sign in again.",
@@ -160,7 +159,7 @@ function createPlatformFeedbackApi(deps) {
       return null;
     }
 
-    return { account, adminId: headerAdminId };
+    return { account, adminId: sessionAdminId };
   }
 
   async function persistFeedbackSuperAdminNotification(notification) {

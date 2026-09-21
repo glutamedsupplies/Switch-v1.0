@@ -1,0 +1,10 @@
+{
+  "line": 225,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "    oled: {\n      mode: ADMIN_BIOMETRIC_OLED_MODES.has(requestedOledMode) ? requestedOledMode : \"text\",\n      font: ADMIN_BIOMETRIC_OLED_FONTS.has(requestedOledFont) ? requestedOledFont : \"medium\",\n      text: String(oledInput.text ?? previousOled.text ?? \"RETINA SCAN\")",
+  "new_string": "    oled: {\n      mode: ADMIN_BIOMETRIC_OLED_MODES.has(requestedOledMode) ? requestedOledMode : \"text\",\n      font: ADMIN_BIOMETRIC_OLED_FONTS.has(requestedOledFont) ? requestedOledFont : \"medium\",\n      datetimeFont: ADMIN_BIOMETRIC_OLED_DATETIME_FONTS.has(requestedOledDatetimeFont)\n        ? requestedOledDatetimeFont\n        : \"clock-xl\",\n      fonts: normalizeAdminBiometricOledFonts(\n        {\n          ...oledInput,\n          fonts: oledInput.fonts && typeof oledInput.fonts === \"object\"\n            ? oledInput.fonts\n            : {\n                text: { preset: requestedOledFont, profileName: \"\" },\n                datetime: { preset: requestedOledDatetimeFont, profileName: \"\" },\n              },\n        },\n        previousOled,\n        requestedOledFont,\n      ),\n      text: String(oledInput.text ?? previousOled.text ?? \"RETINA SCAN\")",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 852
+}

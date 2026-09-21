@@ -13,6 +13,8 @@ function createAccountDevicesApi(deps) {
     writeJsonFileAtomically,
     sendJson,
     parseRequestBody,
+    getRequestAccountIdentifier,
+    assertSessionPayloadIdentity,
   } = deps;
 
   const DEVICES_FILE = path.join(DATA_DIR, "account_device_sessions.json");
@@ -425,9 +427,9 @@ function createAccountDevicesApi(deps) {
   async function handleStatus(request, response, requestUrl) {
     try {
       const status = await getDeviceSessionStatus({
-        accountId: getAccountIdFrom({}, requestUrl),
+        accountId: getAccountIdFrom(request),
         deviceKey: getCurrentDeviceKeyFrom({}, requestUrl),
-        email: requestUrl?.searchParams?.get("email") || "",
+        email: getRequestAccountIdentifier(request).email,
       });
       sendJson(response, 200, {
         ...status,
@@ -442,14 +444,8 @@ function createAccountDevicesApi(deps) {
     }
   }
 
-  function getAccountIdFrom(payload = {}, requestUrl) {
-    return normalizeText(
-      payload.accountId ||
-        payload.id ||
-        requestUrl?.searchParams?.get("accountId") ||
-        "",
-      120,
-    );
+  function getAccountIdFrom(request) {
+    return normalizeText(getRequestAccountIdentifier(request).id, 120);
   }
 
   function getCurrentDeviceKeyFrom(payload = {}, requestUrl) {
@@ -466,7 +462,7 @@ function createAccountDevicesApi(deps) {
 
   async function handleList(request, response, requestUrl) {
     try {
-      const accountId = getAccountIdFrom({}, requestUrl);
+      const accountId = getAccountIdFrom(request);
       if (!accountId) {
         sendJson(response, 400, { message: "Account ID is required." });
         return;
@@ -487,7 +483,8 @@ function createAccountDevicesApi(deps) {
   async function handleRegister(request, response) {
     try {
       const payload = await parseRequestBody(request);
-      const accountId = getAccountIdFrom(payload);
+      assertSessionPayloadIdentity(request, payload, { account: true });
+      const accountId = getAccountIdFrom(request);
       const device = await registerDevice({ accountId, payload, request });
       const devices = await listDevicesForAccount(accountId, device.deviceKey);
       sendJson(response, 200, {
@@ -508,7 +505,8 @@ function createAccountDevicesApi(deps) {
   async function handleRevoke(request, response) {
     try {
       const payload = await parseRequestBody(request);
-      const accountId = getAccountIdFrom(payload);
+      assertSessionPayloadIdentity(request, payload, { account: true });
+      const accountId = getAccountIdFrom(request);
       const revokeOthers = Boolean(payload.revokeOthers || payload.allOthers);
       const result = await revokeDevice({
         accountId,

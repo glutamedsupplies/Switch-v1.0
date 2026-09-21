@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Products</title>
+    <link rel="stylesheet" href="/styles.css?v=admin-employee-nav-restore-1" />
+    <link rel="stylesheet" href="/product-panel.css?v=listing-composer-portal-2" />
+  <script src="/lazy-loading.js?v=global-lazy-1"></script>
+  </head>
+  <body>
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav product-status-shell">
+      <div class="dashboard-layout">
+        <aside class="panel dashboard-sidebar" id="product-dashboard-sidebar">
+          <nav class="dashboard-nav" aria-label="Admin navigation">
+            <a
+              class="dashboard-nav__item"
+              href="/admin_dashboard.html"
+              aria-label="Dashboard"
+              title="Dashboard"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M4.5 10.5 12 4l7.5 6.5" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M6.5 9.8v8.7a1 1 0 0 0 1 1h3.7v-5.1h1.6v5.1h3.7a1 1 0 0 0 1-1V9.8" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Dashboard</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/insight.html"
+              aria-label="Insight"
+              title="Insight"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M4.5 19.5h15" stroke-linecap="round" />
+                  <path d="M7.5 15.5V10" stroke-linecap="round" />
+                  <path d="M12 15.5V6.5" stroke-linecap="round" />
+                  <path d="M16.5 15.5v-3" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Insight</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/product_insight.html"
+              aria-label="Product Insight"
+              title="Product Insight"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M4.5 19.5h15" stroke-linecap="round" />
+                  <path d="m6.5 14 3.2-3.2 2.5 2.1 5.3-6.2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M15.8 6.7h3.7v3.7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Product Insight</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item is-active"
+              href="/product_panel.html"
+              aria-current="page"
+              aria-label="Products"
+              title="Products"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M5 6.5h14" stroke-linecap="round" />
+                  <path d="M5 12h14" stroke-linecap="round" />
+                  <path d="M5 17.5h14" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Products</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/stock.html"
+              aria-label="Inventory"
+              title="Inventory"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <rect x="4" y="6" width="16" height="12" rx="2.5" />
+                  <path d="M8 10.5h8" stroke-linecap="round" />
+                  <path d="M8 14h5" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Inventory</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/Employee_data.html"
+              aria-label="Employee data"
+              title="Employee data"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M8.5 4.5h7" stroke-linecap="round" />
+                  <rect x="5" y="3.5" width="14" height="17" rx="2.5" />
+                  <circle cx="12" cy="10" r="2.4" />
+                  <path d="M8.2 16.1a5 5 0 0 1 7.6 0" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Employee Data</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/register.html"
+              aria-label="Register"
+              title="Register"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <circle cx="10" cy="8" r="3" />
+                  <path d="M4.8 18a5.3 5.3 0 0 1 10.4 0" stroke-linecap="round" />
+                  <path d="M18 7v6" stroke-linecap="round" />
+                  <path d="M15 10h6" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Register</span>
+            </a>
+
+            <a
+              class="dashboard-nav__item"
+              href="/login.html"
+              aria-label="Login"
+              title="Login"
+            >
+              <span class="dashboard-nav__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M10 7.5V6a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-1.5" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M14.5 12H4.5" stroke-linecap="round" />
+                  <path d="m8 8.5-3.5 3.5L8 15.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <span class="dashboard-nav__label">Login</span>
+            </a>
+          </nav>
+        </aside>
+        <button
+          type="button"
+          class="product-panel-toolbar__nav-backdrop"
+          data-dashboard-sidebar-backdrop
+          aria-label="Close navigation"
+        ></button>
+
+        <div class="dashboard-content">
+          <section class="hero">
+            <div class="hero-actions">
+              <div>
+                <h1>Product Listing</h1>
+              </div>
+
+              <div class="dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Admin workspace summary">
+                  <span
+                    class="product-panel-toolbar__avatar"
+                    aria-hidden="true"
+                    data-login-logo
+                    data-default-logo-src="/uploads/gmslogo-1778579733173.png"
+                  >
+                    <img
+                      class="product-panel-toolbar__avatar-image"
+                      alt="Admin logo"
+                      hidden
+                      data-logo-image
+                    />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>
+                      AD
+                    </span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Admin Workspace</strong>
+                    <span>Product Listing</span>
+                  </span>
+                </div>
+
+                <div class="dashboard-tool-menu dashboard-notification-menu" data-notification-menu>
+                  <button
+                    class="dashboard-tool-button dashboard-tool-button--notification"
+                    type="button"
+                    aria-label="Notification"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Notification"
+                    data-notification-toggle
+                  >
+                    <span class="dashboard-tool-button__icon" aria-hidden="true">
+                      <svg viewBox="0 -960 960 960" fill="none" aria-hidden="true">
+                        <path
+                          d="M190-200q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h50v-304q0-84 49.5-150.5T420-798v-22q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v22q81 17 130.5 83.5T720-564v304h50q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H190Zm290-302Zm0 422q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80ZM300-260h360v-304q0-75-52.5-127.5T480-744q-75 0-127.5 52.5T300-564v304Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </span>
+                    <span
+                      class="dashboard-notification-badge"
+                      id="activity-count-badge"
+                      hidden
+                      aria-hidden="true"
+                    ></span>
+                  </button>
+
+                  <div class="dashboard-notification-dropdown" hidden data-notification-dropdown>
+                    <div class="dashboard-notification-dropdown__header">
+                      <div>
+                        <h2 class="dashboard-notification-dropdown__title">Notification</h2>
+                      </div>
+                      <span class="count-pill" id="activity-count-pill">0</span>
+                    </div>
+
+                    <div class="activity-list dashboard-notification-list" id="activity-list">
+                      <div class="empty-state">No notification yet.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-menu" data-settings-menu>
+                  <button
+                    class="settings-toggle"
+                    type="button"
+                    aria-label="Color Picker"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                    title="Color Picker"
+                    data-settings-toggle
+                  >
+                    <span class="settings-toggle__icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path
+                          d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                          stroke-linejoin="round"
+                        />
+                        <circle cx="12" cy="12" r="3.2" />
+                      </svg>
+                    </span>
+                    <span class="settings-toggle__swatch" aria-hidden="true"></span>
+                  </button>
+
+                  <div class="settings-dropdown" hidden data-settings-dropdown>
+                    <p class="settings-dropdown__eyebrow">Theme Settings</p>
+                    <h2 class="settings-dropdown__title" style="font-weight: 500;">Color Picker</h2>
+                    <p class="settings-dropdown__copy">
+                      Pick a color and it updates the whole web server instantly.
+                    </p>
+
+                    <label class="settings-color-field">
+                      <span>Primary Color</span>
+                      <input type="color" value="#2563EB" data-theme-color-input />
+                    </label>
+
+                    <div class="settings-color-meta">
+                      <span data-theme-hex>#2563EB</span>
+                      <span data-theme-rgb>RGB 37, 99, 235</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="ghost-button settings-reset-button"
+                      data-theme-reset
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="product-panel-grid product-panel-grid--products-only">
+            <div class="product-composer-modal-overlay" id="product-composer-modal" hidden>
+              <section
+                class="panel product-panel-grid__form product-composer-modal product-composer-modal--workspace"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="form-title"
+                tabindex="-1"
+              >
+                <header class="product-composer-modal__topbar">
+                  <div class="product-composer-modal__identity">
+                    <span class="product-composer-modal__brand-icon" aria-hidden="true">
+                      <i class="fa-solid fa-cube"></i>
+                    </span>
+                    <div>
+                      <p class="section-label" id="form-section-label">Create Product</p>
+                      <h2 id="form-title">Add Product</h2>
+                      <p class="product-composer-modal__subtitle">
+                        Create a new product and manage all the essential information.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="product-composer-modal__header-actions">
+                    <span class="status-pill" id="status-pill">Adding</span>
+                    <button
+                      type="button"
+                      class="product-composer-modal__close"
+                      id="close-product-composer-button"
+                      aria-label="Close Add Product"
+                      title="Close"
+                    >
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </header>
+
+                <form id="product-form" class="product-form product-composer-form">
+                  <div class="product-composer-modal__workspace">
+                    <nav class="product-composer-nav" aria-label="Add Product sections">
+                      <button
+                        type="button"
+                        class="product-form-section-carousel__button product-composer-nav__item is-active"
+                        data-product-editor-section-target="product-editor-section-photo"
+                        aria-controls="product-editor-section-photo"
+                        aria-pressed="true"
+                      >
+                        <i class="fa-regular fa-image" aria-hidden="true"></i>
+                        <span>Media</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="product-form-section-carousel__button product-composer-nav__item"
+                        data-product-editor-section-target="product-editor-section-details"
+                        aria-controls="product-editor-section-details"
+                        aria-pressed="false"
+                      >
+                        <i class="fa-regular fa-circle-question" aria-hidden="true"></i>
+                        <span>Product Details</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="product-form-section-carousel__button product-composer-nav__item"
+                        data-product-editor-section-target="product-editor-section-variants"
+                        aria-controls="product-editor-section-variants"
+                        aria-pressed="false"
+                      >
+                        <i class="fa-solid fa-cubes-stacked" aria-hidden="true"></i>
+                        <span>Variants</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="product-form-section-carousel__button product-composer-nav__item"
+                        data-product-editor-section-target="product-editor-section-barcode"
+                        aria-controls="product-editor-section-barcode"
+                        aria-pressed="false"
+                      >
+                        <i class="fa-solid fa-barcode" aria-hidden="true"></i>
+                        <span>Barcode</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="product-form-section-carousel__button product-composer-nav__item"
+                        data-product-editor-section-target="product-editor-section-image-search"
+                        aria-controls="product-editor-section-image-search"
+                        aria-pressed="false"
+                      >
+                        <i class="fa-solid fa-camera" aria-hidden="true"></i>
+                        <span>Image Search</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="product-form-section-carousel__button product-composer-nav__item"
+                        data-product-editor-section-target="product-editor-section-3d-model"
+                        aria-controls="product-editor-section-3d-model"
+                        aria-pressed="false"
+                      >
+                        <i class="fa-solid fa-cube" aria-hidden="true"></i>
+                        <span>3D Model</span>
+                      </button>
+                    </nav>
+
+                    <div
+                      id="product-editor-section-media"
+                      class="product-composer-canvas product-form-section-anchor"
+                    >
+                      <section
+                        id="product-editor-section-photo"
+                        class="product-composer-section product-composer-section--photo product-image-upload-group product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">1</span>
+                          <div>
+                            <h3>Photo</h3>
+                            <p>Upload clear, high-quality product images.</p>
+                          </div>
+                        </div>
+                        <div id="product-image-input-list" class="product-image-input-list"></div>
+                        <div class="product-image-upload-group__footer">
+                          <button
+                            type="button"
+                            class="product-image-upload-group__add-button product-image-upload-group__add-button--filled"
+                            id="add-image-input-button"
+                            aria-label="Add image"
+                            title="Add image"
+                          >
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                            <span>Add Image</span>
+                          </button>
+                        </div>
+                      </section>
+
+                      <section
+                        id="product-editor-section-video"
+                        class="product-composer-section product-composer-section--video product-image-upload-group product-video-upload-group product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">2</span>
+                          <div>
+                            <h3>Video</h3>
+                            <p>Showcase the product with an optional video.</p>
+                          </div>
+                        </div>
+                        <div id="product-video-input-list" class="product-image-input-list product-video-input-list"></div>
+                        <div class="product-image-upload-group__footer">
+                          <button
+                            type="button"
+                            class="product-image-upload-group__add-button product-image-upload-group__add-button--filled"
+                            id="add-video-input-button"
+                            aria-label="Add video"
+                            title="Add video"
+                          >
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                            <span>Add Video</span>
+                          </button>
+                        </div>
+                      </section>
+
+                      <section
+                        id="product-editor-section-details"
+                        class="product-composer-section product-composer-section--details product-form-section-panel product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">3</span>
+                          <div>
+                            <h3>Product Details</h3>
+                            <p>Fill in the basic information about the product.</p>
+                          </div>
+                        </div>
+                        <div class="product-form-details-stack">
+                          <div class="product-category-selected-chips" id="selected-category-chips" hidden></div>
+                          <div class="form-grid">
+                            <label>
+                              Product Name <span aria-hidden="true">*</span>
+                              <input type="text" name="name" placeholder="Enter product name" required />
+                            </label>
+                            <label>
+                              Category <span aria-hidden="true">*</span>
+                              <div class="product-category-multiselect" id="product-category-multiselect">
+                                <input type="hidden" name="category" id="category-select" required />
+                                <button
+                                  type="button"
+                                  class="product-category-multiselect__trigger"
+                                  id="product-category-trigger"
+                                  aria-haspopup="listbox"
+                                  aria-expanded="false"
+                                >
+                                  <span class="product-category-multiselect__summary" id="product-category-summary">
+                                    Select categories
+                                  </span>
+                                  <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                                </button>
+                                <div
+                                  class="product-category-multiselect__menu"
+                                  id="product-category-menu"
+                                  role="listbox"
+                                  aria-multiselectable="true"
+                                  hidden
+                                ></div>
+                              </div>
+                            </label>
+                          </div>
+                          <div class="form-grid form-grid--triple">
+                            <label>
+                              Original Price <span aria-hidden="true">*</span>
+                              <input type="number" name="originalPrice" min="0" step="0.01" placeholder="0.00" required />
+                            </label>
+                            <label>
+                              Sales Price
+                              <input type="number" name="salesPrice" min="0" step="0.01" placeholder="0.00" />
+                            </label>
+                            <label>
+                              Stock Quantity <span aria-hidden="true">*</span>
+                              <input type="number" name="stock" min="0" step="1" placeholder="0" required />
+                            </label>
+                          </div>
+                          <div class="form-grid form-grid--triple product-partner-selection" data-product-partner-selection>
+                            <fieldset class="product-partner-selection__group" data-product-partner-group="delivery">
+                              <legend>Delivery Partner</legend>
+                              <div class="product-partner-selection__dropdown" data-product-partner-dropdown="delivery">
+                                <button
+                                  type="button"
+                                  class="product-partner-selection__trigger"
+                                  data-product-partner-trigger="delivery"
+                                  aria-haspopup="listbox"
+                                  aria-expanded="false"
+                                >
+                                  <span class="product-partner-selection__summary is-placeholder" data-product-partner-summary="delivery">Select delivery partner</span>
+                                  <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                                </button>
+                                <div class="product-partner-selection__list product-partner-selection__menu" data-product-partner-list="delivery" role="listbox" aria-multiselectable="true" hidden></div>
+                              </div>
+                              <p class="product-partner-selection__status" data-product-partner-status="delivery"></p>
+                            </fieldset>
+                            <fieldset class="product-partner-selection__group" data-product-partner-group="payment">
+                              <legend>Payment Partner</legend>
+                              <div class="product-partner-selection__dropdown" data-product-partner-dropdown="payment">
+                                <button
+                                  type="button"
+                                  class="product-partner-selection__trigger"
+                                  data-product-partner-trigger="payment"
+                                  aria-haspopup="listbox"
+                                  aria-expanded="false"
+                                >
+                                  <span class="product-partner-selection__summary is-placeholder" data-product-partner-summary="payment">Select payment partner</span>
+                                  <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                                </button>
+                                <div class="product-partner-selection__list product-partner-selection__menu" data-product-partner-list="payment" role="listbox" aria-multiselectable="true" hidden></div>
+                              </div>
+                              <p class="product-partner-selection__status" data-product-partner-status="payment"></p>
+                            </fieldset>
+                            <label>
+                              Expiry Date
+                              <input type="date" name="expiryDate" />
+                            </label>
+                          </div>
+                          <label>
+                            Description <span aria-hidden="true">*</span>
+                            <textarea name="description" rows="5" placeholder="Write about this product" required></textarea>
+                          </label>
+                        </div>
+                      </section>
+
+                      <section
+                        id="product-editor-section-variants"
+                        class="product-composer-section product-composer-section--variants product-form-section-panel product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">4</span>
+                          <div>
+                            <h3>Variants</h3>
+                            <p>Add available sizes, colors, materials, and stock options.</p>
+                          </div>
+                        </div>
+                        <div class="product-variant-group">
+                          <div id="product-variant-list" class="product-variant-list"></div>
+                          <div class="product-image-upload-group__footer">
+                            <button
+                              type="button"
+                              class="product-image-upload-group__add-button product-image-upload-group__add-button--filled"
+                              id="add-variant-button"
+                              aria-label="Add variant"
+                              title="Add variant"
+                            >
+                              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                              <span>Add Variant</span>
+                            </button>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section
+                        id="product-editor-section-barcode"
+                        class="product-composer-section product-composer-section--barcode product-form-section-panel product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">5</span>
+                          <div>
+                            <h3>Barcode</h3>
+                            <p>Scan or enter the product barcode.</p>
+                          </div>
+                        </div>
+                        <div class="product-form-details-stack">
+                          <label class="visually-hidden" for="product-barcode-input">Product Barcode</label>
+                          <input
+                            type="text"
+                            name="barcode"
+                            id="product-barcode-input"
+                            class="barcode-hidden-input"
+                            autocomplete="off"
+                          />
+                          <div id="barcode-scan-prompt" class="barcode-scan-prompt">
+                            Barcode scan active. Scan a barcode now to generate the image.
+                          </div>
+                          <div id="barcode-preview-container" class="barcode-preview-container" hidden></div>
+                          <label class="barcode-packing-checkbox" hidden>
+                            <input type="checkbox" name="moveBarcodeToPackingDashboard" />
+                            <span>Move to packing dashboard</span>
+                          </label>
+                        </div>
+                      </section>
+
+                      <section
+                        id="product-editor-section-image-search"
+                        class="product-composer-section product-composer-section--image-search product-form-section-panel product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">6</span>
+                          <div>
+                            <h3>Image Search</h3>
+                            <p>Capture product angles for visual search matching.</p>
+                          </div>
+                        </div>
+                        <div class="visual-search-registration">
+                          <div
+                            id="visual-search-preview-container"
+                            class="visual-search-preview-container visual-search-angle-grid"
+                          ></div>
+                        </div>
+                      </section>
+
+                      <section
+                        id="product-editor-section-3d-model"
+                        class="product-composer-section product-composer-section--model product-form-section-panel product-form-section-anchor"
+                      >
+                        <div class="product-composer-section__heading">
+                          <span class="product-composer-section__number" aria-hidden="true">7</span>
+                          <div>
+                            <h3>3D Model</h3>
+                            <p>Upload a GLB model for an interactive product view.</p>
+                          </div>
+                        </div>
+                        <div class="product-model-registration">
+                          <div
+                            id="product-model-viewer"
+                            class="product-model-registration__viewer"
+                            role="img"
+                            aria-label="3D model preview"
+                            tabindex="0"
+                          >
+                            <div id="product-model-cube" class="product-model-registration__cube" aria-hidden="true">
+                              <span class="product-model-registration__cube-face product-model-registration__cube-face--front"></span>
+                              <span class="product-model-registration__cube-face product-model-registration__cube-face--back"></span>
+                              <span class="product-model-registration__cube-face product-model-registration__cube-face--right"></span>
+                              <span class="product-model-registration__cube-face product-model-registration__cube-face--left"></span>
+                              <span class="product-model-registration__cube-face product-model-registration__cube-face--top"></span>
+                              <span class="product-model-registration__cube-face product-model-registration__cube-face--bottom"></span>
+                            </div>
+                            <div class="product-model-registration__scan-ring" aria-hidden="true"></div>
+                          </div>
+                          <div class="product-model-registration__content">
+                            <div class="product-model-registration__carousel" id="product-model-carousel">
+                              <p class="product-model-registration__title">Upload a ready 3D product file.</p>
+                              <p class="product-model-registration__copy" id="product-model-status">
+                                Choose a .glb file, then save the product to register it.
+                              </p>
+                            </div>
+                            <div class="product-model-registration__actions">
+                              <button
+                                type="button"
+                                class="product-model-registration__action product-model-registration__action--primary"
+                                id="product-model-upload-button"
+                              >
+                                <i class="fa-solid fa-upload" aria-hidden="true"></i>
+                                <span>Upload GLB</span>
+                              </button>
+                              <button
+                                type="button"
+                                class="product-model-registration__action product-model-registration__action--danger"
+                                id="product-model-remove-button"
+                                hidden
+                              >
+                                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                                <span>Remove</span>
+                              </button>
+                              <input
+                                id="product-model-file-input"
+                                type="file"
+                                accept=".glb,model/gltf-binary,application/octet-stream"
+                                hidden
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+
+                      <div id="android-preview-stage" class="product-composer-compatibility-preview" hidden></div>
+                    </div>
+                  </div>
+
+                  <footer class="form-actions product-composer-modal__footer">
+                    <p class="helper-text" id="helper-text" aria-live="polite"></p>
+                    <div class="product-composer-modal__footer-actions">
+                      <button type="button" class="ghost-button" id="dismiss-product-composer-button">
+                        Cancel
+                      </button>
+                      <button type="button" class="ghost-button" id="cancel-edit-button" hidden>
+                        Cancel Edit
+                      </button>
+                      <button type="button" class="ghost-button" id="refresh-button" hidden>
+                        Refresh List
+                      </button>
+                      <button type="submit" id="submit-button">
+                        <i class="fa-regular fa-paper-plane" aria-hidden="true"></i>
+                        <span data-product-submit-label>Publish Product</span>
+                      </button>
+                    </div>
+                  </footer>
+                </form>
+              </section>
+            </div>
+
+            <section class="panel product-panel-grid__inventory">
+              <div class="product-panel-grid__inventory-heading">
+                <div>
+                  <p class="section-label">Catalog</p>
+                  <h2>Products</h2>
+                </div>
+                <button type="button" class="product-panel-add-button" id="open-product-composer-button">
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  <span>Add Product</span>
+                </button>
+              </div>
+              <section class="product-listing-summary" aria-label="Product listing summary" aria-live="polite">
+                <article class="product-listing-summary__card product-listing-summary__card--total">
+                  <span class="product-listing-summary__icon" aria-hidden="true">
+                    <i class="fa-regular fa-file-lines"></i>
+                  </span>
+                  <div class="product-listing-summary__content">
+                    <span class="product-listing-summary__label">Total Listing</span>
+                    <strong class="product-listing-summary__value" data-product-listing-total>0</strong>
+                    <span class="product-listing-summary__note">All product records</span>
+                  </div>
+                </article>
+                <article class="product-listing-summary__card product-listing-summary__card--active">
+                  <span class="product-listing-summary__icon" aria-hidden="true">
+                    <i class="fa-regular fa-circle-check"></i>
+                  </span>
+                  <div class="product-listing-summary__content">
+                    <span class="product-listing-summary__label">Active</span>
+                    <strong class="product-listing-summary__value" data-product-listing-active>0</strong>
+                    <span class="product-listing-summary__note">Live in customer app</span>
+                  </div>
+                </article>
+                <article class="product-listing-summary__card product-listing-summary__card--inactive">
+                  <span class="product-listing-summary__icon" aria-hidden="true">
+                    <i class="fa-regular fa-circle-pause"></i>
+                  </span>
+                  <div class="product-listing-summary__content">
+                    <span class="product-listing-summary__label">Inactive</span>
+                    <strong class="product-listing-summary__value" data-product-listing-inactive>0</strong>
+                    <span class="product-listing-summary__note">Not currently live</span>
+                  </div>
+                </article>
+                <article class="product-listing-summary__card product-listing-summary__card--restricted">
+                  <span class="product-listing-summary__icon" aria-hidden="true">
+                    <i class="fa-solid fa-shield-halved"></i>
+                  </span>
+                  <div class="product-listing-summary__content">
+                    <span class="product-listing-summary__label">Restricted</span>
+                    <strong class="product-listing-summary__value" data-product-listing-restricted>0</strong>
+                    <span class="product-listing-summary__note">Super Admin restriction</span>
+                  </div>
+                </article>
+              </section>
+              <div class="product-panel-grid__inventory-tools">
+                <label
+                  class="product-panel-toolbar__search product-panel-grid__inventory-search"
+                  aria-label="Search admin product tools"
+                >
+                  <span class="product-panel-toolbar__search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="11" cy="11" r="6.5" />
+                      <path d="m16 16 4 4" stroke-linecap="round" />
+                    </svg>
+                  </span>
+                  <input
+                    type="search"
+                    id="product-search-input"
+                    placeholder="Search products, categories, or stock..."
+                    autocomplete="off"
+                  />
+                </label>
+
+                <div
+                  class="product-category-multiselect product-panel-grid__inventory-category-filter"
+                  id="product-category-filter"
+                >
+                  <button
+                    type="button"
+                    class="product-category-multiselect__trigger"
+                    id="product-category-filter-trigger"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                  >
+                    <span
+                      class="product-category-multiselect__summary"
+                      id="product-category-filter-summary"
+                    >
+                      All Categories
+                    </span>
+                    <span
+                      class="product-panel-grid__inventory-category-filter-icon"
+                      aria-hidden="true"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="m6.5 9.5 5.5 5 5.5-5" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </span>
+                  </button>
+                  <div
+                    class="product-category-multiselect__menu product-panel-grid__inventory-category-filter-menu"
+                    id="product-category-filter-menu"
+                    role="listbox"
+                    hidden
+                  ></div>
+                </div>
+              </div>
+
+              <div id="product-list" class="product-list"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="/admin_navigation.js?v=main-live-chat-nav-1"></script>
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script src="/app.js?v=listing-composer-portal-2"></script>
+  </body>
+</html>

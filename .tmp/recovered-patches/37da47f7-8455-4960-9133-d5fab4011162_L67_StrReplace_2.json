@@ -1,0 +1,10 @@
+{
+  "line": 67,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "  try {\n    await fsPromises.access(WORKSPACE_SETTINGS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(WORKSPACE_SETTINGS_FILE, \"{}\\n\", \"utf8\");\n  }\n}",
+  "new_string": "  try {\n    await fsPromises.access(WORKSPACE_SETTINGS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(WORKSPACE_SETTINGS_FILE, \"{}\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(CHAT_WALLPAPERS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(CHAT_WALLPAPERS_FILE, \"[]\\n\", \"utf8\");\n  }\n}",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 314
+}

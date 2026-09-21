@@ -1,0 +1,10 @@
+{
+  "line": 170,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "function normalizeAdminBiometricSettings(value, previousValue = null) {",
+  "new_string": "function normalizeAdminBiometricLightingSettings(lightingInput, previousLighting = {}) {\n  const defaults = {\n    sleep: \"white\",\n    break: \"purple\",\n    normal: \"cyan\",\n    settings: \"yellow\",\n    enroll: \"blue\",\n    success: \"green\",\n    error: \"red\",\n  };\n  const inputScenes = lightingInput?.scenes && typeof lightingInput.scenes === \"object\"\n    ? lightingInput.scenes\n    : {};\n  const previousScenes = previousLighting?.scenes && typeof previousLighting.scenes === \"object\"\n    ? previousLighting.scenes\n    : {};\n  const scenes = {};\n  for (const key of Object.keys(defaults)) {\n    const color = String(inputScenes[key] ?? previousScenes[key] ?? defaults[key])\n      .trim()\n      .toLowerCase();\n    scenes[key] = ADMIN_BIOMETRIC_FINGERPRINT_LED_COLORS.has(color) ? color : defaults[key];\n  }\n  return { scenes };\n}\n\nfunction normalizeAdminBiometricSettings(value, previousValue = null) {",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 899
+}

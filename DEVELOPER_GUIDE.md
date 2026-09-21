@@ -64,6 +64,8 @@ The backend loads `backend/.env` and root `.env` if present.
 | `SUPER_ADMIN_PASSWORD` | none | Required bcrypt hash for the super admin password; plaintext is rejected. |
 | `ADMIN_API_SESSION_SECRET` | none | Required HMAC signing secret for expiring super admin sessions. |
 | `SUPER_ADMIN_SESSION_TTL_SECONDS` | `28800` | Super admin session lifetime, capped at seven days. |
+| `APP_SESSION_SECRET` | falls back to `ADMIN_API_SESSION_SECRET` | Preferred dedicated HMAC secret for buyer/seller/employee sessions. |
+| `APP_SESSION_TTL_SECONDS` | `86400` | App session lifetime, capped at 30 days. |
 | `REQUIRE_SECRETS` | `0` | Set to `1` to enforce required secrets outside production. |
 | `CHAT_AI_API_KEY` or `OPENAI_API_KEY` | empty | Enables AI chat replies. |
 | `CHAT_AI_MODEL` or `OPENAI_MODEL` | `gpt-4o-mini` | AI model name. |
@@ -165,7 +167,7 @@ See `PROJECT_STRUCTURE.md` for detailed file descriptions.
 
 - Follow the existing Flutter service pattern: base interface, web implementation, IO implementation, stub implementation, and platform export.
 - Keep per-account local storage keys scoped through `AuthSession`.
-- Preserve admin workspace scoping through `adminId` and the existing helper functions.
+- Derive account and tenant scope from `request.authSession`; legacy identity headers are hints only.
 - Validate inputs on both client and server.
 - Avoid storing sensitive data in Git. Runtime JSON data and uploads are ignored.
 - Prefer smaller modules when changing large files such as `backend/server.js`, `backend/public/app.js`, `backend/public/settings-menu.js`, `lib/main.dart`, and `lib/chat_support.dart`.
@@ -180,6 +182,7 @@ flutter test
 node --check backend/server.js
 node --check backend/public/super_admin.js
 npm --prefix backend run test:password-auth
+npm --prefix backend run test:session-tenancy
 ```
 
 ### JSON Password Migration
@@ -209,7 +212,7 @@ For web/admin changes, manually test:
 
 For production-like deployment:
 
-1. Set `SUPER_ADMIN_USERNAME`, a bcrypt hash in `SUPER_ADMIN_PASSWORD`, and `ADMIN_API_SESSION_SECRET`.
+1. Set `SUPER_ADMIN_USERNAME`, a bcrypt hash in `SUPER_ADMIN_PASSWORD`, `ADMIN_API_SESSION_SECRET`, and a dedicated `APP_SESSION_SECRET`.
 2. Set an API URL for Flutter builds with `--dart-define=API_BASE_URL=...`.
 3. Move JSON persistence to a real database or enforce file locks/backups.
 4. Move uploads to object storage or protected storage.
@@ -222,4 +225,4 @@ For production-like deployment:
 - For Android emulator, use `http://10.0.2.2:8080` instead of `127.0.0.1`.
 - If visual search fails, confirm `sharp` installed successfully in `backend/node_modules`.
 - If AI reply fails, confirm `CHAT_AI_API_KEY` or `OPENAI_API_KEY` is set.
-- If admin data appears empty, check the browser's stored `gms-admin-id` and backend JSON files.
+- If protected admin data returns `401`, sign in again and verify the signed app-session cookie/token is present.

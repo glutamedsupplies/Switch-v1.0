@@ -1,0 +1,10 @@
+{
+  "line": 27,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "    if (!isSellerListingConnectedToSuperAdmin(entry) || !adminId || isSuperAdminActivityActor(entry)) {\n      return;\n    }\n    if (\n      !isSellerWorkspaceActivityActor(entry)\n      && String(entry?.action ?? \"\").trim().toLowerCase() !== \"created\"\n    ) {\n      return;\n    }\n\n    const accounts = await readAccounts();\n    const account = findAdminAccountByScopeId(accounts, adminId)\n      || findAdminAccountByScopeId(accounts, entry?.actor?.adminId)\n      || findAdminAccountByScopeId(accounts, entry?.actor?.accountId);\n    if (!account) {\n      return;\n    }\n    await persistSuperAdminNotification(getLinkedSuperAdminNotificationFromActivity(entry, account));",
+  "new_string": "    if (!adminId || isSuperAdminActivityActor(entry)) {\n      return;\n    }\n\n    const accounts = await readAccounts();\n    const account = findAdminAccountByScopeId(accounts, adminId)\n      || findAdminAccountByScopeId(accounts, entry?.actor?.adminId)\n      || findAdminAccountByScopeId(accounts, entry?.actor?.accountId);\n    if (!account) {\n      return;\n    }\n\n    if (isSellerProfileUpdateForSuperAdmin(entry)) {\n      await persistSuperAdminNotification(getLinkedSuperAdminNotificationFromProfileActivity(entry, account));\n      return;\n    }\n\n    if (!isSellerListingConnectedToSuperAdmin(entry)) {\n      return;\n    }\n    if (\n      !isSellerWorkspaceActivityActor(entry)\n      && String(entry?.action ?? \"\").trim().toLowerCase() !== \"created\"\n    ) {\n      return;\n    }\n\n    await persistSuperAdminNotification(getLinkedSuperAdminNotificationFromActivity(entry, account));",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 882
+}

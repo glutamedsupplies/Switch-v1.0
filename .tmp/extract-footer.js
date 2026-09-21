@@ -1,0 +1,10 @@
+const fs = require("fs");
+const src = fs.readFileSync("backend/public/_patch_footer.js", "utf8");
+const start = src.indexOf("const footer = `");
+if (start < 0) throw new Error("footer start not found");
+const contentStart = start + "const footer = `".length;
+const end = src.indexOf("`;", contentStart);
+if (end < 0) throw new Error("footer end not found");
+const footer = src.slice(contentStart, end);
+fs.writeFileSync("backend/public/switch_site_footer.inc.html", footer.trimStart());
+console.log("ok", footer.length);

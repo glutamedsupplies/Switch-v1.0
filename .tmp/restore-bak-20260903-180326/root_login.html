@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GMS Root Login</title>
+    <link rel="stylesheet" href="/styles.css?v=universal-search-1" />
+  </head>
+  <body class="login-page">
+    <main class="page-shell login-page-shell login-page-shell--neutral login-page-shell--settings-drawer login-page-shell--root-only">
+      <div class="settings-menu login-page-settings" data-settings-menu>
+        <button
+          class="settings-toggle"
+          type="button"
+          aria-label="Color Picker"
+          aria-haspopup="true"
+          aria-expanded="false"
+          title="Color Picker"
+          data-settings-toggle
+        >
+          <span class="settings-toggle__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path
+                d="M10.4 2.8h3.2l.5 2.1c.4.1.9.3 1.3.5l1.9-1.1 2.3 2.3-1.1 1.9c.2.4.4.8.5 1.3l2.1.5v3.2l-2.1.5c-.1.5-.3.9-.5 1.3l1.1 1.9-2.3 2.3-1.9-1.1c-.4.2-.8.4-1.3.5l-.5 2.1h-3.2l-.5-2.1c-.5-.1-.9-.3-1.3-.5l-1.9 1.1-2.3-2.3 1.1-1.9a5 5 0 0 1-.5-1.3l-2.1-.5v-3.2l2.1-.5c.1-.5.3-.9.5-1.3L4.5 6.6l2.3-2.3 1.9 1.1c.4-.2.8-.4 1.3-.5Z"
+                stroke-linejoin="round"
+              />
+              <circle cx="12" cy="12" r="3.2" />
+            </svg>
+          </span>
+          <span class="settings-toggle__swatch" aria-hidden="true"></span>
+        </button>
+
+        <div class="settings-dropdown" hidden data-settings-dropdown>
+          <p class="settings-dropdown__eyebrow">Theme Settings</p>
+          <h2 class="settings-dropdown__title">Color Picker</h2>
+          <p class="settings-dropdown__copy">
+            Pick a color and it updates the whole web server instantly.
+          </p>
+
+          <div class="settings-file-field">
+            <label class="settings-file-trigger">
+              <span class="settings-file-trigger__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M12 16V6" stroke-linecap="round" />
+                  <path d="m8.5 9.5 3.5-3.5 3.5 3.5" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M5 18.5h14" stroke-linecap="round" />
+                </svg>
+              </span>
+              <span class="settings-file-trigger__text">Change Logo</span>
+              <span class="settings-file-name" data-logo-file-name>No file selected</span>
+              <input
+                class="settings-file-trigger__input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                data-logo-file-input
+              />
+            </label>
+            <button
+              type="button"
+              class="product-gallery-modal__close validation-modal__close settings-logo-remove-button"
+              aria-label="Remove logo"
+              title="Remove logo"
+              data-logo-remove
+              hidden
+            >
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <label class="settings-color-field settings-color-field--primary">
+            <span>Primary Color</span>
+            <input type="color" value="#2563EB" data-theme-color-input />
+          </label>
+
+          <div class="settings-color-meta">
+            <span data-theme-hex>#2563EB</span>
+            <span data-theme-rgb>RGB 37, 99, 235</span>
+          </div>
+
+          <button
+            type="button"
+            class="ghost-button settings-reset-button"
+            data-theme-reset
+          >
+            Reset Default
+          </button>
+        </div>
+      </div>
+
+      <section class="login-layout">
+        <section class="panel login-panel">
+          <div class="panel-heading login-panel-heading">
+            <div class="login-panel-header">
+              <h2 id="root-login-panel-title">Root Login</h2>
+            </div>
+          </div>
+
+          <form id="root-login-form" class="product-form login-form is-root-login" novalidate>
+            <label id="root-login-identifier-label" class="login-identifier-label">
+              <span id="root-login-identifier-text">Root Username</span>
+              <input
+                id="root-login-identifier-input"
+                type="text"
+                name="username"
+                placeholder="root"
+                autocomplete="username"
+                required
+              />
+            </label>
+
+            <label id="root-login-password-label">
+              <span id="root-login-password-text">Root Password</span>
+              <div class="password-field">
+                <input
+                  id="root-login-password-input"
+                  type="password"
+                  name="password"
+                  placeholder="Enter root password"
+                  autocomplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  class="password-field__toggle"
+                  data-password-toggle="root-login-password-input"
+                  aria-controls="root-login-password-input"
+                >
+                  Show
+                </button>
+              </div>
+            </label>
+
+            <button type="submit" class="login-submit" id="root-login-submit-button">
+              Sign In as Root
+            </button>
+          </form>
+
+          <p id="root-login-feedback" class="feedback-note" aria-live="polite"></p>
+        </section>
+      </section>
+    </main>
+
+    <div
+      class="validation-modal-overlay"
+      id="root-login-validation-modal-overlay"
+      hidden
+      aria-hidden="true"
+    >
+      <section
+        class="validation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="root-login-validation-modal-title"
+      >
+        <button
+          type="button"
+          class="product-gallery-modal__close validation-modal__close"
+          id="root-login-validation-modal-close"
+          aria-label="Close validation modal"
+          title="Close validation modal"
+        >
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+        <div class="validation-modal__top">
+          <div
+            class="validation-modal__icon validation-modal__icon--error"
+            aria-hidden="true"
+            role="presentation"
+            tabindex="-1"
+          >
+            <svg viewBox="0 0 24 24" width="140" height="140" fill="none">
+              <circle
+                cx="12"
+                cy="12"
+                r="9"
+                stroke="currentColor"
+                stroke-width="1.8"
+              />
+              <path
+                d="M12 7.6v5.6"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <circle cx="12" cy="16.9" r="1.1" fill="currentColor" />
+            </svg>
+          </div>
+        </div>
+        <div class="validation-modal__body">
+          <h2 class="validation-modal__title" id="root-login-validation-modal-title">
+            Error
+          </h2>
+          <p class="validation-modal__copy" id="root-login-validation-modal-copy">
+            Please review the highlighted fields and try again.
+          </p>
+          <div class="validation-modal__actions">
+            <button
+              type="button"
+              class="ghost-button validation-modal__action-button validation-modal__action-button--secondary"
+              id="root-login-validation-modal-action"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script src="/theme.js?v=scoped-admin-nav-theme-1"></script>
+    <script src="/settings-menu.js?v=workspace-default-icon-1"></script>
+    <script src="/password-toggle.js"></script>
+    <script>
+      const rootLoginForm = document.getElementById("root-login-form");
+      const rootLoginFeedback = document.getElementById("root-login-feedback");
+      const rootIdentifierInput = document.getElementById("root-login-identifier-input");
+      const rootPasswordInput = document.getElementById("root-login-password-input");
+      const rootSubmitButton = document.getElementById("root-login-submit-button");
+      const rootModalOverlay = document.getElementById("root-login-validation-modal-overlay");
+      const rootModalTitle = document.getElementById("root-login-validation-modal-title");
+      const rootModalCopy = document.getElementById("root-login-validation-modal-copy");
+      const rootModalAction = document.getElementById("root-login-validation-modal-action");
+      const rootModalClose = document.getElementById("root-login-validation-modal-close");
+      let rootLoginFocusTarget = null;
+
+      function setRootFeedback(message, mode) {
+        rootLoginFeedback.textContent = message;
+        rootLoginFeedback.className = "feedback-note";
+        if (mode) {
+          rootLoginFeedback.classList.add(mode);
+        }
+      }
+
+      function syncRootModalOpenState() {
+        document.body.classList.toggle("modal-open", !rootModalOverlay.hidden);
+      }
+
+      function closeRootValidationModal(options = {}) {
+        const { restoreFocus = true } = options;
+        rootModalOverlay.hidden = true;
+        rootModalOverlay.setAttribute("aria-hidden", "true");
+        syncRootModalOpenState();
+
+        if (restoreFocus && rootLoginFocusTarget instanceof HTMLElement) {
+          window.setTimeout(() => {
+            rootLoginFocusTarget.focus();
+          }, 0);
+        }
+
+        rootLoginFocusTarget = null;
+      }
+
+      function openRootValidationModal(message, options = {}) {
+        const {
+          title = "Error",
+          actionLabel = "Go Back",
+          focusTarget = null,
+        } = options;
+
+        rootModalTitle.textContent = title;
+        rootModalCopy.textContent = message;
+        rootModalAction.textContent = actionLabel;
+        rootLoginFocusTarget = focusTarget instanceof HTMLElement ? focusTarget : null;
+        rootModalOverlay.hidden = false;
+        rootModalOverlay.setAttribute("aria-hidden", "false");
+        setRootFeedback("");
+        syncRootModalOpenState();
+
+        window.setTimeout(() => {
+          rootModalAction.focus();
+        }, 0);
+      }
+
+      function openRootPasswordModal(message) {
+        openRootValidationModal(message, {
+          title: "Invalid Password",
+          actionLabel: "Review Password",
+          focusTarget: rootPasswordInput,
+        });
+      }
+
+      async function verifyRootLogin(username, password) {
+        const response = await fetch("/api/super-admin-login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const loginError = new Error(
+            response.status === 401
+              ? "Incorrect root credentials. Please try again."
+              : data.message || "Unable to sign in root.",
+          );
+          loginError.status = response.status;
+          throw loginError;
+        }
+
+        return data;
+      }
+
+      function clearActiveAdminScope() {
+        try {
+          window.localStorage.removeItem("gms-admin-id");
+        } catch (error) {
+          console.warn("Unable to clear admin scope.", error);
+        }
+      }
+
+      rootLoginForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const formData = new FormData(rootLoginForm);
+        const username = String(formData.get("username") ?? "").trim();
+        const password = String(formData.get("password") ?? "").trim();
+
+        if (!username) {
+          openRootValidationModal("Please enter the root username.", {
+            title: "Root Username Required",
+            actionLabel: "Enter Username",
+            focusTarget: rootIdentifierInput,
+          });
+          return;
+        }
+
+        if (!password) {
+          openRootPasswordModal("Please enter the root password.");
+          return;
+        }
+
+        if (password.length < 6) {
+          openRootPasswordModal("Password must be at least 6 characters long.");
+          return;
+        }
+
+        rootSubmitButton.disabled = true;
+        rootSubmitButton.setAttribute("aria-disabled", "true");
+        setRootFeedback("Checking root account...");
+
+        try {
+          const rootLoginData = await verifyRootLogin(username, password);
+          const rootSession = {
+            ...(rootLoginData.root || {}),
+            token: rootLoginData.token,
+            role: "root",
+            signedInAt: new Date().toISOString(),
+          };
+          window.sessionStorage.removeItem("gms-admin-session");
+          window.sessionStorage.removeItem("gms-employee-session");
+          clearActiveAdminScope();
+          window.sessionStorage.setItem(
+            "gms-super-admin-session",
+            JSON.stringify(rootSession),
+          );
+          setRootFeedback(rootLoginData.message || "Root login successful.", "success");
+          window.location.replace(rootLoginData.redirectPath || "/super_admin.html");
+        } catch (error) {
+          rootSubmitButton.disabled = false;
+          rootSubmitButton.setAttribute("aria-disabled", "false");
+          openRootValidationModal(
+            error instanceof Error ? error.message : "Unable to sign in root.",
+            {
+              title: "Root Login Error",
+              actionLabel: "Try Again",
+              focusTarget: rootIdentifierInput,
+            },
+          );
+        }
+      });
+
+      rootIdentifierInput.addEventListener("input", () => {
+        setRootFeedback("");
+      });
+      rootPasswordInput.addEventListener("input", () => {
+        setRootFeedback("");
+      });
+      rootModalClose.addEventListener("click", () => closeRootValidationModal());
+      rootModalAction.addEventListener("click", () => closeRootValidationModal());
+      rootModalOverlay.addEventListener("click", (event) => {
+        if (event.target === rootModalOverlay) {
+          closeRootValidationModal();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !rootModalOverlay.hidden) {
+          closeRootValidationModal();
+        }
+      });
+    </script>
+  </body>
+</html>

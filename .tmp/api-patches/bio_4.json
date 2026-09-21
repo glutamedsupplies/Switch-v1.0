@@ -1,0 +1,4 @@
+{
+  "old": "  ).trim().toLowerCase();\n  const rawMelodyNotes = Array.isArray(buzzerInput.notes)\n    ? buzzerInput.notes\n    : Array.isArray(previousBuzzer.notes)\n      ? previousBuzzer.notes\n      : [];\n  const melodyNotes = rawMelodyNotes.slice(0, 16).map((note) => ({\n    frequency: clampAdminBiometricInteger(note?.frequency, 0, 8000, 0),\n    duration: clampAdminBiometricInteger(note?.duration, 20, 3000, 180),\n  }));\n\n  const usbVendorId = clampAdminBiometricInteger(",
+  "neu": "  ).trim().toLowerCase();\n\n  const usbVendorId = clampAdminBiometricInteger("
+}

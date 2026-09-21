@@ -1,0 +1,10 @@
+{
+  "line": 67,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "      if (backfill.length) {\n        inbox = [...backfill, ...inbox];\n        await writeSuperAdminNotifications(inbox);\n      }\n      sendJson(response, 200, {\n        products: notificationProducts,\n        notifications: inbox,\n        total: inbox.length,\n      });",
+  "new_string": "      if (backfill.length) {\n        inbox = [...backfill, ...inbox];\n        await writeSuperAdminNotifications(inbox);\n      }\n      const feedbackEntries = await readPlatformFeedback();\n      inbox = await syncHandledSuperAdminNotifications(inbox, {\n        pendingProductIds: notificationProducts.map((product) =>\n          String(product?.id ?? product?.productId ?? \"\").trim(),\n        ).filter(Boolean),\n        feedbackEntries,\n      });\n      sendJson(response, 200, {\n        products: notificationProducts,\n        notifications: inbox,\n        total: inbox.length,\n      });",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 586
+}

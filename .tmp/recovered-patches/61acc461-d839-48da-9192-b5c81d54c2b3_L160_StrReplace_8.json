@@ -1,0 +1,10 @@
+{
+  "line": 160,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "  return normalizeAiIntegrationRecord({\n    id: currentIntegration.id,\n    schemaVersion: AI_INTEGRATION_SCHEMA_VERSION,",
+  "new_string": "  return normalizeAiIntegrationRecord({\n    id: currentIntegration.apiKey\n      ? currentIntegration.id\n      : deriveAiIntegrationId({ provider: discovery.provider, apiKey: discovery.apiKey }),\n    schemaVersion: AI_INTEGRATION_SCHEMA_VERSION,",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 244
+}

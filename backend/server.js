@@ -5,6 +5,10 @@ const fs = require("fs");
 const fsPromises = require("fs/promises");
 const crypto = require("crypto");
 const { createSuperAdminAuth } = require("./security/superAdminAuth");
+const {
+  createAppSessionAuth,
+  validateIdentityHints,
+} = require("./security/appSessionAuth");
 const { createPlatformFeedbackApi } = require("./services/platformFeedbackApi");
 const { createTrendingSearchesApi } = require("./services/trendingSearchesApi");
 const { createMapsPlacesApi } = require("./services/mapsPlacesApi");
@@ -383,6 +387,7 @@ const YOLO_INSPECTION_TIMEOUT_MS = Math.max(
   Number(process.env.YOLO_INSPECTION_TIMEOUT_MS) || 20_000,
 );
 const superAdminAuth = createSuperAdminAuth(process.env);
+const appSessionAuth = createAppSessionAuth(process.env);
 const SUPER_ADMIN_USERNAME = superAdminAuth.username;
 
 const MIME_TYPES = {
@@ -442,29 +447,14 @@ function getRecordAdminId(record, fallback = DEFAULT_ADMIN_ID) {
 }
 
 function getRequestAdminId(request, requestUrl = null, fallback = DEFAULT_ADMIN_ID) {
-  const url = requestUrl ?? new URL(request.url, `http://127.0.0.1:${PORT}`);
   return normalizeAdminTenantId(
-    request.headers["x-gms-admin-id"] ??
-      request.headers["x-admin-id"] ??
-      url.searchParams.get("adminId") ??
-      url.searchParams.get("tenantId") ??
-      url.searchParams.get("workspaceId"),
+    request?.authSession?.adminId,
     normalizeAdminTenantId(fallback, DEFAULT_ADMIN_ID),
   );
 }
 
 function hasRequestAdminScope(request, requestUrl = null) {
-  const url = requestUrl ?? new URL(request.url, `http://127.0.0.1:${PORT}`);
-  return Boolean(
-    normalizeAdminTenantId(
-      request.headers["x-gms-admin-id"] ??
-        request.headers["x-admin-id"] ??
-        url.searchParams.get("adminId") ??
-        url.searchParams.get("tenantId") ??
-        url.searchParams.get("workspaceId"),
-      "",
-    ),
-  );
+  return Boolean(normalizeAdminTenantId(request?.authSession?.adminId, ""));
 }
 
 function getExplicitRequestAdminId(request, requestUrl = null) {
@@ -1004,6 +994,107 @@ function isSuperAdminAuthorized(request) {
   return Boolean(superAdminAuth.verifySession(token));
 }
 
+function getRawRequestAdminIdentityHint(request, requestUrl = null) {
+  const url = requestUrl ?? new URL(request.url, `http://127.0.0.1:${PORT}`);
+  return String(
+    request.headers["x-gms-admin-id"]
+      ?? request.headers["x-admin-id"]
+      ?? url.searchParams.get("adminId")
+      ?? url.searchParams.get("tenantId")
+      ?? url.searchParams.get("workspaceId")
+      ?? "",
+  ).trim();
+}
+
+function getRawRequestAccountIdentityHints(request, requestUrl = null) {
+  const url = requestUrl ?? new URL(request.url, `http://127.0.0.1:${PORT}`);
+  return {
+    accountId: String(
+      request.headers["x-gms-account-id"]
+        ?? request.headers["x-account-id"]
+        ?? url.searchParams.get("accountId")
+        ?? "",
+    ).trim(),
+    email: String(
+      request.headers["x-gms-account-email"]
+        ?? request.headers["x-account-email"]
+        ?? url.searchParams.get("accountEmail")
+        ?? url.searchParams.get("email")
+        ?? "",
+    ).trim(),
+  };
+}
+
+function attachAppSession(request) {
+  const token = appSessionAuth.getRequestSessionToken(request);
+  request.appSessionTokenProvided = Boolean(token);
+  request.authSession = token ? appSessionAuth.verifySession(token) : null;
+  return request.authSession;
+}
+
+function requireAppSession(request, response, requestUrl, options = {}) {
+  const session = request.authSession;
+  if (!session) {
+    sendJson(response, 401, {
+      message: request.appSessionTokenProvided
+        ? "Your session is invalid or expired. Please sign in again."
+        : "A signed-in account session is required.",
+      code: "APP_SESSION_INVALID",
+    });
+    return false;
+  }
+
+  const allowedRoles = Array.isArray(options.roles) ? options.roles : [];
+  if (allowedRoles.length && !allowedRoles.includes(session.role)) {
+    sendJson(response, 403, {
+      message: "This account is not allowed to access this resource.",
+      code: "APP_SESSION_ROLE_FORBIDDEN",
+    });
+    return false;
+  }
+
+  const identityKind = options.identityKind === "auto"
+    ? session.role === "buyer" ? "account" : "admin"
+    : options.identityKind;
+  const hints = identityKind === "admin"
+    ? { adminId: getRawRequestAdminIdentityHint(request, requestUrl) }
+    : identityKind === "account"
+      ? getRawRequestAccountIdentityHints(request, requestUrl)
+      : {};
+  const validation = validateIdentityHints(session, hints);
+  if (!validation.ok) {
+    sendJson(response, 403, {
+      message: `The supplied ${validation.field} does not match the signed session.`,
+      code: "APP_SESSION_IDENTITY_MISMATCH",
+      field: validation.field,
+    });
+    return false;
+  }
+
+  return true;
+}
+
+function assertSessionPayloadIdentity(
+  request,
+  payload,
+  { account = false, admin = false } = {},
+) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const validation = validateIdentityHints(request.authSession, {
+    accountId: account ? source.accountId ?? source.userId ?? source.uid : "",
+    email: account ? source.accountEmail ?? source.email : "",
+    adminId: admin
+      ? source.adminId ?? source.tenantId ?? source.workspaceId ?? source.ownerAdminId
+      : "",
+  });
+  if (!validation.ok) {
+    throw createHttpError(
+      `The supplied ${validation.field} does not match the signed session.`,
+      403,
+    );
+  }
+}
+
 function requireSuperAdmin(request, response) {
   if (isSuperAdminAuthorized(request)) {
     return true;
@@ -1495,15 +1586,11 @@ async function writeFollowers(followers) {
 }
 
 function getRequestAccountIdentifier(request, requestUrl) {
-  requestUrl = requestUrl || new URL(request.url, `http://${request.headers.host}`);
-  const headerId = String(request.headers["x-gms-account-id"] ?? request.headers["x-account-id"] ?? "").trim();
-  const headerEmail = String(request.headers["x-gms-account-email"] ?? request.headers["x-account-email"] ?? "").trim();
-  const queryId = String(requestUrl.searchParams.get("accountId") ?? requestUrl.searchParams.get("id") ?? "").trim();
-  const queryEmail = String(requestUrl.searchParams.get("email") ?? requestUrl.searchParams.get("accountEmail") ?? "").trim();
-  const id = headerId || queryId || headerEmail || queryEmail || "";
+  const accountId = String(request?.authSession?.accountId ?? "").trim();
+  const email = String(request?.authSession?.email ?? "").trim().toLowerCase();
   return {
-    id,
-    email: headerEmail || queryEmail || "",
+    id: accountId || email,
+    email,
   };
 }
 
@@ -5577,6 +5664,33 @@ function normalizeOrderEntriesPayload(payload, adminId = "") {
     .filter((entry) => isRealOrderAccountId(entry.accountId));
 }
 
+function scopeOrderEntriesToSession(entries, request) {
+  if (request?.authSession?.role !== "buyer") {
+    return entries;
+  }
+
+  const accountId = String(request.authSession.accountId ?? "").trim();
+  const accountEmail = String(request.authSession.email ?? "").trim().toLowerCase();
+  const allowedAccountKeys = new Set(
+    [accountId, accountEmail]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return entries.map((entry) => {
+    const suppliedAccountId = String(entry?.accountId ?? "").trim().toLowerCase();
+    if (suppliedAccountId && !allowedAccountKeys.has(suppliedAccountId)) {
+      throw createHttpError(
+        "The supplied accountId does not match the signed session.",
+        403,
+      );
+    }
+    return {
+      ...entry,
+      accountId,
+    };
+  });
+}
+
 function sortStoredOrderEntries(entries) {
   return [...entries].sort((left, right) => {
     const createdAtDifference =
@@ -7124,7 +7238,7 @@ function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type,If-Match,X-Request-ID,X-File-Name,X-GMS-Admin-ID,X-Admin-ID,X-GMS-Super-Admin-Token",
+    "Content-Type,Authorization,If-Match,X-Request-ID,X-File-Name,X-Switch-Session,X-GMS-Admin-ID,X-Admin-ID,X-GMS-Account-ID,X-Account-ID,X-GMS-Account-Email,X-Account-Email,X-GMS-Super-Admin-Token",
   );
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
 }
@@ -7143,6 +7257,61 @@ function sendText(response, statusCode, body) {
     "Content-Type": "text/plain; charset=utf-8",
   });
   response.end(body);
+}
+
+function getAccountSessionId(account) {
+  return String(
+    account?.id
+      ?? account?.accountId
+      ?? account?.accountCode
+      ?? account?.employeeId
+      ?? account?.userId
+      ?? account?.uid
+      ?? account?.email
+      ?? "",
+  ).trim();
+}
+
+function setAppSessionCookie(request, response, session) {
+  const forwardedProtocol = String(request.headers["x-forwarded-proto"] ?? "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const secure = forwardedProtocol === "https" || request.socket?.encrypted === true;
+  response.setHeader(
+    "Set-Cookie",
+    [
+      `switch_session=${encodeURIComponent(session.token)}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+      `Max-Age=${session.expiresInSeconds}`,
+      secure ? "Secure" : "",
+    ].filter(Boolean).join("; "),
+  );
+}
+
+function issueAppSessionForAccount(request, response, account, role, overrides = {}) {
+  const normalizedRole = String(role ?? "").trim().toLowerCase();
+  const session = appSessionAuth.issueSession({
+    accountId: overrides.accountId || getAccountSessionId(account),
+    email: overrides.email || account?.email,
+    role: normalizedRole,
+    adminId:
+      overrides.adminId
+      || (normalizedRole === "seller" || normalizedRole === "employee"
+        ? getRecordAdminId(
+            account,
+            normalizedRole === "seller" ? getAccountSessionId(account) : "",
+          )
+        : ""),
+  });
+  setAppSessionCookie(request, response, session);
+  return {
+    sessionToken: session.token,
+    sessionExpiresAt: session.expiresAt,
+    sessionExpiresInSeconds: session.expiresInSeconds,
+  };
 }
 
 function parseRequestBody(request) {
@@ -7287,19 +7456,8 @@ function serializeUnifiedSessionEntry(entry) {
 function getUnifiedSessionRequestIdentity(request, requestUrl, payload = null) {
   const source = payload && typeof payload === "object" ? payload : {};
   return {
-    accountId: String(
-      source.accountId ??
-      source.id ??
-      requestUrl?.searchParams.get("accountId") ??
-      request.headers["x-gms-account-id"] ??
-      "",
-    ).trim(),
-    email: String(
-      source.email ??
-      requestUrl?.searchParams.get("email") ??
-      request.headers["x-gms-account-email"] ??
-      "",
-    ).trim().toLowerCase(),
+    accountId: String(request?.authSession?.accountId ?? "").trim(),
+    email: String(request?.authSession?.email ?? "").trim().toLowerCase(),
     activeMode: String(
       source.activeMode ??
       requestUrl?.searchParams.get("activeMode") ??
@@ -7322,7 +7480,7 @@ async function requireUnifiedSessionEntry(request, requestUrl, payload = null) {
 
   const identity = getUnifiedSessionRequestIdentity(request, requestUrl, payload);
   if (!identity.accountId && !identity.email) {
-    throw createHttpError("Provide accountId or email.", 400);
+    throw createHttpError("A signed-in account session is required.", 401);
   }
 
   const entry = await resolveUnifiedSession(identity);
@@ -19811,6 +19969,7 @@ async function handleProductsApi(request, response) {
       }
 
       const payload = await parseRequestBody(request);
+      assertSessionPayloadIdentity(request, payload, { admin: true });
       if (
         doesProductPayloadChangePromotion(payload) &&
         !(await requireAdminRestrictionAllowed(
@@ -20954,12 +21113,19 @@ async function handleAdminLoginApi(request, response) {
           return;
         }
 
+        const sessionFields = issueAppSessionForAccount(
+          request,
+          response,
+          account,
+          "seller",
+        );
         sendJson(response, 200, {
           admin: serializeAdminAccount(account),
           dashboardPath: "/admin_dashboard.html",
           redirectPath: "/main.html",
           message: "Seller login verified.",
           authStore: "postgres",
+          ...sessionFields,
         });
         return;
       }
@@ -21021,12 +21187,19 @@ async function handleAdminLoginApi(request, response) {
     setAdminAccountPresence(account, true, { event: "login" });
     await writeAccounts(accounts);
 
+    const sessionFields = issueAppSessionForAccount(
+      request,
+      response,
+      account,
+      "seller",
+    );
     sendJson(response, 200, {
       admin: serializeAdminAccount(account),
       dashboardPath: "/admin_dashboard.html",
       redirectPath: "/main.html",
       message: "Seller login verified.",
       authStore: "json",
+      ...sessionFields,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -21133,13 +21306,20 @@ async function handleAdminPresenceApi(request, response) {
 
   try {
     const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { admin: true });
+    const sessionIdentity = {
+      adminId: request.authSession.adminId,
+      id: request.authSession.accountId,
+      accountCode: request.authSession.accountId,
+      email: request.authSession.email,
+    };
 
     if (await isSellerPostgresReady()) {
       const matchValues = [
-        payload?.adminId,
-        payload?.id,
-        payload?.accountCode,
-        payload?.email,
+        sessionIdentity.adminId,
+        sessionIdentity.id,
+        sessionIdentity.accountCode,
+        sessionIdentity.email,
       ]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean);
@@ -21171,7 +21351,7 @@ async function handleAdminPresenceApi(request, response) {
     }
 
     const accounts = await readAccounts();
-    const account = findAdminPresenceAccount(accounts, payload);
+    const account = findAdminPresenceAccount(accounts, sessionIdentity);
     if (!account) {
       sendJson(response, 404, { message: "Admin account not found." });
       return;
@@ -21318,7 +21498,8 @@ async function handlePreferredLanguageApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
-    const accountId = String(payload.accountId ?? payload.id ?? "").trim();
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(request.authSession.accountId).trim();
     const preferredLanguage = normalizePreferredLanguage(
       payload.preferredLanguage ?? payload.language ?? payload.languageCode,
     );
@@ -21350,8 +21531,9 @@ async function handleBuyerAccountDeletionApi(request, response) {
 
   try {
     const payload = await parseRequestBody(request);
-    const accountId = String(payload.accountId ?? payload.id ?? "").trim();
-    const email = String(payload.email ?? "").trim().toLowerCase();
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(request.authSession.accountId).trim();
+    const email = String(request.authSession.email).trim().toLowerCase();
     const confirmationEmail = String(payload.confirmationEmail ?? "").trim().toLowerCase();
 
     if (!accountId || !email) {
@@ -21440,8 +21622,9 @@ async function handleBuyerChangePasswordApi(request, response) {
 
   try {
     const payload = await parseRequestBody(request);
-    const accountId = String(payload.accountId ?? payload.id ?? "").trim();
-    const email = String(payload.email ?? "").trim().toLowerCase();
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(request.authSession.accountId).trim();
+    const email = String(request.authSession.email).trim().toLowerCase();
     const currentPassword = String(
       payload.currentPassword ?? payload.oldPassword ?? "",
     );
@@ -21557,6 +21740,7 @@ async function handleUnifiedAuthSwitchRoleApi(request, response) {
 
   try {
     const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { account: true });
     const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
     const requestedMode = String(payload.activeMode ?? payload.role ?? "").trim().toLowerCase();
     if (!requestedMode) {
@@ -21630,14 +21814,11 @@ async function handleUnifiedAccountProfileImageApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
-    const requestedAccountId = String(payload.accountId ?? payload.id ?? "").trim();
-    const requestedEmail = String(payload.email ?? "").trim().toLowerCase();
-    const currentSession = await resolveUnifiedSession({
-      accountId: requestedAccountId,
-      email: requestedEmail,
-    });
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+    const currentSession = await requireUnifiedSessionEntry(request, requestUrl, payload);
     const accountId = String(
-      currentSession?.account?.id ?? currentSession?.accountId ?? requestedAccountId,
+      currentSession?.account?.id ?? currentSession?.accountId ?? request.authSession.accountId,
     ).trim();
     if (!accountId) {
       sendJson(response, 404, { message: "Account was not found." });
@@ -21678,6 +21859,9 @@ async function handleBecomeSellerStartApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    payload.accountId = request.authSession.accountId;
+    payload.email = request.authSession.email;
     const result = await startSellerOnboarding(payload);
     const now = new Date().toISOString();
     const companyName = String(
@@ -22121,6 +22305,9 @@ async function handleBecomeSellerMarkVerifiedApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    payload.accountId = request.authSession.accountId;
+    payload.email = request.authSession.email;
     const result = await markAccountVerifiedForSellerOnboarding(payload);
     sendJson(response, 200, {
       account: result.account,
@@ -22151,8 +22338,9 @@ async function handleSellerSwitchPinApi(request, response, action) {
     }
 
     const payload = await parseRequestBody(request);
-    const accountId = String(payload.accountId || "").trim();
-    const email = String(payload.email || "").trim().toLowerCase();
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(request.authSession.accountId).trim();
+    const email = String(request.authSession.email).trim().toLowerCase();
     const companyId = String(payload.companyId || "").trim();
     if (!accountId && !email) {
       sendJson(response, 400, { message: "Account ID or email is required." });
@@ -22242,8 +22430,9 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
-    const accountId = String(payload.accountId || "").trim();
-    const email = String(payload.email || "").trim().toLowerCase();
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(request.authSession.accountId).trim();
+    const email = String(request.authSession.email).trim().toLowerCase();
     if (!accountId && !email) {
       sendJson(response, 400, { message: "Account ID or email is required." });
       return;
@@ -22277,6 +22466,12 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
       return;
     }
 
+    const sessionFields = issueAppSessionForAccount(
+      request,
+      response,
+      seller,
+      "seller",
+    );
     sendJson(response, 200, {
       admin: serializeAdminAccount(seller),
       dashboardPath: "/main.html#dashboard",
@@ -22284,6 +22479,7 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
       message: "Seller workspace ready.",
       authStore: "postgres",
       pinRequired: true,
+      ...sessionFields,
     });
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
@@ -22586,6 +22782,12 @@ async function handleAuthGoogleLoginApi(request, response) {
       return;
     }
 
+    const sessionFields = issueAppSessionForAccount(
+      request,
+      response,
+      loginResult.account,
+      "buyer",
+    );
     sendJson(response, 200, {
       account: serializeAccountForList(stripInternalFields(loginResult.account)),
       message: loginResult.created
@@ -22593,6 +22795,7 @@ async function handleAuthGoogleLoginApi(request, response) {
         : "Login successful.",
       created: Boolean(loginResult.created),
       authStore: "postgres",
+      ...sessionFields,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -22669,6 +22872,12 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
       return;
     }
 
+    const sessionFields = issueAppSessionForAccount(
+      request,
+      response,
+      admin,
+      "seller",
+    );
     sendJson(response, 200, {
       admin: serializeAdminAccount(admin),
       redirectPath: "/main.html#dashboard",
@@ -22678,6 +22887,7 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
         : "Seller login successful.",
       created: Boolean(loginResult.created),
       authStore: "postgres",
+      ...sessionFields,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -22726,10 +22936,17 @@ async function handleAppUserLoginApi(request, response) {
           return;
         }
 
+        const sessionFields = issueAppSessionForAccount(
+          request,
+          response,
+          pgLogin.account,
+          "buyer",
+        );
         sendJson(response, 200, {
           account: serializeAccountForList(stripInternalFields(pgLogin.account)),
           message: "Login successful.",
           authStore: "postgres",
+          ...sessionFields,
         });
         return;
       }
@@ -22801,10 +23018,17 @@ async function handleAppUserLoginApi(request, response) {
     });
     await writeAccounts(accounts);
 
+    const sessionFields = issueAppSessionForAccount(
+      request,
+      response,
+      account,
+      "buyer",
+    );
     sendJson(response, 200, {
       account: serializeAccountForList(account),
       message: "Login successful.",
       authStore: "json",
+      ...sessionFields,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -22829,14 +23053,7 @@ function findAdminAccountIndexForRequest(accounts, adminId) {
 
 async function handleAdminAccountApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
-  const requestAdminId = normalizeAdminTenantId(
-    request.headers["x-gms-admin-id"] ??
-      request.headers["x-admin-id"] ??
-      requestUrl.searchParams.get("adminId") ??
-      requestUrl.searchParams.get("tenantId") ??
-      requestUrl.searchParams.get("workspaceId"),
-    "",
-  );
+  const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
 
   if (!requestAdminId) {
     sendJson(response, 401, { message: "Admin session was not found." });
@@ -22888,6 +23105,7 @@ async function handleAdminAccountApi(request, response) {
       }
 
       const payload = await parseRequestBody(request);
+      assertSessionPayloadIdentity(request, payload, { admin: true });
       const accounts = await readAccounts();
       const accountIndex = findAdminAccountIndexForRequest(accounts, requestAdminId);
       if (accountIndex < 0) {
@@ -23092,14 +23310,7 @@ async function handleAdminAccountApi(request, response) {
 
 async function handleAdminAccountDeletionApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
-  const requestAdminId = normalizeAdminTenantId(
-    request.headers["x-gms-admin-id"] ??
-      request.headers["x-admin-id"] ??
-      requestUrl.searchParams.get("adminId") ??
-      requestUrl.searchParams.get("tenantId") ??
-      requestUrl.searchParams.get("workspaceId"),
-    "",
-  );
+  const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
 
   if (!requestAdminId) {
     sendJson(response, 401, { message: "Admin session was not found." });
@@ -23120,6 +23331,7 @@ async function handleAdminAccountDeletionApi(request, response) {
     const payload = request.method === "POST"
       ? await parseRequestBody(request).catch(() => ({}))
       : {};
+    assertSessionPayloadIdentity(request, payload, { admin: true });
     const accounts = await readAccounts();
     const accountIndex = findAdminAccountIndexForRequest(accounts, requestAdminId);
     if (accountIndex < 0) {
@@ -27902,6 +28114,12 @@ async function handleEmployeeLoginApi(request, response) {
           faceAttendanceData,
         );
         const dashboardPath = getEmployeeDashboardPath(serializedAccount);
+        const sessionFields = issueAppSessionForAccount(
+          request,
+          response,
+          pgLogin.account,
+          "employee",
+        );
         sendJson(response, 200, {
           account: serializedAccount,
           adminId: serializedAccount.adminId,
@@ -27909,6 +28127,7 @@ async function handleEmployeeLoginApi(request, response) {
           redirectPath: "/main.html",
           message: "Employee login verified.",
           authStore: "postgres",
+          ...sessionFields,
         });
         return;
       }
@@ -27932,6 +28151,12 @@ async function handleEmployeeLoginApi(request, response) {
     const faceAttendanceData = await readFaceAttendanceData();
     const serializedAccount = serializeEmployeeAccount(account, faceAttendanceData);
     const dashboardPath = getEmployeeDashboardPath(serializedAccount);
+    const sessionFields = issueAppSessionForAccount(
+      request,
+      response,
+      account,
+      "employee",
+    );
     sendJson(response, 200, {
       account: serializedAccount,
       adminId: serializedAccount.adminId,
@@ -27939,6 +28164,7 @@ async function handleEmployeeLoginApi(request, response) {
       redirectPath: "/main.html",
       message: "Employee login verified.",
       authStore: "json",
+      ...sessionFields,
     });
   } catch (error) {
     sendJson(response, 400, {
@@ -28059,6 +28285,19 @@ async function handleAccountsApi(request, response) {
         String(payload.source ?? "").trim().toLowerCase() === "app";
 
       if (
+        !isAppUserRegistration
+        && !requireAppSession(request, response, requestUrl, {
+          roles: ["seller", "employee"],
+          identityKind: "admin",
+        })
+      ) {
+        return;
+      }
+      if (!isAppUserRegistration) {
+        assertSessionPayloadIdentity(request, payload, { admin: true });
+      }
+
+      if (
         !isAppUserRegistration &&
         shouldApplyAdminRestriction &&
         !(await requireAdminRestrictionAllowed(
@@ -28076,7 +28315,7 @@ async function handleAccountsApi(request, response) {
       if (isAppUserRegistration && (await isCustomerPostgresReady())) {
         const pgAccount = await createCustomerAccount({
           ...payload,
-          adminId: payload.adminId ?? requestAdminId ?? DEFAULT_ADMIN_ID,
+          adminId: DEFAULT_ADMIN_ID,
           googleProfile: payload.googleProfile,
           verificationToken: payload.verificationToken,
           verificationChannel: payload.verificationChannel ?? "email",
@@ -28105,7 +28344,7 @@ async function handleAccountsApi(request, response) {
       if (!isAppUserRegistration && (await isEmployeePostgresReady())) {
         const normalizedAccount = applyAdminId(normalizeAccountRecord({
           ...payload,
-          adminId: payload.adminId ?? requestAdminId,
+          adminId: requestAdminId,
         }), requestAdminId);
 
         const pgEmployee = await createEmployeeAccount(normalizedAccount);
@@ -28133,8 +28372,8 @@ async function handleAccountsApi(request, response) {
       const normalizedAccount = applyAdminId(normalizeAccountRecord({
         ...payload,
         password: await hashPassword(payload.password),
-        adminId: payload.adminId ?? requestAdminId,
-      }), requestAdminId);
+        adminId: isAppUserRegistration ? DEFAULT_ADMIN_ID : requestAdminId,
+      }), isAppUserRegistration ? DEFAULT_ADMIN_ID : requestAdminId);
       const hasEmployeeId = normalizedAccount.employeeId.trim().length > 0;
       const employeeIdTaken = hasEmployeeId && accounts.some(
         (account) =>
@@ -28831,23 +29070,23 @@ async function handleOrdersApi(request, response) {
   const requestAdminId = getRequestAdminId(request, requestUrl);
   const requestIsSuperAdmin = isSuperAdminAuthorized(request);
   const requestIsAdminScoped = hasRequestAdminScope(request, requestUrl);
-  const requestAccountId = getRequestAccountIdentifier(request, requestUrl).id;
-  const requestShouldUseAdminScope = !requestIsSuperAdmin && requestIsAdminScoped && !requestAccountId;
+  const requestIsBuyer = request?.authSession?.role === "buyer";
+  const requestAccountId = requestIsBuyer
+    ? getRequestAccountIdentifier(request, requestUrl).id
+    : "";
+  const requestShouldUseAccountScope = !requestIsSuperAdmin && requestIsBuyer;
+  const requestShouldUseAdminScope =
+    !requestIsSuperAdmin && requestIsAdminScoped && !requestShouldUseAccountScope;
   const incomingAdminScopeId = requestShouldUseAdminScope ? requestAdminId : "";
 
   if (request.method === "GET") {
     try {
       let orders = await readOrders();
-      if (requestShouldUseAdminScope) {
-        orders = filterRecordsByAdminId(orders, requestAdminId);
-      }
-      // Filter by account ID if provided (for user-specific order fetching)
-      if (requestAccountId) {
+      if (requestShouldUseAccountScope) {
         orders = orders.filter(
-          (order) =>
-            String(order?.accountId ?? "").trim() === requestAccountId,
+          (order) => String(order?.accountId ?? "").trim() === requestAccountId,
         );
-      } else if (!requestIsSuperAdmin && !requestShouldUseAdminScope) {
+      } else if (requestShouldUseAdminScope) {
         orders = filterRecordsByAdminId(orders, requestAdminId);
       }
       const [products, accounts, deliveryPartners] = await Promise.all([
@@ -28887,7 +29126,10 @@ async function handleOrdersApi(request, response) {
       }
 
       const payload = await parseRequestBody(request);
-      const orders = normalizeOrderEntriesPayload(payload, incomingAdminScopeId);
+      const orders = scopeOrderEntriesToSession(
+        normalizeOrderEntriesPayload(payload, incomingAdminScopeId),
+        request,
+      );
       try {
         await flashDealsApi.convertReservationsFromOrders(orders);
       } catch (flashError) {
@@ -28900,9 +29142,13 @@ async function handleOrdersApi(request, response) {
         return;
       }
       const existingOrders = await readOrders();
-      const nextOrders = requestShouldUseAdminScope
+      const requestShouldPreserveOtherScopes =
+        requestShouldUseAdminScope || requestShouldUseAccountScope;
+      const nextOrders = requestShouldPreserveOtherScopes
         ? sortStoredOrderEntries([
-            ...existingOrders.filter((entry) => !isRecordInAdminScope(entry, requestAdminId)),
+            ...existingOrders.filter((entry) => requestShouldUseAccountScope
+              ? String(entry?.accountId ?? "").trim() !== requestAccountId
+              : !isRecordInAdminScope(entry, requestAdminId)),
             ...orders,
           ])
         : mergeStoredOrderEntries(existingOrders, orders);
@@ -28912,8 +29158,8 @@ async function handleOrdersApi(request, response) {
         requestShouldUseAdminScope ? requestAdminId : null,
       );
       sendJson(response, 200, {
-        orders: requestShouldUseAdminScope ? orders : nextOrders,
-        total: requestShouldUseAdminScope ? orders.length : nextOrders.length,
+        orders: requestShouldPreserveOtherScopes ? orders : nextOrders,
+        total: requestShouldPreserveOtherScopes ? orders.length : nextOrders.length,
         message: "Orders synced.",
       });
     } catch (error) {
@@ -28940,7 +29186,10 @@ async function handleOrdersApi(request, response) {
       }
 
       const payload = await parseRequestBody(request);
-      const incomingOrders = normalizeOrderEntriesPayload(payload, incomingAdminScopeId);
+      const incomingOrders = scopeOrderEntriesToSession(
+        normalizeOrderEntriesPayload(payload, incomingAdminScopeId),
+        request,
+      );
       try {
         await flashDealsApi.convertReservationsFromOrders(incomingOrders);
       } catch (flashError) {
@@ -28953,13 +29202,21 @@ async function handleOrdersApi(request, response) {
         return;
       }
       const existingOrders = await readOrders();
-      const existingScopedOrders = requestShouldUseAdminScope
-        ? filterRecordsByAdminId(existingOrders, requestAdminId)
-        : existingOrders;
+      const existingScopedOrders = requestShouldUseAccountScope
+        ? existingOrders.filter(
+            (entry) => String(entry?.accountId ?? "").trim() === requestAccountId,
+          )
+        : requestShouldUseAdminScope
+          ? filterRecordsByAdminId(existingOrders, requestAdminId)
+          : existingOrders;
       const mergedOrders = mergeStoredOrderEntries(existingScopedOrders, incomingOrders);
-      const nextOrders = requestShouldUseAdminScope
+      const requestShouldPreserveOtherScopes =
+        requestShouldUseAdminScope || requestShouldUseAccountScope;
+      const nextOrders = requestShouldPreserveOtherScopes
         ? sortStoredOrderEntries([
-            ...existingOrders.filter((entry) => !isRecordInAdminScope(entry, requestAdminId)),
+            ...existingOrders.filter((entry) => requestShouldUseAccountScope
+              ? String(entry?.accountId ?? "").trim() !== requestAccountId
+              : !isRecordInAdminScope(entry, requestAdminId)),
             ...mergedOrders,
           ])
         : mergedOrders;
@@ -29839,6 +30096,7 @@ async function handleSingleProductApi(request, response, productId) {
       }
 
       const payload = await parseRequestBody(request);
+      assertSessionPayloadIdentity(request, payload, { admin: true });
       const products = await readProducts();
       const targetProduct = products.find((product) =>
         product.id === productId && isRecordInAdminScope(product, requestAdminId)
@@ -29869,6 +30127,7 @@ async function handleSingleProductApi(request, response, productId) {
   if (request.method === "PUT") {
     try {
       const payload = await parseRequestBody(request);
+      assertSessionPayloadIdentity(request, payload, { admin: true });
       let products = await readProducts();
       const productIndex = products.findIndex((product) =>
         product.id === productId && isRecordInAdminScope(product, requestAdminId)
@@ -30114,6 +30373,7 @@ async function handleSingleProductApi(request, response, productId) {
       }
 
       const payload = await parseRequestBody(request);
+      assertSessionPayloadIdentity(request, payload, { admin: true });
       const products = await readProducts();
       const productIndex = products.findIndex((product) =>
         product.id === productId && isRecordInAdminScope(product, requestAdminId)
@@ -30924,6 +31184,7 @@ const platformFeedbackApi = createPlatformFeedbackApi({
   writeJsonFileAtomically,
   readAccounts,
   findAdminAccountByScopeId,
+  getExplicitRequestAdminId,
   requireSuperAdmin,
   sendJson,
   parseRequestBody,
@@ -30944,6 +31205,7 @@ const trendingSearchesApi = createTrendingSearchesApi({
   requireSuperAdmin,
   sendJson,
   parseRequestBody,
+  getRequestAccountIdentifier,
 });
 
 const mapsPlacesApi = createMapsPlacesApi({
@@ -31001,6 +31263,8 @@ accountDevicesApi = createAccountDevicesApi({
   writeJsonFileAtomically,
   sendJson,
   parseRequestBody,
+  getRequestAccountIdentifier,
+  assertSessionPayloadIdentity,
 });
 
 const buyerDeliveryAddressesApi = createBuyerDeliveryAddressesApi({
@@ -31009,6 +31273,8 @@ const buyerDeliveryAddressesApi = createBuyerDeliveryAddressesApi({
   writeJsonFileAtomically,
   sendJson,
   parseRequestBody,
+  getRequestAccountIdentifier,
+  assertSessionPayloadIdentity,
 });
 
 const restoredSaApis = createRestoreMissingSaApis({
@@ -31043,6 +31309,92 @@ const ordersWaybillApi = createOrdersWaybillApi({
   normalizeStoredOrderEntry,
 });
 
+function getRequiredAppSessionPolicy(requestUrl, methodValue) {
+  const pathname = String(requestUrl?.pathname || "");
+  const method = String(methodValue || "GET").toUpperCase();
+  const allAccountRoles = ["buyer", "seller", "employee"];
+  const tenantRoles = ["seller", "employee"];
+
+  if (
+    pathname === "/api/auth/session"
+    || pathname === "/api/auth/switch-role"
+    || pathname === "/api/account/roles"
+    || pathname === "/api/account/profile-image"
+    || pathname === "/api/accounts/preferred-language"
+    || pathname === "/api/account/delete"
+    || pathname === "/api/account/change-password"
+    || pathname === "/api/account/delivery-addresses"
+    || pathname.startsWith("/api/account/devices")
+    || (
+      pathname.startsWith("/api/account/become-seller/")
+      && pathname !== "/api/account/become-seller/checkout-intent"
+      && pathname !== "/api/account/become-seller/confirm-payment"
+    )
+    || pathname.startsWith("/api/account/seller-switch-pin/")
+  ) {
+    return { roles: allAccountRoles, identityKind: "account" };
+  }
+
+  if (
+    pathname === "/api/admin-account"
+    || pathname.startsWith("/api/admin-account/deletion")
+    || pathname === "/api/admin-presence"
+  ) {
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (pathname === "/api/accounts") {
+    if (method === "POST") return null;
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (pathname === "/api/products") {
+    return method === "GET"
+      ? null
+      : { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (
+    pathname.startsWith("/api/products/")
+    && pathname !== "/api/products/visual-search"
+  ) {
+    return ["PUT", "PATCH", "DELETE"].includes(method)
+      ? { roles: tenantRoles, identityKind: "admin" }
+      : null;
+  }
+
+  if (pathname === "/api/product-reviews/reply") {
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (pathname === "/api/orders/waybills/print") {
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (pathname === "/api/orders" || pathname.startsWith("/api/orders/")) {
+    const action = pathname.split("/").filter(Boolean)[3] || "";
+    if (action === "pack" || action === "ship" || action === "cancel-request") {
+      return { roles: tenantRoles, identityKind: "admin" };
+    }
+    return { roles: allAccountRoles, identityKind: "auto" };
+  }
+
+  if (
+    pathname === "/api/activity"
+    || pathname === "/api/listing-insight/overall-ranking"
+    || pathname === "/api/seller-followers/overview"
+    || pathname === "/api/admin-followers-count"
+  ) {
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (pathname === "/api/platform-feedback" && method === "POST") {
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  return null;
+}
+
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
@@ -31056,6 +31408,16 @@ const server = http.createServer(async (request, response) => {
   if (
     requestUrl.pathname.startsWith("/api/super-admin/")
     && !requireSuperAdmin(request, response)
+  ) {
+    return;
+  }
+
+  attachAppSession(request);
+  const appSessionPolicy = getRequiredAppSessionPolicy(requestUrl, request.method);
+  if (
+    appSessionPolicy
+    && !isSuperAdminAuthorized(request)
+    && !requireAppSession(request, response, requestUrl, appSessionPolicy)
   ) {
     return;
   }
@@ -31815,6 +32177,7 @@ const server = http.createServer(async (request, response) => {
 Promise.resolve()
   .then(() => {
     superAdminAuth.assertStartupConfiguration();
+    appSessionAuth.assertStartupConfiguration();
     if (!superAdminAuth.isConfigured()) {
       const reason = superAdminAuth.hasLegacyDefaultCredentials
         ? "the retired default credentials are configured"
@@ -31822,6 +32185,11 @@ Promise.resolve()
           ? "SUPER_ADMIN_PASSWORD is not a bcrypt hash"
           : `missing: ${superAdminAuth.missingConfiguration.join(", ")}`;
       console.warn(`Super-admin login disabled; ${reason}`);
+    }
+    if (!appSessionAuth.isConfigured()) {
+      console.warn(
+        "App login sessions disabled; set APP_SESSION_SECRET or ADMIN_API_SESSION_SECRET.",
+      );
     }
   })
   .then(() => ensureStoragePaths())

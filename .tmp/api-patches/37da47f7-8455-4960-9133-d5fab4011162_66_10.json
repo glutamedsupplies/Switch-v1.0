@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\37da47f7-8455-4960-9133-d5fab4011162\\37da47f7-8455-4960-9133-d5fab4011162.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old": "const WORKSPACE_SETTINGS_FILE = path.join(DATA_DIR, \"workspace_settings.json\");",
+  "neu": "const WORKSPACE_SETTINGS_FILE = path.join(DATA_DIR, \"workspace_settings.json\");\nconst CHAT_WALLPAPERS_FILE = path.join(DATA_DIR, \"chat_wallpapers.json\");\nconst MAX_CHAT_WALLPAPERS = 24;"
+}

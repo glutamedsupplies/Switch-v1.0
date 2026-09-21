@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\d23dc215-3475-422b-8263-1172e900ea57\\d23dc215-3475-422b-8263-1172e900ea57.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\admin_biometric_settings.js",
+  "old": "      sendButton: root.querySelector(\"[data-biometric-action='send-settings']\"),\n      saveButton: root.querySelector(\"[data-biometric-action='save-settings']\"),\n    };",
+  "neu": "      sendButton: root.querySelector(\"[data-biometric-action='send-settings']\"),\n      saveButton: root.querySelector(\"[data-biometric-action='save-settings']\"),\n      settingsPanel: root.querySelector(\"[data-biometric-settings-panel]\"),\n      settingsToggle: root.querySelector(\"[data-biometric-action='toggle-settings']\"),\n    };"
+}

@@ -1,0 +1,10 @@
+{
+  "line": 284,
+  "tool": "Write",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\services\\biometricFirmwareCompile.js",
+  "old_string": null,
+  "new_string": null,
+  "contents_preview": "const path = require(\"path\");\nconst fs = require(\"fs\");\nconst fsPromises = require(\"fs/promises\");\nconst os = require(\"os\");\nconst { execFile } = require(\"child_process\");\nconst { promisify } = require(\"util\");\n\nconst execFileAsync = promisify(execFile);\n\nconst REPO_ROOT = path.join(__dirname, \"..\", \"..\");\nconst DEFAULT_SKETCH_DIR = path.join(REPO_ROOT, \"hardware\", \"gms_biometric_controller\");\nconst DEFAULT_FQBN = String(process.env.GMS_BIOMETRIC_FQBN || \"esp32:esp32:esp32s3\").trim();\nconst COMP",
+  "contents_len": 5730,
+  "new_len": 0
+}

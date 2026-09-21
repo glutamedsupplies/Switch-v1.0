@@ -1,0 +1,10 @@
+{
+  "line": 22,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "  try {\n    await fsPromises.access(SUPER_ADMIN_NOTIFICATIONS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(SUPER_ADMIN_NOTIFICATIONS_FILE, \"[]\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(ACCOUNTS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(ACCOUNTS_FILE, \"[]\\n\", \"utf8\");\n  }",
+  "new_string": "  try {\n    await fsPromises.access(SUPER_ADMIN_NOTIFICATIONS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(SUPER_ADMIN_NOTIFICATIONS_FILE, \"[]\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(PLATFORM_FEEDBACK_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(PLATFORM_FEEDBACK_FILE, \"[]\\n\", \"utf8\");\n  }\n\n  try {\n    await fsPromises.access(ACCOUNTS_FILE);\n  } catch (error) {\n    await fsPromises.writeFile(ACCOUNTS_FILE, \"[]\\n\", \"utf8\");\n  }",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 470
+}

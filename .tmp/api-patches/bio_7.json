@@ -1,0 +1,4 @@
+{
+  "old": "const ADMIN_BIOMETRIC_OLED_FONTS = new Set([\"small\", \"medium\", \"bold\", \"mono\"]);\nconst ADMIN_BIOMETRIC_OLED_MODES = new Set([\"text\", \"eyes\"]);",
+  "neu": "const ADMIN_BIOMETRIC_OLED_FONTS = new Set([\"small\", \"medium\", \"bold\", \"mono\", \"large\"]);\nconst ADMIN_BIOMETRIC_OLED_DATETIME_FONTS = new Set([\n  \"clock-xl\",\n  \"clock-large\",\n  \"clock-medium\",\n  \"clock-compact\",\n]);\nconst ADMIN_BIOMETRIC_OLED_MODES = new Set([\"text\", \"eyes\", \"datetime\"]);"
+}

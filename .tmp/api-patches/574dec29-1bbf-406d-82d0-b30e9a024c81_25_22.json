@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\574dec29-1bbf-406d-82d0-b30e9a024c81\\574dec29-1bbf-406d-82d0-b30e9a024c81.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\super_admin.js",
+  "old": "    if (![\"payment-partners\", \"delivery-partners\", \"ai-integration\", \"user-data\", \"seller-feedback\", \"user-feedback\"].includes(nextSection)) {\n      closeIntegratedDrawers();\n    }",
+  "neu": "    if (![\"payment-partners\", \"delivery-partners\", \"ai-integration\", \"user-data\", \"seller-feedback\", \"user-feedback\"].includes(nextSection)) {\n      closeIntegratedDrawers();\n      closePlatformFeedbackDrawer();\n    }"
+}

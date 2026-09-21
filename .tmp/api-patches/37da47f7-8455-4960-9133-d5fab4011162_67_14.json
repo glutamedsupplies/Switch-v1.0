@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\37da47f7-8455-4960-9133-d5fab4011162\\37da47f7-8455-4960-9133-d5fab4011162.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old": "  if (requestUrl.pathname === \"/api/store-types\") {\n    await handleStoreTypesApi(request, response);\n    return;\n  }",
+  "neu": "  if (requestUrl.pathname === \"/api/store-types\") {\n    await handleStoreTypesApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/chat-wallpapers\") {\n    await handleChatWallpapersApi(request, response);\n    return;\n  }\n\n  const chatWallpaperMatch = requestUrl.pathname.match(/^\\/api\\/chat-wallpapers\\/([^/]+)$/);\n  if (chatWallpaperMatch) {\n    await handleSingleChatWallpaperApi(\n      request,\n      response,\n      decodeURIComponent(chatWallpaperMatch[1] ?? \"\"),\n    );\n    return;\n  }"
+}

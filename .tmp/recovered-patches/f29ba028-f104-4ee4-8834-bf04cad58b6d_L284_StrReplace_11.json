@@ -1,0 +1,10 @@
+{
+  "line": 284,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "  if (requestUrl.pathname === \"/api/super-admin/biometric-settings\") {\n    await handleSuperAdminBiometricSettingsApi(request, response);\n    return;\n  }",
+  "new_string": "  if (requestUrl.pathname === \"/api/super-admin/biometric-settings\") {\n    await handleSuperAdminBiometricSettingsApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/super-admin/biometric-firmware/compile\") {\n    await handleSuperAdminBiometricFirmwareApi(request, response);\n    return;\n  }",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 316
+}

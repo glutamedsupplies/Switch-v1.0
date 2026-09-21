@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\61acc461-d839-48da-9192-b5c81d54c2b3\\61acc461-d839-48da-9192-b5c81d54c2b3.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\super_admin.js",
+  "old": "      const response = await fetch(\"/api/super-admin/ai-integration\", {\n        method: \"DELETE\",\n        headers: rootHeaders({\n          Accept: \"application/json\",\n          \"Content-Type\": \"application/json\",\n        }),\n        body: JSON.stringify({ id: target.id }),\n      });",
+  "neu": "      const response = await fetch(\"/api/super-admin/ai-integration\", {\n        method: \"PATCH\",\n        headers: rootHeaders({\n          Accept: \"application/json\",\n          \"Content-Type\": \"application/json\",\n        }),\n        body: JSON.stringify({ id: target.id, remove: true }),\n      });"
+}

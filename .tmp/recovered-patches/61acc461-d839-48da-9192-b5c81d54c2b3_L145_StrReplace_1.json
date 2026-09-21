@@ -1,0 +1,10 @@
+{
+  "line": 145,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "const AI_INTEGRATION_SCHEMA_VERSION = 2;\nconst AI_PROVIDER_OPENAI = \"openai\";",
+  "new_string": "const AI_INTEGRATION_SCHEMA_VERSION = 3;\nconst MAX_AI_INTEGRATIONS = 8;\nconst MAX_LAUNCHED_AI_INTEGRATIONS = 2;\nconst AI_CAPABILITY_KEYS = Object.freeze([\"chatbot\", \"autoReply\", \"imageEnhancement\"]);\nconst AI_PROVIDER_OPENAI = \"openai\";",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 236
+}

@@ -1,0 +1,10 @@
+{
+  "line": 67,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "  if (requestUrl.pathname === \"/api/super-admin/product-requests\") {\n    await handleSuperAdminProductRequestsApi(request, response);\n    return;\n  }\n\n  const superAdminAdminActivityMatch = requestUrl.pathname.match(",
+  "new_string": "  if (requestUrl.pathname === \"/api/super-admin/product-requests\") {\n    await handleSuperAdminProductRequestsApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/super-admin/notifications/read\") {\n    await handleSuperAdminNotificationsReadApi(request, response);\n    return;\n  }\n\n  const superAdminAdminActivityMatch = requestUrl.pathname.match(",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 371
+}

@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\d23dc215-3475-422b-8263-1172e900ea57\\d23dc215-3475-422b-8263-1172e900ea57.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\super_admin.html",
+  "old": "                    <h3 id=\"super-admin-settings-biometrics\">Biometrics &amp; Device Controller</h3>\n                    <div class=\"admin-biometric-settings-mount\" data-super-admin-biometric-settings-root>\n                      <p class=\"admin-biometric-settings-loading\">Loading biometric device settings...</p>",
+  "neu": "                    <h3 id=\"super-admin-settings-biometrics\">Retina Scan &amp; Device Controller</h3>\n                    <div class=\"admin-biometric-settings-mount\" data-super-admin-biometric-settings-root>\n                      <p class=\"admin-biometric-settings-loading\">Loading retina scan device settings...</p>"
+}

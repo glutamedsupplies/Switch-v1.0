@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\8f2c6321-a02f-45e9-aa3e-a8549f96097e\\8f2c6321-a02f-45e9-aa3e-a8549f96097e.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\admin_biometric_settings.js",
+  "old": "        <div class=\"admin-biometric-settings__panel\" data-biometric-settings-panel hidden>\n\n        <section class=\"admin-biometric-card\" aria-labelledby=\"admin-biometric-fingerprint-title\">",
+  "neu": "        <div class=\"admin-biometric-settings__panel\" id=\"admin-biometric-settings-panel\" data-biometric-settings-panel hidden aria-hidden=\"true\">\n        <div class=\"admin-biometric-settings__panel-inner\">\n\n        <section class=\"admin-biometric-card\" aria-labelledby=\"admin-biometric-fingerprint-title\">"
+}

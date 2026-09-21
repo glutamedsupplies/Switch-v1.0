@@ -1,0 +1,7 @@
+{
+  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\3bdcd3ba-b454-41b4-ae09-0225f4bb3a92\\3bdcd3ba-b454-41b4-ae09-0225f4bb3a92.jsonl",
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old": "  if (requestUrl.pathname === \"/api/super-admin/ai-image-enhancement/launch\") {\n    await handleSuperAdminAiIntegrationLaunchApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/products/illegal-content-check\") {",
+  "neu": "  if (requestUrl.pathname === \"/api/super-admin/ai-image-enhancement/launch\") {\n    await handleSuperAdminAiIntegrationLaunchApi(request, response);\n    return;\n  }\n\n  const aiIntegrationApiKeyMatch = requestUrl.pathname.match(\n    /^\\/api\\/super-admin\\/ai-image-enhancement\\/([^/]+)\\/api-key$/,\n  );\n  if (aiIntegrationApiKeyMatch) {\n    await handleAiIntegrationApiKeyRevealApi(\n      request,\n      response,\n      decodeURIComponent(aiIntegrationApiKeyMatch[1] ?? \"\"),\n    );\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/products/illegal-content-check\") {"
+}

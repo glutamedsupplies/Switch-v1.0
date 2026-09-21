@@ -19,10 +19,11 @@ Flutter services can override this with:
 | Header | Purpose |
 | --- | --- |
 | `Content-Type: application/json` | JSON request bodies. |
-| `x-gms-admin-id` or `x-admin-id` | Admin/workspace scope for most admin-owned resources. |
+| `x-switch-session` | Signed buyer/seller/employee session returned by login. `Authorization: Bearer <token>` is also accepted. |
+| `x-gms-admin-id` or `x-admin-id` | Legacy tenant hint only. It must match the signed session and never grants access. |
 | `x-gms-super-admin-token` | Signed, expiring super admin token returned by `/api/super-admin-login`. |
-| `x-gms-account-id`, `x-account-id`, `x-user-id` | Customer account identity for selected customer APIs. |
-| `x-gms-account-email`, `x-account-email` | Customer email identity fallback for selected customer APIs. |
+| `x-gms-account-id`, `x-account-id` | Legacy account hint only. It must match the signed session and never grants access. |
+| `x-gms-account-email`, `x-account-email` | Legacy email hint only. It must match the signed session. |
 | `x-file-name` | Source file name for binary upload endpoints. |
 
 ## Common Status Codes
@@ -42,6 +43,32 @@ Flutter services can override this with:
 | `500` | Server error. |
 | `503` | Optional service unavailable, such as AI or `sharp` visual search. |
 
+## Signed App Sessions
+
+Buyer, seller, employee, and Google login responses include `sessionToken`, `sessionExpiresAt`, and `sessionExpiresInSeconds`. Browser logins also receive an `HttpOnly` cookie. Non-browser clients send the token as `x-switch-session` or `Authorization: Bearer <token>`.
+
+Protected routes return `401` for a missing, forged, or expired token. A legacy `adminId`/`accountId` header or query that does not match the signed claims returns `403`; those values never choose the authorized tenant.
+
+```bash
+# 1. Login and copy sessionToken from the JSON response.
+curl -sS -X POST http://127.0.0.1:8080/api/admin-login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"seller@example.com","password":"your-password"}'
+
+# 2. Valid session: returns only the signed seller tenant.
+curl -i http://127.0.0.1:8080/api/products \
+  -H "X-Switch-Session: <sessionToken>"
+
+# 3. Spoofed tenant: returns 403.
+curl -i http://127.0.0.1:8080/api/products \
+  -H "X-Switch-Session: <sessionToken>" \
+  -H "X-GMS-Admin-ID: another-tenant"
+
+# 4. Forged or expired token: returns 401.
+curl -i http://127.0.0.1:8080/api/orders \
+  -H "X-Switch-Session: forged-token"
+```
+
 ## Endpoint Reference
 
 ### Health
@@ -54,18 +81,18 @@ Flutter services can override this with:
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST` | `/api/accounts/login` | None | `{ "email": "user@example.com", "password": "secret" }` | `{ "account": {...}, "message": "Login successful." }` | None | `POST /api/accounts/login` |
-| `POST` | `/api/admin-login` | None | `{ "email": "admin@example.com", "password": "secret" }` | `{ "admin": {...}, "redirectPath": "/admin_dashboard.html" }` | None | `POST /api/admin-login` |
-| `POST` | `/api/employee-login` | None | `{ "employeeId": "GMS-123456", "password": "secret" }` | `{ "account": {...}, "adminId": "...", "redirectPath": "..." }` | None | `POST /api/employee-login` |
+| `POST` | `/api/accounts/login` | None | `{ "email": "user@example.com", "password": "secret" }` | `{ "account": {...}, "sessionToken": "...", "sessionExpiresAt": "..." }` | None | `POST /api/accounts/login` |
+| `POST` | `/api/admin-login` | None | `{ "email": "admin@example.com", "password": "secret" }` | `{ "admin": {...}, "sessionToken": "...", "sessionExpiresAt": "..." }` | None | `POST /api/admin-login` |
+| `POST` | `/api/employee-login` | None | `{ "employeeId": "GMS-123456", "password": "secret" }` | `{ "account": {...}, "adminId": "...", "sessionToken": "..." }` | None | `POST /api/employee-login` |
 | `GET` | `/api/employee-lookup` | `employeeId` query | None | `{ "account": { "employeeId": "...", "accountCode": "...", "role": "employee" } }` | None | `GET /api/employee-lookup?employeeId=GMS-123456` |
-| `POST` | `/api/admin-presence` | None | `{ "adminId": "...", "isOnline": true }` | `{ "admin": {...}, "message": "Admin is online." }` | Account must exist | `POST /api/admin-presence` |
-| `GET` | `/api/admin-account` | Optional `adminId` query | None | `{ "admin": {...} }` | Admin scope header/query | `GET /api/admin-account` with `x-gms-admin-id` |
-| `PUT` | `/api/admin-account` | Optional `adminId` query | Admin profile fields | `{ "admin": {...}, "message": "Admin account updated." }` | Admin scope header/query | `PUT /api/admin-account` |
+| `POST` | `/api/admin-presence` | None | `{ "isOnline": true }` | `{ "admin": {...}, "message": "Admin is online." }` | Signed seller/employee session | `POST /api/admin-presence` |
+| `GET` | `/api/admin-account` | None | None | `{ "admin": {...} }` | Signed seller session | `GET /api/admin-account` with `x-switch-session` |
+| `PUT` | `/api/admin-account` | None | Admin profile fields | `{ "admin": {...}, "message": "Admin account updated." }` | Signed seller session | `PUT /api/admin-account` |
 | `POST` | `/api/admin-register` | None | Admin account fields | `{ "admin": {...}, "redirectPath": "/login.html?role=admin" }` | None | `POST /api/admin-register` |
-| `GET` | `/api/accounts` | Optional `id`, `accountId`, `employeeId` for delete/update lookups | None | `{ "accounts": [...] }` | Admin scope unless super admin token | `GET /api/accounts` with `x-gms-admin-id` |
+| `GET` | `/api/accounts` | Optional target `id`, `accountId`, `employeeId` | None | `{ "accounts": [...] }` | Signed seller/employee session or super admin token | `GET /api/accounts` with `x-switch-session` |
 | `POST` | `/api/accounts` | None | Customer or employee account fields | `{ "account": {...}, "message": "User account created." }` | Admin scope for web-created records | `POST /api/accounts` |
-| `PUT` | `/api/accounts` | Optional `id`, `accountId`, `employeeId` | Employee update fields | `{ "account": {...}, "message": "Employee account updated." }` | Admin scope | `PUT /api/accounts?id=EMP-1` |
-| `DELETE` | `/api/accounts` | Optional `id`, `accountId`, `employeeId` | Optional account ID body | `{ "account": {...}, "faceAttendanceProfileRemoved": true }` | Admin scope | `DELETE /api/accounts?id=EMP-1` |
+| `PUT` | `/api/accounts` | Optional target `id`, `accountId`, `employeeId` | Employee update fields | `{ "account": {...}, "message": "Employee account updated." }` | Signed seller/employee session | `PUT /api/accounts?id=EMP-1` |
+| `DELETE` | `/api/accounts` | Optional target `id`, `accountId`, `employeeId` | Optional account ID body | `{ "account": {...}, "faceAttendanceProfileRemoved": true }` | Signed seller/employee session | `DELETE /api/accounts?id=EMP-1` |
 
 ### Super Admin
 
@@ -100,15 +127,15 @@ Flutter services can override this with:
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
 | `GET` | `/api/products` | `approvalStatus`; admin scope headers/query | None | `{ "products": [...] }` | Public only for `approvalStatus=approved`; otherwise admin scope required | `GET /api/products?approvalStatus=approved` |
-| `POST` | `/api/products` | Admin scope header/query | Product payload | `{ "product": {...}, "message": "Product submitted for super admin review." }` | Admin scope | `POST /api/products` |
-| `PUT` | `/api/products/{productId}` | `productId` path | Full product update | `{ "product": {...}, "message": "Product updated." }` | Admin scope | `PUT /api/products/prod-1` |
-| `PATCH` | `/api/products/{productId}` | `productId` path | `{ "isActive": true }` | `{ "product": {...}, "message": "Product visibility updated." }` | Admin scope | `PATCH /api/products/prod-1` |
-| `DELETE` | `/api/products/{productId}` | `productId` path | Optional activity actor | `{ "deletedId": "...", "message": "Product deleted." }` | Admin scope | `DELETE /api/products/prod-1` |
+| `POST` | `/api/products` | Legacy tenant hint optional | Product payload | `{ "product": {...}, "message": "Product submitted for super admin review." }` | Signed seller/employee session | `POST /api/products` |
+| `PUT` | `/api/products/{productId}` | `productId` path | Full product update | `{ "product": {...}, "message": "Product updated." }` | Signed seller/employee session, same tenant | `PUT /api/products/prod-1` |
+| `PATCH` | `/api/products/{productId}` | `productId` path | `{ "isActive": true }` | `{ "product": {...}, "message": "Product visibility updated." }` | Signed seller/employee session, same tenant | `PATCH /api/products/prod-1` |
+| `DELETE` | `/api/products/{productId}` | `productId` path | Optional activity actor | `{ "deletedId": "...", "message": "Product deleted." }` | Signed seller/employee session, same tenant | `DELETE /api/products/prod-1` |
 | `POST` | `/api/products/visual-search` | Admin scope header/query | Binary image body, `x-file-name` | `{ "products": [...], "total": 1, "message": "Visual matches found." }` | Admin scope/default scope | `POST /api/products/visual-search` |
 | `GET` | `/api/super-admin/product-requests` | None | None | `{ "products": [...], "total": 0 }` | Super admin token | `GET /api/super-admin/product-requests` |
 | `PATCH`/`POST` | `/api/super-admin/products/{productId}/approve` | `productId` path | Optional empty body | `{ "product": {...}, "message": "Product request approved." }` | Super admin token | `PATCH /api/super-admin/products/prod-1/approve` |
 | `PATCH`/`POST`/`DELETE` | `/api/super-admin/products/{productId}/cancel` | `productId` path | Optional empty body | `{ "product": {...}, "message": "Product request cancelled." }` | Super admin token | `POST /api/super-admin/products/prod-1/cancel` |
-| `GET` | `/api/super-admin/products/{adminId}` | `adminId` path | None | `{ "products": [...], "companyName": "...", "companyId": "..." }` | Currently no explicit token check in dispatcher handler | `GET /api/super-admin/products/admin-1` |
+| `GET` | `/api/super-admin/products/{adminId}` | `adminId` path | None | `{ "products": [...], "companyName": "...", "companyId": "..." }` | Super admin token | `GET /api/super-admin/products/admin-1` |
 | `POST`/`PATCH` | `/api/product-reviews/reply` | None | `{ "productId": "...", "reviewId": "...", "reply": "Thanks" }` | `{ "product": {...}, "message": "Reply saved." }` | Admin context inferred from product/order | `POST /api/product-reviews/reply` |
 
 ### Sellers and Followers
@@ -141,9 +168,9 @@ Flutter services can override this with:
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET` | `/api/orders` | Admin scope or account ID headers/query | None | `{ "orders": [...] }` | Admin or account scope | `GET /api/orders?accountId=user-1` |
-| `PUT` | `/api/orders` | Admin scope or account ID headers/query | Array or object containing orders | `{ "orders": [...], "total": 0, "message": "Orders synced." }` | Admin or account scope | `PUT /api/orders` |
-| `POST` | `/api/orders` | Admin scope or account ID headers/query | Array or object containing orders | `{ "orders": [...], "mergedCount": 1, "message": "Orders merged." }` | Admin or account scope | `POST /api/orders` |
+| `GET` | `/api/orders` | Legacy identity hints optional | None | `{ "orders": [...] }` | Signed session; buyer sees own account, seller/employee sees own tenant | `GET /api/orders` |
+| `PUT` | `/api/orders` | Legacy identity hints optional | Array or object containing orders | `{ "orders": [...], "total": 0, "message": "Orders synced." }` | Signed session; writes forced to session scope | `PUT /api/orders` |
+| `POST` | `/api/orders` | Legacy identity hints optional | Array or object containing orders | `{ "orders": [...], "mergedCount": 1, "message": "Orders merged." }` | Signed session; writes forced to session scope | `POST /api/orders` |
 | `POST` | `/api/orders/{createdAtEpochMs}/pack` | `createdAtEpochMs` path | `{ "deductInventory": true }` | `{ "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/pack` |
 | `POST` | `/api/orders/{createdAtEpochMs}/ship` | `createdAtEpochMs` path | Optional empty body | `{ "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/ship` |
 | `POST` | `/api/orders/{createdAtEpochMs}/cancel` | `createdAtEpochMs` path | Optional empty body | `{ "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/cancel` |
@@ -182,7 +209,7 @@ Flutter services can override this with:
 ```http
 POST /api/products HTTP/1.1
 Content-Type: application/json
-x-gms-admin-id: admin-1
+x-switch-session: <seller-session-token>
 
 {
   "name": "Sample Product",
@@ -199,7 +226,7 @@ x-gms-admin-id: admin-1
 ```http
 POST /api/orders HTTP/1.1
 Content-Type: application/json
-x-gms-account-id: user-1
+x-switch-session: <buyer-session-token>
 
 {
   "orders": [
@@ -235,7 +262,7 @@ x-gms-super-admin-token: <token>
 ## API Assumptions
 
 - Request and response schemas are inferred from `backend/server.js` and client calls.
-- Several endpoints rely on trusted headers/query parameters rather than signed sessions.
+- Critical product, order, and account routes use signed session identity; remaining non-critical legacy routes should be migrated incrementally.
 - Some upload endpoints do not enforce endpoint-level authentication in the handler; access is currently controlled by UI availability rather than server middleware.
 - Super admin product-by-company route naming overlaps with product approval routes. The dispatcher handles approve/cancel first, then `/api/super-admin/products/{adminId}`.
 

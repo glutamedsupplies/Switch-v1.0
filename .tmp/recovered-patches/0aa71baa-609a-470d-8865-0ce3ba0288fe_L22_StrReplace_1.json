@@ -1,0 +1,10 @@
+{
+  "line": 22,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "const CHAT_WALLPAPERS_FILE = path.join(DATA_DIR, \"chat_wallpapers.json\");\nconst MAX_CHAT_WALLPAPERS = 24;",
+  "new_string": "const CHAT_WALLPAPERS_FILE = path.join(DATA_DIR, \"chat_wallpapers.json\");\nconst PLATFORM_FEEDBACK_FILE = path.join(DATA_DIR, \"platform_feedback.json\");\nconst MAX_CHAT_WALLPAPERS = 24;\nconst MAX_PLATFORM_FEEDBACK_ENTRIES = 5_000;\nconst MAX_PLATFORM_FEEDBACK_MESSAGE_LENGTH = 1_000;",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 280
+}

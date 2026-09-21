@@ -1,0 +1,14 @@
+---
+description: Keep Super Admin ↔ seller-admin notifications on every connected action
+alwaysApply: true
+---
+
+# Super Admin ↔ Seller Admin notifications
+
+Any Super Admin action that affects a seller (approve, reject, revision, listing restrict, warn, restrict, ban, deactivate, unrestrict, unban, and similar) MUST notify the seller admin inbox.
+
+Any seller-admin action Super Admin oversees (new listing, resubmit/update while in review, delete listing, and similar) MUST notify the Super Admin inbox.
+
+Do not drop unread notifications. Do not cap seller/SA inboxes at 50. Use `appendPersistentNotifications`, `assignSellerAdminNotification`, `persistSuperAdminNotification`, and `logActivitySafely` (linked fan-out). If you already wrote the inbox item, set `skipLinkedNotification: true` on the activity log to avoid duplicates.
+
+Never ship a Super Admin ↔ seller feature without both-direction, persistent notifications.

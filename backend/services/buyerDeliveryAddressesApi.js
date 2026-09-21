@@ -13,6 +13,8 @@ function createBuyerDeliveryAddressesApi(deps) {
     writeJsonFileAtomically,
     sendJson,
     parseRequestBody,
+    getRequestAccountIdentifier,
+    assertSessionPayloadIdentity,
   } = deps;
 
   const ADDRESSES_FILE = path.join(DATA_DIR, "buyer_delivery_addresses.json");
@@ -113,22 +115,16 @@ function createBuyerDeliveryAddressesApi(deps) {
     await writeJsonFileAtomically(ADDRESSES_FILE, store);
   }
 
-  function resolveIdentity(source = {}, requestUrl) {
-    const query = requestUrl?.searchParams;
-    const accountId = String(
-      source.accountId ?? source.id ?? query?.get("accountId") ?? "",
-    ).trim();
-    const email = String(
-      source.email ?? query?.get("email") ?? "",
-    )
-      .trim()
-      .toLowerCase();
+  function resolveIdentity(request) {
+    const identity = getRequestAccountIdentifier(request);
+    const accountId = String(identity.id || "").trim();
+    const email = String(identity.email || "").trim().toLowerCase();
     const accountKey = normalizeAccountKey(accountId, email);
     return { accountId, email, accountKey };
   }
 
   async function handleGet(request, response, requestUrl) {
-    const { accountKey } = resolveIdentity({}, requestUrl);
+    const { accountKey } = resolveIdentity(request);
     if (!accountKey) {
       sendJson(response, 400, {
         message: "Account ID or email is required.",
@@ -149,7 +145,8 @@ function createBuyerDeliveryAddressesApi(deps) {
 
   async function handlePut(request, response) {
     const payload = await parseRequestBody(request);
-    const { accountKey } = resolveIdentity(payload);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const { accountKey } = resolveIdentity(request);
     if (!accountKey) {
       sendJson(response, 400, {
         message: "Account ID or email is required.",

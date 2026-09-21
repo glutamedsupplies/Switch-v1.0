@@ -1,0 +1,10 @@
+{
+  "line": 68,
+  "tool": "StrReplace",
+  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
+  "old_string": "  if (requestUrl.pathname === \"/api/store-types\") {\n    await handleStoreTypesApi(request, response);\n    return;\n  }",
+  "new_string": "  if (requestUrl.pathname === \"/api/store-types\") {\n    await handleStoreTypesApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/chat-wallpapers\") {\n    await handleChatWallpapersApi(request, response);\n    return;\n  }\n\n  const chatWallpaperMatch = requestUrl.pathname.match(/^\\/api\\/chat-wallpapers\\/([^/]+)$/);\n  if (chatWallpaperMatch) {\n    await handleSingleChatWallpaperApi(\n      request,\n      response,\n      decodeURIComponent(chatWallpaperMatch[1] ?? \"\"),\n    );\n    return;\n  }",
+  "contents_preview": null,
+  "contents_len": 0,
+  "new_len": 515
+}
