@@ -10,8 +10,8 @@ import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  const skipFullAppNeedsBackend =
-      'Full-app widget tests call live seller/store-type HTTP and fail in CI without a backend.';
+  // Full-app tests hit live seller/store-type HTTP and fail in CI without a backend.
+  const skipFullAppNeedsBackend = true;
 
   testWidgets('app snackbar appears near the bottom of the screen', (
     WidgetTester tester,
