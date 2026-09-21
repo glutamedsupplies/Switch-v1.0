@@ -80,34 +80,53 @@ function assembleProducts(rows, children) {
   });
 }
 
-async function listProductsFromPostgres() {
+async function listProductsFromPostgres(options = {}) {
+  const { whereSql, params } = buildProductScopeFilters(options);
   const result = await query(
-    `SELECT * FROM products ORDER BY created_at DESC, id`,
+    `SELECT * FROM products ${whereSql} ORDER BY created_at DESC, id`,
+    params,
   );
   const productIds = result.rows.map((row) => row.id);
   const children = await loadProductChildren(productIds);
   return assembleProducts(result.rows, children);
 }
 
-async function listProductsPageFromPostgres({
+function buildProductScopeFilters({
   adminId = "",
   approvalStatus = "",
-  limit = 50,
-  offset = 0,
+  publicCatalog = false,
 } = {}) {
   const filters = [];
   const params = [];
-
   if (adminId) {
     params.push(adminId);
     filters.push(`admin_id = $${params.length}`);
   }
-  if (approvalStatus) {
+  if (publicCatalog && !adminId) {
+    filters.push(`approval_status = 'approved'`);
+    filters.push(`is_active IS NOT FALSE`);
+  } else if (approvalStatus) {
     params.push(approvalStatus);
     filters.push(`approval_status = $${params.length}`);
   }
+  return {
+    whereSql: filters.length ? `WHERE ${filters.join(" AND ")}` : "",
+    params,
+  };
+}
 
-  const whereSql = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+async function listProductsPageFromPostgres({
+  adminId = "",
+  approvalStatus = "",
+  publicCatalog = false,
+  limit = 50,
+  offset = 0,
+} = {}) {
+  const { whereSql, params } = buildProductScopeFilters({
+    adminId,
+    approvalStatus,
+    publicCatalog,
+  });
   const countResult = await query(
     `SELECT COUNT(*)::int AS total FROM products ${whereSql}`,
     params,
@@ -365,7 +384,10 @@ async function upsertProductRecord(client, product) {
 
 async function syncProductsToPostgres(products, options = {}) {
   const deleteMissing = options.deleteMissing !== false;
-  const incoming = asArray(products);
+  const scopeAdminId = String(options.adminId ?? "").trim();
+  const incoming = asArray(products).filter((product) => (
+    !scopeAdminId || String(product?.adminId ?? "").trim() === scopeAdminId
+  ));
   const incomingIds = incoming
     .map((product) => String(product?.id ?? "").trim())
     .filter(Boolean);
@@ -376,7 +398,16 @@ async function syncProductsToPostgres(products, options = {}) {
     }
 
     if (deleteMissing) {
-      if (incomingIds.length) {
+      if (scopeAdminId) {
+        if (incomingIds.length) {
+          await client.query(
+            `DELETE FROM products WHERE admin_id = $1 AND id <> ALL($2::text[])`,
+            [scopeAdminId, incomingIds],
+          );
+        } else {
+          await client.query(`DELETE FROM products WHERE admin_id = $1`, [scopeAdminId]);
+        }
+      } else if (incomingIds.length) {
         await client.query(
           `DELETE FROM products WHERE id <> ALL($1::text[])`,
           [incomingIds],

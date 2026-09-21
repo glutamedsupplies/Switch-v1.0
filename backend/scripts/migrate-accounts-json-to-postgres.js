@@ -5,6 +5,9 @@
  *
  * Usage:
  *   node scripts/migrate-accounts-json-to-postgres.js
+ *
+ * Copies existing account rows (bcrypt hashes only). Does not seed or print
+ * plaintext passwords, API keys, or session secrets.
  */
 
 const fs = require("fs");

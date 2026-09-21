@@ -41,7 +41,14 @@ async function isCatalogPostgresReady() {
           WHERE table_schema = 'public'
             AND table_name = 'orders'
             AND column_name = 'paid_at'
-        ) AS orders_lifecycle
+        ) AS orders_lifecycle,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'orders'
+            AND column_name = 'payment_intent_id'
+        ) AS orders_payment
     `);
     const row = result.rows[0] || {};
     catalogReadyCache = Boolean(
@@ -52,7 +59,8 @@ async function isCatalogPostgresReady() {
       && row.orders
       && row.order_items
       && row.inventory_movements
-      && row.orders_lifecycle,
+      && row.orders_lifecycle
+      && row.orders_payment,
     );
   } catch (_) {
     catalogReadyCache = false;

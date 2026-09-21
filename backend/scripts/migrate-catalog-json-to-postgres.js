@@ -13,6 +13,7 @@
  *
  * Re-running upserts by stable IDs (store type / category / order_group_id)
  * and existing product/order line IDs. Chat is not migrated (Phase B).
+ * This script does not seed or log passwords, API keys, or session secrets.
  */
 
 const fs = require("fs");

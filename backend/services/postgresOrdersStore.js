@@ -12,15 +12,47 @@ const {
 } = require("../db/catalogHelpers");
 const { upsertInventoryMovements } = require("./postgresProductsStore");
 
-async function listOrdersFromPostgres() {
+function buildOrderScopeFilters({ adminId = "", accountId = "" } = {}) {
+  const filters = [];
+  const params = [];
+  if (adminId) {
+    params.push(adminId);
+    filters.push(`admin_id = $${params.length}`);
+  }
+  if (accountId) {
+    params.push(accountId);
+    filters.push(`account_id = $${params.length}`);
+  }
+  return {
+    whereSql: filters.length ? `WHERE ${filters.join(" AND ")}` : "",
+    params,
+  };
+}
+
+function paymentTrackingUpdateSql(table) {
+  return `
+          payment_provider = CASE WHEN EXCLUDED.payment_provider <> '' THEN EXCLUDED.payment_provider ELSE ${table}.payment_provider END,
+          payment_intent_id = CASE WHEN EXCLUDED.payment_intent_id <> '' THEN EXCLUDED.payment_intent_id ELSE ${table}.payment_intent_id END,
+          payment_checkout_session_id = CASE WHEN EXCLUDED.payment_checkout_session_id <> '' THEN EXCLUDED.payment_checkout_session_id ELSE ${table}.payment_checkout_session_id END,
+          payment_idempotency_key = COALESCE(NULLIF(${table}.payment_idempotency_key, ''), EXCLUDED.payment_idempotency_key),
+          payment_client_key = CASE WHEN EXCLUDED.payment_client_key <> '' THEN EXCLUDED.payment_client_key ELSE ${table}.payment_client_key END,
+          payment_reference = CASE WHEN EXCLUDED.payment_reference <> '' THEN EXCLUDED.payment_reference ELSE ${table}.payment_reference END,
+          payment_status = CASE WHEN EXCLUDED.payment_status <> '' THEN EXCLUDED.payment_status ELSE ${table}.payment_status END,
+          tracking_number = CASE WHEN EXCLUDED.tracking_number <> '' THEN EXCLUDED.tracking_number ELSE ${table}.tracking_number END`;
+}
+
+async function listOrdersFromPostgres(options = {}) {
+  const { whereSql, params } = buildOrderScopeFilters(options);
   const [groupResult, itemResult] = await Promise.all([
-    query(`SELECT * FROM orders`),
+    query(`SELECT * FROM orders ${whereSql}`, params),
     query(
       `
       SELECT *
       FROM order_items
+      ${whereSql}
       ORDER BY created_at_epoch_ms DESC, id
       `,
+      params,
     ),
   ]);
 
@@ -39,19 +71,7 @@ async function listOrdersPageFromPostgres({
   limit = 50,
   offset = 0,
 } = {}) {
-  const filters = [];
-  const params = [];
-
-  if (adminId) {
-    params.push(adminId);
-    filters.push(`admin_id = $${params.length}`);
-  }
-  if (accountId) {
-    params.push(accountId);
-    filters.push(`account_id = $${params.length}`);
-  }
-
-  const whereSql = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+  const { whereSql, params } = buildOrderScopeFilters({ adminId, accountId });
   const countResult = await query(
     `SELECT COUNT(*)::int AS total FROM order_items ${whereSql}`,
     params,
@@ -91,7 +111,18 @@ async function listOrdersPageFromPostgres({
 
 async function syncOrdersToPostgres(orders, options = {}) {
   const deleteMissing = options.deleteMissing !== false;
-  const incomingIds = asArray(orders)
+  const scopeAdminId = String(options.adminId ?? "").trim();
+  const scopeAccountId = String(options.accountId ?? "").trim();
+  const scopedSource = asArray(orders).filter((entry) => {
+    if (scopeAdminId && String(entry?.adminId ?? "").trim() !== scopeAdminId) {
+      return false;
+    }
+    if (scopeAccountId && String(entry?.accountId ?? "").trim() !== scopeAccountId) {
+      return false;
+    }
+    return true;
+  });
+  const incomingIds = scopedSource
     .map((entry) => String(entry?.id ?? "").trim())
     .filter(Boolean);
   let existingEntries = asArray(options.existingEntries);
@@ -105,7 +136,7 @@ async function syncOrdersToPostgres(orders, options = {}) {
     );
     existingEntries = existingResult.rows;
   }
-  const incoming = assignOrderGroupIds(asArray(orders), {
+  const incoming = assignOrderGroupIds(scopedSource, {
     mode: options.mode === "stable" ? "stable" : "random",
     existingEntries,
   });
@@ -123,11 +154,19 @@ async function syncOrdersToPostgres(orders, options = {}) {
         INSERT INTO orders (
           id, order_group_id, admin_id, account_id, created_at_epoch_ms,
           stage, paid_at, packed_at, shipped_at, received_at, cancelled_at,
-          return_requested_at, waybill_printed_at, extra_data, created_at, updated_at
+          return_requested_at, waybill_printed_at,
+          payment_provider, payment_intent_id, payment_checkout_session_id,
+          payment_idempotency_key, payment_client_key, payment_reference,
+          payment_status, tracking_number,
+          extra_data, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5,
           $6, $7, $8, $9, $10, $11,
-          $12, $13, $14::jsonb, $15, NOW()
+          $12, $13,
+          $14, $15, $16,
+          $17, $18, $19,
+          $20, $21,
+          $22::jsonb, $23, NOW()
         )
         ON CONFLICT (id) DO UPDATE SET
           order_group_id = EXCLUDED.order_group_id,
@@ -142,6 +181,7 @@ async function syncOrdersToPostgres(orders, options = {}) {
           cancelled_at = COALESCE(orders.cancelled_at, EXCLUDED.cancelled_at),
           return_requested_at = COALESCE(orders.return_requested_at, EXCLUDED.return_requested_at),
           waybill_printed_at = COALESCE(orders.waybill_printed_at, EXCLUDED.waybill_printed_at),
+          ${paymentTrackingUpdateSql("orders")},
           extra_data = EXCLUDED.extra_data,
           updated_at = NOW()
         `,
@@ -159,6 +199,14 @@ async function syncOrdersToPostgres(orders, options = {}) {
           groupRow.cancelled_at,
           groupRow.return_requested_at,
           groupRow.waybill_printed_at,
+          groupRow.payment_provider,
+          groupRow.payment_intent_id,
+          groupRow.payment_checkout_session_id,
+          groupRow.payment_idempotency_key,
+          groupRow.payment_client_key,
+          groupRow.payment_reference,
+          groupRow.payment_status,
+          groupRow.tracking_number,
           JSON.stringify(groupRow.extra_data || {}),
           groupRow.created_at,
         ],
@@ -177,14 +225,20 @@ async function syncOrdersToPostgres(orders, options = {}) {
             id, order_group_id, admin_id, account_id, product_id, variant_id,
             quantity, unit_price, stage, created_at_epoch_ms,
             paid_at, packed_at, shipped_at, received_at, cancelled_at,
-            return_requested_at, waybill_printed_at, extra_data,
-            created_at, updated_at
+            return_requested_at, waybill_printed_at,
+            payment_provider, payment_intent_id, payment_checkout_session_id,
+            payment_idempotency_key, payment_client_key, payment_reference,
+            payment_status, tracking_number,
+            extra_data, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10,
             $11, $12, $13, $14, $15,
-            $16, $17, $18::jsonb,
-            $19, NOW()
+            $16, $17,
+            $18, $19, $20,
+            $21, $22, $23,
+            $24, $25,
+            $26::jsonb, $27, NOW()
           )
           ON CONFLICT (id) DO UPDATE SET
             order_group_id = EXCLUDED.order_group_id,
@@ -209,6 +263,7 @@ async function syncOrdersToPostgres(orders, options = {}) {
               order_items.waybill_printed_at,
               EXCLUDED.waybill_printed_at
             ),
+            ${paymentTrackingUpdateSql("order_items")},
             extra_data = EXCLUDED.extra_data,
             updated_at = NOW()
           `,
@@ -230,6 +285,14 @@ async function syncOrdersToPostgres(orders, options = {}) {
             itemRow.cancelled_at,
             itemRow.return_requested_at,
             itemRow.waybill_printed_at,
+            itemRow.payment_provider,
+            itemRow.payment_intent_id,
+            itemRow.payment_checkout_session_id,
+            itemRow.payment_idempotency_key,
+            itemRow.payment_client_key,
+            itemRow.payment_reference,
+            itemRow.payment_status,
+            itemRow.tracking_number,
             JSON.stringify(itemRow.extra_data || {}),
             itemRow.created_at,
           ],
@@ -254,10 +317,30 @@ async function syncOrdersToPostgres(orders, options = {}) {
     }
 
     if (deleteMissing) {
+      const scopeFilters = [];
+      const scopeParams = [];
+      if (scopeAdminId) {
+        scopeParams.push(scopeAdminId);
+        scopeFilters.push(`admin_id = $${scopeParams.length}`);
+      }
+      if (scopeAccountId) {
+        scopeParams.push(scopeAccountId);
+        scopeFilters.push(`account_id = $${scopeParams.length}`);
+      }
+      const scopeSql = scopeFilters.length ? ` AND ${scopeFilters.join(" AND ")}` : "";
+
       if (incomingGroupIds.length) {
         await client.query(
-          `DELETE FROM orders WHERE id <> ALL($1::text[])`,
-          [incomingGroupIds],
+          `DELETE FROM orders WHERE id <> ALL($1::text[])${scopeSql.replace(
+            /\$(\d+)/g,
+            (_, n) => `$${Number(n) + 1}`,
+          )}`,
+          [incomingGroupIds, ...scopeParams],
+        );
+      } else if (scopeAdminId || scopeAccountId) {
+        await client.query(
+          `DELETE FROM orders${scopeSql.replace(" AND ", " WHERE ")}`,
+          scopeParams,
         );
       } else {
         await client.query(`DELETE FROM orders`);
@@ -265,8 +348,16 @@ async function syncOrdersToPostgres(orders, options = {}) {
 
       if (incomingItemIds.length) {
         await client.query(
-          `DELETE FROM order_items WHERE id <> ALL($1::text[])`,
-          [incomingItemIds],
+          `DELETE FROM order_items WHERE id <> ALL($1::text[])${scopeSql.replace(
+            /\$(\d+)/g,
+            (_, n) => `$${Number(n) + 1}`,
+          )}`,
+          [incomingItemIds, ...scopeParams],
+        );
+      } else if (scopeAdminId || scopeAccountId) {
+        await client.query(
+          `DELETE FROM order_items${scopeSql.replace(" AND ", " WHERE ")}`,
+          scopeParams,
         );
       } else if (!incoming.length) {
         await client.query(`DELETE FROM order_items`);

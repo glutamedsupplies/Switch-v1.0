@@ -167,7 +167,7 @@ curl -i http://127.0.0.1:8080/api/orders \
 
 ### Orders
 
-Order line objects include stable `id` / `orderGroupId` plus funnel timestamps (`createdAt`, `paidAt`, `packedAt`, `shippedAt`, `cancelledAt`) that map to first-class Postgres columns.
+Order line objects include stable `id` / `orderGroupId` plus funnel timestamps (`createdAt`, `paidAt`, `packedAt`, `shippedAt`, `cancelledAt`) that map to first-class Postgres columns. Optional `paymentIntentId` / `paymentIdempotencyKey` / `trackingNumber` are stored for later PayMongo + shipment use. Seller list/page reads are scoped to the signed `adminId`; buyers only see their `accountId`. Public `GET /api/products?approvalStatus=approved` returns approved listings only.
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -175,7 +175,7 @@ Order line objects include stable `id` / `orderGroupId` plus funnel timestamps (
 | `PUT` | `/api/orders` | Legacy identity hints optional | Array or object containing orders | `{ "orders": [...], "total": 0, "message": "Orders synced." }` | Signed session; writes forced to session scope | `PUT /api/orders` |
 | `POST` | `/api/orders` | Legacy identity hints optional | Array or object containing orders | `{ "orders": [...], "mergedCount": 1, "message": "Orders merged." }` | Signed session; writes forced to session scope | `POST /api/orders` |
 | `POST` | `/api/orders/{groupId}/pack` | `groupId` is `orderGroupId` or `createdAtEpochMs` | `{ "deductInventory": true }` | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/pack` |
-| `POST` | `/api/orders/{groupId}/ship` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional empty body | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/ship` |
+| `POST` | `/api/orders/{groupId}/ship` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional `{ "trackingNumber": "…" }` | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/ship` |
 | `POST` | `/api/orders/{groupId}/cancel` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional empty body | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/cancel` |
 | `POST` | `/api/orders/{groupId}/cancel-request/{accept\|reject}` | Group ID and decision path | Optional empty body | `{ "decision": "accept", "message": "Cancellation request accepted." }` | Admin scope | `POST /api/orders/1780000000000/cancel-request/accept` |
 

@@ -71,6 +71,77 @@ function toInteger(value, fallback = 0) {
   return Math.trunc(toNumber(value, fallback));
 }
 
+function firstNonEmptyString(values) {
+  for (const value of asArray(values)) {
+    const text = String(value ?? "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function resolveOrderPaymentAndTracking(source) {
+  const entry = asObject(source);
+  return {
+    payment_provider: firstNonEmptyString([
+      entry.paymentProvider,
+      entry.paymentGateway,
+      entry.payment_provider,
+    ]),
+    payment_intent_id: firstNonEmptyString([
+      entry.paymentIntentId,
+      entry.payment_intent_id,
+      entry.paymongoPaymentIntentId,
+    ]),
+    payment_checkout_session_id: firstNonEmptyString([
+      entry.paymentCheckoutSessionId,
+      entry.checkoutSessionId,
+      entry.payment_checkout_session_id,
+    ]),
+    payment_idempotency_key: firstNonEmptyString([
+      entry.paymentIdempotencyKey,
+      entry.idempotencyKey,
+      entry.payment_idempotency_key,
+    ]),
+    payment_client_key: firstNonEmptyString([
+      entry.paymentClientKey,
+      entry.clientKey,
+      entry.payment_client_key,
+    ]),
+    payment_reference: firstNonEmptyString([
+      entry.paymentReference,
+      entry.payment_reference,
+    ]),
+    payment_status: firstNonEmptyString([
+      entry.paymentStatus,
+      entry.payment_status,
+    ]),
+    tracking_number: firstNonEmptyString([
+      entry.trackingNumber,
+      entry.trackingNo,
+      entry.tracking_number,
+    ]),
+  };
+}
+
+function paymentFieldsForApi(row, fallbackRow) {
+  const primary = asObject(row);
+  const fallback = asObject(fallbackRow);
+  const pick = (key) => firstNonEmptyString([primary[key], fallback[key]]);
+  return {
+    paymentProvider: pick("payment_provider"),
+    paymentIntentId: pick("payment_intent_id"),
+    paymentCheckoutSessionId: pick("payment_checkout_session_id"),
+    paymentIdempotencyKey: pick("payment_idempotency_key"),
+    paymentClientKey: pick("payment_client_key"),
+    paymentReference: pick("payment_reference"),
+    paymentStatus: pick("payment_status"),
+    trackingNumber: pick("tracking_number"),
+    trackingNo: pick("tracking_number"),
+  };
+}
+
 function stableStoreTypeId(name) {
   return `st_${sha16(normalizeNameKey(name))}`;
 }
@@ -806,11 +877,25 @@ const ORDER_ITEM_COLUMN_KEYS = new Set([
   "returnRequestedAtEpochMs",
   "waybillPrintedAt",
   "waybillPrintedAtEpochMs",
+  "paymentProvider",
+  "paymentGateway",
+  "paymentIntentId",
+  "paymentCheckoutSessionId",
+  "checkoutSessionId",
+  "paymentIdempotencyKey",
+  "idempotencyKey",
+  "paymentClientKey",
+  "clientKey",
+  "paymentReference",
+  "paymentStatus",
+  "trackingNumber",
+  "trackingNo",
 ]);
 
 function orderItemToRow(entry, orderGroupId, index = 0) {
   const source = asObject(entry);
   const lifecycle = resolveOrderLifecycleTimestamps(source);
+  const payment = resolveOrderPaymentAndTracking(source);
   const id = String(source.id ?? "").trim() || stableOrderItemId({
     orderGroupId,
     productId: source.productId,
@@ -835,6 +920,7 @@ function orderItemToRow(entry, orderGroupId, index = 0) {
     cancelled_at: lifecycle.cancelledAt,
     return_requested_at: lifecycle.returnRequestedAt,
     waybill_printed_at: lifecycle.waybillPrintedAt,
+    ...payment,
     extra_data: omitKeys({ ...source, orderGroupId }, ORDER_ITEM_COLUMN_KEYS),
     created_at: lifecycle.createdAt,
     updated_at: toTimestamp(source.updatedAt) || new Date(),
@@ -865,6 +951,22 @@ function orderGroupToRow(group) {
     ]),
     createdAtEpochMs: group.createdAtEpochMs ?? primary.createdAtEpochMs,
   });
+  const itemPayments = items.map((item) => resolveOrderPaymentAndTracking(item));
+  const groupPayment = resolveOrderPaymentAndTracking({
+    ...primary,
+    paymentProvider: firstNonEmptyString(itemPayments.map((item) => item.payment_provider)),
+    paymentIntentId: firstNonEmptyString(itemPayments.map((item) => item.payment_intent_id)),
+    paymentCheckoutSessionId: firstNonEmptyString(
+      itemPayments.map((item) => item.payment_checkout_session_id),
+    ),
+    paymentIdempotencyKey: firstNonEmptyString(
+      itemPayments.map((item) => item.payment_idempotency_key),
+    ),
+    paymentClientKey: firstNonEmptyString(itemPayments.map((item) => item.payment_client_key)),
+    paymentReference: firstNonEmptyString(itemPayments.map((item) => item.payment_reference)),
+    paymentStatus: firstNonEmptyString(itemPayments.map((item) => item.payment_status)),
+    trackingNumber: firstNonEmptyString(itemPayments.map((item) => item.tracking_number)),
+  });
   return {
     id: group.orderGroupId,
     order_group_id: group.orderGroupId,
@@ -881,6 +983,7 @@ function orderGroupToRow(group) {
     cancelled_at: groupLifecycle.cancelledAt,
     return_requested_at: groupLifecycle.returnRequestedAt,
     waybill_printed_at: groupLifecycle.waybillPrintedAt,
+    ...groupPayment,
     extra_data: {
       itemIds: items.map((item) => String(item?.id ?? "").trim()).filter(Boolean),
     },
@@ -921,6 +1024,7 @@ function rowToOrderEntry(itemRow, groupRow) {
     unitPrice: toNumber(itemRow.unit_price, extra.unitPrice || 0),
     stage: itemRow.stage || extra.stage || extra.status || "toPay",
     ...lifecycle,
+    ...paymentFieldsForApi(itemRow, groupRow),
     customerReceivedAtEpochMs: lifecycle.receivedAtEpochMs
       || toInteger(extra.customerReceivedAtEpochMs, 0),
     updatedAt: toIso(itemRow.updated_at) || extra.updatedAt || "",
@@ -1055,6 +1159,8 @@ module.exports = {
   stableOrderItemId,
   stableMovementId,
   resolveOrderLifecycleTimestamps,
+  resolveOrderPaymentAndTracking,
+  paymentFieldsForApi,
   lifecycleFieldsForApi,
   isCatalogJsonBackupEnabled,
   parsePagination,

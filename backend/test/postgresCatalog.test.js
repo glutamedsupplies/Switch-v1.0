@@ -94,10 +94,18 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
 
   t.after(async () => {
     try {
-      await query(`DELETE FROM inventory_movements WHERE admin_id = $1`, [adminId]);
-      await query(`DELETE FROM order_items WHERE admin_id = $1`, [adminId]);
-      await query(`DELETE FROM orders WHERE admin_id = $1`, [adminId]);
-      await query(`DELETE FROM products WHERE admin_id = $1`, [adminId]);
+      await query(`DELETE FROM inventory_movements WHERE admin_id = ANY($1::text[])`, [
+        [adminId, `admin_other_${suffix}`],
+      ]);
+      await query(`DELETE FROM order_items WHERE admin_id = ANY($1::text[])`, [
+        [adminId, `admin_other_${suffix}`],
+      ]);
+      await query(`DELETE FROM orders WHERE admin_id = ANY($1::text[])`, [
+        [adminId, `admin_other_${suffix}`],
+      ]);
+      await query(`DELETE FROM products WHERE admin_id = ANY($1::text[])`, [
+        [adminId, `admin_other_${suffix}`],
+      ]);
       await query(`DELETE FROM categories WHERE admin_id = $1`, [adminId]);
       await query(
         `DELETE FROM store_types WHERE name_normalized = $1`,
@@ -273,4 +281,72 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
   );
   assert.ok(movementResult.rowCount >= 1);
   assert.ok(movementResult.rows.some((row) => row.direction === "deduct" || row.direction === "restock"));
+
+  const otherAdminId = `admin_other_${suffix}`;
+  await syncProductsToPostgres(
+    [{
+      id: `prd_other_${suffix}`,
+      adminId: otherAdminId,
+      name: "Other seller serum",
+      description: "Should not leak",
+      approvalStatus: "pending",
+      isActive: true,
+      originalPrice: 10,
+      stock: 1,
+      barcode: `bc-other-${suffix}`,
+      category: "Skincare",
+      categories: ["Skincare"],
+      variants: [{ id: `var_other_${suffix}`, name: "Default", originalPrice: 10, stock: 1 }],
+    }],
+    { deleteMissing: false },
+  );
+  const tenantPage = await listProductsPageFromPostgres({ adminId, limit: 50, offset: 0 });
+  assert.equal(tenantPage.items.some((product) => product.adminId === otherAdminId), false);
+  assert.equal(tenantPage.items.some((product) => product.id === productId), true);
+  const publicPage = await listProductsPageFromPostgres({ publicCatalog: true, limit: 200, offset: 0 });
+  assert.equal(publicPage.items.some((product) => product.id === `prd_other_${suffix}`), false);
+
+  await syncOrdersToPostgres(
+    [{
+      id: `ord_other_${suffix}`,
+      adminId: otherAdminId,
+      accountId: `acct_other_${suffix}`,
+      productId: `prd_other_${suffix}`,
+      productName: "Other seller serum",
+      quantity: 1,
+      unitPrice: 10,
+      stage: "toPay",
+      createdAtEpochMs: Date.now(),
+    }],
+    { deleteMissing: false },
+  );
+  const scopedOrders = await listOrdersFromPostgres({ adminId });
+  assert.equal(scopedOrders.some((entry) => entry.adminId === otherAdminId), false);
+  assert.equal(scopedOrders.some((entry) => entry.id === `ord_${suffix}`), true);
+
+  await syncOrdersToPostgres(
+    [{
+      id: `ord_${suffix}`,
+      adminId,
+      accountId,
+      productId,
+      productName: "Test serum",
+      quantity: 1,
+      unitPrice: 150,
+      stage: "toPrepare",
+      createdAtEpochMs,
+      paymentIntentId: `pi_${suffix}`,
+      paymentIdempotencyKey: `idem_${suffix}`,
+      paymentProvider: "paymongo",
+      trackingNumber: "GMS-TEST",
+    }],
+    { deleteMissing: false, adminId, mode: "stable" },
+  );
+  const payRow = await query(
+    `SELECT payment_intent_id, payment_idempotency_key, tracking_number
+     FROM orders WHERE admin_id = $1`,
+    [adminId],
+  );
+  assert.ok(payRow.rows.some((row) => row.payment_intent_id === `pi_${suffix}`));
+  assert.ok(payRow.rows.some((row) => row.tracking_number === "GMS-TEST"));
 });

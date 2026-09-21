@@ -25,6 +25,7 @@ const {
   stableVariantId,
   stableOrderItemId,
   resolveOrderLifecycleTimestamps,
+  resolveOrderPaymentAndTracking,
   isCatalogJsonBackupEnabled,
 } = require("../db/catalogHelpers");
 
@@ -281,6 +282,34 @@ test("order lifecycle timestamps follow real stages", () => {
   });
   assert.equal(zeroEpoch.paidAt, null);
   assert.equal(zeroEpoch.packedAt, null);
+});
+
+test("order payment intent and tracking map to first-class columns", () => {
+  const payment = resolveOrderPaymentAndTracking({
+    paymentIntentId: "pi_abc",
+    checkoutSessionId: "cs_abc",
+    paymentIdempotencyKey: "idem-1",
+    paymentClientKey: "pi_abc_client",
+    paymentReference: "ref-9",
+    paymentProvider: "paymongo",
+    paymentStatus: "awaiting_payment",
+    trackingNumber: "GMS123",
+  });
+  assert.equal(payment.payment_intent_id, "pi_abc");
+  assert.equal(payment.payment_checkout_session_id, "cs_abc");
+  assert.equal(payment.payment_idempotency_key, "idem-1");
+  assert.equal(payment.tracking_number, "GMS123");
+
+  const itemRow = orderItemToRow({
+    id: "ord-pay-1",
+    productId: "prd-1",
+    stage: "toPay",
+    paymentIntentId: "pi_abc",
+    trackingNo: "TRACK-9",
+  }, "og_pay", 0);
+  assert.equal(itemRow.id, "ord-pay-1");
+  assert.equal(itemRow.payment_intent_id, "pi_abc");
+  assert.equal(itemRow.tracking_number, "TRACK-9");
 });
 
 test("inventory movements are derived from order deductions and stock history", () => {

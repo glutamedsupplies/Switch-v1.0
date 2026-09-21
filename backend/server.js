@@ -126,6 +126,8 @@ const {
   buildPaginationMeta,
   isCatalogJsonBackupEnabled,
   resolveOrderLifecycleTimestamps,
+  resolveOrderPaymentAndTracking,
+  paymentFieldsForApi,
   lifecycleFieldsForApi,
 } = require("./db/catalogHelpers");
 const { isPostgresConfigured } = require("./db/pool");
@@ -1364,26 +1366,54 @@ async function writeCatalogJsonBackup(filePath, records, label) {
   }
 }
 
-async function readProducts() {
+async function readProducts(options = {}) {
+  const adminId = String(options.adminId ?? "").trim();
+  const publicCatalog = options.publicCatalog === true;
   if (await isCatalogPostgresReady()) {
-    return listProductsFromPostgres();
+    return listProductsFromPostgres({
+      adminId,
+      approvalStatus: options.approvalStatus || "",
+      publicCatalog,
+    });
   }
 
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(PRODUCTS_FILE, "utf8");
-
+  let products = [];
   try {
     const decoded = JSON.parse(raw);
-    return Array.isArray(decoded) ? decoded : [];
+    products = Array.isArray(decoded) ? decoded : [];
   } catch (error) {
-    return [];
+    products = [];
   }
+  if (adminId) {
+    products = filterRecordsByAdminId(products, adminId);
+  } else if (publicCatalog) {
+    products = products.filter((product) =>
+      normalizeProductApprovalStatus(product?.approvalStatus) === PRODUCT_APPROVAL_APPROVED
+      && product?.isActive !== false
+    );
+  }
+  if (options.approvalStatus && !(publicCatalog && !adminId)) {
+    const requested = normalizeProductApprovalStatus(options.approvalStatus, "");
+    products = products.filter((product) =>
+      normalizeProductApprovalStatus(product?.approvalStatus) === requested
+    );
+  }
+  return products;
 }
 
-async function writeProducts(products) {
+async function writeProducts(products, options = {}) {
   const nextProducts = Array.isArray(products) ? products : [];
+  const scopeAdminId = String(options.adminId ?? "").trim();
   if (await isCatalogPostgresReady()) {
-    await syncProductsToPostgres(nextProducts);
+    const pgProducts = scopeAdminId
+      ? nextProducts.filter((product) => isRecordInAdminScope(product, scopeAdminId))
+      : nextProducts;
+    await syncProductsToPostgres(pgProducts, {
+      deleteMissing: options.deleteMissing !== false,
+      adminId: scopeAdminId,
+    });
     await writeCatalogJsonBackup(PRODUCTS_FILE, nextProducts, "products");
     return;
   }
@@ -2217,25 +2247,57 @@ function runPartnerMutation(partnerType, task) {
   return enqueueSerializedMutation(`partner:${normalizedType}`, task);
 }
 
-async function writeOrders(orders) {
+async function writeOrders(orders, options = {}) {
   const filtered = filterRealAccountOrders(orders);
+  const scopeAdminId = String(options.adminId ?? "").trim();
+  const scopeAccountId = String(options.accountId ?? "").trim();
   let existingEntries = [];
   try {
     existingEntries = await isCatalogPostgresReady()
-      ? await listOrdersFromPostgres()
+      ? await listOrdersFromPostgres({
+          adminId: scopeAdminId,
+          accountId: scopeAccountId,
+        })
       : await readJsonOrdersFallback();
   } catch (_) {
     existingEntries = [];
   }
   const normalizedOrders = assignOrderGroupIds(filtered, { existingEntries });
   if (await isCatalogPostgresReady()) {
-    await syncOrdersToPostgres(normalizedOrders);
+    const pgOrders = normalizedOrders.filter((entry) => {
+      if (scopeAdminId && !isRecordInAdminScope(entry, scopeAdminId)) {
+        return false;
+      }
+      if (scopeAccountId && String(entry?.accountId ?? "").trim() !== scopeAccountId) {
+        return false;
+      }
+      return true;
+    });
+    await syncOrdersToPostgres(pgOrders, {
+      deleteMissing: options.deleteMissing !== false,
+      adminId: scopeAdminId,
+      accountId: scopeAccountId,
+      existingEntries,
+    });
     await writeCatalogJsonBackup(ORDERS_FILE, normalizedOrders, "orders");
     return normalizedOrders;
   }
 
   await writeJsonArrayFile(ORDERS_FILE, normalizedOrders);
   return normalizedOrders;
+}
+
+function catalogWriteScope({ adminId = "", accountId = "" } = {}) {
+  const options = {};
+  const normalizedAdminId = String(adminId ?? "").trim();
+  const normalizedAccountId = String(accountId ?? "").trim();
+  if (normalizedAdminId) {
+    options.adminId = normalizedAdminId;
+  }
+  if (normalizedAccountId) {
+    options.accountId = normalizedAccountId;
+  }
+  return options;
 }
 
 async function readJsonOrdersFallback() {
@@ -2249,12 +2311,21 @@ async function readJsonOrdersFallback() {
   }
 }
 
-async function readOrders() {
+async function readOrders(options = {}) {
+  const adminId = String(options.adminId ?? "").trim();
+  const accountId = String(options.accountId ?? "").trim();
   if (await isCatalogPostgresReady()) {
-    return filterRealAccountOrders(await listOrdersFromPostgres());
+    return filterRealAccountOrders(await listOrdersFromPostgres({ adminId, accountId }));
   }
 
-  return readJsonOrdersFallback();
+  let orders = await readJsonOrdersFallback();
+  if (adminId) {
+    orders = filterRecordsByAdminId(orders, adminId);
+  }
+  if (accountId) {
+    orders = orders.filter((entry) => String(entry?.accountId ?? "").trim() === accountId);
+  }
+  return orders;
 }
 
 function isRealOrderAccountId(value) {
@@ -5723,6 +5794,7 @@ function normalizeStoredOrderEntry(input) {
     stage: normalizedStage,
     createdAtEpochMs,
     orderGroupId: String(input.orderGroupId ?? input.groupId ?? "").trim(),
+    ...paymentFieldsForApi(resolveOrderPaymentAndTracking(input)),
     needsWaybill,
     waybillPrintedAtEpochMs,
     grandTotalAmount,
@@ -6733,7 +6805,7 @@ async function handleProductReviewReplyApi(request, response) {
       return;
     }
 
-    await writeOrders(nextOrders);
+    await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
     await syncProductReviewCommentCountsFromOrders(nextOrders, requestAdminId);
 
     const reviewAggregates = buildProductReviewAggregates(nextOrders, requestAdminId);
@@ -20164,9 +20236,13 @@ async function handleProductsApi(request, response) {
     }
 
     const [allProducts, accounts, allOrders, storedStoreTypes] = await Promise.all([
-      readProducts(),
+      requestIsAdminScoped
+        ? readProducts({ adminId: requestAdminId })
+        : readProducts({ publicCatalog: true }),
       readAccounts(),
-      readOrders(),
+      requestIsAdminScoped
+        ? readOrders({ adminId: requestAdminId })
+        : readOrders(),
       readStoreTypes(),
     ]);
     const reviewAggregates = buildProductReviewAggregates(
@@ -20276,7 +20352,7 @@ async function handleProductsApi(request, response) {
           illegalContentGate.safety,
         );
         products.unshift(product);
-        await writeProducts(products);
+        await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
         await logActivitySafely(createProductActivityEntry("updated", product, payload?.__activityActor), request);
         const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(await readAccounts());
         sendJson(response, 422, {
@@ -20307,7 +20383,7 @@ async function handleProductsApi(request, response) {
         ...normalizeProductListingInsightHistory(product),
       };
       products.unshift(product);
-      await writeProducts(products);
+      await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
       if (isApprovedProductYoloTrainingRecord(product)) {
         await syncApprovedProductTrainingArchive([product]);
       }
@@ -20601,6 +20677,7 @@ async function handleProductVisualSearchApi(request, response) {
         allStoredProducts.map((product) =>
           updatedProductsById.get(String(product?.id ?? "").trim()) ?? product,
         ),
+        catalogWriteScope({ adminId: requestAdminId }),
       );
     }
 
@@ -29416,16 +29493,28 @@ async function handleOrdersApi(request, response) {
 
   if (request.method === "GET") {
     try {
-      let orders = await readOrders();
-      if (requestShouldUseAccountScope) {
-        orders = orders.filter(
-          (order) => String(order?.accountId ?? "").trim() === requestAccountId,
-        );
-      } else if (requestShouldUseAdminScope) {
-        orders = filterRecordsByAdminId(orders, requestAdminId);
+      if (
+        !requestIsSuperAdmin
+        && !requestShouldUseAccountScope
+        && !requestShouldUseAdminScope
+      ) {
+        sendJson(response, 403, {
+          message: "Signed account or store scope is required to list orders.",
+        });
+        return;
       }
+
+      let orders = requestShouldUseAccountScope
+        ? await readOrders({ accountId: requestAccountId })
+        : requestShouldUseAdminScope
+          ? await readOrders({ adminId: requestAdminId })
+          : await readOrders();
       const [products, accounts, deliveryPartners] = await Promise.all([
-        readProducts(),
+        requestShouldUseAdminScope
+          ? readProducts({ adminId: requestAdminId })
+          : requestShouldUseAccountScope
+            ? readProducts({ publicCatalog: true })
+            : readProducts(),
         readAccounts(),
         readDeliveryPartners(),
       ]);
@@ -29452,6 +29541,17 @@ async function handleOrdersApi(request, response) {
 
   if (request.method === "PUT") {
     try {
+      if (
+        !requestIsSuperAdmin
+        && !requestShouldUseAccountScope
+        && !requestShouldUseAdminScope
+      ) {
+        sendJson(response, 403, {
+          message: "Signed account or store scope is required to save orders.",
+        });
+        return;
+      }
+
       if (
         requestShouldUseAdminScope &&
         !(await requireAdminRestrictionAllowed(
@@ -29492,7 +29592,10 @@ async function handleOrdersApi(request, response) {
             ...orders,
           ])
         : mergeStoredOrderEntries(existingOrders, orders);
-      await writeOrders(nextOrders);
+      await writeOrders(nextOrders, catalogWriteScope({
+        adminId: requestShouldUseAdminScope ? requestAdminId : "",
+        accountId: requestShouldUseAccountScope ? requestAccountId : "",
+      }));
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
@@ -29512,6 +29615,17 @@ async function handleOrdersApi(request, response) {
 
   if (request.method === "POST") {
     try {
+      if (
+        !requestIsSuperAdmin
+        && !requestShouldUseAccountScope
+        && !requestShouldUseAdminScope
+      ) {
+        sendJson(response, 403, {
+          message: "Signed account or store scope is required to save orders.",
+        });
+        return;
+      }
+
       if (
         requestShouldUseAdminScope &&
         !(await requireAdminRestrictionAllowed(
@@ -29560,7 +29674,10 @@ async function handleOrdersApi(request, response) {
             ...mergedOrders,
           ])
         : mergedOrders;
-      await writeOrders(nextOrders);
+      await writeOrders(nextOrders, catalogWriteScope({
+        adminId: requestShouldUseAdminScope ? requestAdminId : "",
+        accountId: requestShouldUseAccountScope ? requestAccountId : "",
+      }));
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
@@ -29644,6 +29761,7 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
       if (inventoryResult.products !== scopedProducts) {
         await writeProducts(
           mergeScopedRecordsById(products, inventoryResult.products, requestAdminId),
+          catalogWriteScope({ adminId: requestAdminId }),
         );
       }
     }
@@ -29686,7 +29804,7 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
       });
     });
 
-    await writeOrders(nextOrders);
+    await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -29730,6 +29848,10 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
   }
 
   try {
+    const payload = await parseRequestBody(request);
+    const trackingNumber = String(
+      payload?.trackingNumber ?? payload?.trackingNo ?? "",
+    ).trim();
     const orders = await readOrders();
     const salesByProductId = new Map();
     let didUpdateOrderGroup = false;
@@ -29760,6 +29882,7 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
         stage: "toReceive",
         shippedAt: new Date().toISOString(),
         shippedAtEpochMs: Date.now(),
+        trackingNumber: trackingNumber || entry?.trackingNumber || entry?.trackingNo || "",
       });
     });
 
@@ -29800,11 +29923,11 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
       });
 
       if (didUpdateProductSales) {
-        await writeProducts(nextProducts);
+        await writeProducts(nextProducts, catalogWriteScope({ adminId: requestAdminId }));
       }
     }
 
-    await writeOrders(nextOrders);
+    await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(
         nextOrders.filter((entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey)),
@@ -29874,6 +29997,7 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
       if (inventoryResult.products !== scopedProducts) {
         await writeProducts(
           mergeScopedRecordsById(products, inventoryResult.products, requestAdminId),
+          catalogWriteScope({ adminId: requestAdminId }),
         );
       }
       inventoryRestoredAtEpochMs = Date.now();
@@ -29906,7 +30030,7 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
       return;
     }
 
-    await writeOrders(nextOrders);
+    await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -29985,6 +30109,7 @@ async function handleCancelOrderRequestDecisionApi(
         if (inventoryResult.products !== scopedProducts) {
           await writeProducts(
             mergeScopedRecordsById(products, inventoryResult.products, requestAdminId),
+            catalogWriteScope({ adminId: requestAdminId }),
           );
         }
         inventoryRestoredAtEpochMs = Date.now();
@@ -30024,7 +30149,7 @@ async function handleCancelOrderRequestDecisionApi(
       });
     });
 
-    await writeOrders(nextOrders);
+    await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -30440,7 +30565,7 @@ async function handleSingleProductApi(request, response, productId) {
       const nextProducts = products.filter((product) =>
         !(product.id === productId && isRecordInAdminScope(product, requestAdminId)),
       );
-      await writeProducts(nextProducts);
+      await writeProducts(nextProducts, catalogWriteScope({ adminId: requestAdminId }));
       await logActivitySafely(createProductActivityEntry("deleted", targetProduct, payload?.__activityActor), request);
       sendJson(response, 200, {
         message: "Product deleted.",
@@ -30600,7 +30725,7 @@ async function handleSingleProductApi(request, response, productId) {
             illegalContentGate.safety,
           );
           products[productIndex] = updatedProduct;
-          await writeProducts(products);
+          await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
           await logActivitySafely(
           createProductActivityEntry(
             "updated",
@@ -30653,7 +30778,7 @@ async function handleSingleProductApi(request, response, productId) {
         ...normalizeProductListingInsightHistory(updatedProduct),
       };
       products[productIndex] = updatedProduct;
-      await writeProducts(products);
+      await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
       if (isApprovedProductYoloTrainingRecord(updatedProduct)) {
         await syncApprovedProductTrainingArchive([updatedProduct]);
       }
@@ -30751,7 +30876,7 @@ async function handleSingleProductApi(request, response, productId) {
         ...normalizeProductListingInsightHistory(updatedProduct),
       };
       products[productIndex] = updatedProduct;
-      await writeProducts(products);
+      await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
       await logActivitySafely(
         createProductActivityEntry(
           "updated",

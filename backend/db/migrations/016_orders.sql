@@ -4,9 +4,11 @@
 -- existing pack/ship/cancel/waybill clients keep working.
 --
 -- Stable IDs: order_items.id is the JSON line id and never changes on import.
--- orders.id = order_group_id. If JSON already has orderGroupId, that value is
--- kept; otherwise migrate uses a deterministic og_* from adminId+accountId+
--- createdAtEpochMs so re-running import does not mint a new group key.
+-- orders.id = order_group_id (server-generated, stable across dual-write and
+-- cutover). If JSON already has orderGroupId, that value is kept; otherwise
+-- migrate uses a deterministic og_* from adminId+accountId+createdAtEpochMs
+-- so re-running import does not mint a new group key.
+-- Payment intent / tracking columns are added in 019 (Step 6 prep).
 
 CREATE TABLE IF NOT EXISTS orders (
   id                    TEXT PRIMARY KEY,
