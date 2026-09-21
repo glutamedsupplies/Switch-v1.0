@@ -5924,6 +5924,8 @@ class _ProductDashboardState extends State<_ProductDashboard> {
   List<Product>? _cachedProducts;
   int _dealContentEpoch = 0;
   bool _loadingMoreProducts = false;
+  bool _endReachedLoading = false;
+  bool _endCheckPending = false;
 
   @override
   void initState() {
@@ -6218,7 +6220,7 @@ class _ProductDashboardState extends State<_ProductDashboard> {
     if (_visibleProductCount >= totalCount) {
       return false;
     }
-    if (_loadingMoreProducts) {
+    if (_loadingMoreProducts || _endReachedLoading || _endCheckPending) {
       return true;
     }
 
