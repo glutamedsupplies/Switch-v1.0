@@ -8819,6 +8819,15 @@
     }
 
     if (
+      admin?.isPendingReviewCompany === true ||
+      statusToken.includes("pending_review") ||
+      statusToken.includes("pending-review") ||
+      String(admin?.planStatus || "").trim().toLowerCase() === "pending_review"
+    ) {
+      return "pending-review";
+    }
+
+    if (
       !temporaryBanExpired &&
       (
         readTruthyFlag(admin?.isBanned) ||
@@ -8945,6 +8954,9 @@
         suspended: 0,
         banned: 0,
         restricted: 0,
+        "pending-review": 0,
+        "pending-deletion": 0,
+        deleted: 0,
       },
     );
 
@@ -9540,6 +9552,9 @@
     if (accountStateFilter === "low-risk" && accountState !== "active") {
       return false;
     }
+    if (accountStateFilter === "pending-review" && accountState !== "pending-review") {
+      return false;
+    }
     if (accountStateFilter === "banned" && accountState !== "banned") {
       return false;
     }
@@ -9778,6 +9793,7 @@
       restricted: "Restricted",
       banned: "Banned",
       suspended: "Suspended",
+      "pending-review": "Pending",
       "pending-deletion": "Deleting",
       deleted: "Deleted",
     };
@@ -9987,10 +10003,40 @@
 
   // Reads or derives company action definitions for the current super admin flow.
   function getCompanyActionDefinitions(adminId) {
-    const accountState = getCompanyAccountState(findCompanyById(adminId));
+    const company = findCompanyById(adminId);
+    const accountState = getCompanyAccountState(company);
     const isBanned = accountState === "banned";
     const isRestricted = accountState === "restricted";
     const isSuspended = accountState === "suspended";
+    const isPendingReview = accountState === "pending-review";
+    if (isPendingReview) {
+      return [
+        {
+          id: "view",
+          label: "View",
+          icon: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle>',
+          adminId,
+        },
+        {
+          id: "activate-pending",
+          label: "Activate",
+          icon: companyCardIconPaths.power,
+          positive: true,
+          adminId,
+          companyId: company?.companyId || "",
+          control: true,
+        },
+        {
+          id: "reject-pending",
+          label: "Reject",
+          icon: companyCardIconPaths.ban,
+          danger: true,
+          adminId,
+          companyId: company?.companyId || "",
+          control: true,
+        },
+      ];
+    }
     return [
       {
         id: "view",
@@ -10042,8 +10088,17 @@
         adminId,
         control: true,
       },
+      {
+        id: "clear-data",
+        label: "Clear data",
+        icon: activityActionIconPaths.trash,
+        danger: true,
+        adminId,
+        clearAdminId: adminId,
+        control: true,
+      },
     ].filter((action) => {
-      if (isBanned && ["restrict", "unrestrict", "deactivate", "activate"].includes(action.id)) {
+      if (isBanned && ["restrict", "unrestrict", "deactivate", "activate", "clear-data"].includes(action.id)) {
         return false;
       }
       return true;
@@ -10067,6 +10122,9 @@
       "unbanned",
       "deactivate",
       "activate",
+      "activate-pending",
+      "reject-pending",
+      "clear-data",
     ].includes(String(actionId || "").trim().toLowerCase());
   }
 
@@ -10085,6 +10143,9 @@
     actionElement.dataset.companyAction = action.id || action.label.toLowerCase().replace(/\s+/g, "-");
     if (action.adminId) {
       actionElement.dataset.companyId = action.adminId;
+    }
+    if (action.companyId) {
+      actionElement.dataset.pendingCompanyId = action.companyId;
     }
     if (action.clearAdminId) {
       actionElement.dataset.clearAdminId = action.clearAdminId;
@@ -11462,6 +11523,17 @@
     warningDetails.hidden = warningDetails.children.length === 0;
     warningSection.querySelector(".super-admin-company-drawer__warning-copy small").textContent = warningDescriptor.meta;
 
+    const documentsSection = document.createElement("section");
+    documentsSection.className = "super-admin-company-drawer__section";
+    documentsSection.innerHTML = `
+      <div class="super-admin-company-drawer__section-heading">
+        <h3>Business documents</h3>
+      </div>
+      <div class="super-admin-company-drawer__documents" data-company-documents></div>
+    `;
+    const documentsHost = documentsSection.querySelector("[data-company-documents]");
+    void renderCompanyDocumentsSection(documentsHost, admin);
+
     const drawerActionsSection = document.createElement("section");
     drawerActionsSection.className = "super-admin-company-drawer__section super-admin-company-drawer__actions-section";
     drawerActionsSection.innerHTML = `
@@ -11487,8 +11559,136 @@
       overview,
       information,
       warningSection,
+      documentsSection,
       drawerActionsSection,
     );
+  }
+
+  async function renderCompanyDocumentsSection(host, admin) {
+    if (!(host instanceof HTMLElement) || !admin) {
+      return;
+    }
+    const companyKey = String(admin.companyId || getCompanyId(admin) || "").trim();
+    const cachedDocs = Array.isArray(admin.businessDocuments) ? admin.businessDocuments : null;
+    host.innerHTML = `<p class="super-admin-company-drawer__documents-empty">Loading documents...</p>`;
+    let documents = cachedDocs;
+    if (!documents) {
+      try {
+        const response = await fetch(
+          `/api/super-admin/companies/${encodeURIComponent(companyKey)}/documents`,
+          {
+            cache: "no-store",
+            headers: rootHeaders({ Accept: "application/json" }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          documents = Array.isArray(data.documents) ? data.documents : [];
+        } else {
+          documents = [];
+        }
+      } catch (_) {
+        documents = [];
+      }
+    }
+
+    host.innerHTML = "";
+    if (!documents.length) {
+      const empty = document.createElement("p");
+      empty.className = "super-admin-company-drawer__documents-empty";
+      empty.textContent = "No business documents uploaded yet.";
+      host.append(empty);
+      return;
+    }
+
+    for (const doc of documents) {
+      const row = document.createElement("div");
+      row.className = "super-admin-company-drawer__document-row";
+      const status = String(doc.reviewStatus || "pending").toLowerCase();
+      row.innerHTML = `
+        <div class="super-admin-company-drawer__document-copy">
+          <strong></strong>
+          <span></span>
+          <small></small>
+        </div>
+        <div class="super-admin-company-drawer__document-actions"></div>
+      `;
+      row.querySelector("strong").textContent = doc.label || doc.type || "Document";
+      row.querySelector("span").textContent = `Status: ${status}`;
+      row.querySelector("small").textContent = doc.fileName || doc.type || "";
+      const actions = row.querySelector(".super-admin-company-drawer__document-actions");
+      const openLink = document.createElement("a");
+      openLink.href = doc.url;
+      openLink.target = "_blank";
+      openLink.rel = "noopener noreferrer";
+      openLink.textContent = "Open";
+      actions.append(openLink);
+      if (status === "pending") {
+        const approveBtn = document.createElement("button");
+        approveBtn.type = "button";
+        approveBtn.textContent = "Approve";
+        approveBtn.addEventListener("click", () => {
+          void reviewCompanyDocument(companyKey, doc.id, "approved", admin);
+        });
+        const rejectBtn = document.createElement("button");
+        rejectBtn.type = "button";
+        rejectBtn.textContent = "Reject";
+        rejectBtn.addEventListener("click", () => {
+          void reviewCompanyDocument(companyKey, doc.id, "rejected", admin);
+        });
+        actions.append(approveBtn, rejectBtn);
+      }
+      host.append(row);
+    }
+  }
+
+  async function reviewCompanyDocument(companyId, documentId, reviewStatus, admin) {
+    const companyName = getCompanyName(admin);
+    const isApprove = reviewStatus === "approved";
+    if (!await requireSuperAdminFingerprint(
+      isApprove ? `approve document for ${companyName}` : `reject document for ${companyName}`,
+    )) {
+      return;
+    }
+    let reason = "";
+    if (!isApprove) {
+      reason = String(window.prompt("Reason for rejecting this document:", "") || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 500);
+      if (!reason) {
+        setFeedback("Rejection reason is required.", "error");
+        return;
+      }
+    }
+    try {
+      const response = await fetch(
+        `/api/super-admin/companies/${encodeURIComponent(companyId)}/documents/${encodeURIComponent(documentId)}/review`,
+        {
+          method: "POST",
+          headers: rootHeaders({
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({ reviewStatus, reason }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to review document.");
+      }
+      if (Array.isArray(data.documents)) {
+        admin.businessDocuments = data.documents;
+      }
+      lastCompanyDrawerStructuralSignature = "";
+      renderCompanyDrawer(admin);
+      await showSuccessValidationModal(
+        isApprove ? "Document Approved" : "Document Rejected",
+        data.message || `Document ${reviewStatus}.`,
+      );
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Unable to review document.", "error");
+    }
   }
 
   // Reads or derives selected company id set for the current super admin flow.
@@ -26304,21 +26504,45 @@
       setFeedback("Loading companies...");
     }
     try {
-      const response = await fetch("/api/super-admin/admins", {
-        cache: "no-store",
-        headers: rootHeaders({
-          Accept: "application/json",
+      const [adminsResponse, pendingResponse] = await Promise.all([
+        fetch("/api/super-admin/admins", {
+          cache: "no-store",
+          headers: rootHeaders({
+            Accept: "application/json",
+          }),
         }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
+        fetch("/api/super-admin/companies/pending-review", {
+          cache: "no-store",
+          headers: rootHeaders({
+            Accept: "application/json",
+          }),
+        }).catch(() => null),
+      ]);
+      const data = await adminsResponse.json().catch(() => ({}));
+      if (!adminsResponse.ok) {
         throw new Error(data.message || "Unable to load companies.");
       }
 
       const nextAdmins = Array.isArray(data.admins) ? data.admins : [];
+      let pendingCompanies = [];
+      if (pendingResponse) {
+        const pendingData = await pendingResponse.json().catch(() => ({}));
+        if (pendingResponse.ok && Array.isArray(pendingData.companies)) {
+          pendingCompanies = pendingData.companies;
+        }
+      }
+
+      const liveAdminIds = new Set(nextAdmins.map((admin) => getCompanyId(admin)));
+      const pendingOnly = pendingCompanies.filter((entry) => {
+        const accountId = String(entry?.adminId || entry?.id || "").trim();
+        return accountId && !liveAdminIds.has(accountId);
+      });
+
+      const mergedAdmins = [...pendingOnly, ...nextAdmins];
       state.admins = includeFollowers
-        ? nextAdmins
-        : mergeCompanyAdminSnapshots(nextAdmins);
+        ? mergedAdmins
+        : mergeCompanyAdminSnapshots(mergedAdmins);
+      state.pendingReviewCount = pendingCompanies.length;
 
       if (includeFollowers) {
         await loadFollowersCountForAdmins();
@@ -28049,7 +28273,7 @@
   }
 
   // Routes company action menu selections into the correct control flow.
-  async function handleCompanyAction(action, adminId) {
+  async function handleCompanyAction(action, adminId, options = {}) {
     const normalizedAction = String(action || "").trim().toLowerCase();
     const targetAdminIds = getCompanyActionTargetIds(adminId);
 
@@ -28093,9 +28317,158 @@
       return;
     }
 
+    if (normalizedAction === "activate-pending" || normalizedAction === "reject-pending") {
+      await performPendingCompanyReviewAction(normalizedAction, targetAdminIds[0], options);
+      return;
+    }
+
+    if (normalizedAction === "clear-data") {
+      await performCompanyClearDataAction(targetAdminIds[0]);
+      return;
+    }
+
     const admin = findCompanyById(targetAdminIds[0]);
     const label = admin ? getCompanyName(admin) : "company";
     setFeedback(`${label} ${normalizedAction.replace(/-/g, " ")} is not available yet.`, "error");
+  }
+
+  async function performPendingCompanyReviewAction(action, adminId, options = {}) {
+    const company = findCompanyById(adminId);
+    if (!company) {
+      setFeedback("Pending company was not found.", "error");
+      return;
+    }
+    const companyId = String(
+      options.pendingCompanyId ||
+      company.companyId ||
+      "",
+    ).trim();
+    if (!companyId) {
+      setFeedback("Missing company id for pending review action.", "error");
+      return;
+    }
+    const companyName = getCompanyName(company);
+    const isActivate = action === "activate-pending";
+    if (!await requireSuperAdminFingerprint(
+      isActivate ? `activate pending company ${companyName}` : `reject pending company ${companyName}`,
+    )) {
+      return;
+    }
+
+    let reason = "";
+    if (!isActivate) {
+      const confirmed = await showValidationModal({
+        mode: "delete",
+        iconVariant: "delete",
+        title: "Reject pending company",
+        copy: `Reject onboarding for ${companyName}? Enter a reason in the next prompt if needed.`,
+        actionLabel: "Continue",
+        secondaryActionLabel: "Cancel",
+      });
+      if (!confirmed) {
+        return;
+      }
+      reason = String(window.prompt(`Reason for rejecting ${companyName}:`, "") || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 500);
+      if (!reason) {
+        setFeedback("Rejection reason is required.", "error");
+        return;
+      }
+    } else {
+      const confirmed = await showValidationModal({
+        mode: "notice",
+        iconVariant: "notice",
+        title: "Activate pending company",
+        copy: `Activate ${companyName} and grant Seller Mode access?`,
+        actionLabel: "Activate",
+        secondaryActionLabel: "Cancel",
+      });
+      if (!confirmed) {
+        return;
+      }
+      reason = "Approved by Super Admin";
+    }
+
+    setFeedback(isActivate ? `Activating ${companyName}...` : `Rejecting ${companyName}...`);
+    try {
+      const response = await fetch(
+        `/api/super-admin/companies/${encodeURIComponent(companyId)}/${isActivate ? "activate" : "reject"}`,
+        {
+          method: "POST",
+          headers: rootHeaders({
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({ reason }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || `Unable to ${isActivate ? "activate" : "reject"} company.`);
+      }
+      await loadAdmins({ quiet: true });
+      await showSuccessValidationModal(
+        isActivate ? "Company Activated" : "Company Rejected",
+        data.message || (isActivate ? `${companyName} activated.` : `${companyName} rejected.`),
+      );
+      setFeedback("");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Unable to update pending company.", "error");
+    }
+  }
+
+  async function performCompanyClearDataAction(adminId) {
+    const company = findCompanyById(adminId);
+    if (!company) {
+      setFeedback("Company was not found.", "error");
+      return;
+    }
+    if (getCompanyAccountState(company) === "pending-review") {
+      setFeedback("Clear data is only available for activated companies.", "error");
+      return;
+    }
+    const companyName = getCompanyName(company);
+    if (!await requireSuperAdminFingerprint(`clear workspace data for ${companyName}`)) {
+      return;
+    }
+    const confirmed = await showValidationModal({
+      mode: "delete",
+      iconVariant: "delete",
+      title: "Clear company workspace",
+      copy:
+        `Permanently clear products, orders, chats, and partner links for ${companyName}? ` +
+        "The company account stays, but marketplace workspace data is removed.",
+      actionLabel: "Clear data",
+      secondaryActionLabel: "Cancel",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setFeedback(`Clearing workspace for ${companyName}...`);
+    try {
+      const response = await fetch(
+        `/api/super-admin/admins/${encodeURIComponent(adminId)}/data`,
+        {
+          method: "DELETE",
+          headers: rootHeaders({ Accept: "application/json" }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to clear company workspace.");
+      }
+      await loadAdmins({ quiet: true });
+      await showSuccessValidationModal(
+        "Workspace Cleared",
+        data.message || `${companyName} workspace data cleared.`,
+      );
+      setFeedback("");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Unable to clear company workspace.", "error");
+    }
   }
 
   // Applies company filters from controls to state and UI.
@@ -28118,7 +28491,7 @@
   // Normalizes company account filter values used by the sidebar nav.
   function normalizeCompanyAccountFilter(value) {
     const normalizedValue = String(value || "").trim();
-    return ["low-risk", "banned", "restricted", "suspended", "new"].includes(normalizedValue)
+    return ["low-risk", "banned", "restricted", "suspended", "new", "pending-review"].includes(normalizedValue)
       ? normalizedValue
       : "all";
   }
@@ -28127,6 +28500,7 @@
   function getCompanyAccountFilterLabel(value) {
     const normalizedValue = normalizeCompanyAccountFilter(value);
     if (normalizedValue === "new") return "New";
+    if (normalizedValue === "pending-review") return "Pending";
     if (normalizedValue === "low-risk") return "Low Risk";
     if (normalizedValue === "banned") return "Banned";
     if (normalizedValue === "restricted") return "Restriction";
@@ -29620,7 +29994,9 @@
           actionItem.dataset.clearAdminId ||
           actionItem.closest(".super-admin-company-card")?.dataset.companyId ||
           "";
-        void handleCompanyAction(actionItem.dataset.companyAction, actionAdminId);
+        void handleCompanyAction(actionItem.dataset.companyAction, actionAdminId, {
+          pendingCompanyId: actionItem.dataset.pendingCompanyId || "",
+        });
         return;
       }
 
@@ -29745,7 +30121,9 @@
         actionItem.dataset.clearAdminId ||
         state.selectedCompanyId ||
         "";
-      void handleCompanyAction(actionItem.dataset.companyAction, actionAdminId);
+      void handleCompanyAction(actionItem.dataset.companyAction, actionAdminId, {
+        pendingCompanyId: actionItem.dataset.pendingCompanyId || "",
+      });
     }
   });
   elements.paymentPartnerDrawerClose?.addEventListener("click", closeIntegratedDrawers);

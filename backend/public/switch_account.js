@@ -20,6 +20,9 @@
     companyLogoPreviewUrl: "",
     companyLogoUploadedUrl: "",
     companyLogoSkipped: false,
+    businessDocumentFile: null,
+    businessDocumentType: "business_permit",
+    businessDocumentUploadedUrl: "",
     verifyChannel: "email",
     verificationToken: "",
     emailVerified: Boolean(session.emailVerified),
@@ -64,6 +67,11 @@
     companyLogoName: document.querySelector("[data-ba-company-logo-name]"),
     companyLogoStatus: document.querySelector("[data-ba-company-logo-status]"),
     companyLogoRemove: document.querySelector("[data-ba-company-logo-remove]"),
+    documentInput: document.querySelector("[data-ba-document-input]"),
+    documentType: document.querySelector("[data-ba-document-type]"),
+    documentStatus: document.querySelector("[data-ba-document-status]"),
+    documentSelect: document.querySelector("[data-ba-document-select]"),
+    documentRemove: document.querySelector("[data-ba-document-remove]"),
     doneCopy: document.querySelector("[data-ba-done-copy]"),
     openDashboard: document.querySelector("[data-ba-open-dashboard]"),
     deleteModal: document.querySelector("[data-ba-delete-modal]"),
@@ -925,6 +933,47 @@
     return uploadedUrl;
   }
 
+  async function uploadSelectedBusinessDocument() {
+    if (state.businessDocumentUploadedUrl) return state.businessDocumentUploadedUrl;
+    const file = state.businessDocumentFile instanceof File ? state.businessDocumentFile : null;
+    if (!file) return "";
+    const response = await fetch("/api/document-uploads", {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-File-Name": file.name || "business-document",
+      },
+      body: file,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || "Unable to upload business document.");
+    }
+    const uploadedUrl = String(data.documentUrl || "").trim();
+    if (!uploadedUrl) {
+      throw new Error("Document upload did not return a file URL.");
+    }
+    state.businessDocumentUploadedUrl = uploadedUrl;
+    return uploadedUrl;
+  }
+
+  function syncBusinessDocumentUi() {
+    const hasFile = state.businessDocumentFile instanceof File;
+    if (els.documentStatus) {
+      els.documentStatus.textContent = hasFile
+        ? `Selected: ${state.businessDocumentFile.name}`
+        : "PDF or image of your business permit / DTI / SEC helps Super Admin review faster.";
+    }
+    if (els.documentRemove) els.documentRemove.hidden = !hasFile;
+  }
+
+  function clearBusinessDocument() {
+    state.businessDocumentFile = null;
+    state.businessDocumentUploadedUrl = "";
+    if (els.documentInput) els.documentInput.value = "";
+    syncBusinessDocumentUi();
+  }
+
   async function loadPlans() {
     try {
       const payload = await fetchJson("/api/account/seller-plans");
@@ -1250,6 +1299,22 @@
     }
     state.companyId = companyId;
 
+    const documentUrl = await uploadSelectedBusinessDocument();
+    if (documentUrl) {
+      setFeedback(els.wizardFeedback, "Saving business document for review...", null);
+      await fetchJson("/api/account/become-seller/documents", {
+        method: "POST",
+        body: JSON.stringify({
+          accountId: state.accountId,
+          companyId,
+          type: state.businessDocumentType || els.documentType?.value || "business_permit",
+          fileName: state.businessDocumentFile?.name || "",
+          label: state.businessDocumentFile?.name || "",
+          url: documentUrl,
+        }),
+      });
+    }
+
     setFeedback(
       els.wizardFeedback,
       freePlan ? "Activating free seller plan..." : "Confirming prototype subscription...",
@@ -1516,6 +1581,23 @@
 
   els.companyLogoRemove?.addEventListener("click", () => {
     clearCompanyLogo();
+  });
+
+  els.documentSelect?.addEventListener("click", () => els.documentInput?.click());
+  els.documentType?.addEventListener("change", () => {
+    state.businessDocumentType = String(els.documentType.value || "business_permit");
+  });
+  els.documentInput?.addEventListener("change", () => {
+    const file = els.documentInput.files?.[0] || null;
+    els.documentInput.value = "";
+    if (!file) return;
+    state.businessDocumentFile = file;
+    state.businessDocumentUploadedUrl = "";
+    state.businessDocumentType = String(els.documentType?.value || "business_permit");
+    syncBusinessDocumentUi();
+  });
+  els.documentRemove?.addEventListener("click", () => {
+    clearBusinessDocument();
   });
 
   document.querySelector("[data-ba-company-logo-skip]")?.addEventListener("click", () => {
