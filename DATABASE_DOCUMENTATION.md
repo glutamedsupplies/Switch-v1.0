@@ -7,7 +7,7 @@ Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, st
 | Domain | Source of truth when `DATABASE_URL` is set | Fallback / backup |
 | --- | --- | --- |
 | Accounts / auth / trending searches | PostgreSQL (`001`–`012`) | JSON only if Postgres is unset or unreachable |
-| Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`019`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
+| Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`020`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
 | Chat, partners, activity, followers, and similar | JSON files | n/a (Phase B will move chat) |
 
 `npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`.
@@ -34,7 +34,7 @@ backend/data/activity_log.json
 - **Stable IDs:** `products.id`, `product_variants.id`, `order_items.id`, and `orders.id` (`order_group_id`) are application-assigned TEXT keys. JSON string IDs are kept on import and dual-write and are never rewritten when present. Order groups without `orderGroupId` get a deterministic `og_*` from `adminId + accountId + createdAtEpochMs` during JSON import so re-running migrate does not mint a new key. `order_group_id` stays stable across dual-write cutover.
 - **New order groups** that have no prior id receive a server-generated `orderGroupId` (`og_*`). `createdAtEpochMs` is still stored so existing pack/ship/cancel/waybill clients keep working. Those endpoints now accept either `orderGroupId` or `createdAtEpochMs`.
 - **Lifecycle timestamps (Step 5 funnel):** orders/order_items expose `created_at`, `paid_at` (left `toPay` → `toPrepare` / `awaitingWaybill`), `packed_at` (`toShip`), `shipped_at` (`toReceive`), `received_at` (`toReview` / `customerReceivedAtEpochMs`), `cancelled_at`, and `return_requested_at`. Products keep `submitted_at`, `approved_at`, `rejected_at`, plus `listed_at`. Historical JSON that lacks per-stage times may infer `paid_at`/`packed_at` from stage using `created_at`; later explicit stamps are first-write-wins.
-- **Payment + tracking (Step 6 prep):** `orders` / `order_items` have `payment_intent_id`, `payment_checkout_session_id`, `payment_idempotency_key`, `payment_client_key`, `payment_reference`, `payment_provider`, `payment_status`, and `tracking_number`. PayMongo adapters are not wired; unique indexes on intent id and idempotency key are ready for later checkout. Ship may persist `trackingNumber` without requiring it.
+- **Payment + tracking (Step 6 prep):** `orders` / `order_items` have `payment_intent_id`, `payment_checkout_session_id`, `payment_idempotency_key`, `payment_client_key`, `payment_reference`, `payment_provider`, `payment_status`, and `tracking_number`. PayMongo adapters are not wired. `orders` keeps the 019 partial uniques on `payment_intent_id` and `payment_idempotency_key`, plus a 020 composite unique on `(payment_provider, payment_intent_id)` WHERE both are non-empty. The composite does not replace the intent-id unique (same intent cannot appear under two providers). `order_items` is not uniquely indexed: multiple lines in one checkout share the same intent. Ship may persist `trackingNumber` without requiring it.
 - **Tenant scoping:** list/page product and order reads filter by `admin_id` (seller) or `account_id` (buyer). Public product catalog is approved+active only — never another seller's pending listings. Dual-write upserts are session-gated; Postgres deletes are tenant-scoped when `adminId`/`accountId` is passed so one seller cannot wipe another.
 - **Inventory:** `inventory_movements` is the durable ledger. Product `stockHistory` and order `inventoryMovements` remain in JSONB `extra_data` for API compatibility.
 - **Chat is not migrated in this phase.**
@@ -121,7 +121,7 @@ Lifecycle columns on both tables (migration `018`), matching codebase stages `to
 | `return_requested_at` | `returnRequest` |
 | `waybill_printed_at` | `waybillPrintedAtEpochMs` |
 
-Step 6 payment / tracking columns (migration `019`) live on the **group** (`orders`) and are copied onto line items for the flat API:
+Step 6 payment / tracking columns (migration `019`) live on the **group** (`orders`) and are copied onto line items for the flat API. Migration `020` adds `UNIQUE (payment_provider, payment_intent_id) WHERE both <> ''` on `orders` only (keeps 019's intent-id and idempotency uniques):
 
 | Column | Purpose |
 | --- | --- |

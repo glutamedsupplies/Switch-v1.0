@@ -64,6 +64,44 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
   await runMigrations();
   assert.equal(await isCatalogPostgresReady(), true);
 
+  const paymentIndexes = await query(`
+    SELECT tablename, indexname, indexdef
+    FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND tablename IN ('orders', 'order_items')
+      AND (
+        indexname IN (
+          'orders_payment_intent_id_key',
+          'orders_payment_idempotency_key_key',
+          'orders_payment_provider_intent_id_key'
+        )
+        OR (
+          indexdef ILIKE '%UNIQUE%'
+          AND indexdef ILIKE '%payment_intent_id%'
+        )
+      )
+  `);
+  const paymentIndexNames = new Set(
+    paymentIndexes.rows.map((row) => `${row.tablename}.${row.indexname}`),
+  );
+  assert.ok(paymentIndexNames.has("orders.orders_payment_intent_id_key"));
+  assert.ok(paymentIndexNames.has("orders.orders_payment_idempotency_key_key"));
+  assert.ok(paymentIndexNames.has("orders.orders_payment_provider_intent_id_key"));
+  const compositePaymentIndex = paymentIndexes.rows.find(
+    (row) => row.indexname === "orders_payment_provider_intent_id_key",
+  );
+  assert.ok(compositePaymentIndex);
+  assert.match(compositePaymentIndex.indexdef, /UNIQUE/i);
+  assert.match(compositePaymentIndex.indexdef, /payment_provider/i);
+  assert.match(compositePaymentIndex.indexdef, /payment_intent_id/i);
+  assert.match(compositePaymentIndex.indexdef, /payment_provider <> ''/i);
+  assert.match(compositePaymentIndex.indexdef, /payment_intent_id <> ''/i);
+  assert.equal(
+    paymentIndexes.rows.filter((row) => row.tablename === "order_items").length,
+    0,
+    "order_items must not unique (provider, payment_intent_id); lines share checkout intent",
+  );
+
   const lifecycleCols = await query(`
     SELECT table_name, column_name
     FROM information_schema.columns
@@ -349,4 +387,43 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
   );
   assert.ok(payRow.rows.some((row) => row.payment_intent_id === `pi_${suffix}`));
   assert.ok(payRow.rows.some((row) => row.tracking_number === "GMS-TEST"));
+
+  const sharedIntentId = `pi_shared_${suffix}`;
+  await query(
+    `INSERT INTO orders (id, order_group_id, admin_id, account_id, payment_provider, payment_intent_id)
+     VALUES ($1, $1, $2, $3, 'paymongo', $4)`,
+    [`og_uniq_${suffix}`, adminId, accountId, sharedIntentId],
+  );
+  await assert.rejects(
+    () => query(
+      `INSERT INTO orders (id, order_group_id, admin_id, account_id, payment_provider, payment_intent_id)
+       VALUES ($1, $1, $2, $3, 'other_provider', $4)`,
+      [`og_uniq_other_${suffix}`, adminId, accountId, sharedIntentId],
+    ),
+    (error) => /orders_payment_intent_id_key/i.test(String(error.message || error)),
+    "019 unique on payment_intent_id alone must still reject the same intent under another provider",
+  );
+  await assert.rejects(
+    () => query(
+      `INSERT INTO orders (id, order_group_id, admin_id, account_id, payment_provider, payment_intent_id)
+       VALUES ($1, $1, $2, $3, 'paymongo', $4)`,
+      [`og_uniq_same_${suffix}`, adminId, accountId, sharedIntentId],
+    ),
+    (error) => /unique/i.test(String(error.message || error)),
+    "duplicate (payment_provider, payment_intent_id) must still be rejected",
+  );
+  await query(
+    `INSERT INTO order_items (
+       id, order_group_id, admin_id, account_id, payment_provider, payment_intent_id
+     ) VALUES
+       ($1, $3, $4, $5, 'paymongo', $6),
+       ($2, $3, $4, $5, 'paymongo', $6)`,
+    [`itm_a_${suffix}`, `itm_b_${suffix}`, `og_uniq_${suffix}`, adminId, accountId, sharedIntentId],
+  );
+  const sharedItemCount = await query(
+    `SELECT COUNT(*)::int AS total FROM order_items
+     WHERE order_group_id = $1 AND payment_intent_id = $2`,
+    [`og_uniq_${suffix}`, sharedIntentId],
+  );
+  assert.equal(sharedItemCount.rows[0].total, 2);
 });
