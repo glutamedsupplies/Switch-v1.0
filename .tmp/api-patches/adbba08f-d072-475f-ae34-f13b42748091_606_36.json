@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\adbba08f-d072-475f-ae34-f13b42748091\\adbba08f-d072-475f-ae34-f13b42748091.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\main.js",
-  "old": "  window.addEventListener(\"gms:realtime-change\", handleMainRealtimeChange);",
-  "neu": "  window.addEventListener(\"gms:realtime-change\", handleMainRealtimeChange);\n  window.addEventListener(\"gms:platform-settings-changed\", syncAllEmbeddedFrameShellParity);"
-}

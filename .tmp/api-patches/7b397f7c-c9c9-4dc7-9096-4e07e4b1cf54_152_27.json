@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\7b397f7c-c9c9-4dc7-9096-4e07e4b1cf54\\7b397f7c-c9c9-4dc7-9096-4e07e4b1cf54.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\super_admin.js",
-  "old": "    const drawerLayerSelectors = [\n      \"[data-super-admin-company-drawer-backdrop]\",\n      \"[data-super-admin-company-drawer]\",\n      \"[data-super-admin-payment-partner-drawer-backdrop]\",\n      \"[data-super-admin-payment-partner-drawer]\",\n      \"[data-super-admin-delivery-partner-drawer-backdrop]\",\n      \"[data-super-admin-delivery-partner-drawer]\",\n      \"[data-buyer-drawer-backdrop]\",\n      \"[data-buyer-drawer]\",\n    ];",
-  "neu": "    const drawerLayerSelectors = [\n      \"[data-super-admin-company-drawer-backdrop]\",\n      \"[data-super-admin-company-drawer]\",\n      \"[data-super-admin-payment-partner-drawer-backdrop]\",\n      \"[data-super-admin-payment-partner-drawer]\",\n      \"[data-super-admin-delivery-partner-drawer-backdrop]\",\n      \"[data-super-admin-delivery-partner-drawer]\",\n      \"[data-ai-integration-drawer-backdrop]\",\n      \"[data-ai-integration-drawer]\",\n      \"[data-platform-feedback-drawer-backdrop]\",\n      \"[data-platform-feedback-drawer]\",\n      \"[data-buyer-drawer-backdrop]\",\n      \"[data-buyer-drawer]\",\n    ];"
-}

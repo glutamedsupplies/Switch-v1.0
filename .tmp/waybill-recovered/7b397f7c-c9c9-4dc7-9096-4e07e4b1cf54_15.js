@@ -1,1 +1,0 @@
-  const needsWaybill = record.needsWaybill !== false;

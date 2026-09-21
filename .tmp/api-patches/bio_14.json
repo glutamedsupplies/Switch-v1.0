@@ -1,4 +1,0 @@
-{
-  "old": "  if (requestUrl.pathname === \"/api/super-admin/biometric-settings\") {\n    await handleSuperAdminBiometricSettingsApi(request, response);\n    return;\n  }",
-  "neu": "  if (requestUrl.pathname === \"/api/super-admin/biometric-settings\") {\n    await handleSuperAdminBiometricSettingsApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/super-admin/biometric-firmware/compile\") {\n    await handleSuperAdminBiometricFirmwareApi(request, response);\n    return;\n  }"
-}

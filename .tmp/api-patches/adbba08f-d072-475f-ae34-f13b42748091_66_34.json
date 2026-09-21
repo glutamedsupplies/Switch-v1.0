@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\adbba08f-d072-475f-ae34-f13b42748091\\adbba08f-d072-475f-ae34-f13b42748091.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\server.js",
-  "old": "  if (requestUrl.pathname === \"/api/super-admin/product-requests\") {\n    await handleSuperAdminProductRequestsApi(request, response);\n    return;\n  }\n\n  const superAdminAdminActivityMatch = requestUrl.pathname.match(",
-  "neu": "  if (requestUrl.pathname === \"/api/super-admin/product-requests\") {\n    await handleSuperAdminProductRequestsApi(request, response);\n    return;\n  }\n\n  if (requestUrl.pathname === \"/api/super-admin/notifications/read\") {\n    await handleSuperAdminNotificationsReadApi(request, response);\n    return;\n  }\n\n  const superAdminAdminActivityMatch = requestUrl.pathname.match("
-}

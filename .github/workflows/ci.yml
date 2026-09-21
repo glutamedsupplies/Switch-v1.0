@@ -1,0 +1,160 @@
+name: CI
+
+# Flutter buyer + Node seller/super-admin checks. No production deploy.
+# Postgres migrate uses a GitHub Actions service container (no repo secrets).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  path-guards:
+    name: Path guards (.tmp / node_modules)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fail if junk paths are tracked or added
+        run: bash .github/scripts/check-forbidden-paths.sh
+
+  flutter:
+    name: Flutter analyze, test, outdated, web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+      - name: flutter pub outdated
+        run: flutter pub outdated
+      - name: Web build (placeholder Maps key, no secrets)
+        run: |
+          cp web/maps_api_key.example.js web/maps_api_key.js
+          flutter build web --release
+
+  backend:
+    name: Node backend install + test + health smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Health smoke
+        run: bash scripts/ci-health-smoke.sh
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          set -euo pipefail
+          curl -sSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            -o /tmp/gitleaks.tgz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Scan working tree (not git history)
+        run: |
+          # History still contains .tmp chrome profiles until a BFG/filter-repo purge.
+          # Scan the current tree so this job gates new leaks on HEAD.
+          gitleaks detect --source . --no-git --redact --verbose --exit-code 1
+
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+      - name: npm audit (backend, fail on critical)
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=critical
+      - name: npm audit (backend, full report)
+        working-directory: backend
+        run: |
+          if npm audit --omit=dev; then
+            echo "Backend npm audit clean."
+          else
+            echo "::warning::Backend npm audit reported non-critical issues (nodemailer/sharp/uuid). Blocking only on critical until a dedicated bump PR."
+          fi
+      - name: npm audit (repo root lockfile)
+        run: npm audit --omit=dev --audit-level=critical
+
+  postgres-migrate:
+    name: Postgres migrate (CI service)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: switch_ci
+          POSTGRES_PASSWORD: switch_ci
+          POSTGRES_DB: switch_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U switch_ci -d switch_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://switch_ci:switch_ci@127.0.0.1:5432/switch_ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install
+        working-directory: backend
+        run: npm ci
+      - name: Run db:migrate
+        working-directory: backend
+        run: npm run db:migrate

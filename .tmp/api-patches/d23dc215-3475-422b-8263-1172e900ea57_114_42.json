@@ -1,7 +1,0 @@
-{
-  "transcript": "C:\\Users\\pc\\.cursor\\projects\\c-Users-pc-Documents-gms-shopping-app-v1-0-gms-shopping\\agent-transcripts\\d23dc215-3475-422b-8263-1172e900ea57\\d23dc215-3475-422b-8263-1172e900ea57.jsonl",
-  "tool": "StrReplace",
-  "path": "c:\\Users\\pc\\Documents\\gms-shopping-app-v1.0\\gms_shopping\\backend\\public\\admin_biometric_settings.js",
-  "old": "    bindEvents();\n    applySettingsToForm();\n    syncConnectionUi();\n    return true;\n  }",
-  "neu": "    bindEvents();\n    applySettingsToForm();\n    syncSettingsPanel();\n    syncConnectionUi();\n    return true;\n  }\n\n  function syncSettingsPanel() {\n    if (!refs?.settingsPanel || !refs.settingsToggle) {\n      return;\n    }\n    refs.settingsPanel.hidden = !settingsPanelOpen;\n    refs.settingsToggle.setAttribute(\"aria-expanded\", settingsPanelOpen ? \"true\" : \"false\");\n    refs.settingsToggle.title = settingsPanelOpen ? \"Hide settings\" : \"Show settings\";\n    refs.settingsToggle.classList.toggle(\"is-open\", settingsPanelOpen);\n    root.querySelector(\".admin-biometric-settings\")?.classList.toggle(\"is-settings-open\", settingsPanelOpen);\n  }\n\n  function toggleSettingsPanel() {\n    settingsPanelOpen = !settingsPanelOpen;\n    syncSettingsPanel();\n  }"
-}
