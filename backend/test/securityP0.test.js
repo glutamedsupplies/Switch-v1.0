@@ -33,7 +33,11 @@ function mockResponse() {
   };
 }
 
-function signPaymongoBody(rawBody, secret, timestamp = "1710000000") {
+function signPaymongoBody(
+  rawBody,
+  secret,
+  timestamp = String(Math.floor(Date.now() / 1000)),
+) {
   const digest = crypto
     .createHmac("sha256", secret)
     .update(`${timestamp}.${rawBody}`)
@@ -118,6 +122,15 @@ test("PayMongo webhook rejects missing secret, unsigned, and bad signatures", ()
       webhookSecret: TEST_WEBHOOK_SECRET,
     }),
     true,
+  );
+  const stale = signPaymongoBody(rawBody, TEST_WEBHOOK_SECRET, "1710000000");
+  assert.equal(
+    verifyPaymongoWebhook({
+      rawBody,
+      signatureHeader: stale,
+      webhookSecret: TEST_WEBHOOK_SECRET,
+    }),
+    false,
   );
 });
 
@@ -254,6 +267,12 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
       });
       assert.equal(missing.status, 401);
 
+      const missingAnalyticsSummary = await requestHttp(HTTP_PORT, {
+        method: "GET",
+        path: "/api/analytics/summary",
+      });
+      assert.equal(missingAnalyticsSummary.status, 401);
+
       const forged = await requestHttp(HTTP_PORT, {
         method: "GET",
         path: "/api/orders",
@@ -306,6 +325,44 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
         },
       });
       assert.equal(wrongTenant.status, 403);
+    });
+
+    await t.test("partner management requires admin auth but product options remain public", async () => {
+      const liveAuth = createAppSessionAuth({ APP_SESSION_SECRET: TEST_APP_SECRET });
+      const seller = liveAuth.issueSession({
+        accountId: "seller-partners",
+        email: "seller-partners@example.com",
+        role: "seller",
+        adminId: "tenant-partners",
+      });
+      for (const urlPath of ["/api/delivery-partners", "/api/payment-partners"]) {
+        const adminList = await requestHttp(HTTP_PORT, {
+          method: "GET",
+          path: urlPath,
+        });
+        assert.equal(adminList.status, 401, `${urlPath} admin list must require auth`);
+
+        const mutation = await requestHttp(HTTP_PORT, {
+          method: "POST",
+          path: urlPath,
+          body: { branch: "Unauthorized Partner" },
+        });
+        assert.equal(mutation.status, 401, `${urlPath} mutation must require auth`);
+
+        const tenantList = await requestHttp(HTTP_PORT, {
+          method: "GET",
+          path: urlPath,
+          headers: { "x-switch-session": seller.token },
+        });
+        assert.equal(tenantList.status, 200, `${urlPath} signed tenant list must work`);
+
+        const publicOptions = await requestHttp(HTTP_PORT, {
+          method: "GET",
+          path: `${urlPath}?productOptions=1`,
+        });
+        assert.equal(publicOptions.status, 200, `${urlPath} product options must remain public`);
+        assert.ok(Array.isArray(publicOptions.json?.partners));
+      }
     });
 
     await t.test("CORS never reflects * and blocks non-localhost origins", async () => {
@@ -408,6 +465,14 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
       });
       assert.equal(good.status, 200);
       assert.equal(good.json?.ignored, true);
+
+      const buyerUnsigned = await requestHttp(HTTP_PORT, {
+        method: "POST",
+        path: "/api/payments/paymongo/buyer-webhook",
+        headers: { "content-type": "application/json" },
+        body: rawBody,
+      });
+      assert.equal(buyerUnsigned.status, 401);
     });
 
     await t.test("unauthenticated confirm-payment returns 401", async () => {

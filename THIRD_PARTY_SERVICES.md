@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project uses third-party packages and optional integrations, but most business operations are implemented locally. Courier APIs are not integrated. Seller-plan checkout can use PayMongo when `PAYMONGO_SECRET_KEY` is set.
+The project uses third-party packages and optional integrations. Seller and buyer PayMongo checkout are optional. Courier booking uses a provider adapter (manual or Lalamove stub/live-ready).
 
 ## Backend Integrations
 
@@ -22,12 +22,22 @@ The project uses third-party packages and optional integrations, but most busine
 - **Default API URL:** `https://api.openai.com/v1/chat/completions`
 - **Status:** Optional. Disabled when no API key is configured.
 
-### PayMongo (optional seller checkout)
+### PayMongo (optional seller + buyer checkout)
 
 - **Environment variables:** `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET`
-- **Location:** `backend/services/sellerCheckoutGateway.js`, `backend/server.js`
-- **Used for:** Hosted seller-plan checkout sessions and signed webhook activation.
-- **Status:** Optional. Webhook requests are rejected unless `PAYMONGO_WEBHOOK_SECRET` is set and `paymongo-signature` verifies. Unsigned `confirm-payment` cannot activate a seller when PayMongo is enabled.
+- **Location:** `backend/services/sellerCheckoutGateway.js`, `backend/services/buyerCheckoutGateway.js`, `backend/server.js`
+- **Used for:** Hosted seller-plan checkout and buyer order checkout sessions with signed webhooks.
+- **Seller webhook:** `POST /api/payments/paymongo/seller-webhook`
+- **Buyer webhook:** `POST /api/payments/paymongo/buyer-webhook` (provider ledger key `paymongo_buyer`)
+- **Buyer checkout:** `POST /api/orders/checkout-session` (buyer session) → returns `checkoutUrl` when PayMongo is enabled; marks the order paid locally when keys are unset (`provider: manual`)
+- **Status:** Optional. Live when credentials are configured. Unsigned client confirm cannot mark buyer orders paid when PayMongo is enabled — webhook is source of truth.
+
+### Courier provider adapter (optional)
+
+- **Environment variables:** `COURIER_PROVIDER` (`manual` \| `lalamove`), `LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET`, `LALAMOVE_WEBHOOK_SECRET`
+- **Location:** `backend/services/courierProviderAdapter.js`, `backend/server.js`
+- **Endpoints:** `POST /api/orders/{groupId}/shipments`; ship flow auto-creates a Lalamove stub tracking number when `COURIER_PROVIDER=lalamove` and no tracking is supplied
+- **Status:** Adapter is wired. Without live Lalamove credentials, shipments return deterministic stub tracking (`LALA-…`). Manual mode keeps existing local waybill + optional tracking entry.
 
 ### Face Attendance Local Integration
 
@@ -96,13 +106,13 @@ The admin pages use iconography and inline SVG/icon patterns. Some pages include
 
 - **Location:** `payment_partners.json`, `backend/public/payment_partners.*`, Flutter payment partner repository/model.
 - **Purpose:** Configurable payment options shown in checkout and product management.
-- **Status:** Internal records only. No live payment gateway API, webhook, or settlement callback was found.
+- **Status:** Partner catalog remains local. Full-payment buyer orders call `POST /api/orders/checkout-session` and PayMongo hosted checkout when configured; COD deposit flow stays local.
 
 ## Delivery Partners
 
-- **Location:** `delivery_partners.json`, `backend/public/delivery_partners.*`, Flutter delivery partner repository/model.
+- **Location:** `delivery_partners.json`, `backend/public/delivery_partners.*`, Flutter delivery partner repository/model, `courierProviderAdapter.js`.
 - **Purpose:** Configurable courier/delivery options shown in checkout and product management.
-- **Status:** Internal records only. No live courier API, shipping label, or tracking webhook integration was found.
+- **Status:** Partner catalog remains local. Shipments can mint tracking via `POST /api/orders/{groupId}/shipments` (`COURIER_PROVIDER=lalamove` stub without live keys). Local waybill print remains available.
 
 ## Email Services
 
@@ -120,7 +130,6 @@ Only the optional OpenAI-compatible chat reply integration was found. Visual sea
 
 - Add secret management for AI/API keys.
 - Move uploaded files to cloud object storage with signed URLs.
-- Add real payment gateway integration if payment capture is required.
-- Add courier API integration if live tracking is required.
+- Complete live Lalamove market signing when production courier credentials are available.
 - Add an email/SMS provider for account verification, receipts, and status updates.
 

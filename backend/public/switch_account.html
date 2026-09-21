@@ -628,6 +628,28 @@
                 <button type="button" class="admin-signup-logo-action" data-ba-company-logo-skip>Skip for now</button>
               </div>
             </div>
+
+            <div class="ba-company-documents" data-ba-company-documents>
+              <label class="admin-signup-field">
+                <span>Business document (optional)</span>
+                <span class="admin-signup-field__control admin-signup-field__control--plain">
+                  <select data-ba-document-type>
+                    <option value="business_permit">Business Permit</option>
+                    <option value="dti">DTI Registration</option>
+                    <option value="sec">SEC Registration</option>
+                    <option value="bir">BIR / TIN</option>
+                    <option value="valid_id">Valid ID</option>
+                    <option value="other">Other</option>
+                  </select>
+                </span>
+              </label>
+              <input type="file" accept=".pdf,.doc,.docx,image/*" data-ba-document-input hidden />
+              <div class="admin-signup-logo-card__actions">
+                <button type="button" class="admin-signup-logo-action" data-ba-document-select>Upload document</button>
+                <button type="button" class="admin-signup-logo-action admin-signup-logo-action--remove" data-ba-document-remove hidden>Remove</button>
+              </div>
+              <p class="ba-muted" data-ba-document-status>PDF or image of your business permit / DTI / SEC helps Super Admin review faster.</p>
+            </div>
           </div>
           <div class="ba-wizard__actions">
             <button type="button" class="ba-secondary-btn" data-ba-back>Back</button>

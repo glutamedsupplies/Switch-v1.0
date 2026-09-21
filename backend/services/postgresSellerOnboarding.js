@@ -742,6 +742,90 @@ async function findSellerCheckoutIntentByPaymentReference(paymentReference) {
   };
 }
 
+async function claimPaymentWebhookEvent({
+  provider,
+  eventId,
+  eventType = "",
+  livemode = false,
+  payloadHash = "",
+}) {
+  const normalizedProvider = String(provider ?? "").trim().toLowerCase();
+  const normalizedEventId = String(eventId ?? "").trim();
+  if (!normalizedProvider || !normalizedEventId) {
+    return { claimed: true, tracked: false };
+  }
+
+  const result = await query(
+    `
+      INSERT INTO payment_webhook_events (
+        provider,
+        event_id,
+        event_type,
+        livemode,
+        payload_hash,
+        status,
+        attempts,
+        received_at,
+        processed_at,
+        last_error
+      ) VALUES ($1, $2, $3, $4, $5, 'processing', 1, NOW(), NULL, '')
+      ON CONFLICT (provider, event_id) DO UPDATE SET
+        event_type = EXCLUDED.event_type,
+        livemode = EXCLUDED.livemode,
+        payload_hash = EXCLUDED.payload_hash,
+        status = 'processing',
+        attempts = payment_webhook_events.attempts + 1,
+        received_at = NOW(),
+        processed_at = NULL,
+        last_error = ''
+      WHERE payment_webhook_events.status = 'failed'
+         OR (
+           payment_webhook_events.status = 'processing'
+           AND payment_webhook_events.received_at < NOW() - INTERVAL '10 minutes'
+         )
+      RETURNING provider, event_id, attempts
+    `,
+    [
+      normalizedProvider,
+      normalizedEventId,
+      String(eventType ?? "").trim().slice(0, 180),
+      livemode === true,
+      String(payloadHash ?? "").trim().slice(0, 128),
+    ],
+  );
+
+  return {
+    claimed: result.rowCount > 0,
+    tracked: true,
+    attempts: Number(result.rows[0]?.attempts) || 0,
+  };
+}
+
+async function finishPaymentWebhookEvent({ provider, eventId, error = "" }) {
+  const normalizedProvider = String(provider ?? "").trim().toLowerCase();
+  const normalizedEventId = String(eventId ?? "").trim();
+  if (!normalizedProvider || !normalizedEventId) {
+    return;
+  }
+  const lastError = String(error ?? "").trim().slice(0, 1000);
+  await query(
+    `
+      UPDATE payment_webhook_events
+      SET
+        status = $3,
+        processed_at = CASE WHEN $3 = 'processed' THEN NOW() ELSE NULL END,
+        last_error = $4
+      WHERE provider = $1 AND event_id = $2
+    `,
+    [
+      normalizedProvider,
+      normalizedEventId,
+      lastError ? "failed" : "processed",
+      lastError,
+    ],
+  );
+}
+
 async function confirmSellerOnboarding(input = {}) {
   const { session, account } = await findAccountForOnboarding(input);
   const companyId = String(input.companyId ?? "").trim();
@@ -903,90 +987,12 @@ async function confirmSellerOnboarding(input = {}) {
     }
 
     if (shouldActivate) {
-      await client.query(
-        `
-          INSERT INTO account_capabilities (
-            account_id,
-            capability,
-            granted_reason,
-            metadata,
-            granted_at,
-            updated_at
-          ) VALUES (
-            $1,
-            'seller_admin',
-            'seller_subscription_activated',
-            $2::jsonb,
-            NOW(),
-            NOW()
-          )
-          ON CONFLICT (account_id, capability) DO UPDATE SET
-            metadata = EXCLUDED.metadata,
-            updated_at = NOW()
-        `,
-        [
-          account.id,
-          JSON.stringify({
-            companyId: company,
-            activatedAt: new Date().toISOString(),
-          }),
-        ],
-      );
-
-      const companyRow = await client.query(
-        `
-          SELECT name, business_type, logo_url, profile_data
-          FROM companies
-          WHERE id = $1
-          LIMIT 1
-        `,
-        [company],
-      );
-      const companyMeta = companyRow.rows[0] || {};
-      const profileExtra = asObject(companyMeta.profile_data);
-
-      await client.query(
-        `
-          INSERT INTO seller_profiles (
-            account_id, admin_id, store_name, store_type,
-            plan_name, plan_status, first_name, middle_name, last_name, suffix,
-            profile_data, created_at, updated_at
-          ) VALUES (
-            $1, $1, $2, $3,
-            $4, 'active', $5, '', $6, '',
-            $7::jsonb, NOW(), NOW()
-          )
-          ON CONFLICT (account_id) DO UPDATE SET
-            store_name = EXCLUDED.store_name,
-            store_type = EXCLUDED.store_type,
-            plan_name = EXCLUDED.plan_name,
-            plan_status = 'active',
-            profile_data = seller_profiles.profile_data || EXCLUDED.profile_data,
-            updated_at = NOW()
-        `,
-        [
-          account.id,
-          String(companyMeta.name || "Seller company").trim() || "Seller company",
-          String(companyMeta.business_type || "").trim(),
-          planName,
-          account.firstName || "",
-          account.lastName || "",
-          JSON.stringify({
-            companyName: companyMeta.name || "",
-            storeName: companyMeta.name || "",
-            businessType: companyMeta.business_type || "",
-            logoUrl: companyMeta.logo_url || "",
-            onboardingSource: "buyer_upgrade",
-            paymentCard: profileExtra.paymentCard || null,
-            ...(profileExtra.sellerPinHash
-              ? { sellerPinHash: profileExtra.sellerPinHash }
-              : {}),
-            ...(profileExtra.businessLogoSkipped === true
-              ? { businessLogoSkipped: true }
-              : {}),
-          }),
-        ],
-      );
+      await grantSellerAdminAccess(client, {
+        account,
+        companyId: company,
+        planName,
+        grantedReason: "seller_subscription_activated",
+      });
     }
   });
 
@@ -1000,6 +1006,745 @@ async function confirmSellerOnboarding(input = {}) {
       activeMode: shouldActivate ? "seller_admin" : "buyer",
       companyId: company,
     }),
+  };
+}
+
+async function grantSellerAdminAccess(client, {
+  account,
+  companyId,
+  planName = "Starter Seller Plan",
+  grantedReason = "seller_subscription_activated",
+}) {
+  await client.query(
+    `
+      UPDATE accounts
+      SET
+        role = CASE WHEN role = 'user' THEN 'admin'::account_role ELSE role END,
+        updated_at = NOW()
+      WHERE id = $1
+    `,
+    [account.id],
+  );
+
+  await client.query(
+    `
+      INSERT INTO account_capabilities (
+        account_id,
+        capability,
+        granted_reason,
+        metadata,
+        granted_at,
+        updated_at
+      ) VALUES (
+        $1,
+        'seller_admin',
+        $2,
+        $3::jsonb,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (account_id, capability) DO UPDATE SET
+        metadata = EXCLUDED.metadata,
+        granted_reason = EXCLUDED.granted_reason,
+        updated_at = NOW()
+    `,
+    [
+      account.id,
+      grantedReason,
+      JSON.stringify({
+        companyId,
+        activatedAt: new Date().toISOString(),
+      }),
+    ],
+  );
+
+  const companyRow = await client.query(
+    `
+      SELECT name, business_type, logo_url, profile_data
+      FROM companies
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [companyId],
+  );
+  const companyMeta = companyRow.rows[0] || {};
+  const profileExtra = asObject(companyMeta.profile_data);
+
+  await client.query(
+    `
+      INSERT INTO seller_profiles (
+        account_id, admin_id, store_name, store_type,
+        plan_name, plan_status, first_name, middle_name, last_name, suffix,
+        profile_data, created_at, updated_at
+      ) VALUES (
+        $1, $1, $2, $3,
+        $4, 'active', $5, '', $6, '',
+        $7::jsonb, NOW(), NOW()
+      )
+      ON CONFLICT (account_id) DO UPDATE SET
+        store_name = EXCLUDED.store_name,
+        store_type = EXCLUDED.store_type,
+        plan_name = EXCLUDED.plan_name,
+        plan_status = 'active',
+        profile_data = seller_profiles.profile_data || EXCLUDED.profile_data,
+        updated_at = NOW()
+    `,
+    [
+      account.id,
+      String(companyMeta.name || "Seller company").trim() || "Seller company",
+      String(companyMeta.business_type || "").trim(),
+      planName,
+      account.firstName || account.first_name || "",
+      account.lastName || account.last_name || "",
+      JSON.stringify({
+        companyName: companyMeta.name || "",
+        storeName: companyMeta.name || "",
+        businessType: companyMeta.business_type || "",
+        logoUrl: companyMeta.logo_url || "",
+        onboardingSource: "buyer_upgrade",
+        paymentCard: profileExtra.paymentCard || null,
+        ...(profileExtra.sellerPinHash
+          ? { sellerPinHash: profileExtra.sellerPinHash }
+          : {}),
+        ...(profileExtra.businessLogoSkipped === true
+          ? { businessLogoSkipped: true }
+          : {}),
+        ...(Array.isArray(profileExtra.businessDocuments)
+          ? { businessDocuments: profileExtra.businessDocuments }
+          : {}),
+      }),
+    ],
+  );
+}
+
+async function listPendingReviewCompanies() {
+  if (!(await isSellerOnboardingReady())) {
+    return [];
+  }
+
+  const result = await query(
+    `
+      SELECT
+        c.id,
+        c.company_code,
+        c.status::text AS status,
+        c.name,
+        c.legal_name,
+        c.public_name,
+        c.email,
+        c.country_code,
+        c.mobile_number,
+        c.logo_url,
+        c.business_type,
+        c.subscription_status::text AS subscription_status,
+        c.verification_status,
+        c.profile_data,
+        c.source_account_id,
+        c.created_at,
+        c.updated_at,
+        a.email AS account_email,
+        a.first_name,
+        a.last_name,
+        a.email_verified,
+        a.mobile_verified,
+        ss.plan_name,
+        ss.amount,
+        ss.currency_code,
+        ss.payment_reference
+      FROM companies c
+      LEFT JOIN accounts a ON a.id = c.source_account_id
+      LEFT JOIN LATERAL (
+        SELECT plan_name, amount, currency_code, payment_reference
+        FROM seller_subscriptions
+        WHERE company_id = c.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) ss ON TRUE
+      WHERE c.type = 'seller'
+        AND c.status = 'pending_review'
+      ORDER BY c.updated_at DESC, c.created_at DESC
+    `,
+  );
+
+  return result.rows.map((row) => {
+    const profileData = asObject(row.profile_data);
+    const companyName = String(row.name || row.public_name || "Seller company").trim();
+    return {
+      id: row.source_account_id || row.id,
+      adminId: row.source_account_id || row.id,
+      companyId: row.id,
+      companyCode: row.company_code || "",
+      companyName,
+      storeName: companyName,
+      businessName: companyName,
+      email: row.account_email || row.email || "",
+      countryCode: row.country_code || "+63",
+      mobileNumber: row.mobile_number || "",
+      logoUrl: row.logo_url || "",
+      companyPictureUrl: row.logo_url || "",
+      storeType: row.business_type || "",
+      businessType: row.business_type || "",
+      status: "pending_review",
+      accountStatus: "pending_review",
+      accountState: "pending-review",
+      planName: row.plan_name || profileData.planName || "Starter Seller Plan",
+      planStatus: row.subscription_status || "pending_review",
+      verificationStatus: row.verification_status || "pending_review",
+      emailVerified: Boolean(row.email_verified),
+      mobileVerified: Boolean(row.mobile_verified),
+      displayName: [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || companyName,
+      firstName: row.first_name || "",
+      lastName: row.last_name || "",
+      paymentReference: row.payment_reference || "",
+      planAmount: Number(row.amount) || 0,
+      currencyCode: row.currency_code || "PHP",
+      businessDocuments: normalizeBusinessDocuments(profileData.businessDocuments),
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+      updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+      isPendingReviewCompany: true,
+      counts: {
+        products: 0,
+        employees: 0,
+        orders: 0,
+        chatThreads: 0,
+        rating: 0,
+        reviewCount: 0,
+      },
+    };
+  });
+}
+
+async function findCompanyById(companyId) {
+  const normalizedId = String(companyId || "").trim();
+  if (!normalizedId) {
+    return null;
+  }
+  const result = await query(
+    `
+      SELECT
+        c.id,
+        c.company_code,
+        c.type::text AS type,
+        c.status::text AS status,
+        c.name,
+        c.legal_name,
+        c.public_name,
+        c.email,
+        c.country_code,
+        c.mobile_number,
+        c.logo_url,
+        c.business_type,
+        c.subscription_status::text AS subscription_status,
+        c.verification_status,
+        c.profile_data,
+        c.source_account_id,
+        c.created_at,
+        c.updated_at
+      FROM companies c
+      WHERE c.id = $1
+        AND c.type = 'seller'
+      LIMIT 1
+    `,
+    [normalizedId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    companyCode: row.company_code || "",
+    type: row.type,
+    status: row.status,
+    name: row.name || "",
+    legalName: row.legal_name || "",
+    publicName: row.public_name || "",
+    email: row.email || "",
+    countryCode: row.country_code || "+63",
+    mobileNumber: row.mobile_number || "",
+    logoUrl: row.logo_url || "",
+    businessType: row.business_type || "",
+    subscriptionStatus: row.subscription_status || "draft",
+    verificationStatus: row.verification_status || "unverified",
+    profileData: asObject(row.profile_data),
+    sourceAccountId: row.source_account_id,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+  };
+}
+
+function normalizeBusinessDocuments(rawDocuments) {
+  const list = Array.isArray(rawDocuments) ? rawDocuments : [];
+  return list
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const id = String(entry.id || "").trim();
+      const url = String(entry.url || entry.documentUrl || "").trim();
+      if (!id || !url) {
+        return null;
+      }
+      return {
+        id,
+        type: String(entry.type || "business_permit").trim().toLowerCase() || "business_permit",
+        label: String(entry.label || entry.fileName || "Business document").replace(/\s+/g, " ").trim().slice(0, 160),
+        fileName: String(entry.fileName || "").trim().slice(0, 200),
+        url,
+        uploadedAt: String(entry.uploadedAt || "").trim() || new Date().toISOString(),
+        uploadedBy: String(entry.uploadedBy || "").trim(),
+        reviewStatus: ["pending", "approved", "rejected"].includes(String(entry.reviewStatus || "").trim().toLowerCase())
+          ? String(entry.reviewStatus).trim().toLowerCase()
+          : "pending",
+        reviewedAt: String(entry.reviewedAt || "").trim(),
+        reviewedBy: String(entry.reviewedBy || "").trim(),
+        reviewReason: String(entry.reviewReason || "").replace(/\s+/g, " ").trim().slice(0, 500),
+      };
+    })
+    .filter(Boolean);
+}
+
+const BUSINESS_DOCUMENT_TYPES = new Set([
+  "business_permit",
+  "dti",
+  "sec",
+  "bir",
+  "valid_id",
+  "other",
+]);
+
+async function addCompanyBusinessDocument({
+  companyId,
+  accountId,
+  type = "business_permit",
+  label = "",
+  fileName = "",
+  url = "",
+  uploadedBy = "",
+}) {
+  if (!(await isSellerOnboardingReady())) {
+    const error = new Error("Seller onboarding storage is unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const company = await findCompanyById(companyId);
+  if (!company) {
+    const error = new Error("Company not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const ownerId = String(company.sourceAccountId || "").trim();
+  const requesterId = String(accountId || "").trim();
+  if (ownerId && requesterId && ownerId !== requesterId) {
+    const error = new Error("You can only upload documents for your own company.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const documentUrl = String(url || "").trim();
+  if (!documentUrl) {
+    const error = new Error("Document URL is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedType = String(type || "business_permit").trim().toLowerCase();
+  if (!BUSINESS_DOCUMENT_TYPES.has(normalizedType)) {
+    const error = new Error("Unsupported business document type.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  const document = {
+    id: `bizdoc-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    type: normalizedType,
+    label: String(label || fileName || normalizedType.replace(/_/g, " ")).replace(/\s+/g, " ").trim().slice(0, 160),
+    fileName: String(fileName || "").trim().slice(0, 200),
+    url: documentUrl,
+    uploadedAt: now,
+    uploadedBy: String(uploadedBy || requesterId || ownerId || "").trim(),
+    reviewStatus: "pending",
+    reviewedAt: "",
+    reviewedBy: "",
+    reviewReason: "",
+  };
+
+  const nextDocuments = [
+    document,
+    ...normalizeBusinessDocuments(company.profileData.businessDocuments).filter(
+      (entry) => entry.type !== document.type || entry.reviewStatus === "approved",
+    ),
+  ].slice(0, 20);
+
+  await query(
+    `
+      UPDATE companies
+      SET
+        profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+        verification_status = CASE
+          WHEN verification_status IN ('verified', 'approved') THEN verification_status
+          ELSE 'pending_review'
+        END,
+        updated_at = NOW()
+      WHERE id = $1
+    `,
+    [
+      company.id,
+      JSON.stringify({
+        businessDocuments: nextDocuments,
+        lastBusinessDocumentUploadedAt: now,
+      }),
+    ],
+  );
+
+  return {
+    companyId: company.id,
+    document,
+    documents: nextDocuments,
+  };
+}
+
+async function reviewCompanyBusinessDocument({
+  companyId,
+  documentId,
+  reviewStatus,
+  reviewReason = "",
+  reviewedBy = "",
+}) {
+  if (!(await isSellerOnboardingReady())) {
+    const error = new Error("Seller onboarding storage is unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const company = await findCompanyById(companyId);
+  if (!company) {
+    const error = new Error("Company not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const normalizedStatus = String(reviewStatus || "").trim().toLowerCase();
+  if (!["approved", "rejected"].includes(normalizedStatus)) {
+    const error = new Error("Document review status must be approved or rejected.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const documents = normalizeBusinessDocuments(company.profileData.businessDocuments);
+  const targetId = String(documentId || "").trim();
+  const index = documents.findIndex((entry) => entry.id === targetId);
+  if (index < 0) {
+    const error = new Error("Business document not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  documents[index] = {
+    ...documents[index],
+    reviewStatus: normalizedStatus,
+    reviewedAt: now,
+    reviewedBy: String(reviewedBy || "").trim(),
+    reviewReason: String(reviewReason || "").replace(/\s+/g, " ").trim().slice(0, 500),
+  };
+
+  const hasApproved = documents.some((entry) => entry.reviewStatus === "approved");
+  const allRejected = documents.length > 0 && documents.every((entry) => entry.reviewStatus === "rejected");
+
+  await query(
+    `
+      UPDATE companies
+      SET
+        profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+        verification_status = CASE
+          WHEN $3::boolean THEN 'verified'
+          WHEN $4::boolean THEN 'rejected'
+          ELSE COALESCE(NULLIF(verification_status, ''), 'pending_review')
+        END,
+        updated_at = NOW()
+      WHERE id = $1
+    `,
+    [
+      company.id,
+      JSON.stringify({
+        businessDocuments: documents,
+        lastBusinessDocumentReviewedAt: now,
+      }),
+      hasApproved,
+      allRejected,
+    ],
+  );
+
+  return {
+    companyId: company.id,
+    document: documents[index],
+    documents,
+    sourceAccountId: company.sourceAccountId,
+    companyName: company.name || "Seller company",
+  };
+}
+
+async function activatePendingReviewCompany({
+  companyId,
+  approvedBy = "super-admin",
+  reason = "",
+} = {}) {
+  if (!(await isSellerOnboardingReady())) {
+    const error = new Error("Seller onboarding storage is unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const company = await findCompanyById(companyId);
+  if (!company) {
+    const error = new Error("Company not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (company.status !== "pending_review") {
+    const error = new Error("Only pending review companies can be activated from this queue.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const accountId = String(company.sourceAccountId || "").trim();
+  if (!accountId) {
+    const error = new Error("Company has no source account to activate.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const accountResult = await query(
+    `
+      SELECT
+        id,
+        email,
+        country_code,
+        mobile_number,
+        email_verified,
+        mobile_verified,
+        first_name,
+        last_name
+      FROM accounts
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [accountId],
+  );
+  const accountRow = accountResult.rows[0];
+  if (!accountRow) {
+    const error = new Error("Source account for this company was not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const subscription = await findSellerSubscriptionByCompany(company.id);
+  const planName = subscription?.planName || company.profileData.planName || "Starter Seller Plan";
+  const approvalReason = String(reason || "Approved by Super Admin").replace(/\s+/g, " ").trim().slice(0, 500);
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `
+        UPDATE companies
+        SET
+          status = 'active'::company_status,
+          subscription_status = 'active'::subscription_status,
+          verification_status = 'verified',
+          profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          activatedBySuperAdminAt: new Date().toISOString(),
+          activatedBySuperAdmin: approvedBy,
+          activationReason: approvalReason,
+        }),
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE company_memberships
+        SET
+          membership_status = 'active'::account_status,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+          AND account_id = $3
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          onboardingStage: "active",
+          activatedBySuperAdmin: approvedBy,
+        }),
+        accountId,
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE seller_subscriptions
+        SET
+          status = 'active'::subscription_status,
+          approved_at = COALESCE(approved_at, NOW()),
+          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          activatedBySuperAdmin: approvedBy,
+          activationReason: approvalReason,
+        }),
+      ],
+    );
+
+    await grantSellerAdminAccess(client, {
+      account: {
+        id: accountRow.id,
+        firstName: accountRow.first_name || "",
+        lastName: accountRow.last_name || "",
+      },
+      companyId: company.id,
+      planName,
+      grantedReason: "super_admin_pending_review_activation",
+    });
+  });
+
+  return {
+    active: true,
+    company: await findCompanyById(company.id),
+    accountId,
+    companyName: company.name || "Seller company",
+    reason: approvalReason,
+  };
+}
+
+async function rejectPendingReviewCompany({
+  companyId,
+  rejectedBy = "super-admin",
+  reason = "",
+} = {}) {
+  if (!(await isSellerOnboardingReady())) {
+    const error = new Error("Seller onboarding storage is unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const company = await findCompanyById(companyId);
+  if (!company) {
+    const error = new Error("Company not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (company.status !== "pending_review") {
+    const error = new Error("Only pending review companies can be rejected from this queue.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rejectionReason = String(reason || "Rejected by Super Admin").replace(/\s+/g, " ").trim().slice(0, 500);
+  if (!rejectionReason) {
+    const error = new Error("Rejection reason is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `
+        UPDATE companies
+        SET
+          status = 'deactivated'::company_status,
+          subscription_status = 'cancelled'::subscription_status,
+          verification_status = 'rejected',
+          profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          rejectedBySuperAdminAt: new Date().toISOString(),
+          rejectedBySuperAdmin: rejectedBy,
+          rejectionReason,
+        }),
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE company_memberships
+        SET
+          membership_status = 'deactivated'::account_status,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          onboardingStage: "rejected",
+          rejectionReason,
+        }),
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE seller_subscriptions
+        SET
+          status = 'cancelled'::subscription_status,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          rejectedBySuperAdmin: rejectedBy,
+          rejectionReason,
+        }),
+      ],
+    );
+  });
+
+  return {
+    active: false,
+    company: await findCompanyById(company.id),
+    accountId: company.sourceAccountId,
+    companyName: company.name || "Seller company",
+    reason: rejectionReason,
+  };
+}
+
+async function getCompanyDocumentsForAdmin(companyIdOrAccountId) {
+  const normalized = String(companyIdOrAccountId || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  let company = await findCompanyById(normalized);
+  if (!company) {
+    company = await findSellerCompanyByAccount(normalized);
+  }
+  if (!company) {
+    return null;
+  }
+  return {
+    companyId: company.id,
+    companyName: company.name || "Seller company",
+    sourceAccountId: company.sourceAccountId || company.source_account_id || "",
+    status: company.status,
+    verificationStatus: company.verificationStatus,
+    documents: normalizeBusinessDocuments(company.profileData?.businessDocuments),
   };
 }
 
@@ -1329,15 +2074,170 @@ function checkSellerSwitchPinUnlock({ token, accountId, companyId }) {
   };
 }
 
+const ENFORCEMENT_COMPANY_STATUSES = new Set([
+  "active",
+  "restricted",
+  "banned",
+  "deactivated",
+  "pending_review",
+]);
+
+function resolveEnforcementMembershipStatus(companyStatus) {
+  switch (companyStatus) {
+    case "active":
+      return "active";
+    case "pending_review":
+      return "pending";
+    case "restricted":
+      return "restricted";
+    case "banned":
+      return "banned";
+    case "deactivated":
+      return "deactivated";
+    default:
+      return "suspended";
+  }
+}
+
+async function syncSellerCompanyEnforcementStatus(accountId, options = {}) {
+  if (!(await isSellerOnboardingReady())) {
+    return null;
+  }
+
+  const normalizedAccountId = String(accountId || "").trim();
+  const companyStatus = String(options.companyStatus || "").trim().toLowerCase();
+  if (!normalizedAccountId || !ENFORCEMENT_COMPANY_STATUSES.has(companyStatus)) {
+    return null;
+  }
+
+  const company = await findSellerCompanyByAccount(normalizedAccountId);
+  if (!company?.id) {
+    return null;
+  }
+
+  const membershipStatus = String(options.membershipStatus || "")
+    .trim()
+    .toLowerCase() || resolveEnforcementMembershipStatus(companyStatus);
+  const shouldUpdateSubscription = Object.prototype.hasOwnProperty.call(options, "subscriptionStatus");
+  const subscriptionStatus = String(options.subscriptionStatus || "").trim().toLowerCase();
+  const verificationStatus = String(options.verificationStatus || "").trim();
+  const reason = String(options.reason || "").replace(/\s+/g, " ").trim().slice(0, 500);
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `
+        UPDATE companies
+        SET
+          status = $2::company_status,
+          subscription_status = CASE
+            WHEN $3::boolean AND $4::text IN (
+              'active', 'pending_review', 'pending_payment', 'expired', 'cancelled', 'past_due', 'draft'
+            )
+              THEN $4::subscription_status
+            ELSE subscription_status
+          END,
+          verification_status = CASE
+            WHEN NULLIF($5, '') IS NOT NULL THEN $5
+            ELSE verification_status
+          END,
+          profile_data = COALESCE(profile_data, '{}'::jsonb) || $6::jsonb,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        company.id,
+        companyStatus,
+        shouldUpdateSubscription,
+        subscriptionStatus || null,
+        verificationStatus,
+        JSON.stringify({
+          lastEnforcementStatus: companyStatus,
+          lastEnforcementReason: reason,
+          lastEnforcementAt: new Date().toISOString(),
+        }),
+      ],
+    );
+
+    await client.query(
+      `
+        UPDATE company_memberships
+        SET
+          membership_status = $2::account_status,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+          AND account_id = $4
+      `,
+      [
+        company.id,
+        membershipStatus,
+        JSON.stringify({
+          lastEnforcementStatus: companyStatus,
+          lastEnforcementReason: reason,
+        }),
+        normalizedAccountId,
+      ],
+    );
+
+    if (
+      shouldUpdateSubscription &&
+      ["active", "pending_review", "expired", "cancelled", "past_due", "pending_payment", "draft"].includes(
+        subscriptionStatus,
+      )
+    ) {
+      await client.query(
+        `
+          UPDATE seller_subscriptions
+          SET
+            status = $2::subscription_status,
+            approved_at = CASE
+              WHEN $2::text = 'active' THEN COALESCE(approved_at, NOW())
+              ELSE approved_at
+            END,
+            metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+            updated_at = NOW()
+          WHERE company_id = $1
+        `,
+        [
+          company.id,
+          subscriptionStatus,
+          JSON.stringify({
+            lastEnforcementStatus: companyStatus,
+            lastEnforcementReason: reason,
+          }),
+        ],
+      );
+    }
+  });
+
+  return {
+    ...company,
+    status: companyStatus,
+    subscriptionStatus: shouldUpdateSubscription ? subscriptionStatus : company.subscriptionStatus,
+    verificationStatus: verificationStatus || company.verificationStatus,
+  };
+}
+
 module.exports = {
   isSellerOnboardingReady,
   startSellerOnboarding,
   createSellerCheckoutIntent,
   updateSellerCheckoutIntentGatewayState,
   findSellerCheckoutIntentByPaymentReference,
+  claimPaymentWebhookEvent,
+  finishPaymentWebhookEvent,
   confirmSellerOnboarding,
   findSellerCompanyByAccount,
+  findCompanyById,
+  listPendingReviewCompanies,
+  activatePendingReviewCompany,
+  rejectPendingReviewCompany,
+  addCompanyBusinessDocument,
+  reviewCompanyBusinessDocument,
+  getCompanyDocumentsForAdmin,
+  normalizeBusinessDocuments,
   markAccountVerifiedForSellerOnboarding,
+  syncSellerCompanyEnforcementStatus,
   getSellerSwitchPinStatus,
   setSellerSwitchPin,
   verifySellerSwitchPin,

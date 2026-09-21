@@ -30,6 +30,7 @@ Authorization uses central signed-session guards plus handler-specific permissio
 - Super admin routes and handlers call `requireSuperAdmin`.
 - Product writes, orders, employee accounts, seller account settings, and buyer self-account routes derive identity from the verified app session.
 - Buyer order reads/writes are forced to the session account; seller/employee order and product operations are forced to the session tenant.
+- Delivery/payment partner administration is session-protected; only read-only `?productOptions=1` buyer lists are public.
 - Employee page access is partly enforced in browser JavaScript through `employee_access_guard.js`.
 - Customer ownership is checked in selected flows such as seller follow and chat message deletion.
 
@@ -159,12 +160,15 @@ In-memory limiters (per process) cover:
 | Uploads | 30 / 15 min per session or IP | `UPLOAD_RATE_LIMIT_MAX` |
 | AI reply / image enhancement | 20 / 10 min | `AI_RATE_LIMIT_MAX` |
 | Visual search | 30 / 10 min | `VISUAL_SEARCH_RATE_LIMIT_MAX` |
+| Analytics event ingestion | 120 / 1 min | `ANALYTICS_RATE_LIMIT_MAX`, `ANALYTICS_RATE_LIMIT_WINDOW_MS` |
 
 Exceeded limits return `429` with `Retry-After`. Login lockout uses code `LOGIN_LOCKED`.
 
 ## PayMongo seller checkout
 
 `POST /api/payments/paymongo/seller-webhook` always requires `PAYMONGO_WEBHOOK_SECRET`. Missing secret → `503`. Missing or invalid `paymongo-signature` → `401`. Unsigned webhooks never activate a seller.
+
+Signed events must be no more than five minutes old. Paid events are matched to the stored checkout session and unexpired checkout intent, then claimed through the durable `payment_webhook_events` ledger. Duplicate deliveries return `200` without repeating activation; failed/stale processing claims can be retried. The intent is marked active only after seller activation succeeds, avoiding partial-failure retry skips. Only the event ID and payload hash are retained in checkout metadata, not the complete webhook payload.
 
 `POST /api/account/become-seller/confirm-payment` requires a signed app session (`401` if missing). When PayMongo hosted checkout is enabled (`PAYMONGO_SECRET_KEY` set), that route will not activate a seller until the webhook has marked the checkout intent paid (`409` / `PAYMONGO_WEBHOOK_REQUIRED`). Manual/free local onboarding still works for an authenticated session when PayMongo is not enabled.
 

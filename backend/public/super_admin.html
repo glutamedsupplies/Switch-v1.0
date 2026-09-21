@@ -147,6 +147,24 @@
               <button
                 type="button"
                 class="super-admin-company-status-nav__item"
+                data-super-admin-company-account-filter="new"
+                aria-pressed="false"
+              >
+                <span class="super-admin-company-status-nav__dot" aria-hidden="true"></span>
+                <span>New</span>
+              </button>
+              <button
+                type="button"
+                class="super-admin-company-status-nav__item"
+                data-super-admin-company-account-filter="pending-review"
+                aria-pressed="false"
+              >
+                <span class="super-admin-company-status-nav__dot" aria-hidden="true"></span>
+                <span>Pending</span>
+              </button>
+              <button
+                type="button"
+                class="super-admin-company-status-nav__item"
                 data-super-admin-company-account-filter="low-risk"
                 aria-pressed="false"
               >
@@ -161,6 +179,15 @@
               >
                 <span class="super-admin-company-status-nav__dot" aria-hidden="true"></span>
                 <span>Restriction</span>
+              </button>
+              <button
+                type="button"
+                class="super-admin-company-status-nav__item"
+                data-super-admin-company-account-filter="suspended"
+                aria-pressed="false"
+              >
+                <span class="super-admin-company-status-nav__dot" aria-hidden="true"></span>
+                <span>Suspended</span>
               </button>
               <button
                 type="button"
@@ -580,6 +607,16 @@
                               <input type="radio" name="super-admin-company-account-filter" value="low-risk" data-super-admin-filter="accountState" />
                               <span class="super-admin-filter-radio__mark"></span>
                               <span>Active</span>
+                            </label>
+                            <label class="super-admin-filter-radio">
+                              <input type="radio" name="super-admin-company-account-filter" value="new" data-super-admin-filter="accountState" />
+                              <span class="super-admin-filter-radio__mark"></span>
+                              <span>New (24h)</span>
+                            </label>
+                            <label class="super-admin-filter-radio">
+                              <input type="radio" name="super-admin-company-account-filter" value="pending-review" data-super-admin-filter="accountState" />
+                              <span class="super-admin-filter-radio__mark"></span>
+                              <span>Pending review</span>
                             </label>
                             <label class="super-admin-filter-radio">
                               <input type="radio" name="super-admin-company-account-filter" value="restricted" data-super-admin-filter="accountState" />

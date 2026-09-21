@@ -32,6 +32,7 @@ Flutter services can override this with:
 | --- | --- |
 | `200` | Request succeeded. |
 | `201` | Record or upload created. |
+| `202` | Analytics event batch accepted. |
 | `204` | CORS preflight accepted. |
 | `400` | Invalid input or validation failure. |
 | `401` | Missing or invalid authentication/session token. |
@@ -154,13 +155,17 @@ curl -i http://127.0.0.1:8080/api/orders \
 
 ### Delivery and Payment Partners
 
+Partner administration requires a signed seller/employee tenant session (or a super-admin token). Buyer checkout uses the intentionally public read-only form `?productOptions=1`; all other collection reads and every mutation are protected.
+
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET` | `/api/delivery-partners` | Optional admin scope | None | `{ "partners": [...] }` | Admin scope or super admin token | `GET /api/delivery-partners` |
+| `GET` | `/api/delivery-partners` | Optional admin scope | None | `{ "partners": [...] }` | Signed admin scope or super admin token | `GET /api/delivery-partners` |
+| `GET` | `/api/delivery-partners?productOptions=1` | None | None | `{ "partners": [...] }` | None; active buyer options only | `GET /api/delivery-partners?productOptions=1` |
 | `POST` | `/api/delivery-partners` | Optional admin scope | `{ "branch": "LBC", "description": "...", "imageUrl": "/uploads/x.webp" }` | `{ "partner": {...}, "message": "Delivery partner saved." }` | Admin scope or super admin token | `POST /api/delivery-partners` |
 | `PATCH` | `/api/delivery-partners/{partnerId}` | `partnerId` path | `{ "isActive": false }` | `{ "partner": {...}, "message": "Delivery partner deactivated." }` | Admin scope or super admin token | `PATCH /api/delivery-partners/partner-1` |
 | `DELETE` | `/api/delivery-partners/{partnerId}` | `partnerId` path | None | `{ "deletedId": "...", "message": "Delivery partner deleted." }` | Admin scope or super admin token | `DELETE /api/delivery-partners/partner-1` |
-| `GET` | `/api/payment-partners` | Optional admin scope | None | `{ "partners": [...] }` | Admin scope or super admin token | `GET /api/payment-partners` |
+| `GET` | `/api/payment-partners` | Optional admin scope | None | `{ "partners": [...] }` | Signed admin scope or super admin token | `GET /api/payment-partners` |
+| `GET` | `/api/payment-partners?productOptions=1` | None | None | `{ "partners": [...] }` | None; active buyer options only | `GET /api/payment-partners?productOptions=1` |
 | `POST` | `/api/payment-partners` | Optional admin scope | `{ "branch": "GCash", "imageUrl": "/uploads/x.webp" }` | `{ "partner": {...}, "message": "Payment partner saved." }` | Admin scope or super admin token | `POST /api/payment-partners` |
 | `PATCH` | `/api/payment-partners/{partnerId}` | `partnerId` path | `{ "enabled": true }` | `{ "partner": {...}, "message": "Payment partner activated." }` | Admin scope or super admin token | `PATCH /api/payment-partners/partner-1` |
 | `DELETE` | `/api/payment-partners/{partnerId}` | `partnerId` path | None | `{ "deletedId": "...", "message": "Payment partner deleted." }` | Admin scope or super admin token | `DELETE /api/payment-partners/partner-1` |
@@ -179,7 +184,28 @@ Order line objects include stable `id` / `orderGroupId` plus funnel timestamps (
 | `POST` | `/api/orders/{groupId}/cancel` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional empty body | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/cancel` |
 | `POST` | `/api/orders/{groupId}/cancel-request/{accept\|reject}` | Group ID and decision path | Optional empty body | `{ "decision": "accept", "message": "Cancellation request accepted." }` | Admin scope | `POST /api/orders/1780000000000/cancel-request/accept` |
 
+### Analytics
+
+Buyer funnel events are best-effort and tenant-scoped from the referenced catalog product; a caller-supplied `adminId` is never trusted. Order and payment lifecycle events are recorded by the server and deduplicated. Public ingestion is limited to 20 events per batch, a 30-day timestamp window, and 120 requests/minute per account or IP by default.
+
+| Method | URL | Parameters | Request Body | Response | Auth | Example |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST` | `/api/analytics/events` | None | One event or `{ "events": [...] }`; public names: `product_viewed`, `added_to_cart`, `checkout_started` | `{ "accepted": 1, "duplicates": 0, "eventIds": [...] }` | Public; valid product + anonymous ID required for guests | `POST /api/analytics/events` |
+| `GET` | `/api/analytics/summary` | `days` (1-365), optional `productId`; super admin may pass `adminId` | None | `{ "summary": { "totals": {...}, "funnel": [...], "daily": [...], "topProducts": [...] } }` | Signed seller/employee tenant session or super admin token | `GET /api/analytics/summary?days=30` |
+
+### Seller Payment Webhook
+
+| Method | URL | Parameters | Request Body | Response | Auth | Example |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST` | `/api/payments/paymongo/seller-webhook` | None | Raw PayMongo event JSON | Processing/duplicate/ignored result | PayMongo HMAC signature; five-minute freshness window | `POST /api/payments/paymongo/seller-webhook` |
+| `POST` | `/api/payments/paymongo/buyer-webhook` | None | Raw PayMongo event JSON | Marks matching buyer order paid (`toPrepare`) | PayMongo HMAC; ledger provider `paymongo_buyer` | `POST /api/payments/paymongo/buyer-webhook` |
+| `POST` | `/api/orders/checkout-session` | None | `{ createdAtEpochMs \| orderGroupId, paymentGateway? }` | `{ provider, checkoutUrl, paymentReference, ... }` | Signed buyer session | Creates hosted PayMongo session or marks paid when keys unset |
+| `GET` | `/api/orders/{groupId}/payment-status` | group id path | None | `{ paid, paymentStatus, stage, ... }` | Buyer or seller session | Poll after checkout return |
+| `POST` | `/api/orders/{groupId}/shipments` | group id path | optional `{ trackingNumber }` | `{ shipment: { trackingNumber, provider, mode } }` | Seller/employee | Courier adapter (manual / Lalamove stub) |
+
 ### Chat Support
+
+Durable in PostgreSQL (`chat_threads` / `chat_messages`, migration `022`) when `DATABASE_URL` is set and migrations are applied; optional JSON backup via `CHAT_JSON_BACKUP` (default on). Import existing JSON with `npm run db:migrate-chat`.
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
