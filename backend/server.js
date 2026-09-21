@@ -33531,6 +33531,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/account/become-seller/documents") {
+    await handleBecomeSellerDocumentsApi(request, response);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/account/become-seller/mark-verified") {
     await handleBecomeSellerMarkVerifiedApi(request, response);
     return;
