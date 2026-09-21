@@ -3846,31 +3846,26 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
           bool attachHeroKey = true,
         }) {
           if (!showProductShowcase) return null;
-          // MinimumSkeletonReveal keeps skeleton + live mounted during fade.
-          // Only the live header may hold `_shopPlatformHeroKey`.
-          final Widget? headerHero;
-          if (_isShopSearchMode) {
-            headerHero = const SizedBox(
-              height: _ShopPlatformHeroBackground.height,
-            );
-          } else if (usePlainSortHeader) {
-            headerHero = SizedBox(height: plainSortHeaderInset);
-          } else if (attachHeroKey) {
-            headerHero = shopHero;
-          } else {
-            headerHero = _ShopPlatformHeroBackground(
-              primaryColor: _primaryColor,
-              backgroundColor: _dashboardForegroundColor,
-              overlayHeader: _isShopHeaderCollapsed && !_isShopSearchMode
-                  ? null
-                  : showcaseOverlayHeader,
-              headerPrimaryColor: _primaryColor,
-            );
-          }
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (headerHero != null) headerHero,
+              if (_isShopSearchMode)
+                const SizedBox(height: _ShopPlatformHeroBackground.height)
+              else if (usePlainSortHeader)
+                SizedBox(height: plainSortHeaderInset)
+              else if (attachHeroKey)
+                shopHero!
+              else
+                // Skeleton path: same hero chrome, no GlobalKey. Live + skeleton
+                // stay mounted together during MinimumSkeletonReveal fade.
+                _ShopPlatformHeroBackground(
+                  primaryColor: _primaryColor,
+                  backgroundColor: _dashboardForegroundColor,
+                  overlayHeader: _isShopHeaderCollapsed && !_isShopSearchMode
+                      ? null
+                      : showcaseOverlayHeader,
+                  headerPrimaryColor: _primaryColor,
+                ),
               if (!usePlainSortHeader)
                 skeletonizeMostPopular
                     ? _DealsCarouselSkeleton(
