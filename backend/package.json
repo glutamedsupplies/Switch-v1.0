@@ -17,6 +17,7 @@
     "test:super-admin-auth": "node --test test/superAdminAuth.test.js",
     "test:session-tenancy": "node --test test/appSessionAuth.test.js",
     "test:password-auth": "node --test test/passwordHashOnly.test.js test/superAdminAuth.test.js",
+    "test:security-p0": "node --test test/securityP0.test.js",
     "passwords:migrate-json": "node scripts/migrate-json-passwords-to-bcrypt.js",
     "db:migrate": "node db/migrate.js",
     "db:migrate-users": "node scripts/migrate-accounts-json-to-postgres.js",

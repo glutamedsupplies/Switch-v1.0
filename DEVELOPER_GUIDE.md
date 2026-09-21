@@ -60,6 +60,7 @@ The backend loads `backend/.env` and root `.env` if present.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `8080` | Backend HTTP port. |
+| `BIND_HOST` | `127.0.0.1` | Listen address. Set `0.0.0.0` to bind all NICs. |
 | `SUPER_ADMIN_USERNAME` | none | Required super admin username. |
 | `SUPER_ADMIN_PASSWORD` | none | Required bcrypt hash for the super admin password; plaintext is rejected. |
 | `ADMIN_API_SESSION_SECRET` | none | Required HMAC signing secret for expiring super admin sessions. |
@@ -216,7 +217,7 @@ For production-like deployment:
 2. Set an API URL for Flutter builds with `--dart-define=API_BASE_URL=...`.
 3. Move JSON persistence to a real database or enforce file locks/backups.
 4. Move uploads to object storage or protected storage.
-5. Add HTTPS, authorization middleware, CSRF protection, rate limiting, and audit logs.
+5. Add HTTPS, CSRF protection, and audit logs. CORS is loopback-only; set `CORS_ALLOWED_ORIGINS` in production.
 6. Ensure `backend/data` and `backend/public/uploads` are persisted outside ephemeral runtime directories.
 
 ## Troubleshooting

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project uses third-party packages and optional integrations, but most business operations are implemented locally. Payment and delivery partner records exist, but no direct payment gateway or courier API integration was found.
+The project uses third-party packages and optional integrations, but most business operations are implemented locally. Courier APIs are not integrated. Seller-plan checkout can use PayMongo when `PAYMONGO_SECRET_KEY` is set.
 
 ## Backend Integrations
 
@@ -21,6 +21,13 @@ The project uses third-party packages and optional integrations, but most busine
 - **Default model:** `gpt-4o-mini`
 - **Default API URL:** `https://api.openai.com/v1/chat/completions`
 - **Status:** Optional. Disabled when no API key is configured.
+
+### PayMongo (optional seller checkout)
+
+- **Environment variables:** `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET`
+- **Location:** `backend/services/sellerCheckoutGateway.js`, `backend/server.js`
+- **Used for:** Hosted seller-plan checkout sessions and signed webhook activation.
+- **Status:** Optional. Webhook requests are rejected unless `PAYMONGO_WEBHOOK_SECRET` is set and `paymongo-signature` verifies. Unsigned `confirm-payment` cannot activate a seller when PayMongo is enabled.
 
 ### Face Attendance Local Integration
 

@@ -79,6 +79,7 @@ jobs:
           npm run test:password-auth
           npm run test:session-tenancy
           npm run test:super-admin-auth
+          npm run test:security-p0
       - name: Health smoke
         run: bash scripts/ci-health-smoke.sh
 

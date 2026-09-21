@@ -35,19 +35,20 @@ Flutter services can override this with:
 | `204` | CORS preflight accepted. |
 | `400` | Invalid input or validation failure. |
 | `401` | Missing or invalid authentication/session token. |
-| `403` | Authenticated but not allowed. |
+| `403` | Authenticated but not allowed, or CORS origin not allowlisted. |
 | `404` | Resource not found. |
 | `405` | HTTP method is not allowed for that endpoint. |
 | `409` | Current resource state blocks the requested action. |
 | `413` | Upload body is too large. |
+| `429` | Rate limited or login lockout. |
 | `500` | Server error. |
-| `503` | Optional service unavailable, such as AI or `sharp` visual search. |
+| `503` | Optional service unavailable, such as AI, `sharp` visual search, or missing PayMongo webhook secret. |
 
 ## Signed App Sessions
 
 Buyer, seller, employee, and Google login responses include `sessionToken`, `sessionExpiresAt`, and `sessionExpiresInSeconds`. Browser logins also receive an `HttpOnly` cookie. Non-browser clients send the token as `x-switch-session` or `Authorization: Bearer <token>`.
 
-Protected routes return `401` for a missing, forged, or expired token. A legacy `adminId`/`accountId` header or query that does not match the signed claims returns `403`; those values never choose the authorized tenant.
+Protected routes return `401` for a missing, forged, or expired token. A legacy `adminId`/`accountId` header or query that does not match the signed claims returns `403`; those values never choose the authorized tenant. A valid session with the wrong role also returns `403`.
 
 ```bash
 # 1. Login and copy sessionToken from the JSON response.
@@ -196,9 +197,10 @@ curl -i http://127.0.0.1:8080/api/orders \
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
 | `GET` | `/api/activity` | `limit`, viewer fields, admin scope | None | `{ "activities": [...], "total": 0 }` | Admin scope | `GET /api/activity?limit=10` |
-| `POST` | `/api/uploads` | `x-file-name`; binary body | Image, video, or model bytes | `{ "imageUrl": "/uploads/file.webp", "mediaUrl": "...", "fileName": "..." }` | No explicit auth in handler; callers are admin pages | `POST /api/uploads` |
-| `POST` | `/api/review-uploads` | `x-file-name`; binary body | Review image/video bytes | Upload metadata | No explicit auth in handler; callers are app/admin pages | `POST /api/review-uploads` |
-| `POST` | `/api/document-uploads` | `x-file-name`; binary body | PDF, DOC, or DOCX bytes | `{ "documentUrl": "/uploads/file.pdf" }` | No explicit auth in handler; callers are employee/admin pages | `POST /api/document-uploads` |
+| `POST` | `/api/uploads` | `x-file-name`; binary body | Image, video, or model bytes | `{ "imageUrl": "/uploads/file.webp", "mediaUrl": "...", "fileName": "..." }` | Signed session or super admin token; unauth is `401` before validation | `POST /api/uploads` |
+| `POST` | `/api/chat-uploads` | `x-file-name`; binary body | Chat image/video/document bytes | Upload metadata | Signed session; unauth is `401` | `POST /api/chat-uploads` |
+| `POST` | `/api/review-uploads` | `x-file-name`; binary body | Review image/video bytes | Upload metadata | Signed session; unauth is `401` | `POST /api/review-uploads` |
+| `POST` | `/api/document-uploads` | `x-file-name`; binary body | PDF, DOC, or DOCX bytes | `{ "documentUrl": "/uploads/file.pdf" }` | Signed session; unauth is `401` | `POST /api/document-uploads` |
 | `POST` | `/api/product-models/from-frames` | None | JSON with six frame image references | Generated model/texture URLs | Admin caller expected | `POST /api/product-models/from-frames` |
 | `POST` | `/api/product-models/from-scan` | None | JSON with scan frame image references | Generated model/texture URLs | Admin caller expected | `POST /api/product-models/from-scan` |
 
@@ -263,6 +265,6 @@ x-gms-super-admin-token: <token>
 
 - Request and response schemas are inferred from `backend/server.js` and client calls.
 - Critical product, order, and account routes use signed session identity; remaining non-critical legacy routes should be migrated incrementally.
-- Some upload endpoints do not enforce endpoint-level authentication in the handler; access is currently controlled by UI availability rather than server middleware.
+- Upload endpoints require a signed session before the body is read; missing/forged/expired tokens return `401`.
 - Super admin product-by-company route naming overlaps with product approval routes. The dispatcher handles approve/cancel first, then `/api/super-admin/products/{adminId}`.
 

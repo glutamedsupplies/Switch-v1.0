@@ -80,6 +80,16 @@ const {
 } = require("./services/sellerCheckoutGateway");
 const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("./db/password");
 const {
+  applyCorsHeaders,
+  parseCorsAllowedOrigins,
+  isDisallowedCrossOrigin,
+} = require("./security/cors");
+const {
+  createRateLimiter,
+  createLoginLockout,
+} = require("./security/rateLimit");
+const { resolveBindHost, isWildcardBind } = require("./security/bindHost");
+const {
   isEmployeePostgresReady,
   createEmployeeAccount,
   loginEmployee,
@@ -153,6 +163,28 @@ loadEnvFile(path.join(__dirname, ".env"));
 loadEnvFile(path.join(path.dirname(__dirname), ".env"));
 
 const PORT = Number(process.env.PORT) || 8080;
+const BIND_HOST = resolveBindHost(process.env);
+const CORS_EXTRA_ORIGINS = parseCorsAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
+const corsRequestByResponse = new WeakMap();
+const loginLockout = createLoginLockout({
+  maxAttempts: Math.max(3, Number(process.env.LOGIN_RATE_LIMIT_MAX) || 5),
+  ipMaxAttempts: Math.max(10, Number(process.env.LOGIN_RATE_LIMIT_IP_MAX) || 40),
+  windowMs: Math.max(30_000, Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000),
+});
+const endpointRateLimiters = Object.freeze({
+  upload: createRateLimiter({
+    max: Math.max(5, Number(process.env.UPLOAD_RATE_LIMIT_MAX) || 30),
+    windowMs: Math.max(30_000, Number(process.env.UPLOAD_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000),
+  }),
+  ai: createRateLimiter({
+    max: Math.max(3, Number(process.env.AI_RATE_LIMIT_MAX) || 20),
+    windowMs: Math.max(30_000, Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 10 * 60 * 1000),
+  }),
+  "visual-search": createRateLimiter({
+    max: Math.max(3, Number(process.env.VISUAL_SEARCH_RATE_LIMIT_MAX) || 30),
+    windowMs: Math.max(30_000, Number(process.env.VISUAL_SEARCH_RATE_LIMIT_WINDOW_MS) || 10 * 60 * 1000),
+  }),
+});
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const BUILT_IN_PLATFORM_ART = Object.freeze({
@@ -1108,17 +1140,22 @@ function requireSuperAdmin(request, response) {
 }
 
 function getServerUrls() {
-  const urls = new Set([`http://127.0.0.1:${PORT}`]);
-  const interfaces = os.networkInterfaces();
-
-  for (const interfaceEntries of Object.values(interfaces)) {
-    for (const entry of interfaceEntries ?? []) {
-      if (entry.family === "IPv4" && !entry.internal) {
-        urls.add(`http://${entry.address}:${PORT}`);
+  const urls = new Set();
+  if (isWildcardBind(BIND_HOST)) {
+    urls.add(`http://127.0.0.1:${PORT}`);
+    const interfaces = os.networkInterfaces();
+    for (const interfaceEntries of Object.values(interfaces)) {
+      for (const entry of interfaceEntries ?? []) {
+        if (entry.family === "IPv4" && !entry.internal) {
+          urls.add(`http://${entry.address}:${PORT}`);
+        }
       }
     }
+    return [...urls];
   }
 
+  const host = BIND_HOST === "::1" || BIND_HOST === "[::1]" ? "127.0.0.1" : BIND_HOST;
+  urls.add(`http://${host}:${PORT}`);
   return [...urls];
 }
 
@@ -1130,6 +1167,14 @@ function getLanServerUrls() {
 }
 
 function writeFlutterLocalApiLanUrls() {
+  if (!isWildcardBind(BIND_HOST)) {
+    console.log(
+      `Flutter LAN/Wi-Fi API URLs not updated; BIND_HOST=${BIND_HOST} ` +
+        "(set BIND_HOST=0.0.0.0 to listen on all NICs and advertise LAN addresses).",
+    );
+    return;
+  }
+
   const lanUrls = getLanServerUrls();
   const targetPath = path.join(
     path.dirname(__dirname),
@@ -7234,13 +7279,8 @@ async function processDueSellerAccountDeletions() {
   return sellerDeletionSweepPromise;
 }
 
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type,Authorization,If-Match,X-Request-ID,X-File-Name,X-Switch-Session,X-GMS-Admin-ID,X-Admin-ID,X-GMS-Account-ID,X-Account-ID,X-GMS-Account-Email,X-Account-Email,X-GMS-Super-Admin-Token",
-  );
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+function setCorsHeaders(response, request = corsRequestByResponse.get(response)) {
+  applyCorsHeaders(response, request, CORS_EXTRA_ORIGINS);
 }
 
 function sendJson(response, statusCode, body) {
@@ -7257,6 +7297,97 @@ function sendText(response, statusCode, body) {
     "Content-Type": "text/plain; charset=utf-8",
   });
   response.end(body);
+}
+
+function sendRateLimited(response, result = {}) {
+  const retryAfterSeconds = Math.max(1, Number(result.retryAfterSeconds) || 60);
+  response.setHeader("Retry-After", String(retryAfterSeconds));
+  sendJson(response, 429, {
+    message: result.message || "Too many requests. Please try again later.",
+    code: result.code || "RATE_LIMITED",
+    retryAfterSeconds,
+  });
+}
+
+function beginLoginAttempt(request, response, identifier) {
+  const ctx = {
+    ip: getRequestIpAddress(request) || "unknown",
+    identifier: String(identifier ?? "").trim().toLowerCase() || "unknown",
+  };
+  const checked = loginLockout.check(ctx);
+  if (!checked.ok) {
+    sendRateLimited(response, {
+      ...checked,
+      message: "Too many login attempts. Please try again later.",
+      code: "LOGIN_LOCKED",
+    });
+    return null;
+  }
+  return ctx;
+}
+
+function recordLoginFailure(ctx) {
+  if (!ctx) {
+    return;
+  }
+  loginLockout.recordFailure(ctx);
+}
+
+function recordLoginSuccess(ctx) {
+  if (!ctx) {
+    return;
+  }
+  loginLockout.recordSuccess(ctx);
+}
+
+function getEndpointRateLimitKind(pathname) {
+  const pathValue = String(pathname || "");
+  if (
+    pathValue === "/api/uploads"
+    || pathValue === "/api/chat-uploads"
+    || pathValue === "/api/review-uploads"
+    || pathValue === "/api/document-uploads"
+  ) {
+    return "upload";
+  }
+  if (pathValue === "/api/products/visual-search") {
+    return "visual-search";
+  }
+  if (
+    pathValue.endsWith("/ai-reply")
+    || pathValue.startsWith("/api/ai-image-enhancement/")
+  ) {
+    return "ai";
+  }
+  return "";
+}
+
+function consumeEndpointRateLimit(request, pathname) {
+  const kind = getEndpointRateLimitKind(pathname);
+  const limiter = kind ? endpointRateLimiters[kind] : null;
+  if (!limiter) {
+    return { ok: true, remaining: 0, retryAfterSeconds: 0 };
+  }
+  const ip = getRequestIpAddress(request) || "unknown";
+  const accountKey = String(request?.authSession?.accountId || "").trim().toLowerCase();
+  const key = accountKey ? `${kind}:acct:${accountKey}` : `${kind}:ip:${ip}`;
+  return limiter.consume(key);
+}
+
+function isPaymongoWebhookVerifiedIntent(intent, accountId) {
+  if (!intent || typeof intent !== "object") {
+    return false;
+  }
+  if (String(intent.accountId || "").trim() !== String(accountId || "").trim()) {
+    return false;
+  }
+  const status = String(intent.status || "").trim().toLowerCase();
+  const metadata = intent.metadata && typeof intent.metadata === "object"
+    ? intent.metadata
+    : {};
+  return status === "active"
+    || Boolean(String(metadata.paymentPaidAt || "").trim())
+    || String(metadata.paymongoEventType || "").trim() === "checkout_session.payment.paid";
 }
 
 function getAccountSessionId(account) {
@@ -21073,6 +21204,11 @@ async function handleAdminLoginApi(request, response) {
       return;
     }
 
+    const loginAttempt = beginLoginAttempt(request, response, email);
+    if (!loginAttempt) {
+      return;
+    }
+
     if (await isSellerPostgresReady()) {
       await processDueSellerAccountDeletions();
       const pgLogin = await loginSeller({ email, password });
@@ -21110,6 +21246,7 @@ async function handleAdminLoginApi(request, response) {
             restrictionDescription: getAdminRestrictionDescription(account),
             authStore: "postgres",
           });
+          recordLoginSuccess(loginAttempt);
           return;
         }
 
@@ -21119,6 +21256,7 @@ async function handleAdminLoginApi(request, response) {
           account,
           "seller",
         );
+        recordLoginSuccess(loginAttempt);
         sendJson(response, 200, {
           admin: serializeAdminAccount(account),
           dashboardPath: "/admin_dashboard.html",
@@ -21130,6 +21268,7 @@ async function handleAdminLoginApi(request, response) {
         return;
       }
 
+      recordLoginFailure(loginAttempt);
       sendJson(response, 401, {
         message: "Admin email or password is incorrect.",
       });
@@ -21144,6 +21283,7 @@ async function handleAdminLoginApi(request, response) {
     );
 
     if (!account || !(await verifyPassword(password, account.password))) {
+      recordLoginFailure(loginAttempt);
       sendJson(response, 401, {
         message: "Admin email or password is incorrect.",
       });
@@ -21181,6 +21321,7 @@ async function handleAdminLoginApi(request, response) {
           .trim(),
         restrictionDescription: getAdminRestrictionDescription(account),
       });
+      recordLoginSuccess(loginAttempt);
       return;
     }
 
@@ -21193,6 +21334,7 @@ async function handleAdminLoginApi(request, response) {
       account,
       "seller",
     );
+    recordLoginSuccess(loginAttempt);
     sendJson(response, 200, {
       admin: serializeAdminAccount(account),
       dashboardPath: "/admin_dashboard.html",
@@ -22059,6 +22201,9 @@ async function handleBecomeSellerCheckoutIntentApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    payload.accountId = request.authSession.accountId;
+    payload.email = request.authSession.email || payload.email;
     const result = await createSellerCheckoutIntent(payload);
     const checkoutIntent = result.checkoutIntent || null;
     const requestOrigin = getRequestOrigin(request);
@@ -22107,6 +22252,79 @@ async function handleBecomeSellerCheckoutIntentApi(request, response) {
   }
 }
 
+async function notifySellerOnboardingOutcome(result, payload = {}, request = null) {
+  const now = new Date().toISOString();
+  const companyName = String(result?.company?.name ?? "Seller company").trim();
+  const sellerAdminId = resolveSellerOnboardingAdminId(result, payload);
+  const createdBy = String(result?.account?.email ?? payload.email ?? "").trim() || "Buyer";
+  const isActive = Boolean(result?.active);
+
+  await persistSuperAdminNotification(
+    createPersistentLinkedNotification({
+      type: isActive ? "seller-onboarding-activated" : "seller-onboarding-pending-review",
+      audience: "super_admin",
+      title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
+      reason: isActive
+        ? "Payment and verification completed via Be Part of Switch"
+        : "Payment completed but manual review is still required",
+      message: isActive
+        ? `${companyName} can now access Seller Mode.`
+        : `${companyName} completed payment and is waiting for activation review.`,
+      adminId: sellerAdminId,
+      companyName,
+      storeName: companyName,
+      businessName: companyName,
+      createdBy,
+      targetUrl: "/super_admin.html#companies",
+      createdAt: now,
+    }),
+  );
+
+  if (sellerAdminId) {
+    await notifySellerAdminInboxByAdminId(
+      sellerAdminId,
+      createPersistentLinkedNotification({
+        type: isActive ? "seller-onboarding-activated" : "seller-onboarding-pending-review",
+        audience: "seller",
+        title: isActive ? "Seller workspace ready" : "Seller upgrade pending review",
+        reason: isActive
+          ? "Your Be Part of Switch upgrade is complete"
+          : "Your company is waiting for activation review",
+        message: isActive
+          ? `${companyName} is ready. Open Seller Mode to manage your store.`
+          : `${companyName} payment was received. Super Admin still needs to finish activation.`,
+        adminId: sellerAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy: SUPER_ADMIN_USERNAME,
+        targetUrl: isActive ? "/main.html#dashboard" : "/switch_account.html",
+        createdAt: now,
+      }),
+    );
+  }
+
+  await logActivitySafely({
+    id: createActivityLogId(),
+    title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
+    actor: {
+      role: "admin",
+      accountId: sellerAdminId || createdBy,
+      displayName: companyName,
+    },
+    adminId: sellerAdminId,
+    source: "seller_onboarding",
+    notificationAudience: "admin",
+    description: isActive
+      ? `${companyName} completed seller activation.`
+      : `${companyName} completed seller payment and is awaiting review.`,
+    createdAt: now,
+    skipLinkedNotification: true,
+  }, request);
+
+  return { isActive, sellerAdminId, companyName, createdBy };
+}
+
 async function handlePaymongoSellerWebhookApi(request, response) {
   if (request.method !== "POST") {
     sendJson(response, 405, { message: "Method not allowed." });
@@ -22115,22 +22333,30 @@ async function handlePaymongoSellerWebhookApi(request, response) {
 
   try {
     const rawBody = await parseRawRequestBody(request);
-    const eventPayload = rawBody ? JSON.parse(rawBody) : {};
-    const eventData = eventPayload?.data || {};
-    const eventType = String(eventData?.type || "").trim();
-    const livemode = Boolean(eventData?.livemode);
-    const signatureHeader = String(request.headers["paymongo-signature"] || "").trim();
     const webhookSecret = String(process.env.PAYMONGO_WEBHOOK_SECRET ?? "").trim();
+    const signatureHeader = String(request.headers["paymongo-signature"] || "").trim();
 
-    if (webhookSecret && !verifyPaymongoWebhook({
+    if (!webhookSecret) {
+      sendJson(response, 503, {
+        message: "PayMongo webhook secret is not configured.",
+        code: "PAYMONGO_WEBHOOK_SECRET_MISSING",
+      });
+      return;
+    }
+
+    if (!verifyPaymongoWebhook({
       rawBody,
       signatureHeader,
       webhookSecret,
-      livemode,
     })) {
       sendJson(response, 401, { message: "Invalid PayMongo signature." });
       return;
     }
+
+    const eventPayload = rawBody ? JSON.parse(rawBody) : {};
+    const eventData = eventPayload?.data || {};
+    const eventType = String(eventData?.type || "").trim();
+    const livemode = Boolean(eventData?.livemode);
 
     if (eventType !== "checkout_session.payment.paid") {
       sendJson(response, 200, {
@@ -22177,6 +22403,10 @@ async function handlePaymongoSellerWebhookApi(request, response) {
       amount: intent.amount,
       currencyCode: intent.currencyCode,
     });
+    await notifySellerOnboardingOutcome(confirmed, {
+      accountId: intent.accountId,
+      email: confirmed?.account?.email,
+    }, request);
 
     sendJson(response, 200, {
       message: "Seller checkout webhook processed.",
@@ -22204,75 +22434,27 @@ async function handleBecomeSellerConfirmApi(request, response) {
     }
 
     const payload = await parseRequestBody(request);
-    const result = await confirmSellerOnboarding(payload);
-    const now = new Date().toISOString();
-    const companyName = String(result?.company?.name ?? "Seller company").trim();
-    const sellerAdminId = resolveSellerOnboardingAdminId(result, payload);
-    const createdBy = String(result?.account?.email ?? payload.email ?? "").trim() || "Buyer";
-    const isActive = Boolean(result?.active);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    payload.accountId = request.authSession.accountId;
+    payload.email = request.authSession.email || payload.email;
 
-    await persistSuperAdminNotification(
-      createPersistentLinkedNotification({
-        type: isActive ? "seller-onboarding-activated" : "seller-onboarding-pending-review",
-        audience: "super_admin",
-        title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
-        reason: isActive
-          ? "Payment and verification completed via Be Part of Switch"
-          : "Payment completed but manual review is still required",
-        message: isActive
-          ? `${companyName} can now access Seller Mode.`
-          : `${companyName} completed payment and is waiting for activation review.`,
-        adminId: sellerAdminId,
-        companyName,
-        storeName: companyName,
-        businessName: companyName,
-        createdBy,
-        targetUrl: "/super_admin.html#companies",
-        createdAt: now,
-      }),
-    );
-
-    if (sellerAdminId) {
-      await notifySellerAdminInboxByAdminId(
-        sellerAdminId,
-        createPersistentLinkedNotification({
-          type: isActive ? "seller-onboarding-activated" : "seller-onboarding-pending-review",
-          audience: "seller",
-          title: isActive ? "Seller workspace ready" : "Seller upgrade pending review",
-          reason: isActive
-            ? "Your Be Part of Switch upgrade is complete"
-            : "Your company is waiting for activation review",
-          message: isActive
-            ? `${companyName} is ready. Open Seller Mode to manage your store.`
-            : `${companyName} payment was received. Super Admin still needs to finish activation.`,
-          adminId: sellerAdminId,
-          companyName,
-          storeName: companyName,
-          businessName: companyName,
-          createdBy: SUPER_ADMIN_USERNAME,
-          targetUrl: isActive ? "/main.html#dashboard" : "/switch_account.html",
-          createdAt: now,
-        }),
-      );
+    const hostedGateway = getHostedGatewayConfig();
+    if (hostedGateway.enabled) {
+      const paymentReference = String(payload.paymentReference ?? "").trim();
+      const intent = paymentReference
+        ? await findSellerCheckoutIntentByPaymentReference(paymentReference)
+        : null;
+      if (!isPaymongoWebhookVerifiedIntent(intent, request.authSession.accountId)) {
+        sendJson(response, 409, {
+          message: "Seller activation requires a verified PayMongo webhook.",
+          code: "PAYMONGO_WEBHOOK_REQUIRED",
+        });
+        return;
+      }
     }
 
-    await logActivitySafely({
-      id: createActivityLogId(),
-      title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
-      actor: {
-        role: "admin",
-        accountId: sellerAdminId || createdBy,
-        displayName: companyName,
-      },
-      adminId: sellerAdminId,
-      source: "seller_onboarding",
-      notificationAudience: "admin",
-      description: isActive
-        ? `${companyName} completed seller activation.`
-        : `${companyName} completed seller payment and is awaiting review.`,
-      createdAt: now,
-      skipLinkedNotification: true,
-    }, request);
+    const result = await confirmSellerOnboarding(payload);
+    const { isActive } = await notifySellerOnboardingOutcome(result, payload, request);
 
     sendJson(response, 200, {
       onboarding: result,
@@ -22915,11 +23097,17 @@ async function handleAppUserLoginApi(request, response) {
       return;
     }
 
+    const loginAttempt = beginLoginAttempt(request, response, email);
+    if (!loginAttempt) {
+      return;
+    }
+
     if (await isCustomerPostgresReady()) {
       const pgLogin = await loginCustomer({ email, password });
       if (pgLogin.ok) {
         const restrictionMessage = getBuyerRestrictionMessage(pgLogin.account);
         if (restrictionMessage) {
+          recordLoginSuccess(loginAttempt);
           sendJson(response, 403, {
             message: restrictionMessage,
             accountStatus: getBuyerAccountStatus(pgLogin.account),
@@ -22942,6 +23130,7 @@ async function handleAppUserLoginApi(request, response) {
           pgLogin.account,
           "buyer",
         );
+        recordLoginSuccess(loginAttempt);
         sendJson(response, 200, {
           account: serializeAccountForList(stripInternalFields(pgLogin.account)),
           message: "Login successful.",
@@ -22952,6 +23141,7 @@ async function handleAppUserLoginApi(request, response) {
       }
 
       if (pgLogin.code === "bad_password") {
+        recordLoginFailure(loginAttempt);
         sendJson(response, 401, { message: "Incorrect Password", code: "bad_password" });
         return;
       }
@@ -22967,6 +23157,7 @@ async function handleAppUserLoginApi(request, response) {
         return;
       }
 
+      recordLoginFailure(loginAttempt);
       sendJson(response, 404, { message: "Incorrect Email", code: "not_found" });
       return;
     }
@@ -22978,6 +23169,7 @@ async function handleAppUserLoginApi(request, response) {
     );
 
     if (!account) {
+      recordLoginFailure(loginAttempt);
       sendJson(response, 404, {
         message: "Incorrect Email",
       });
@@ -22985,6 +23177,7 @@ async function handleAppUserLoginApi(request, response) {
     }
 
     if (!(await verifyPassword(password, account.password))) {
+      recordLoginFailure(loginAttempt);
       sendJson(response, 401, {
         message: "Incorrect Password",
       });
@@ -22993,6 +23186,7 @@ async function handleAppUserLoginApi(request, response) {
 
     const restrictionMessage = getBuyerRestrictionMessage(account);
     if (restrictionMessage) {
+      recordLoginSuccess(loginAttempt);
       sendJson(response, 403, {
         message: restrictionMessage,
         accountStatus: getBuyerAccountStatus(account),
@@ -23024,6 +23218,7 @@ async function handleAppUserLoginApi(request, response) {
       account,
       "buyer",
     );
+    recordLoginSuccess(loginAttempt);
     sendJson(response, 200, {
       account: serializeAccountForList(account),
       message: "Login successful.",
@@ -23509,8 +23704,13 @@ async function handleSuperAdminLoginApi(request, response) {
     const payload = await parseRequestBody(request);
     const username = String(payload.username ?? payload.email ?? "").trim();
     const password = String(payload.password ?? "");
+    const loginAttempt = beginLoginAttempt(request, response, username);
+    if (!loginAttempt) {
+      return;
+    }
 
     if (!(await superAdminAuth.verifyCredentials(username, password))) {
+      recordLoginFailure(loginAttempt);
       sendJson(response, 401, {
         message: "Root username or password is incorrect.",
       });
@@ -23518,6 +23718,7 @@ async function handleSuperAdminLoginApi(request, response) {
     }
 
     const session = superAdminAuth.issueSession();
+    recordLoginSuccess(loginAttempt);
     sendJson(response, 200, {
       root: {
         username: SUPER_ADMIN_USERNAME,
@@ -28105,6 +28306,11 @@ async function handleEmployeeLoginApi(request, response) {
       return;
     }
 
+    const loginAttempt = beginLoginAttempt(request, response, employeeId);
+    if (!loginAttempt) {
+      return;
+    }
+
     if (await isEmployeePostgresReady()) {
       const pgLogin = await loginEmployee({ employeeId, password });
       if (pgLogin.ok) {
@@ -28120,6 +28326,7 @@ async function handleEmployeeLoginApi(request, response) {
           pgLogin.account,
           "employee",
         );
+        recordLoginSuccess(loginAttempt);
         sendJson(response, 200, {
           account: serializedAccount,
           adminId: serializedAccount.adminId,
@@ -28132,6 +28339,7 @@ async function handleEmployeeLoginApi(request, response) {
         return;
       }
 
+      recordLoginFailure(loginAttempt);
       sendJson(response, 401, {
         message: "Employee ID or password is incorrect.",
       });
@@ -28142,6 +28350,7 @@ async function handleEmployeeLoginApi(request, response) {
     const account = await findEmployeeLoginAccountWithPassword(accounts, employeeId, password);
 
     if (!account) {
+      recordLoginFailure(loginAttempt);
       sendJson(response, 401, {
         message: "Employee ID or password is incorrect.",
       });
@@ -28157,6 +28366,7 @@ async function handleEmployeeLoginApi(request, response) {
       account,
       "employee",
     );
+    recordLoginSuccess(loginAttempt);
     sendJson(response, 200, {
       account: serializedAccount,
       adminId: serializedAccount.adminId,
@@ -29824,6 +30034,16 @@ async function handleUploadApi(request, response, options = {}) {
     return;
   }
 
+  if (!isSuperAdminAuthorized(request) && !request.authSession) {
+    sendJson(response, 401, {
+      message: request.appSessionTokenProvided
+        ? "Your session is invalid or expired. Please sign in again."
+        : "A signed-in account session is required.",
+      code: "APP_SESSION_INVALID",
+    });
+    return;
+  }
+
   try {
     const isReviewUpload = options?.reviewMedia === true;
     const allowDocuments = options?.allowDocuments === true;
@@ -30024,6 +30244,16 @@ async function handleProductModelFromScanApi(request, response) {
 async function handleDocumentUploadApi(request, response) {
   if (request.method !== "POST") {
     sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (!isSuperAdminAuthorized(request) && !request.authSession) {
+    sendJson(response, 401, {
+      message: request.appSessionTokenProvided
+        ? "Your session is invalid or expired. Please sign in again."
+        : "A signed-in account session is required.",
+      code: "APP_SESSION_INVALID",
+    });
     return;
   }
 
@@ -31325,11 +31555,7 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
     || pathname === "/api/account/change-password"
     || pathname === "/api/account/delivery-addresses"
     || pathname.startsWith("/api/account/devices")
-    || (
-      pathname.startsWith("/api/account/become-seller/")
-      && pathname !== "/api/account/become-seller/checkout-intent"
-      && pathname !== "/api/account/become-seller/confirm-payment"
-    )
+    || pathname.startsWith("/api/account/become-seller/")
     || pathname.startsWith("/api/account/seller-switch-pin/")
   ) {
     return { roles: allAccountRoles, identityKind: "account" };
@@ -31367,6 +31593,15 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
     return { roles: tenantRoles, identityKind: "admin" };
   }
 
+  if (
+    pathname === "/api/uploads"
+    || pathname === "/api/chat-uploads"
+    || pathname === "/api/review-uploads"
+    || pathname === "/api/document-uploads"
+  ) {
+    return { roles: allAccountRoles };
+  }
+
   if (pathname === "/api/orders/waybills/print") {
     return { roles: tenantRoles, identityKind: "admin" };
   }
@@ -31397,11 +31632,35 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
 
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
+  corsRequestByResponse.set(response, request);
 
   if (request.method === "OPTIONS") {
-    setCorsHeaders(response);
+    if (
+      requestUrl.pathname.startsWith("/api/")
+      && isDisallowedCrossOrigin(request, CORS_EXTRA_ORIGINS)
+    ) {
+      setCorsHeaders(response, request);
+      sendJson(response, 403, {
+        message: "Origin is not allowed.",
+        code: "CORS_ORIGIN_FORBIDDEN",
+      });
+      return;
+    }
+    setCorsHeaders(response, request);
     response.writeHead(204);
     response.end();
+    return;
+  }
+
+  if (
+    requestUrl.pathname.startsWith("/api/")
+    && requestUrl.pathname !== "/api/payments/paymongo/seller-webhook"
+    && isDisallowedCrossOrigin(request, CORS_EXTRA_ORIGINS)
+  ) {
+    sendJson(response, 403, {
+      message: "Origin is not allowed.",
+      code: "CORS_ORIGIN_FORBIDDEN",
+    });
     return;
   }
 
@@ -31419,6 +31678,12 @@ const server = http.createServer(async (request, response) => {
     && !isSuperAdminAuthorized(request)
     && !requireAppSession(request, response, requestUrl, appSessionPolicy)
   ) {
+    return;
+  }
+
+  const endpointRateLimit = consumeEndpointRateLimit(request, requestUrl.pathname);
+  if (!endpointRateLimit.ok) {
+    sendRateLimited(response, endpointRateLimit);
     return;
   }
 
@@ -32218,8 +32483,9 @@ Promise.resolve()
     }
   })
   .then(() => {
-    server.listen(PORT, () => {
+    server.listen(PORT, BIND_HOST, () => {
       writeFlutterLocalApiLanUrls();
+      console.log(`Switch backend listening on ${BIND_HOST}:${PORT}`);
       console.log("Switch backend running at:");
       for (const url of getServerUrls()) {
         console.log(`- ${url}`);
