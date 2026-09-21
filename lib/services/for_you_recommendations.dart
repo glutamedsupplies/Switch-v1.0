@@ -1,13 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:gms_shopping/cart.dart';
-import 'package:gms_shopping/favorite_products_store.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/search_bar.dart' show buyerLiveSearchMatchScore;
-import 'package:gms_shopping/services/search_suggestions_service.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/cart.dart';
+import 'package:switch_app/favorite_products_store.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/search_bar.dart' show buyerLiveSearchMatchScore;
+import 'package:switch_app/services/search_suggestions_service.dart';
+import 'package:switch_app/utils/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Personalized "For You" ranking from search, favorites, cart, checkout, and views.

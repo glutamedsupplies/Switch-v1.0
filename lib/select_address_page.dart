@@ -4,11 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gms_shopping/search_bar.dart';
-import 'package:gms_shopping/services/buyer_delivery_address_store.dart';
-import 'package:gms_shopping/services/philippines_places_service.dart';
-import 'package:gms_shopping/services/philippines_psgc_service.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:switch_app/search_bar.dart';
+import 'package:switch_app/services/buyer_delivery_address_store.dart';
+import 'package:switch_app/services/philippines_places_service.dart';
+import 'package:switch_app/services/philippines_psgc_service.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Full-screen Select Address experience (map + bottom sheet).
