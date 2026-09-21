@@ -75,6 +75,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Settings'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
+
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
   });
