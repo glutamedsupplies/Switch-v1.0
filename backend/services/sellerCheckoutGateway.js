@@ -145,12 +145,24 @@ function signaturesMatch(expectedHex, receivedHex) {
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
 }
 
-function verifyPaymongoWebhook({ rawBody, signatureHeader, webhookSecret, livemode }) {
+function verifyPaymongoWebhook({
+  rawBody,
+  signatureHeader,
+  webhookSecret,
+  livemode,
+  toleranceSeconds = 300,
+  nowSeconds = Math.floor(Date.now() / 1000),
+}) {
   if (!webhookSecret || !signatureHeader) {
     return false;
   }
   const parsed = parsePaymongoSignatureHeader(signatureHeader);
-  if (!parsed.t) {
+  const timestamp = Number(parsed.t);
+  if (!parsed.t || !Number.isFinite(timestamp) || timestamp <= 0) {
+    return false;
+  }
+  const tolerance = Math.max(0, Number(toleranceSeconds) || 0);
+  if (tolerance > 0 && Math.abs(Number(nowSeconds) - timestamp) > tolerance) {
     return false;
   }
   const expected = crypto

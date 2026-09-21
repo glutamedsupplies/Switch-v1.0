@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:switch_app/models/product.dart';
 import 'package:switch_app/order_store.dart';
 import 'package:switch_app/search_bar.dart' show buyerLiveSearchMatchScore;
 import 'package:switch_app/services/search_suggestions_service.dart';
+import 'package:switch_app/services/analytics_event_service.dart';
 import 'package:switch_app/utils/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -59,6 +61,17 @@ class ForYouRecommendations {
       existing.length > _maxRecentViews
           ? existing.take(_maxRecentViews).toList(growable: false)
           : existing,
+    );
+    unawaited(
+      analyticsEvents.record(
+        eventName: 'product_viewed',
+        productId: productId,
+        source: 'product_details',
+        properties: <String, dynamic>{
+          if (product.category.trim().isNotEmpty)
+            'category': product.category.trim(),
+        },
+      ),
     );
     // Persist only — don't bump revision here. Immediate notify reshuffles the
     // home For You grid and makes product images blink on every open.
@@ -137,8 +150,8 @@ class ForYouRecommendations {
       addTerm(recentSearches[i], 14.0 * decay.clamp(0.35, 1.0));
     }
 
-    for (final id in FavoriteProductsStore.instance.favoriteProductIdsNotifier
-        .value) {
+    for (final id
+        in FavoriteProductsStore.instance.favoriteProductIdsNotifier.value) {
       final product = byId[id.trim()];
       if (product != null) {
         addProductSignals(product, 9);

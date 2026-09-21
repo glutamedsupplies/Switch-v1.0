@@ -60,7 +60,7 @@ class _HttpPaymentPartnerRepository implements PaymentPartnerRepository {
   Future<List<PaymentPartner>> _fetchPartnersFromBaseUrl(String baseUrl) async {
     try {
       final request = await _client
-          .getUrl(Uri.parse('$baseUrl/api/payment-partners'))
+          .getUrl(Uri.parse('$baseUrl/api/payment-partners?productOptions=1'))
           .timeout(_requestTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
 

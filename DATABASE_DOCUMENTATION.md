@@ -2,15 +2,17 @@
 
 ## Storage Overview
 
-Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, store types, categories, products, and orders when `DATABASE_URL` is set and migrations have been applied. Other collections (chat, partners, activity, followers, vouchers, flash deals) still use JSON files under `backend/data/`.
+Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, store types, categories, products, orders, payment webhook ledger, analytics events, and chat when `DATABASE_URL` is set and migrations have been applied. Other collections (partners, activity, followers, vouchers, flash deals) still use JSON files under `backend/data/`.
 
 | Domain | Source of truth when `DATABASE_URL` is set | Fallback / backup |
 | --- | --- | --- |
 | Accounts / auth / trending searches | PostgreSQL (`001`–`012`) | JSON only if Postgres is unset or unreachable |
 | Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`019`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
-| Chat, partners, activity, followers, and similar | JSON files | n/a (Phase B will move chat) |
+| Payment webhook ledger and analytics events | PostgreSQL (`020`–`021`) | Analytics has a capped JSON fallback when Postgres is unset |
+| Chat threads + messages | PostgreSQL (`022`) | JSON dual-write backup (`CHAT_JSON_BACKUP`, default on); falls back to JSON if schema missing |
+| Partners, activity, followers, and similar | JSON files | n/a |
 
-`npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`.
+`npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`. Import existing chat JSON with `npm run db:migrate-chat`.
 
 Runtime JSON files are stored under `backend/data` and are ignored by Git:
 
@@ -25,6 +27,7 @@ backend/data/delivery_partners.json
 backend/data/payment_partners.json
 backend/data/followers.json
 backend/data/activity_log.json
+backend/data/analytics_events.json
 ```
 
 ### Catalog / orders cutover strategy (Phase A)
@@ -34,10 +37,10 @@ backend/data/activity_log.json
 - **Stable IDs:** `products.id`, `product_variants.id`, `order_items.id`, and `orders.id` (`order_group_id`) are application-assigned TEXT keys. JSON string IDs are kept on import and dual-write and are never rewritten when present. Order groups without `orderGroupId` get a deterministic `og_*` from `adminId + accountId + createdAtEpochMs` during JSON import so re-running migrate does not mint a new key. `order_group_id` stays stable across dual-write cutover.
 - **New order groups** that have no prior id receive a server-generated `orderGroupId` (`og_*`). `createdAtEpochMs` is still stored so existing pack/ship/cancel/waybill clients keep working. Those endpoints now accept either `orderGroupId` or `createdAtEpochMs`.
 - **Lifecycle timestamps (Step 5 funnel):** orders/order_items expose `created_at`, `paid_at` (left `toPay` → `toPrepare` / `awaitingWaybill`), `packed_at` (`toShip`), `shipped_at` (`toReceive`), `received_at` (`toReview` / `customerReceivedAtEpochMs`), `cancelled_at`, and `return_requested_at`. Products keep `submitted_at`, `approved_at`, `rejected_at`, plus `listed_at`. Historical JSON that lacks per-stage times may infer `paid_at`/`packed_at` from stage using `created_at`; later explicit stamps are first-write-wins.
-- **Payment + tracking (Step 6 prep):** `orders` / `order_items` have `payment_intent_id`, `payment_checkout_session_id`, `payment_idempotency_key`, `payment_client_key`, `payment_reference`, `payment_provider`, `payment_status`, and `tracking_number`. PayMongo adapters are not wired; unique indexes on intent id and idempotency key are ready for later checkout. Ship may persist `trackingNumber` without requiring it.
+- **Payment + tracking (Step 6 prep):** `orders` / `order_items` have `payment_intent_id`, `payment_checkout_session_id`, `payment_idempotency_key`, `payment_client_key`, `payment_reference`, `payment_provider`, `payment_status`, and `tracking_number`. Buyer-order PayMongo capture is not wired; unique indexes on intent id and idempotency key are ready for later checkout. Seller-plan PayMongo checkout is separate and live when configured. Ship may persist `trackingNumber` without requiring it.
 - **Tenant scoping:** list/page product and order reads filter by `admin_id` (seller) or `account_id` (buyer). Public product catalog is approved+active only — never another seller's pending listings. Dual-write upserts are session-gated; Postgres deletes are tenant-scoped when `adminId`/`accountId` is passed so one seller cannot wipe another.
 - **Inventory:** `inventory_movements` is the durable ledger. Product `stockHistory` and order `inventoryMovements` remain in JSONB `extra_data` for API compatibility.
-- **Chat is not migrated in this phase.**
+- **Chat (Phase B):** When `chat_threads` + `chat_messages` exist, `readChatThreads` / `writeChatThreads` use Postgres as source of truth. Optional JSON backup via `CHAT_JSON_BACKUP` (default on). Import with `npm run db:migrate-chat`. Product/customer snapshot leftovers and future agent/reaction fields live in `extra_data`.
 
 List endpoints `GET /api/products` and `GET /api/orders` accept `limit` and `offset` (optional `cursor` is reserved). When those query params are present, the response includes `pagination: { limit, offset, total, hasMore }`. Omitting them keeps the previous full-list response.
 
@@ -56,6 +59,7 @@ erDiagram
   PRODUCTS ||--o{ INVENTORY_MOVEMENTS : stock_ledger
   ORDERS ||--o{ ORDER_ITEMS : contains
   ORDERS ||--o{ INVENTORY_MOVEMENTS : fulfillment
+  CHAT_THREADS ||--o{ CHAT_MESSAGES : contains
   STORE_TYPES ||--o{ ACCOUNTS : business_type
   ACCOUNTS ||--o{ FOLLOWERS : seller_followed
   ACCOUNTS ||--o{ ACTIVITY_LOG : actor_or_scope
@@ -90,7 +94,7 @@ JSON fallback (when `DATABASE_URL` is unset):
 
 ## PostgreSQL tables (Phase A catalog / orders)
 
-Applied by `013_store_types.sql` through `019_order_payment_tracking.sql`.
+Applied by `013_store_types.sql` through `021_analytics_events.sql`.
 
 ### `store_types`
 
@@ -132,6 +136,14 @@ Step 6 payment / tracking columns (migration `019`) live on the **group** (`orde
 | `payment_reference` | Merchant reference |
 | `payment_provider` / `payment_status` | e.g. `paymongo` |
 | `tracking_number` | Optional ship/pack tracking no. |
+
+### `payment_webhook_events`
+
+Migration `020` is the durable PayMongo replay/idempotency ledger. The `(provider, event_id)` primary key ensures only the first active claim mutates payment state. Failed events and processing claims older than ten minutes may be retried; processed duplicates return success without re-running activation.
+
+### `analytics_events`
+
+Migration `021` stores tenant-scoped funnel events. The primary key is the client/server event ID; indexes cover `(admin_id, occurred_at)`, event name, product, and order group. Public events derive `admin_id` from the stored product. Server-generated `order_created` and `payment_succeeded` IDs are deterministic so order resyncs do not double count.
 
 ### `inventory_movements`
 
@@ -280,30 +292,24 @@ Primary key: `name`.
 
 Foreign keys/soft references: Accounts reference store types by `storeType`, `storeTypeName`, or `businessType`.
 
-### `chat_threads.json`
+### `chat_threads` / `chat_messages` (PostgreSQL, migration `022`)
 
-Stores customer support conversations.
+Durable customer support conversations. JSON `backend/data/chat_threads.json` remains a best-effort backup when `CHAT_JSON_BACKUP` is on.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `threadId` | string | Primary identifier. |
-| `adminId` | string | Store/workspace owner. |
-| `customerId`, `userId` | string | Customer account identifier. |
-| `customerLabel` | string | Customer display label. |
-| `productId`, `productName`, `productCategory`, `productDescription`, `productImageUrl` | string | Product context. |
-| `productOriginalPrice`, `productSalesPrice`, `productStock`, `productSold`, `productRating` | number | Product snapshot. |
-| `productShowsTopBrand` | boolean | Product badge/context flag. |
-| `companyName`, `companyPictureUrl` | string | Seller/company context. |
-| `employeeRating`, `employeeRatingComment`, `employeeRatingUpdatedAt` | number/string/null | Customer rating of employee/support. |
-| `updatedAt`, `lastReadAt`, `supportReadAt` | string | Read/update timestamps. |
-| `typing` | object | User/employee typing and online state. |
-| `messages` | array | Chat messages. |
+| `id` (`threadId`) | TEXT PK | Stable `thread-{customer}-{admin}-{product}`. |
+| `admin_id` | TEXT | Store/workspace owner. |
+| `customer_id` | TEXT | Customer account identifier. |
+| `product_id`, `product_name`, `company_name`, `customer_label` | TEXT | Core context columns. |
+| `employee_rating`, `employee_rating_comment`, `employee_rating_updated_at` | number/text/timestamptz | Support rating. |
+| `last_read_at`, `support_read_at`, `updated_at` | timestamptz | Read/update timestamps. |
+| `typing` | JSONB | User/employee typing and online state. |
+| `extra_data` | JSONB | Customer profile + product snapshot leftovers, agent handoff flags. |
 
-Message fields: `id`, `text`, `imageUrl`, `imageName`, `isFromSupport`, `isSentToServer`, `timestamp`, `source`, `editedAt`, `deletedAt`, `replyTo`.
+Message table (`chat_messages`): `id`, `thread_id`, `text`, `image_url`, `image_name`, `content_type`, `is_from_support`, `source`, sender fields, `reply_to`, `edited_at`, `deleted_at`, `sent_at`, `extra_data`.
 
-Primary key: `threadId`.
-
-Foreign keys/soft references: `adminId` -> admin workspace, `customerId`/`userId` -> accounts, `productId` -> products.
+Foreign keys/soft references: `admin_id` -> admin workspace, `customer_id` -> accounts, `product_id` -> products. `chat_messages.thread_id` references `chat_threads(id)` ON DELETE CASCADE.
 
 ### `delivery_partners.json`
 

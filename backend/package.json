@@ -22,7 +22,9 @@
     "db:migrate": "node db/migrate.js",
     "db:migrate-users": "node scripts/migrate-accounts-json-to-postgres.js",
     "db:migrate-catalog": "node scripts/migrate-catalog-json-to-postgres.js",
+    "db:migrate-chat": "node scripts/migrate-chat-json-to-postgres.js",
     "test:catalog": "node --test test/catalogHelpers.test.js test/postgresCatalog.test.js",
+    "test:chat": "node --test test/chatHelpers.test.js test/postgresChat.test.js",
     "gmail:connect": "node scripts/gmail-oauth-setup.js",
     "gmail:test": "node scripts/test-gmail-otp.js"
   },

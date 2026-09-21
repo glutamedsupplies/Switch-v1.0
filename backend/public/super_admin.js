@@ -621,6 +621,7 @@
     eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle>',
     eyeOff: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"></path><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"></path><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-4.86"></path><path d="m2 2 20 20"></path>',
     key: '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle>',
+    power: '<path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 1 1-12.8 0"></path>',
   });
   const superAdminNotificationIconPaths = Object.freeze({
     listingReview: '<path d="M12 22V12"></path><path d="M20.27 18.27 22 20"></path><path d="M21 10.498V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.729l7 4a2 2 0 0 0 2 .001l.98-.559"></path><path d="M3.29 7 12 12l8.71-5"></path><path d="m7.5 4.27 8.997 5.148"></path><circle cx="18.5" cy="16.5" r="2.5"></circle>',
@@ -9989,6 +9990,7 @@
     const accountState = getCompanyAccountState(findCompanyById(adminId));
     const isBanned = accountState === "banned";
     const isRestricted = accountState === "restricted";
+    const isSuspended = accountState === "suspended";
     return [
       {
         id: "view",
@@ -10024,15 +10026,28 @@
         control: true,
       },
       {
+        id: isSuspended ? "activate" : "deactivate",
+        label: isSuspended ? "Activate" : "Deactivate",
+        icon: companyCardIconPaths.power,
+        positive: isSuspended,
+        adminId,
+        control: true,
+      },
+      {
         id: isBanned ? "unban" : "ban",
-        label: isBanned ? "Unbanned" : "Banned",
+        label: isBanned ? "Unban" : "Ban",
         icon: isBanned ? companyCardIconPaths.unban : companyCardIconPaths.ban,
         danger: !isBanned,
         positive: isBanned,
         adminId,
         control: true,
       },
-    ].filter((action) => !isBanned || !["restrict", "unrestrict"].includes(action.id));
+    ].filter((action) => {
+      if (isBanned && ["restrict", "unrestrict", "deactivate", "activate"].includes(action.id)) {
+        return false;
+      }
+      return true;
+    });
   }
 
   // Reads or derives company control action definitions for the current super admin flow.
@@ -10042,9 +10057,17 @@
 
   // Checks whether company control action is true for the current record or UI state.
   function isCompanyControlAction(actionId) {
-    return ["notify", "restrict", "unrestrict", "ban", "banned", "unban", "unbanned"].includes(
-      String(actionId || "").trim().toLowerCase(),
-    );
+    return [
+      "notify",
+      "restrict",
+      "unrestrict",
+      "ban",
+      "banned",
+      "unban",
+      "unbanned",
+      "deactivate",
+      "activate",
+    ].includes(String(actionId || "").trim().toLowerCase());
   }
 
   // Builds the DOM structure for company action element.
@@ -27465,43 +27488,85 @@
       return admin;
     }
     const normalizedAction = String(action || "").trim().toLowerCase();
-    if (normalizedAction !== "unrestrict") {
-      return admin;
+    if (normalizedAction === "unrestrict") {
+      return {
+        ...admin,
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        adminStatus: "active",
+        userStatus: "active",
+        isActive: true,
+        disabled: false,
+        isRestricted: false,
+        restricted: false,
+        restrictedAt: null,
+        restricted_at: null,
+        restrictedBy: "",
+        restricted_by: "",
+        restrictDurationValue: null,
+        restrictDurationUnit: "",
+        restrictExpiresAt: null,
+        restrictionExpiresAt: null,
+        restrictedUntil: null,
+        restrict_expires_at: null,
+        restrictionReason: "",
+        restrictReason: "",
+        restriction_reason: "",
+        restrict_reason: "",
+        restrictionDescription: "",
+        restrictDescription: "",
+        restriction_description: "",
+        restrict_description: "",
+        restrictionLimits: [],
+        restrictLimits: [],
+        restrictionLimitLabels: [],
+        restrictLimitLabels: [],
+      };
     }
-    return {
-      ...admin,
-      status: "active",
-      accountStatus: "active",
-      accountState: "active",
-      adminStatus: "active",
-      userStatus: "active",
-      isActive: true,
-      disabled: false,
-      isRestricted: false,
-      restricted: false,
-      restrictedAt: null,
-      restricted_at: null,
-      restrictedBy: "",
-      restricted_by: "",
-      restrictDurationValue: null,
-      restrictDurationUnit: "",
-      restrictExpiresAt: null,
-      restrictionExpiresAt: null,
-      restrictedUntil: null,
-      restrict_expires_at: null,
-      restrictionReason: "",
-      restrictReason: "",
-      restriction_reason: "",
-      restrict_reason: "",
-      restrictionDescription: "",
-      restrictDescription: "",
-      restriction_description: "",
-      restrict_description: "",
-      restrictionLimits: [],
-      restrictLimits: [],
-      restrictionLimitLabels: [],
-      restrictLimitLabels: [],
-    };
+    if (normalizedAction === "activate") {
+      return {
+        ...admin,
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        adminStatus: "active",
+        userStatus: "active",
+        isActive: true,
+        disabled: false,
+        isSuspended: false,
+        suspended: false,
+        suspendedAt: null,
+        deactivatedAt: null,
+        disabledAt: null,
+      };
+    }
+    if (normalizedAction === "deactivate") {
+      return {
+        ...admin,
+        status: "deactivated",
+        accountStatus: "deactivated",
+        accountState: "deactivated",
+        isActive: false,
+        disabled: true,
+      };
+    }
+    if (normalizedAction === "unban") {
+      return {
+        ...admin,
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        isActive: true,
+        disabled: false,
+        isBanned: false,
+        banned: false,
+        bannedAt: null,
+        banReason: "",
+        banDescription: "",
+      };
+    }
+    return admin;
   }
 
   // Reads current notify type from the seller notify modal.
@@ -27854,6 +27919,7 @@
       unrestrict: `unrestrict ${label}`,
       unban: `unban ${label}`,
       deactivate: `deactivate ${label}`,
+      activate: `activate ${label}`,
     };
     if (fingerprintLabels[normalizedAction]) {
       if (!await requireSuperAdminFingerprint(fingerprintLabels[normalizedAction])) {
@@ -27887,6 +27953,8 @@
       unrestrict: `Unrestricting ${label}...`,
       ban: `Banning ${label}...`,
       unban: `Unbanning ${label}...`,
+      deactivate: `Deactivating ${label}...`,
+      activate: `Activating ${label}...`,
     };
     setFeedback(progressLabels[normalizedAction] || `Updating ${label}...`);
 
@@ -27948,10 +28016,15 @@
         restrict: normalizedAdminIds.length > 1 ? "Companies Restricted" : "Company Restricted",
         unban: normalizedAdminIds.length > 1 ? "Companies Unbanned" : "Company Unbanned",
         unrestrict: normalizedAdminIds.length > 1 ? "Companies Unrestricted" : "Company Unrestricted",
+        deactivate: normalizedAdminIds.length > 1 ? "Companies Deactivated" : "Company Deactivated",
+        activate: normalizedAdminIds.length > 1 ? "Companies Activated" : "Company Activated",
         notify: notifyType === "warning"
           ? (normalizedAdminIds.length > 1 ? "Seller Warnings Sent" : "Seller Warning Sent")
           : (normalizedAdminIds.length > 1 ? "Seller Notices Sent" : "Seller Notice Sent"),
       };
+      if (actionMessages.length === 1 && normalizedAction !== "notify") {
+        successMessage = actionMessages[0];
+      }
       if (controlSuccessTitles[normalizedAction]) {
         await showSuccessValidationModal(controlSuccessTitles[normalizedAction], successMessage);
       }
@@ -27996,7 +28069,17 @@
       return;
     }
 
-    if (["notify", "restrict", "unrestrict", "ban", "banned", "unban", "unbanned"].includes(normalizedAction)) {
+    if ([
+      "notify",
+      "restrict",
+      "unrestrict",
+      "ban",
+      "banned",
+      "unban",
+      "unbanned",
+      "deactivate",
+      "activate",
+    ].includes(normalizedAction)) {
       const controlAction = normalizedAction === "banned"
         ? "ban"
         : normalizedAction === "unbanned"

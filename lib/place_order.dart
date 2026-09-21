@@ -10,6 +10,8 @@ import 'package:switch_app/models/product.dart';
 import 'package:switch_app/order_tab_navigation.dart';
 import 'package:switch_app/order_store.dart';
 import 'package:switch_app/services/delivery_partner_repository.dart';
+import 'package:switch_app/services/analytics_event_service.dart';
+import 'package:switch_app/services/buyer_checkout_service.dart';
 import 'package:switch_app/services/payment_partner_repository.dart';
 import 'package:switch_app/services/vouchers_service.dart';
 import 'package:switch_app/theme/app_snack_bar.dart';
@@ -21,6 +23,7 @@ import 'package:switch_app/utils/currency_format.dart';
 import 'package:switch_app/widgets/app_price_text.dart';
 import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum BookingFlowSource { cartCheckout, directBuy }
 
@@ -238,8 +241,7 @@ class BookingLineItem {
       companyName: companyName ?? this.companyName,
       flashDealId: flashDealId ?? this.flashDealId,
       flashReservationId: flashReservationId ?? this.flashReservationId,
-      reservationExpiresAt:
-          reservationExpiresAt ?? this.reservationExpiresAt,
+      reservationExpiresAt: reservationExpiresAt ?? this.reservationExpiresAt,
     );
   }
 }
@@ -362,6 +364,7 @@ class _BookingPageState extends State<BookingPage> {
   void initState() {
     super.initState();
     _orderItems = List<BookingLineItem>.from(widget.items);
+    _recordCheckoutStarted();
     _deliveryPartnerRepository = createDeliveryPartnerRepository();
     _paymentPartnerRepository = createPaymentPartnerRepository();
     _deliveryPartnersFuture = _loadDeliveryPartners();
@@ -375,6 +378,25 @@ class _BookingPageState extends State<BookingPage> {
       ..addListener(_handleEnteredAmountChanged);
     unawaited(_loadRecentBookingPreferences());
     unawaited(_loadCheckoutVouchers());
+  }
+
+  void _recordCheckoutStarted() {
+    final seenProductIds = <String>{};
+    for (final item in _orderItems) {
+      final productId = item.productId.trim();
+      if (productId.isEmpty || !seenProductIds.add(productId)) continue;
+      unawaited(
+        analyticsEvents.record(
+          eventName: 'checkout_started',
+          productId: productId,
+          platformId: _checkoutPlatformId,
+          source: widget.source == BookingFlowSource.cartCheckout
+              ? 'cart_checkout'
+              : 'direct_buy',
+          properties: <String, dynamic>{'quantity': item.quantity},
+        ),
+      );
+    }
   }
 
   @override
@@ -1614,8 +1636,14 @@ class _BookingPageState extends State<BookingPage> {
       _grandTotal - enteredAmount,
       0.0,
     );
-    const nextOrderStage = OrderStageKey.toPrepare;
-    const amountToPayAmount = 0.0;
+    // Full payment waits in To Pay until PayMongo webhook (or manual fallback)
+    // marks the order paid. COD with deposit met still goes to To Prepare.
+    final bool useOnlineCheckout = !isCodPlacement;
+    final OrderStageKey nextOrderStage = useOnlineCheckout
+        ? OrderStageKey.toPay
+        : OrderStageKey.toPrepare;
+    final double amountToPayAmount =
+        useOnlineCheckout ? _grandTotal : 0.0;
     final createdAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     final orderEntries = await _buildOrderEntries(
       createdAtEpochMs: createdAtEpochMs,
@@ -1643,6 +1671,33 @@ class _BookingPageState extends State<BookingPage> {
       }
     }
 
+    var openStage = nextOrderStage;
+    if (useOnlineCheckout) {
+      try {
+        final checkout = await createBuyerOrderCheckoutSession(
+          createdAtEpochMs: createdAtEpochMs,
+          paymentGateway: paymentPartner.branchLabel,
+        );
+        if (checkout.hasHostedCheckout) {
+          final uri = Uri.tryParse(checkout.checkoutUrl);
+          if (uri != null) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+          openStage = OrderStageKey.toPay;
+        } else if (checkout.alreadyPaid || checkout.provider == 'manual') {
+          openStage = OrderStageKey.toPrepare;
+        }
+      } catch (error) {
+        debugPrint('Buyer checkout session failed: $error');
+        if (mounted) {
+          _showBookingMessage(
+            'Order saved. Complete payment from To Pay when checkout is available.',
+          );
+        }
+        openStage = OrderStageKey.toPay;
+      }
+    }
+
     try {
       await _saveRecentBookingPreferences(
         deliveryPartner: deliveryPartner,
@@ -1656,7 +1711,7 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
 
-    _openPlacedOrderTab(nextOrderStage);
+    _openPlacedOrderTab(openStage);
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -3531,8 +3586,7 @@ class _CheckoutVouchersSheet extends StatelessWidget {
                         const SizedBox(height: 10),
                         if (availableVouchers.isEmpty)
                           _CheckoutVoucherEmptyState(
-                            message:
-                                'No unused available vouchers right now.',
+                            message: 'No unused available vouchers right now.',
                             secondaryColor: secondaryColor,
                           )
                         else

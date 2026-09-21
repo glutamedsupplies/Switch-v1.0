@@ -11,10 +11,10 @@ import 'package:switch_app/models/product.dart';
 import 'package:switch_app/product_details.dart';
 import 'package:switch_app/search_bar.dart';
 import 'package:switch_app/services/flash_deals_service.dart';
+import 'package:switch_app/services/analytics_event_service.dart';
 import 'package:switch_app/services/product_repository.dart';
 import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:switch_app/utils/auth_session.dart';
-import 'package:switch_app/utils/currency_format.dart';
 import 'package:switch_app/widgets/app_price_text.dart';
 import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:switch_app/widgets/search_not_found_art.dart';
@@ -59,9 +59,7 @@ Future<CartPageAction?> openCartPage(
 
   return Navigator.of(context).push<CartPageAction>(
     MaterialPageRoute<CartPageAction>(
-      builder: (_) => CartPage(
-        platformId: CartStore.instance.activePlatformId,
-      ),
+      builder: (_) => CartPage(platformId: CartStore.instance.activePlatformId),
     ),
   );
 }
@@ -663,8 +661,7 @@ class CartStore {
     final existingIndex = nextItems.indexWhere(
       (item) => item.entryKey == provisionalKey,
     );
-    final existingItem =
-        existingIndex >= 0 ? nextItems[existingIndex] : null;
+    final existingItem = existingIndex >= 0 ? nextItems[existingIndex] : null;
     final targetQuantity = existingItem == null
         ? normalizedQuantity
         : _normalizeCartQuantity(
@@ -754,7 +751,8 @@ class CartStore {
         flashDealId: nextItem.flashDealId,
         flashReservationId: nextItem.flashReservationId,
         reservationExpiresAt: nextItem.reservationExpiresAt,
-        clearFlashLock: nextItem.flashReservationId.isEmpty &&
+        clearFlashLock:
+            nextItem.flashReservationId.isEmpty &&
             existing.flashReservationId.isNotEmpty,
       );
     } else {
@@ -762,6 +760,18 @@ class CartStore {
     }
 
     await _persist(nextItems);
+    unawaited(
+      analyticsEvents.record(
+        eventName: 'added_to_cart',
+        productId: product.id,
+        platformId: scopedPlatform,
+        source: 'cart',
+        properties: <String, dynamic>{
+          'quantity': nextItem.quantity,
+          if (nextItem.variantId.isNotEmpty) 'variantId': nextItem.variantId,
+        },
+      ),
+    );
   }
 
   Future<void> updateQuantity(String entryKey, int quantity) async {
@@ -798,8 +808,7 @@ class CartStore {
               : current.unitPrice,
           flashDealId: reservation.dealId,
           flashReservationId: reservation.id,
-          reservationExpiresAt:
-              reservation.expiresAt.toUtc().toIso8601String(),
+          reservationExpiresAt: reservation.expiresAt.toUtc().toIso8601String(),
         );
       } on FlashDealReserveException {
         // Keep previous quantity/lock if re-reserve fails.
@@ -859,7 +868,9 @@ class CartStore {
       final item = nextItems[index];
       if (!item.hasFlashLock) continue;
 
-      final extended = await extendFlashDealReservation(item.flashReservationId);
+      final extended = await extendFlashDealReservation(
+        item.flashReservationId,
+      );
       if (extended != null && extended.isHeld) {
         nextItems[index] = item.copyWith(
           unitPrice: extended.lockedUnitPrice > 0
@@ -1434,9 +1445,7 @@ class _CartPageState extends State<CartPage> {
               .toList(growable: false);
 
           if (visibleItems.isEmpty) {
-            return _CartSearchEmptyState(
-              secondaryColor: secondaryColor,
-            );
+            return _CartSearchEmptyState(secondaryColor: secondaryColor);
           }
 
           final subtotal = selectedItems.fold<double>(
@@ -1564,9 +1573,7 @@ class _CartEmptyState extends StatelessWidget {
 }
 
 class _CartSearchEmptyState extends StatelessWidget {
-  const _CartSearchEmptyState({
-    required this.secondaryColor,
-  });
+  const _CartSearchEmptyState({required this.secondaryColor});
 
   final Color secondaryColor;
 

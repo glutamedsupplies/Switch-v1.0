@@ -72,7 +72,7 @@ class _WebPaymentPartnerRepository implements PaymentPartnerRepository {
   Future<List<PaymentPartner>> _fetchPartnersFromBaseUrl(String baseUrl) async {
     try {
       final response = await HttpRequest.request(
-        '$baseUrl/api/payment-partners',
+        '$baseUrl/api/payment-partners?productOptions=1',
         method: 'GET',
         requestHeaders: const {
           'Accept': 'application/json',

@@ -10,6 +10,7 @@ const {
   validateIdentityHints,
 } = require("./security/appSessionAuth");
 const { createPlatformFeedbackApi } = require("./services/platformFeedbackApi");
+const { createAnalyticsApi } = require("./services/analyticsApi");
 const { createTrendingSearchesApi } = require("./services/trendingSearchesApi");
 const { createMapsPlacesApi } = require("./services/mapsPlacesApi");
 const { createVouchersApi } = require("./services/vouchersApi");
@@ -66,8 +67,18 @@ const {
   createSellerCheckoutIntent,
   updateSellerCheckoutIntentGatewayState,
   findSellerCheckoutIntentByPaymentReference,
+  claimPaymentWebhookEvent,
+  finishPaymentWebhookEvent,
   confirmSellerOnboarding,
   markAccountVerifiedForSellerOnboarding,
+  syncSellerCompanyEnforcementStatus,
+  listPendingReviewCompanies,
+  activatePendingReviewCompany,
+  rejectPendingReviewCompany,
+  addCompanyBusinessDocument,
+  reviewCompanyBusinessDocument,
+  getCompanyDocumentsForAdmin,
+  findCompanyById,
   getSellerSwitchPinStatus,
   setSellerSwitchPin,
   verifySellerSwitchPin,
@@ -78,6 +89,15 @@ const {
   createHostedCheckoutSession,
   verifyPaymongoWebhook,
 } = require("./services/sellerCheckoutGateway");
+const {
+  createBuyerOrderCheckoutSession,
+  newPaymentIdempotencyKey,
+  newPaymentReference,
+} = require("./services/buyerCheckoutGateway");
+const {
+  createShipment: createCourierShipment,
+  getCourierProviderConfig,
+} = require("./services/courierProviderAdapter");
 const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("./db/password");
 const {
   applyCorsHeaders,
@@ -119,6 +139,11 @@ const {
   syncOrdersToPostgres,
 } = require("./services/postgresOrdersStore");
 const {
+  isChatPostgresReady,
+  listChatThreadsFromPostgres,
+  syncChatThreadsToPostgres,
+} = require("./services/postgresChatStore");
+const {
   assignOrderGroupIds,
   orderEntryMatchesGroupKey,
   parsePagination,
@@ -130,6 +155,7 @@ const {
   paymentFieldsForApi,
   lifecycleFieldsForApi,
 } = require("./db/catalogHelpers");
+const { isChatJsonBackupEnabled } = require("./db/chatHelpers");
 const { isPostgresConfigured } = require("./db/pool");
 let biometricFirmwareCompile = null;
 try {
@@ -208,6 +234,10 @@ const endpointRateLimiters = Object.freeze({
   "visual-search": createRateLimiter({
     max: Math.max(3, Number(process.env.VISUAL_SEARCH_RATE_LIMIT_MAX) || 30),
     windowMs: Math.max(30_000, Number(process.env.VISUAL_SEARCH_RATE_LIMIT_WINDOW_MS) || 10 * 60 * 1000),
+  }),
+  analytics: createRateLimiter({
+    max: Math.max(20, Number(process.env.ANALYTICS_RATE_LIMIT_MAX) || 120),
+    windowMs: Math.max(30_000, Number(process.env.ANALYTICS_RATE_LIMIT_WINDOW_MS) || 60 * 1000),
   }),
 });
 const ROOT_DIR = __dirname;
@@ -1366,6 +1396,21 @@ async function writeCatalogJsonBackup(filePath, records, label) {
   }
 }
 
+async function writeChatJsonBackup(threads) {
+  if (!isChatJsonBackupEnabled()) {
+    return;
+  }
+  try {
+    await ensureStoragePaths();
+    await writeJsonArrayFile(CHAT_THREADS_FILE, threads);
+  } catch (error) {
+    console.warn(
+      "JSON chat backup write failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 async function readProducts(options = {}) {
   const adminId = String(options.adminId ?? "").trim();
   const publicCatalog = options.publicCatalog === true;
@@ -2131,6 +2176,10 @@ function resolveStoreTypePlatformId(source = {}) {
 }
 
 async function readChatThreads() {
+  if (await isChatPostgresReady()) {
+    return listChatThreadsFromPostgres();
+  }
+
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(CHAT_THREADS_FILE, "utf8");
 
@@ -2142,12 +2191,23 @@ async function readChatThreads() {
   }
 }
 
-async function writeChatThreads(threads) {
-  await fsPromises.writeFile(
-    CHAT_THREADS_FILE,
-    `${JSON.stringify(threads, null, 2)}\n`,
-    "utf8",
-  );
+async function writeChatThreads(threads, options = {}) {
+  const nextThreads = Array.isArray(threads) ? threads : [];
+  const scopeAdminId = String(options.adminId ?? "").trim();
+  if (await isChatPostgresReady()) {
+    const pgThreads = scopeAdminId
+      ? nextThreads.filter((thread) => isRecordInAdminScope(thread, scopeAdminId))
+      : nextThreads;
+    await syncChatThreadsToPostgres(pgThreads, {
+      deleteMissing: options.deleteMissing !== false,
+      adminId: scopeAdminId,
+    });
+    await writeChatJsonBackup(nextThreads);
+    return;
+  }
+
+  await ensureStoragePaths();
+  await writeJsonArrayFile(CHAT_THREADS_FILE, nextThreads);
 }
 
 const serializedMutationQueues = new Map();
@@ -7544,6 +7604,9 @@ function getEndpointRateLimitKind(pathname) {
   }
   if (pathValue === "/api/products/visual-search") {
     return "visual-search";
+  }
+  if (pathValue === "/api/analytics/events") {
+    return "analytics";
   }
   if (
     pathValue.endsWith("/ai-reply")
@@ -18779,7 +18842,7 @@ async function writeNormalizedChatThreadsForAdmin(adminId, scopedThreads) {
     ...existingThreads.filter((thread) => !isRecordInAdminScope(thread, normalizedAdminId)),
     ...scopedThreadRecords,
   ]);
-  await writeChatThreads(nextThreads);
+  await writeChatThreads(nextThreads, { adminId: normalizedAdminId });
 }
 
 function normalizeStoredChatThreadRecord(thread) {
@@ -21125,12 +21188,17 @@ async function requirePartnerResourcePermission({
   requestIsSuperAdmin,
   productOptions = false,
 }) {
-  if (
-    !config.permission
-    || requestIsSuperAdmin
-    || productOptions
-    || !hasRequestAdminScope(request, requestUrl)
-  ) {
+  if (requestIsSuperAdmin || productOptions) {
+    return true;
+  }
+  if (!hasRequestAdminScope(request, requestUrl)) {
+    sendJson(response, 403, {
+      message: "Signed store scope is required to manage partners.",
+      code: "PARTNER_ADMIN_SCOPE_REQUIRED",
+    });
+    return false;
+  }
+  if (!config.permission) {
     return true;
   }
   return requireAdminRestrictionAllowed(
@@ -22533,6 +22601,7 @@ async function handlePaymongoSellerWebhookApi(request, response) {
     return;
   }
 
+  let claimedWebhookEventId = "";
   try {
     const rawBody = await parseRawRequestBody(request);
     const webhookSecret = String(process.env.PAYMONGO_WEBHOOK_SECRET ?? "").trim();
@@ -22571,6 +22640,9 @@ async function handlePaymongoSellerWebhookApi(request, response) {
 
     const sessionData = eventData?.data || {};
     const attributes = sessionData?.attributes || {};
+    const providerEventId = String(eventData?.id || "").trim();
+    const payloadHash = crypto.createHash("sha256").update(rawBody).digest("hex");
+    const webhookEventId = providerEventId || `payload_${payloadHash}`;
     const paymentReference = String(attributes?.reference_number || "").trim();
     if (!paymentReference) {
       sendJson(response, 400, { message: "Missing checkout reference number." });
@@ -22583,17 +22655,56 @@ async function handlePaymongoSellerWebhookApi(request, response) {
       return;
     }
 
-    await updateSellerCheckoutIntentGatewayState(intent.id, {
-      paymentGateway: "paymongo",
-      status: "active",
-      metadata: {
-        hostedCheckoutId: String(sessionData?.id || "").trim(),
-        paymentPaidAt: new Date().toISOString(),
-        paymongoEventType: eventType,
-        paymongoLivemode: livemode,
-        paymongoWebhookPayload: eventPayload,
-      },
+    const expectedCheckoutId = String(intent?.metadata?.hostedCheckoutId || "").trim();
+    const receivedCheckoutId = String(sessionData?.id || "").trim();
+    if (expectedCheckoutId && receivedCheckoutId !== expectedCheckoutId) {
+      sendJson(response, 409, {
+        message: "PayMongo checkout session does not match this intent.",
+        code: "PAYMONGO_CHECKOUT_MISMATCH",
+      });
+      return;
+    }
+    if (intent.expiresAt && Date.parse(intent.expiresAt) < Date.now()) {
+      sendJson(response, 409, {
+        message: "Seller checkout intent has expired.",
+        code: "PAYMONGO_CHECKOUT_EXPIRED",
+      });
+      return;
+    }
+
+    const claim = await claimPaymentWebhookEvent({
+      provider: "paymongo",
+      eventId: webhookEventId,
+      eventType,
+      livemode,
+      payloadHash,
     });
+    if (!claim.claimed) {
+      sendJson(response, 200, {
+        message: "Webhook was already processed.",
+        duplicate: true,
+        eventId: webhookEventId,
+      });
+      return;
+    }
+    claimedWebhookEventId = webhookEventId;
+
+    if (
+      String(intent.status || "").trim().toLowerCase() === "active"
+      && String(intent?.metadata?.paymentPaidAt || "").trim()
+    ) {
+      await finishPaymentWebhookEvent({
+        provider: "paymongo",
+        eventId: webhookEventId,
+      });
+      claimedWebhookEventId = "";
+      sendJson(response, 200, {
+        message: "Checkout was already activated.",
+        duplicate: true,
+        eventId: webhookEventId,
+      });
+      return;
+    }
 
     const confirmed = await confirmSellerOnboarding({
       accountId: intent.accountId,
@@ -22605,18 +22716,554 @@ async function handlePaymongoSellerWebhookApi(request, response) {
       amount: intent.amount,
       currencyCode: intent.currencyCode,
     });
+
+    await updateSellerCheckoutIntentGatewayState(intent.id, {
+      paymentGateway: "paymongo",
+      status: "active",
+      metadata: {
+        hostedCheckoutId: String(sessionData?.id || "").trim(),
+        paymentPaidAt: new Date().toISOString(),
+        paymongoEventId: webhookEventId,
+        paymongoEventType: eventType,
+        paymongoLivemode: livemode,
+        paymongoPayloadHash: payloadHash,
+      },
+    });
     await notifySellerOnboardingOutcome(confirmed, {
       accountId: intent.accountId,
       email: confirmed?.account?.email,
     }, request);
+
+    await finishPaymentWebhookEvent({
+      provider: "paymongo",
+      eventId: webhookEventId,
+    });
+    claimedWebhookEventId = "";
 
     sendJson(response, 200, {
       message: "Seller checkout webhook processed.",
       session: serializeUnifiedSessionEntry(confirmed.session),
     });
   } catch (error) {
+    if (claimedWebhookEventId) {
+      try {
+        await finishPaymentWebhookEvent({
+          provider: "paymongo",
+          eventId: claimedWebhookEventId,
+          error: error instanceof Error ? error.message : "Webhook processing failed.",
+        });
+      } catch (trackingError) {
+        console.error("Unable to mark PayMongo webhook as failed:", trackingError);
+      }
+    }
     sendJson(response, error?.statusCode || 400, {
       message: error instanceof Error ? error.message : "Unable to process PayMongo webhook.",
+    });
+  }
+}
+
+function markBuyerOrderEntryPaid(entry, paymentPatch = {}) {
+  const stage = String(entry?.stage ?? "").trim();
+  const nextStage =
+    stage === "toPay" || stage === "" || stage === "awaitingWaybill"
+      ? "toPrepare"
+      : stage;
+  const paidAtEpochMs = Date.now();
+  return normalizeStoredOrderEntry({
+    ...entry,
+    ...paymentPatch,
+    stage: nextStage,
+    amountToPayAmount: 0,
+    paymentStatus:
+      String(paymentPatch.paymentStatus || entry?.paymentStatus || "paid").trim()
+      || "paid",
+    paidAt: entry?.paidAt || new Date(paidAtEpochMs).toISOString(),
+    paidAtEpochMs:
+      Math.trunc(parseFiniteNumber(entry?.paidAtEpochMs, 0)) || paidAtEpochMs,
+  });
+}
+
+async function handleBuyerOrderCheckoutSessionApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(
+      request.authSession?.accountId || payload.accountId || "",
+    ).trim();
+    if (!accountId) {
+      sendJson(response, 401, { message: "Signed buyer session is required." });
+      return;
+    }
+
+    const groupKey = String(
+      payload.orderGroupId
+        ?? payload.createdAtEpochMs
+        ?? payload.groupKey
+        ?? "",
+    ).trim();
+    if (!groupKey) {
+      sendJson(response, 400, { message: "orderGroupId or createdAtEpochMs is required." });
+      return;
+    }
+
+    const orders = await readOrders({ accountId });
+    const groupEntries = orders.filter((entry) =>
+      orderEntryMatchesGroupKey(entry, groupKey)
+      && String(entry?.accountId ?? "").trim() === accountId
+    );
+    if (!groupEntries.length) {
+      sendJson(response, 404, { message: "Order group not found." });
+      return;
+    }
+
+    const alreadyPaid = groupEntries.every((entry) => {
+      const status = String(entry?.paymentStatus ?? "").trim().toLowerCase();
+      const stage = String(entry?.stage ?? "").trim();
+      return status === "paid" || (stage !== "toPay" && parseFiniteNumber(entry?.amountToPayAmount, 0) <= 0.009);
+    });
+    if (alreadyPaid) {
+      sendJson(response, 200, {
+        provider: "manual",
+        alreadyPaid: true,
+        checkoutUrl: "",
+        orderGroupId: String(groupEntries[0]?.orderGroupId || groupKey).trim(),
+        createdAtEpochMs: Math.trunc(
+          parseFiniteNumber(groupEntries[0]?.createdAtEpochMs, 0),
+        ),
+        message: "Order is already paid.",
+      });
+      return;
+    }
+
+    const amount = groupEntries.reduce((sum, entry) => {
+      const due = Math.max(parseFiniteNumber(entry?.amountToPayAmount, 0), 0);
+      if (due > 0.009) {
+        return sum + due;
+      }
+      return sum + Math.max(parseFiniteNumber(entry?.grandTotalAmount, 0), 0);
+    }, 0);
+    if (amount <= 0.009) {
+      sendJson(response, 400, { message: "Order has no payable amount." });
+      return;
+    }
+
+    const paymentIdempotencyKey =
+      String(payload.paymentIdempotencyKey ?? "").trim()
+      || String(groupEntries[0]?.paymentIdempotencyKey ?? "").trim()
+      || newPaymentIdempotencyKey("buy");
+    const paymentReference =
+      String(payload.paymentReference ?? "").trim()
+      || String(groupEntries[0]?.paymentReference ?? "").trim()
+      || newPaymentReference("ORD");
+    const paymentGateway = String(
+      payload.paymentGateway
+        ?? groupEntries[0]?.paymentPartnerName
+        ?? groupEntries[0]?.paymentMethod
+        ?? "",
+    ).trim();
+    const requestOrigin = getRequestOrigin(request);
+    const successUrl = String(payload.successUrl ?? "").trim()
+      || `${requestOrigin}/?checkout=success&orderGroupId=${encodeURIComponent(groupKey)}`;
+    const cancelUrl = String(payload.cancelUrl ?? "").trim()
+      || `${requestOrigin}/?checkout=cancel&orderGroupId=${encodeURIComponent(groupKey)}`;
+
+    const hosted = await createBuyerOrderCheckoutSession({
+      orderGroupId: String(groupEntries[0]?.orderGroupId || groupKey).trim(),
+      amount,
+      currencyCode: String(payload.currencyCode ?? "PHP").trim() || "PHP",
+      paymentGateway,
+      paymentReference,
+      description: `Order ${groupKey}`,
+      customerEmail: String(
+        payload.email || request.authSession?.email || "",
+      ).trim(),
+      customerName: String(
+        payload.customerName || groupEntries[0]?.clientName || "",
+      ).trim(),
+      successUrl,
+      cancelUrl,
+      metadata: {
+        accountId,
+        createdAtEpochMs: Math.trunc(
+          parseFiniteNumber(groupEntries[0]?.createdAtEpochMs, 0),
+        ),
+      },
+    });
+
+    const paymentPatch = {
+      paymentProvider: hosted.provider,
+      paymentCheckoutSessionId: hosted.externalId || "",
+      paymentReference: hosted.paymentReference || paymentReference,
+      paymentIdempotencyKey,
+      paymentStatus: hosted.provider === "paymongo" ? "pending" : "paid",
+      paymentClientKey: "",
+      paymentIntentId: String(groupEntries[0]?.paymentIntentId ?? "").trim(),
+    };
+
+    let nextOrders;
+    if (hosted.provider === "paymongo") {
+      nextOrders = orders.map((entry) => {
+        if (
+          !orderEntryMatchesGroupKey(entry, groupKey)
+          || String(entry?.accountId ?? "").trim() !== accountId
+        ) {
+          return entry;
+        }
+        return normalizeStoredOrderEntry({
+          ...entry,
+          ...paymentPatch,
+          stage: "toPay",
+          amountToPayAmount: Math.max(
+            parseFiniteNumber(entry?.amountToPayAmount, 0),
+            parseFiniteNumber(entry?.grandTotalAmount, 0),
+          ),
+        });
+      });
+    } else {
+      nextOrders = orders.map((entry) => {
+        if (
+          !orderEntryMatchesGroupKey(entry, groupKey)
+          || String(entry?.accountId ?? "").trim() !== accountId
+        ) {
+          return entry;
+        }
+        return markBuyerOrderEntryPaid(entry, paymentPatch);
+      });
+    }
+
+    await writeOrders(nextOrders, catalogWriteScope({ accountId }));
+
+    sendJson(response, 201, {
+      provider: hosted.provider,
+      checkoutUrl: hosted.checkoutUrl || "",
+      providerCheckoutId: hosted.externalId || "",
+      paymentReference: paymentPatch.paymentReference,
+      paymentIdempotencyKey,
+      paymentMethodTypes: hosted.paymentMethodTypes || [],
+      livemode: Boolean(hosted.livemode),
+      orderGroupId: String(groupEntries[0]?.orderGroupId || groupKey).trim(),
+      createdAtEpochMs: Math.trunc(
+        parseFiniteNumber(groupEntries[0]?.createdAtEpochMs, 0),
+      ),
+      message:
+        hosted.provider === "paymongo"
+          ? "Buyer checkout session created."
+          : "PayMongo is not configured; order marked paid locally.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to create buyer checkout session.",
+    });
+  }
+}
+
+async function handleBuyerOrderPaymentStatusApi(request, response, groupKey) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const accountId = String(request.authSession?.accountId || "").trim();
+    const adminId = getRequestAdminId(
+      request,
+      new URL(request.url, `http://127.0.0.1:${PORT}`),
+    );
+    const orders = await readOrders(
+      accountId ? { accountId } : adminId ? { adminId } : {},
+    );
+    const groupEntries = orders.filter((entry) => {
+      if (!orderEntryMatchesGroupKey(entry, groupKey)) {
+        return false;
+      }
+      if (accountId && String(entry?.accountId ?? "").trim() !== accountId) {
+        return false;
+      }
+      if (adminId && !isRecordInAdminScope(entry, adminId)) {
+        return false;
+      }
+      return true;
+    });
+    if (!groupEntries.length) {
+      sendJson(response, 404, { message: "Order group not found." });
+      return;
+    }
+
+    const paymentStatus = String(groupEntries[0]?.paymentStatus || "").trim();
+    const stage = String(groupEntries[0]?.stage || "").trim();
+    const paid = paymentStatus.toLowerCase() === "paid"
+      || (stage !== "toPay" && parseFiniteNumber(groupEntries[0]?.amountToPayAmount, 0) <= 0.009);
+
+    sendJson(response, 200, {
+      orderGroupId: String(groupEntries[0]?.orderGroupId || groupKey).trim(),
+      createdAtEpochMs: Math.trunc(
+        parseFiniteNumber(groupEntries[0]?.createdAtEpochMs, 0),
+      ),
+      paymentStatus: paymentStatus || (paid ? "paid" : "pending"),
+      paymentProvider: String(groupEntries[0]?.paymentProvider || "").trim(),
+      paymentReference: String(groupEntries[0]?.paymentReference || "").trim(),
+      paymentCheckoutSessionId: String(
+        groupEntries[0]?.paymentCheckoutSessionId || "",
+      ).trim(),
+      stage,
+      paid,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error ? error.message : "Unable to load payment status.",
+    });
+  }
+}
+
+async function handlePaymongoBuyerWebhookApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  let claimedWebhookEventId = "";
+  try {
+    const rawBody = await parseRawRequestBody(request);
+    const webhookSecret = String(process.env.PAYMONGO_WEBHOOK_SECRET ?? "").trim();
+    const signatureHeader = String(request.headers["paymongo-signature"] || "").trim();
+
+    if (!webhookSecret) {
+      sendJson(response, 503, {
+        message: "PayMongo webhook secret is not configured.",
+        code: "PAYMONGO_WEBHOOK_SECRET_MISSING",
+      });
+      return;
+    }
+
+    if (!verifyPaymongoWebhook({
+      rawBody,
+      signatureHeader,
+      webhookSecret,
+    })) {
+      sendJson(response, 401, { message: "Invalid PayMongo signature." });
+      return;
+    }
+
+    const eventPayload = rawBody ? JSON.parse(rawBody) : {};
+    const eventData = eventPayload?.data || {};
+    const eventType = String(eventData?.type || "").trim();
+    const livemode = Boolean(eventData?.livemode);
+
+    if (eventType !== "checkout_session.payment.paid") {
+      sendJson(response, 200, {
+        message: "Webhook received.",
+        ignored: true,
+        eventType,
+      });
+      return;
+    }
+
+    const sessionData = eventData?.data || {};
+    const attributes = sessionData?.attributes || {};
+    const providerEventId = String(eventData?.id || "").trim();
+    const payloadHash = crypto.createHash("sha256").update(rawBody).digest("hex");
+    const webhookEventId = providerEventId || `buyer_payload_${payloadHash}`;
+    const paymentReference = String(attributes?.reference_number || "").trim();
+    const receivedCheckoutId = String(sessionData?.id || "").trim();
+    if (!paymentReference && !receivedCheckoutId) {
+      sendJson(response, 400, { message: "Missing checkout reference." });
+      return;
+    }
+
+    const claim = await claimPaymentWebhookEvent({
+      provider: "paymongo_buyer",
+      eventId: webhookEventId,
+      eventType,
+      livemode,
+      payloadHash,
+    });
+    if (!claim.claimed) {
+      sendJson(response, 200, {
+        message: "Webhook was already processed.",
+        duplicate: true,
+        eventId: webhookEventId,
+      });
+      return;
+    }
+    claimedWebhookEventId = webhookEventId;
+
+    const orders = await readOrders();
+    const matching = orders.filter((entry) => {
+      const entryRef = String(entry?.paymentReference || "").trim();
+      const entrySession = String(entry?.paymentCheckoutSessionId || "").trim();
+      if (paymentReference && entryRef === paymentReference) {
+        return true;
+      }
+      if (receivedCheckoutId && entrySession === receivedCheckoutId) {
+        return true;
+      }
+      return false;
+    });
+
+    if (!matching.length) {
+      await finishPaymentWebhookEvent({
+        provider: "paymongo_buyer",
+        eventId: webhookEventId,
+        error: "No matching buyer order for checkout session.",
+      });
+      claimedWebhookEventId = "";
+      sendJson(response, 404, { message: "Buyer order not found for checkout session." });
+      return;
+    }
+
+    const paymentIntentId = String(
+      attributes?.payments?.[0]?.id
+        || attributes?.payment_intent?.id
+        || matching[0]?.paymentIntentId
+        || "",
+    ).trim();
+
+    const matchKeys = new Set(
+      matching.map((entry) =>
+        String(entry?.orderGroupId || entry?.createdAtEpochMs || entry?.id || "").trim()
+      ),
+    );
+
+    const nextOrders = orders.map((entry) => {
+      const entryRef = String(entry?.paymentReference || "").trim();
+      const entrySession = String(entry?.paymentCheckoutSessionId || "").trim();
+      const matched =
+        (paymentReference && entryRef === paymentReference)
+        || (receivedCheckoutId && entrySession === receivedCheckoutId);
+      if (!matched) {
+        return entry;
+      }
+      return markBuyerOrderEntryPaid(entry, {
+        paymentProvider: "paymongo",
+        paymentStatus: "paid",
+        paymentCheckoutSessionId: receivedCheckoutId || entrySession,
+        paymentReference: paymentReference || entryRef,
+        paymentIntentId: paymentIntentId || entry?.paymentIntentId || "",
+      });
+    });
+
+    const accountIds = [...new Set(
+      matching.map((entry) => String(entry?.accountId || "").trim()).filter(Boolean),
+    )];
+    if (accountIds.length === 1) {
+      await writeOrders(nextOrders, catalogWriteScope({ accountId: accountIds[0] }));
+    } else {
+      await writeOrders(nextOrders);
+    }
+
+    await finishPaymentWebhookEvent({
+      provider: "paymongo_buyer",
+      eventId: webhookEventId,
+    });
+    claimedWebhookEventId = "";
+
+    sendJson(response, 200, {
+      message: "Buyer checkout webhook processed.",
+      updatedGroups: [...matchKeys],
+      eventId: webhookEventId,
+    });
+  } catch (error) {
+    if (claimedWebhookEventId) {
+      try {
+        await finishPaymentWebhookEvent({
+          provider: "paymongo_buyer",
+          eventId: claimedWebhookEventId,
+          error: error instanceof Error ? error.message : "Webhook processing failed.",
+        });
+      } catch (trackingError) {
+        console.error("Unable to mark buyer PayMongo webhook as failed:", trackingError);
+      }
+    }
+    sendJson(response, error?.statusCode || 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to process buyer PayMongo webhook.",
+    });
+  }
+}
+
+async function handleOrderShipmentApi(request, response, groupKey) {
+  const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+  const requestAdminId = getRequestAdminId(request, requestUrl);
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (!groupKey) {
+    sendJson(response, 400, { message: "Invalid order group id." });
+    return;
+  }
+
+  if (
+    !(await requireAdminRestrictionAllowed(
+      request,
+      response,
+      requestUrl,
+      "process_orders",
+      requestAdminId,
+    ))
+  ) {
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const trackingHint = String(
+      payload?.trackingNumber ?? payload?.trackingNo ?? "",
+    ).trim();
+    const orders = await readOrders({ adminId: requestAdminId });
+    const groupEntries = orders.filter((entry) =>
+      isScopedOrderGroupEntry(entry, requestAdminId, groupKey)
+    );
+    if (!groupEntries.length) {
+      sendJson(response, 404, { message: "Order group not found." });
+      return;
+    }
+
+    const primary = groupEntries[0];
+    const shipment = await createCourierShipment({
+      orderGroupId: String(primary?.orderGroupId || groupKey).trim(),
+      trackingHint,
+      recipientName: String(primary?.clientName || primary?.customerName || "").trim(),
+      recipientPhone: String(
+        primary?.clientContactNumber || primary?.contactNumber || "",
+      ).trim(),
+      recipientAddress: String(primary?.clientAddress || primary?.address || "").trim(),
+    });
+
+    const nextOrders = (await readOrders()).map((entry) => {
+      if (!isScopedOrderGroupEntry(entry, requestAdminId, groupKey)) {
+        return entry;
+      }
+      return normalizeStoredOrderEntry({
+        ...entry,
+        trackingNumber: shipment.trackingNumber,
+        courierProvider: shipment.provider,
+        courierShipmentId: shipment.providerShipmentId,
+        courierShipmentMode: shipment.mode,
+        courierShipmentStatus: shipment.status,
+      });
+    });
+
+    await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+
+    sendJson(response, 201, {
+      ...getOrderGroupResponseFields(groupEntries, groupKey),
+      shipment,
+      message: "Shipment created.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 500, {
+      message:
+        error instanceof Error ? error.message : "Unable to create shipment.",
     });
   }
 }
@@ -24513,6 +25160,87 @@ function applySuperAdminProductListingRestrictionNotification(
   return notification;
 }
 
+function applySuperAdminSellerEnforcementNotification(
+  updatedAccount,
+  previousAccount,
+  {
+    type,
+    title,
+    reason,
+    message,
+  },
+  now,
+) {
+  const notificationReason = String(reason || title || "Seller account update")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  const notificationMessage = String(message || notificationReason)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 900);
+  const notification = {
+    id: `seller-${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: String(type || "notice").trim() || "notice",
+    audience: "seller",
+    adminId: getRecordAdminId(updatedAccount, updatedAccount?.adminId || updatedAccount?.id || ""),
+    title: String(title || "Super Admin Account Update")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120),
+    reason: notificationReason,
+    message: notificationMessage,
+    status: "unread",
+    createdAt: now,
+    createdBy: SUPER_ADMIN_USERNAME,
+    targetUrl: "/admin_dashboard.html",
+  };
+
+  Object.assign(updatedAccount, {
+    lastSuperAdminNotifiedAt: now,
+    superAdminNotificationCount:
+      Math.max(0, Number(previousAccount?.superAdminNotificationCount) || 0) + 1,
+    superAdminNotificationType: notification.type,
+    superAdminNotificationReason: notificationReason,
+    lastSuperAdminNotificationReason: notificationReason,
+    lastSuperAdminNotificationMessage: notificationMessage,
+  });
+  assignSellerAdminNotification(updatedAccount, notification);
+  return notification;
+}
+
+async function syncSellerCompanyStatusForSuperAdminAction(accountId, action, reason = "") {
+  const companyStatusByAction = {
+    ban: "banned",
+    unban: "active",
+    restrict: "restricted",
+    unrestrict: "active",
+    deactivate: "deactivated",
+    activate: "active",
+  };
+  const companyStatus = companyStatusByAction[action];
+  if (!companyStatus) {
+    return null;
+  }
+
+  try {
+    const syncOptions = {
+      companyStatus,
+      reason,
+    };
+    if (action === "activate" || action === "unban" || action === "unrestrict") {
+      syncOptions.subscriptionStatus = "active";
+    }
+    if (action === "activate") {
+      syncOptions.verificationStatus = "verified";
+    }
+    return await syncSellerCompanyEnforcementStatus(accountId, syncOptions);
+  } catch (error) {
+    console.error("Unable to sync seller company enforcement status:", error);
+    return null;
+  }
+}
+
 async function handleSuperAdminAdminActionApi(request, response, adminId) {
   if (!requireSuperAdmin(request, response)) {
     return;
@@ -24541,8 +25269,20 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         ? "unban"
         : action === "unrestricted"
           ? "unrestrict"
-          : action;
-    const allowedActions = new Set(["notify", "deactivate", "restrict", "unrestrict", "ban", "unban"]);
+          : action === "activated"
+            ? "activate"
+            : action === "deactivated"
+              ? "deactivate"
+              : action;
+    const allowedActions = new Set([
+      "notify",
+      "deactivate",
+      "activate",
+      "restrict",
+      "unrestrict",
+      "ban",
+      "unban",
+    ]);
 
     if (!allowedActions.has(normalizedAction)) {
       sendJson(response, 400, { message: "Unsupported admin action." });
@@ -24717,7 +25457,101 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         deactivatedAt: now,
         deactivatedBy: SUPER_ADMIN_USERNAME,
       });
+      const companyName = getSellerCompanyDisplayName(updatedAccount);
+      const deactivateNotification = applySuperAdminSellerEnforcementNotification(
+        updatedAccount,
+        previousAccount,
+        {
+          type: "seller-deactivated",
+          title: "Seller Account Deactivated",
+          reason: "Deactivated by Super Admin",
+          message:
+            `Your seller company "${companyName}" has been deactivated by Super Admin. ` +
+            "Seller Mode access is paused until the account is activated again.",
+        },
+        now,
+      );
       message = "Company deactivated.";
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-admin-action",
+        source: "super_admin",
+        adminId: normalizedAdminId,
+        action: "deactivated",
+        title: deactivateNotification.title,
+        description: deactivateNotification.message,
+        notificationAudience: "admin",
+        targetUrl: "/admin_dashboard.html",
+        actor: {
+          role: "super-admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+        skipLinkedNotification: true,
+      }, request);
+      await syncSellerCompanyStatusForSuperAdminAction(
+        normalizedAdminId,
+        "deactivate",
+        deactivateNotification.reason,
+      );
+    } else if (normalizedAction === "activate") {
+      Object.assign(updatedAccount, {
+        status: "active",
+        accountStatus: "active",
+        accountState: "active",
+        adminStatus: "active",
+        userStatus: "active",
+        isActive: true,
+        disabled: false,
+        isSuspended: false,
+        suspended: false,
+        isRestricted: false,
+        restricted: false,
+        suspendedAt: null,
+        deactivatedAt: null,
+        disabledAt: null,
+        activatedAt: now,
+        activatedBy: SUPER_ADMIN_USERNAME,
+      });
+      const companyName = getSellerCompanyDisplayName(updatedAccount);
+      const activateNotification = applySuperAdminSellerEnforcementNotification(
+        updatedAccount,
+        previousAccount,
+        {
+          type: "seller-activated",
+          title: "Seller Account Activated",
+          reason: "Activated by Super Admin",
+          message:
+            `Your seller company "${companyName}" has been activated by Super Admin. ` +
+            "You can sign in and continue using Seller Mode.",
+        },
+        now,
+      );
+      message = "Company activated.";
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-admin-action",
+        source: "super_admin",
+        adminId: normalizedAdminId,
+        action: "activated",
+        title: activateNotification.title,
+        description: activateNotification.message,
+        notificationAudience: "admin",
+        targetUrl: "/admin_dashboard.html",
+        actor: {
+          role: "super-admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+        skipLinkedNotification: true,
+      }, request);
+      await syncSellerCompanyStatusForSuperAdminAction(
+        normalizedAdminId,
+        "activate",
+        activateNotification.reason,
+      );
     } else if (normalizedAction === "restrict") {
       Object.assign(updatedAccount, {
         status: "restricted",
@@ -24778,7 +25612,13 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
           displayName: SUPER_ADMIN_USERNAME,
         },
         createdAt: now,
-      });
+        skipLinkedNotification: true,
+      }, request);
+      await syncSellerCompanyStatusForSuperAdminAction(
+        normalizedAdminId,
+        "restrict",
+        restrictionReason,
+      );
     } else if (normalizedAction === "ban") {
       Object.assign(updatedAccount, {
         status: "banned",
@@ -24803,7 +25643,47 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         banDurationUnit: "",
         banExpiresAt: null,
       });
+      const companyName = getSellerCompanyDisplayName(updatedAccount);
+      const banNotification = applySuperAdminSellerEnforcementNotification(
+        updatedAccount,
+        previousAccount,
+        {
+          type: "seller-banned",
+          title: "Seller Account Banned",
+          reason: banReason,
+          message: [
+            `Your seller company "${companyName}" has been permanently banned by Super Admin.`,
+            `Reason: ${banReason}.`,
+            banDescription ? `Details: ${banDescription}` : "",
+            "Login and Seller Mode access are blocked.",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        },
+        now,
+      );
       message = "Company permanently banned.";
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-admin-action",
+        source: "super_admin",
+        adminId: normalizedAdminId,
+        action: "banned",
+        title: banNotification.title,
+        description: banNotification.message,
+        notificationAudience: "admin",
+        targetUrl: "/admin_dashboard.html",
+        banReason,
+        banDescription,
+        actor: {
+          role: "super-admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+        skipLinkedNotification: true,
+      }, request);
+      await syncSellerCompanyStatusForSuperAdminAction(normalizedAdminId, "ban", banReason);
     } else if (normalizedAction === "unban") {
       Object.assign(updatedAccount, {
         status: "active",
@@ -24857,7 +25737,44 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         sessionActive: false,
         presenceStatus: "offline",
       });
+      const companyName = getSellerCompanyDisplayName(updatedAccount);
+      const unbanNotification = applySuperAdminSellerEnforcementNotification(
+        updatedAccount,
+        previousAccount,
+        {
+          type: "seller-unbanned",
+          title: "Seller Account Unbanned",
+          reason: "Ban removed by Super Admin",
+          message:
+            `Your seller company "${companyName}" has been unbanned by Super Admin. ` +
+            "Login and Seller Mode access are restored.",
+        },
+        now,
+      );
       message = "Company unbanned and login access restored.";
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-admin-action",
+        source: "super_admin",
+        adminId: normalizedAdminId,
+        action: "unbanned",
+        title: unbanNotification.title,
+        description: unbanNotification.message,
+        notificationAudience: "admin",
+        targetUrl: "/admin_dashboard.html",
+        actor: {
+          role: "super-admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+        skipLinkedNotification: true,
+      }, request);
+      await syncSellerCompanyStatusForSuperAdminAction(
+        normalizedAdminId,
+        "unban",
+        unbanNotification.reason,
+      );
     } else if (normalizedAction === "unrestrict") {
       Object.assign(updatedAccount, {
         status: "active",
@@ -24897,7 +25814,44 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         unrestrictedAt: now,
         unrestrictedBy: SUPER_ADMIN_USERNAME,
       });
+      const companyName = getSellerCompanyDisplayName(updatedAccount);
+      const unrestrictNotification = applySuperAdminSellerEnforcementNotification(
+        updatedAccount,
+        previousAccount,
+        {
+          type: "seller-unrestricted",
+          title: "Seller Restriction Removed",
+          reason: "Restriction removed by Super Admin",
+          message:
+            `The restriction on your seller company "${companyName}" has been removed by Super Admin. ` +
+            "Full Seller Mode access is restored.",
+        },
+        now,
+      );
       message = "Company restriction removed.";
+      await logActivitySafely({
+        id: createActivityLogId(),
+        type: "seller-admin-action",
+        source: "super_admin",
+        adminId: normalizedAdminId,
+        action: "unrestricted",
+        title: unrestrictNotification.title,
+        description: unrestrictNotification.message,
+        notificationAudience: "admin",
+        targetUrl: "/admin_dashboard.html",
+        actor: {
+          role: "super-admin",
+          accountId: "super-admin",
+          displayName: SUPER_ADMIN_USERNAME,
+        },
+        createdAt: now,
+        skipLinkedNotification: true,
+      }, request);
+      await syncSellerCompanyStatusForSuperAdminAction(
+        normalizedAdminId,
+        "unrestrict",
+        unrestrictNotification.reason,
+      );
     }
 
     sources.accounts[accountIndex] = updatedAccount;
@@ -27824,15 +28778,34 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
 
   try {
     const sources = await readAdminWorkspaceSources();
-    const targetAdmin = sources.accounts.find((account) =>
+    const accountIndex = sources.accounts.findIndex((account) =>
       isAdminAccount(account) && getRecordAdminId(account, account.id) === normalizedAdminId
     );
-    if (!targetAdmin) {
+    if (accountIndex < 0) {
       sendJson(response, 404, { message: "Admin account not found." });
       return;
     }
 
+    const targetAdmin = sources.accounts[accountIndex];
     const counts = getAdminWorkspaceCounts(normalizedAdminId, sources);
+    const now = new Date().toISOString();
+    const companyName = getSellerCompanyDisplayName(targetAdmin);
+    const clearNotification = {
+      id: `seller-workspace-cleared-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "seller-workspace-cleared",
+      audience: "seller",
+      title: "Company Workspace Cleared",
+      reason: "Workspace data cleared by Super Admin",
+      message:
+        `Super Admin cleared marketplace workspace data for "${companyName}". ` +
+        "Products, orders, chats, and partner links for this company were removed.",
+      status: "unread",
+      adminId: normalizedAdminId,
+      targetUrl: "/admin_dashboard.html",
+      createdAt: now,
+      createdBy: SUPER_ADMIN_USERNAME,
+    };
+
     await Promise.all([
       writeProducts(sources.products.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
       writeOrders(sources.orders.filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
@@ -27850,12 +28823,54 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
         );
       }),
       writeActivityLog((await readActivityLog()).filter((record) => !isRecordInAdminScope(record, normalizedAdminId))),
-      writeAccounts(
-        sources.accounts.filter((record) =>
-          isAdminAccount(record) || !isRecordInAdminScope(record, normalizedAdminId),
-        ),
-      ),
     ]);
+
+    const updatedAccount = {
+      ...targetAdmin,
+      updatedAt: now,
+      lastWorkspaceClearedAt: now,
+      lastWorkspaceClearedBy: SUPER_ADMIN_USERNAME,
+    };
+    assignSellerAdminNotification(updatedAccount, clearNotification);
+    sources.accounts[accountIndex] = updatedAccount;
+    await writeAccounts(
+      sources.accounts.filter((record) =>
+        isAdminAccount(record) || !isRecordInAdminScope(record, normalizedAdminId),
+      ),
+    );
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "seller-workspace-cleared",
+        audience: "super_admin",
+        title: "Company workspace cleared",
+        reason: "Manual workspace wipe",
+        message: `Cleared workspace data for ${companyName}.`,
+        adminId: normalizedAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy: SUPER_ADMIN_USERNAME,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-admin-action",
+      source: "super_admin",
+      adminId: normalizedAdminId,
+      action: "workspace-cleared",
+      title: clearNotification.title,
+      description: clearNotification.message,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
 
     sendJson(response, 200, {
       adminId: normalizedAdminId,
@@ -27868,6 +28883,407 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
         error instanceof Error
           ? error.message
           : "Unable to clear admin workspace data.",
+    });
+  }
+}
+
+async function handleSuperAdminPendingCompaniesApi(request, response) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  try {
+    const companies = await listPendingReviewCompanies();
+    sendJson(response, 200, {
+      companies,
+      count: companies.length,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load pending companies.",
+    });
+  }
+}
+
+async function handleSuperAdminPendingCompanyActivateApi(request, response, companyId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedCompanyId = String(companyId || "").trim();
+  if (!normalizedCompanyId) {
+    sendJson(response, 400, { message: "Company ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const reason = String(payload?.reason || payload?.activationReason || "Approved by Super Admin")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+    const result = await activatePendingReviewCompany({
+      companyId: normalizedCompanyId,
+      approvedBy: SUPER_ADMIN_USERNAME,
+      reason,
+    });
+    const now = new Date().toISOString();
+    const companyName = result.companyName || "Seller company";
+    const sellerAdminId = normalizeAdminTenantId(result.accountId, "");
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "seller-onboarding-activated",
+        audience: "super_admin",
+        title: "Pending company activated",
+        reason,
+        message: `${companyName} was activated from the pending review queue.`,
+        adminId: sellerAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy: SUPER_ADMIN_USERNAME,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+
+    if (sellerAdminId) {
+      await notifySellerAdminInboxByAdminId(
+        sellerAdminId,
+        createPersistentLinkedNotification({
+          type: "seller-onboarding-activated",
+          audience: "seller",
+          title: "Seller Account Activated",
+          reason,
+          message:
+            `Super Admin activated "${companyName}". You can now open Seller Mode and start listing.`,
+          adminId: sellerAdminId,
+          companyName,
+          targetUrl: "/main.html#dashboard",
+          createdAt: now,
+          createdBy: SUPER_ADMIN_USERNAME,
+        }),
+      );
+    }
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-onboarding",
+      source: "super_admin",
+      adminId: sellerAdminId,
+      action: "pending-review-activated",
+      title: "Pending company activated",
+      description: `${companyName} activated by Super Admin. ${reason}`,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      company: result.company,
+      adminId: sellerAdminId,
+      message: `${companyName} activated.`,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to activate company.",
+    });
+  }
+}
+
+async function handleSuperAdminPendingCompanyRejectApi(request, response, companyId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedCompanyId = String(companyId || "").trim();
+  if (!normalizedCompanyId) {
+    sendJson(response, 400, { message: "Company ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const reason = String(payload?.reason || payload?.rejectionReason || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+    if (!reason) {
+      sendJson(response, 400, { message: "Rejection reason is required." });
+      return;
+    }
+
+    const result = await rejectPendingReviewCompany({
+      companyId: normalizedCompanyId,
+      rejectedBy: SUPER_ADMIN_USERNAME,
+      reason,
+    });
+    const now = new Date().toISOString();
+    const companyName = result.companyName || "Seller company";
+    const sellerAdminId = normalizeAdminTenantId(result.accountId, "");
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "seller-onboarding-rejected",
+        audience: "super_admin",
+        title: "Pending company rejected",
+        reason,
+        message: `${companyName} was rejected from the pending review queue.`,
+        adminId: sellerAdminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy: SUPER_ADMIN_USERNAME,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+
+    if (sellerAdminId) {
+      await notifySellerAdminInboxByAdminId(
+        sellerAdminId,
+        createPersistentLinkedNotification({
+          type: "seller-onboarding-rejected",
+          audience: "seller",
+          title: "Seller Onboarding Rejected",
+          reason,
+          message:
+            `Super Admin rejected seller onboarding for "${companyName}". Reason: ${reason}.`,
+          adminId: sellerAdminId,
+          companyName,
+          targetUrl: "/unified_account.html",
+          createdAt: now,
+          createdBy: SUPER_ADMIN_USERNAME,
+        }),
+      );
+    }
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-onboarding",
+      source: "super_admin",
+      adminId: sellerAdminId,
+      action: "pending-review-rejected",
+      title: "Pending company rejected",
+      description: `${companyName} rejected by Super Admin. ${reason}`,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      company: result.company,
+      message: `${companyName} rejected.`,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to reject company.",
+    });
+  }
+}
+
+async function handleSuperAdminCompanyDocumentsApi(request, response, companyId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  try {
+    const payload = await getCompanyDocumentsForAdmin(companyId);
+    if (!payload) {
+      sendJson(response, 404, { message: "Company documents not found." });
+      return;
+    }
+    sendJson(response, 200, payload);
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load company documents.",
+    });
+  }
+}
+
+async function handleSuperAdminCompanyDocumentReviewApi(request, response, companyId, documentId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "PATCH" && request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const reviewStatus = String(payload?.reviewStatus || payload?.status || "")
+      .trim()
+      .toLowerCase();
+    const reviewReason = String(payload?.reason || payload?.reviewReason || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+    const result = await reviewCompanyBusinessDocument({
+      companyId,
+      documentId,
+      reviewStatus,
+      reviewReason,
+      reviewedBy: SUPER_ADMIN_USERNAME,
+    });
+    const now = new Date().toISOString();
+    const sellerAdminId = normalizeAdminTenantId(result.sourceAccountId, "");
+    const isApproved = reviewStatus === "approved";
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: isApproved ? "company-document-approved" : "company-document-rejected",
+        audience: "super_admin",
+        title: isApproved ? "Business document approved" : "Business document rejected",
+        reason: reviewReason || (isApproved ? "Document approved" : "Document rejected"),
+        message: `${result.companyName}: ${result.document.label} was ${reviewStatus}.`,
+        adminId: sellerAdminId,
+        companyName: result.companyName,
+        createdBy: SUPER_ADMIN_USERNAME,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+
+    if (sellerAdminId) {
+      await notifySellerAdminInboxByAdminId(
+        sellerAdminId,
+        createPersistentLinkedNotification({
+          type: isApproved ? "company-document-approved" : "company-document-rejected",
+          audience: "seller",
+          title: isApproved ? "Business Document Approved" : "Business Document Rejected",
+          reason: reviewReason || (isApproved ? "Document approved" : "Document rejected"),
+          message: isApproved
+            ? `Super Admin approved your ${result.document.label}.`
+            : `Super Admin rejected your ${result.document.label}.${reviewReason ? ` Reason: ${reviewReason}` : ""}`,
+          adminId: sellerAdminId,
+          companyName: result.companyName,
+          targetUrl: "/admin_dashboard.html",
+          createdAt: now,
+          createdBy: SUPER_ADMIN_USERNAME,
+        }),
+      );
+    }
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-document-review",
+      source: "super_admin",
+      adminId: sellerAdminId,
+      action: reviewStatus,
+      title: isApproved ? "Business document approved" : "Business document rejected",
+      description: `${result.companyName}: ${result.document.label} ${reviewStatus}.`,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      ...result,
+      message: `Document ${reviewStatus}.`,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to review document.",
+    });
+  }
+}
+
+async function handleBecomeSellerDocumentsApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const accountId = String(payload?.accountId || request.accountId || "").trim();
+    const companyId = String(payload?.companyId || "").trim();
+    if (!accountId || !companyId) {
+      sendJson(response, 400, { message: "accountId and companyId are required." });
+      return;
+    }
+
+    const result = await addCompanyBusinessDocument({
+      companyId,
+      accountId,
+      type: payload?.type || payload?.documentType || "business_permit",
+      label: payload?.label || payload?.fileName || "",
+      fileName: payload?.fileName || "",
+      url: payload?.url || payload?.documentUrl || "",
+      uploadedBy: accountId,
+    });
+
+    const now = new Date().toISOString();
+    const company = await findCompanyById(companyId);
+    const companyName = company?.name || "Seller company";
+
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "company-document-uploaded",
+        audience: "super_admin",
+        title: "Business document uploaded",
+        reason: result.document.type,
+        message: `${companyName} uploaded ${result.document.label} for review.`,
+        adminId: accountId,
+        companyName,
+        createdBy: accountId,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-document-upload",
+      source: "buyer_upgrade",
+      adminId: accountId,
+      action: "uploaded",
+      title: "Business document uploaded",
+      description: `${companyName} uploaded ${result.document.label}.`,
+      actor: {
+        role: "buyer",
+        accountId,
+        displayName: companyName,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 201, {
+      ...result,
+      message: "Business document uploaded for review.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to save business document.",
     });
   }
 }
@@ -29596,6 +31012,7 @@ async function handleOrdersApi(request, response) {
         adminId: requestShouldUseAdminScope ? requestAdminId : "",
         accountId: requestShouldUseAccountScope ? requestAccountId : "",
       }));
+      await recordOrderAnalyticsSafely(orders);
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
@@ -29678,6 +31095,7 @@ async function handleOrdersApi(request, response) {
         adminId: requestShouldUseAdminScope ? requestAdminId : "",
         accountId: requestShouldUseAccountScope ? requestAccountId : "",
       }));
+      await recordOrderAnalyticsSafely(incomingOrders);
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
@@ -29849,12 +31267,44 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
 
   try {
     const payload = await parseRequestBody(request);
-    const trackingNumber = String(
+    let trackingNumber = String(
       payload?.trackingNumber ?? payload?.trackingNo ?? "",
     ).trim();
     const orders = await readOrders();
     const salesByProductId = new Map();
     let didUpdateOrderGroup = false;
+
+    if (!trackingNumber) {
+      const courierConfig = getCourierProviderConfig();
+      if (courierConfig.provider === "lalamove") {
+        const groupEntries = orders.filter((entry) =>
+          isScopedOrderGroupEntry(entry, requestAdminId, groupKey)
+        );
+        const primary = groupEntries[0];
+        if (primary) {
+          const existing = String(
+            primary?.trackingNumber ?? primary?.trackingNo ?? "",
+          ).trim();
+          if (existing) {
+            trackingNumber = existing;
+          } else {
+            const shipment = await createCourierShipment({
+              orderGroupId: String(primary?.orderGroupId || groupKey).trim(),
+              recipientName: String(
+                primary?.clientName || primary?.customerName || "",
+              ).trim(),
+              recipientPhone: String(
+                primary?.clientContactNumber || primary?.contactNumber || "",
+              ).trim(),
+              recipientAddress: String(
+                primary?.clientAddress || primary?.address || "",
+              ).trim(),
+            });
+            trackingNumber = shipment.trackingNumber;
+          }
+        }
+      }
+    }
 
     const nextOrders = orders.map((entry) => {
       if (!isScopedOrderGroupEntry(entry, requestAdminId, groupKey)) {
@@ -31764,6 +33214,25 @@ const ordersWaybillApi = createOrdersWaybillApi({
   normalizeStoredOrderEntry,
 });
 
+const analyticsApi = createAnalyticsApi({
+  DATA_DIR,
+  readProducts,
+  getRecordAdminId,
+  normalizeAdminTenantId,
+  enqueueSerializedMutation,
+  parseRequestBody,
+  sendJson,
+  isSuperAdminAuthorized,
+});
+
+async function recordOrderAnalyticsSafely(orderEntries) {
+  try {
+    await analyticsApi.recordOrderCreated(orderEntries);
+  } catch (error) {
+    console.error("Unable to record order analytics:", error);
+  }
+}
+
 function getRequiredAppSessionPolicy(requestUrl, methodValue) {
   const pathname = String(requestUrl?.pathname || "");
   const method = String(methodValue || "GET").toUpperCase();
@@ -31832,9 +33301,20 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
   }
 
   if (pathname === "/api/orders" || pathname.startsWith("/api/orders/")) {
+    if (pathname === "/api/orders/checkout-session") {
+      return { roles: ["buyer"], identityKind: "account" };
+    }
     const action = pathname.split("/").filter(Boolean)[3] || "";
-    if (action === "pack" || action === "ship" || action === "cancel-request") {
+    if (
+      action === "pack"
+      || action === "ship"
+      || action === "cancel-request"
+      || action === "shipments"
+    ) {
       return { roles: tenantRoles, identityKind: "admin" };
+    }
+    if (action === "payment-status") {
+      return { roles: allAccountRoles, identityKind: "auto" };
     }
     return { roles: allAccountRoles, identityKind: "auto" };
   }
@@ -31844,6 +33324,26 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
     || pathname === "/api/listing-insight/overall-ranking"
     || pathname === "/api/seller-followers/overview"
     || pathname === "/api/admin-followers-count"
+    || pathname === "/api/analytics/summary"
+  ) {
+    return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (
+    pathname === "/api/delivery-partners"
+    || pathname === "/api/payment-partners"
+  ) {
+    const isPublicProductOptionsRead =
+      method === "GET" && isProductPartnerOptionsRequest(requestUrl);
+    return isPublicProductOptionsRead
+      ? null
+      : { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (
+    pathname.startsWith("/api/delivery-partners/")
+    || pathname.startsWith("/api/payment-partners/")
+    || pathname === "/api/partner-audit"
   ) {
     return { roles: tenantRoles, identityKind: "admin" };
   }
@@ -31880,6 +33380,7 @@ const server = http.createServer(async (request, response) => {
   if (
     requestUrl.pathname.startsWith("/api/")
     && requestUrl.pathname !== "/api/payments/paymongo/seller-webhook"
+    && requestUrl.pathname !== "/api/payments/paymongo/buyer-webhook"
     && isDisallowedCrossOrigin(request, CORS_EXTRA_ORIGINS)
   ) {
     sendJson(response, 403, {
@@ -31917,6 +33418,16 @@ const server = http.createServer(async (request, response) => {
       status: "ok",
       message: "Switch backend is running.",
     });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/analytics/events") {
+    await analyticsApi.handleEvents(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/analytics/summary") {
+    await analyticsApi.handleSummary(request, response, requestUrl);
     return;
   }
 
@@ -32002,6 +33513,16 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/payments/paymongo/seller-webhook") {
     await handlePaymongoSellerWebhookApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/payments/paymongo/buyer-webhook") {
+    await handlePaymongoBuyerWebhookApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/orders/checkout-session") {
+    await handleBuyerOrderCheckoutSessionApi(request, response);
     return;
   }
 
@@ -32105,6 +33626,60 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/super-admin/admins") {
     await handleSuperAdminAdminsApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/super-admin/companies/pending-review") {
+    await handleSuperAdminPendingCompaniesApi(request, response);
+    return;
+  }
+
+  const superAdminPendingActivateMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/companies\/([^/]+)\/activate$/,
+  );
+  if (superAdminPendingActivateMatch) {
+    await handleSuperAdminPendingCompanyActivateApi(
+      request,
+      response,
+      decodeURIComponent(superAdminPendingActivateMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminPendingRejectMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/companies\/([^/]+)\/reject$/,
+  );
+  if (superAdminPendingRejectMatch) {
+    await handleSuperAdminPendingCompanyRejectApi(
+      request,
+      response,
+      decodeURIComponent(superAdminPendingRejectMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminCompanyDocumentReviewMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/companies\/([^/]+)\/documents\/([^/]+)\/review$/,
+  );
+  if (superAdminCompanyDocumentReviewMatch) {
+    await handleSuperAdminCompanyDocumentReviewApi(
+      request,
+      response,
+      decodeURIComponent(superAdminCompanyDocumentReviewMatch[1] ?? ""),
+      decodeURIComponent(superAdminCompanyDocumentReviewMatch[2] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminCompanyDocumentsMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/companies\/([^/]+)\/documents$/,
+  );
+  if (superAdminCompanyDocumentsMatch) {
+    await handleSuperAdminCompanyDocumentsApi(
+      request,
+      response,
+      decodeURIComponent(superAdminCompanyDocumentsMatch[1] ?? ""),
+    );
     return;
   }
 
@@ -32627,6 +34202,16 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (action === "shipments") {
+      await handleOrderShipmentApi(request, response, createdAtEpochMs);
+      return;
+    }
+
+    if (action === "payment-status") {
+      await handleBuyerOrderPaymentStatusApi(request, response, createdAtEpochMs);
+      return;
+    }
+
     if (action === "cancel") {
       await handleCancelOrderGroupApi(request, response, createdAtEpochMs);
       return;
@@ -32710,9 +34295,17 @@ Promise.resolve()
           ? `PostgreSQL catalog/orders store: enabled (source of truth; JSON backup ${jsonBackup ? "on" : "off"})`
           : "PostgreSQL catalog/orders: configured but schema not ready (falling back to JSON)",
       );
+      const chatReady = await isChatPostgresReady();
+      const chatBackup = isChatJsonBackupEnabled();
+      console.log(
+        chatReady
+          ? `PostgreSQL chat store: enabled (source of truth; JSON backup ${chatBackup ? "on" : "off"})`
+          : "PostgreSQL chat: configured but schema not ready (falling back to JSON)",
+      );
     } else {
       console.log("PostgreSQL accounts: disabled (set DATABASE_URL to enable)");
       console.log("PostgreSQL catalog/orders: disabled (set DATABASE_URL to enable)");
+      console.log("PostgreSQL chat: disabled (set DATABASE_URL to enable)");
     }
   })
   .then(() => {
