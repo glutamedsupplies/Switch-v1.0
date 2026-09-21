@@ -5921,6 +5921,9 @@ class _ProductDashboardState extends State<_ProductDashboard> {
   static const double _lazyLoadTriggerExtent = 240;
 
   late int _visibleProductCount;
+  bool _loadingMoreProducts = false;
+  bool _endReachedLoading = false;
+  bool _endCheckPending = false;
   List<Product>? _cachedProducts;
   int _dealContentEpoch = 0;
 
