@@ -126,22 +126,16 @@ Use the equivalent device ID for macOS, Linux, iOS, or other targets.
 
 ## Database Setup
 
-No separate database server is required. On startup, `backend/server.js` creates missing runtime files in `backend/data`:
+PostgreSQL is required for durable accounts, products, and orders.
 
-```text
-products.json
-activity_log.json
-accounts.json
-categories.json
-store_types.json
-chat_threads.json
-delivery_partners.json
-payment_partners.json
-orders.json
-followers.json
-```
+1. Create a database and set `DATABASE_URL` in `backend/.env` (see `backend/.env.example`).
+2. Apply schema: `cd backend && npm run db:migrate`
+3. Optional JSON import (idempotent upserts, does not delete extra Postgres rows):
+   - `npm run db:migrate-users` — `accounts.json`
+   - `npm run db:migrate-catalog` — `store_types.json`, `products.json`, `orders.json`
+4. Without `DATABASE_URL`, the backend still creates JSON files in `backend/data` on startup.
 
-The `backend/data/*.json` files are ignored by Git and should be backed up separately in any real deployment.
+JSON-only collections (chat, partners, activity, followers, and similar) remain files under `backend/data/` and are ignored by Git.
 
 ## File Uploads
 

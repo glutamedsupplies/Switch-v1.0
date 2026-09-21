@@ -105,6 +105,27 @@ const {
   syncAccountsToPostgres,
   deleteAccountById,
 } = require("./services/postgresAccountsStore");
+const {
+  isCatalogPostgresReady,
+  listStoreTypesFromPostgres,
+  syncStoreTypesToPostgres,
+} = require("./services/postgresCatalogStore");
+const {
+  listProductsFromPostgres,
+  syncProductsToPostgres,
+} = require("./services/postgresProductsStore");
+const {
+  listOrdersFromPostgres,
+  syncOrdersToPostgres,
+} = require("./services/postgresOrdersStore");
+const {
+  assignOrderGroupIds,
+  orderEntryMatchesGroupKey,
+  parsePagination,
+  paginateArray,
+  buildPaginationMeta,
+  isCatalogJsonBackupEnabled,
+} = require("./db/catalogHelpers");
 const { isPostgresConfigured } = require("./db/pool");
 let biometricFirmwareCompile = null;
 try {
@@ -1318,7 +1339,34 @@ async function ensureStoragePaths() {
   }
 }
 
+async function writeJsonArrayFile(filePath, records) {
+  await fsPromises.writeFile(
+    filePath,
+    `${JSON.stringify(Array.isArray(records) ? records : [], null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function writeCatalogJsonBackup(filePath, records, label) {
+  if (!isCatalogJsonBackupEnabled()) {
+    return;
+  }
+  try {
+    await ensureStoragePaths();
+    await writeJsonArrayFile(filePath, records);
+  } catch (error) {
+    console.warn(
+      `JSON ${label} backup write failed:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 async function readProducts() {
+  if (await isCatalogPostgresReady()) {
+    return listProductsFromPostgres();
+  }
+
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(PRODUCTS_FILE, "utf8");
 
@@ -1331,11 +1379,14 @@ async function readProducts() {
 }
 
 async function writeProducts(products) {
-  await fsPromises.writeFile(
-    PRODUCTS_FILE,
-    `${JSON.stringify(products, null, 2)}\n`,
-    "utf8",
-  );
+  const nextProducts = Array.isArray(products) ? products : [];
+  if (await isCatalogPostgresReady()) {
+    await syncProductsToPostgres(nextProducts);
+    await writeCatalogJsonBackup(PRODUCTS_FILE, nextProducts, "products");
+    return;
+  }
+
+  await writeJsonArrayFile(PRODUCTS_FILE, nextProducts);
 }
 
 async function readApprovedProductTrainingRecords() {
@@ -1847,6 +1898,10 @@ async function removeFaceAttendanceProfileForAccount(account) {
 }
 
 async function readStoreTypes() {
+  if (await isCatalogPostgresReady()) {
+    return listStoreTypesFromPostgres();
+  }
+
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(STORE_TYPES_FILE, "utf8");
 
@@ -1859,11 +1914,14 @@ async function readStoreTypes() {
 }
 
 async function writeStoreTypes(storeTypes) {
-  await fsPromises.writeFile(
-    STORE_TYPES_FILE,
-    `${JSON.stringify(storeTypes, null, 2)}\n`,
-    "utf8",
-  );
+  const nextStoreTypes = Array.isArray(storeTypes) ? storeTypes : [];
+  if (await isCatalogPostgresReady()) {
+    await syncStoreTypesToPostgres(nextStoreTypes);
+    await writeCatalogJsonBackup(STORE_TYPES_FILE, nextStoreTypes, "store types");
+    return;
+  }
+
+  await writeJsonArrayFile(STORE_TYPES_FILE, nextStoreTypes);
 }
 
 async function readPlatforms() {
@@ -2157,10 +2215,30 @@ function runPartnerMutation(partnerType, task) {
   return enqueueSerializedMutation(`partner:${normalizedType}`, task);
 }
 
-async function readOrders() {
+async function writeOrders(orders) {
+  const filtered = filterRealAccountOrders(orders);
+  let existingEntries = [];
+  try {
+    existingEntries = await isCatalogPostgresReady()
+      ? await listOrdersFromPostgres()
+      : await readJsonOrdersFallback();
+  } catch (_) {
+    existingEntries = [];
+  }
+  const normalizedOrders = assignOrderGroupIds(filtered, { existingEntries });
+  if (await isCatalogPostgresReady()) {
+    await syncOrdersToPostgres(normalizedOrders);
+    await writeCatalogJsonBackup(ORDERS_FILE, normalizedOrders, "orders");
+    return normalizedOrders;
+  }
+
+  await writeJsonArrayFile(ORDERS_FILE, normalizedOrders);
+  return normalizedOrders;
+}
+
+async function readJsonOrdersFallback() {
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(ORDERS_FILE, "utf8");
-
   try {
     const decoded = JSON.parse(raw);
     return filterRealAccountOrders(Array.isArray(decoded) ? decoded : []);
@@ -2169,13 +2247,12 @@ async function readOrders() {
   }
 }
 
-async function writeOrders(orders) {
-  const normalizedOrders = filterRealAccountOrders(orders);
-  await fsPromises.writeFile(
-    ORDERS_FILE,
-    `${JSON.stringify(normalizedOrders, null, 2)}\n`,
-    "utf8",
-  );
+async function readOrders() {
+  if (await isCatalogPostgresReady()) {
+    return filterRealAccountOrders(await listOrdersFromPostgres());
+  }
+
+  return readJsonOrdersFallback();
 }
 
 function isRealOrderAccountId(value) {
@@ -2194,6 +2271,25 @@ function filterRealAccountOrders(orders) {
   return (Array.isArray(orders) ? orders : []).filter((order) =>
     isRealOrderAccountId(order?.accountId),
   );
+}
+
+function isScopedOrderGroupEntry(entry, adminId, groupKey) {
+  return isRecordInAdminScope(entry, adminId)
+    && orderEntryMatchesGroupKey(entry, groupKey);
+}
+
+function getOrderGroupResponseFields(entries, groupKey) {
+  const primary = Array.isArray(entries) && entries.length ? entries[0] : null;
+  const epoch = Math.trunc(
+    parseFiniteNumber(
+      primary?.createdAtEpochMs,
+      parseFiniteNumber(groupKey, 0),
+    ),
+  );
+  return {
+    createdAtEpochMs: Number.isFinite(epoch) ? epoch : 0,
+    orderGroupId: String(primary?.orderGroupId || groupKey || "").trim(),
+  };
 }
 
 function normalizeCategoryName(value) {
@@ -5614,6 +5710,7 @@ function normalizeStoredOrderEntry(input) {
     ).trim(),
     stage: normalizedStage,
     createdAtEpochMs,
+    orderGroupId: String(input.orderGroupId ?? input.groupId ?? "").trim(),
     needsWaybill,
     waybillPrintedAtEpochMs,
     grandTotalAmount,
@@ -20074,9 +20171,14 @@ async function handleProductsApi(request, response) {
         !isProductListingRestrictedForCustomers(product)
       );
     }
-    sendJson(response, 200, {
-      products: attachProductsCompanyMetadata(products, accounts),
-    });
+    products = attachProductsCompanyMetadata(products, accounts);
+    const pagination = parsePagination(requestUrl.searchParams);
+    const page = paginateArray(products, pagination);
+    const payload = { products: page.items };
+    if (pagination.enabled) {
+      payload.pagination = buildPaginationMeta(page);
+    }
+    sendJson(response, 200, payload);
     return;
   }
 
@@ -29304,14 +29406,19 @@ async function handleOrdersApi(request, response) {
         readAccounts(),
         readDeliveryPartners(),
       ]);
-      sendJson(response, 200, {
-        orders: enrichOrdersWithListingAndBuyerData(
-          orders,
-          products,
-          accounts,
-          deliveryPartners,
-        ),
-      });
+      const pagination = parsePagination(requestUrl.searchParams);
+      const enriched = enrichOrdersWithListingAndBuyerData(
+        orders,
+        products,
+        accounts,
+        deliveryPartners,
+      );
+      const page = paginateArray(enriched, pagination);
+      const payload = { orders: page.items };
+      if (pagination.enabled) {
+        payload.pagination = buildPaginationMeta(page);
+      }
+      sendJson(response, 200, payload);
     } catch (error) {
       sendJson(response, 500, {
         message: error instanceof Error ? error.message : "Unable to load orders.",
@@ -29461,8 +29568,8 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
     return;
   }
 
-  const normalizedCreatedAtEpochMs = Math.trunc(parseFiniteNumber(createdAtEpochMs, NaN));
-  if (!Number.isFinite(normalizedCreatedAtEpochMs)) {
+  const groupKey = String(createdAtEpochMs ?? "").trim();
+  if (!groupKey) {
     sendJson(response, 400, { message: "Invalid order group id." });
     return;
   }
@@ -29484,10 +29591,7 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
     const deductInventory = Boolean(payload?.deductInventory);
     const orders = await readOrders();
     const targetEntries = orders.filter(
-      (entry) =>
-        isRecordInAdminScope(entry, requestAdminId) &&
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-        normalizedCreatedAtEpochMs,
+      (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
     );
 
     if (!targetEntries.length) {
@@ -29536,11 +29640,7 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
     let didUpdateOrderGroup = false;
 
     const nextOrders = orders.map((entry) => {
-      if (
-        !isRecordInAdminScope(entry, requestAdminId) ||
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) !==
-        normalizedCreatedAtEpochMs
-      ) {
+      if (!isScopedOrderGroupEntry(entry, requestAdminId, groupKey)) {
         return entry;
       }
 
@@ -29563,12 +29663,9 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
 
     await writeOrders(nextOrders);
     sendJson(response, 200, {
-      createdAtEpochMs: normalizedCreatedAtEpochMs,
+      ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
-        (entry) =>
-          isRecordInAdminScope(entry, requestAdminId) &&
-          Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-          normalizedCreatedAtEpochMs,
+        (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
       ).length,
       message: "Order group moved to To Ship.",
     });
@@ -29589,8 +29686,8 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
     return;
   }
 
-  const normalizedCreatedAtEpochMs = Math.trunc(parseFiniteNumber(createdAtEpochMs, NaN));
-  if (!Number.isFinite(normalizedCreatedAtEpochMs)) {
+  const groupKey = String(createdAtEpochMs ?? "").trim();
+  if (!groupKey) {
     sendJson(response, 400, { message: "Invalid order group id." });
     return;
   }
@@ -29613,11 +29710,7 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
     let didUpdateOrderGroup = false;
 
     const nextOrders = orders.map((entry) => {
-      if (
-        !isRecordInAdminScope(entry, requestAdminId) ||
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) !==
-        normalizedCreatedAtEpochMs
-      ) {
+      if (!isScopedOrderGroupEntry(entry, requestAdminId, groupKey)) {
         return entry;
       }
 
@@ -29686,12 +29779,12 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
 
     await writeOrders(nextOrders);
     sendJson(response, 200, {
-      createdAtEpochMs: normalizedCreatedAtEpochMs,
+      ...getOrderGroupResponseFields(
+        nextOrders.filter((entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey)),
+        groupKey,
+      ),
       updatedCount: nextOrders.filter(
-        (entry) =>
-          isRecordInAdminScope(entry, requestAdminId) &&
-          Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-          normalizedCreatedAtEpochMs,
+        (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
       ).length,
       message: "Order group moved to To Receive.",
     });
@@ -29712,10 +29805,8 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
     return;
   }
 
-  const normalizedCreatedAtEpochMs = Math.trunc(
-    parseFiniteNumber(createdAtEpochMs, NaN),
-  );
-  if (!Number.isFinite(normalizedCreatedAtEpochMs)) {
+  const groupKey = String(createdAtEpochMs ?? "").trim();
+  if (!groupKey) {
     sendJson(response, 400, { message: "Invalid order group id." });
     return;
   }
@@ -29735,10 +29826,7 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
   try {
     const orders = await readOrders();
     const targetEntries = orders.filter(
-      (entry) =>
-        isRecordInAdminScope(entry, requestAdminId) &&
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-        normalizedCreatedAtEpochMs,
+      (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
     );
 
     if (!targetEntries.length) {
@@ -29767,11 +29855,7 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
     const resolvedAtEpochMs = Date.now();
     let didUpdateOrderGroup = false;
     const nextOrders = orders.map((entry) => {
-      if (
-        !isRecordInAdminScope(entry, requestAdminId) ||
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) !==
-        normalizedCreatedAtEpochMs
-      ) {
+      if (!isScopedOrderGroupEntry(entry, requestAdminId, groupKey)) {
         return entry;
       }
 
@@ -29795,12 +29879,9 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
 
     await writeOrders(nextOrders);
     sendJson(response, 200, {
-      createdAtEpochMs: normalizedCreatedAtEpochMs,
+      ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
-        (entry) =>
-          isRecordInAdminScope(entry, requestAdminId) &&
-          Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-          normalizedCreatedAtEpochMs,
+        (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
       ).length,
       message: "Order group cancelled.",
     });
@@ -29826,10 +29907,8 @@ async function handleCancelOrderRequestDecisionApi(
     return;
   }
 
-  const normalizedCreatedAtEpochMs = Math.trunc(
-    parseFiniteNumber(createdAtEpochMs, NaN),
-  );
-  if (!Number.isFinite(normalizedCreatedAtEpochMs)) {
+  const groupKey = String(createdAtEpochMs ?? "").trim();
+  if (!groupKey) {
     sendJson(response, 400, { message: "Invalid order group id." });
     return;
   }
@@ -29855,10 +29934,7 @@ async function handleCancelOrderRequestDecisionApi(
   try {
     const orders = await readOrders();
     const targetEntries = orders.filter(
-      (entry) =>
-        isRecordInAdminScope(entry, requestAdminId) &&
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-        normalizedCreatedAtEpochMs,
+      (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
     );
 
     if (!targetEntries.length) {
@@ -29889,11 +29965,7 @@ async function handleCancelOrderRequestDecisionApi(
     let didUpdateOrderGroup = false;
 
     const nextOrders = orders.map((entry) => {
-      if (
-        !isRecordInAdminScope(entry, requestAdminId) ||
-        Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) !==
-        normalizedCreatedAtEpochMs
-      ) {
+      if (!isScopedOrderGroupEntry(entry, requestAdminId, groupKey)) {
         return entry;
       }
 
@@ -29923,12 +29995,9 @@ async function handleCancelOrderRequestDecisionApi(
 
     await writeOrders(nextOrders);
     sendJson(response, 200, {
-      createdAtEpochMs: normalizedCreatedAtEpochMs,
+      ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
-        (entry) =>
-          isRecordInAdminScope(entry, requestAdminId) &&
-          Math.trunc(parseFiniteNumber(entry?.createdAtEpochMs, NaN)) ===
-          normalizedCreatedAtEpochMs,
+        (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
       ).length,
       decision: normalizedDecision,
       message:
@@ -32478,8 +32547,16 @@ Promise.resolve()
           ? "PostgreSQL accounts store: enabled (JSON accounts disabled)"
           : "PostgreSQL accounts: configured but unreachable (falling back to JSON)",
       );
+      const catalogReady = await isCatalogPostgresReady();
+      const jsonBackup = isCatalogJsonBackupEnabled();
+      console.log(
+        catalogReady
+          ? `PostgreSQL catalog/orders store: enabled (source of truth; JSON backup ${jsonBackup ? "on" : "off"})`
+          : "PostgreSQL catalog/orders: configured but schema not ready (falling back to JSON)",
+      );
     } else {
       console.log("PostgreSQL accounts: disabled (set DATABASE_URL to enable)");
+      console.log("PostgreSQL catalog/orders: disabled (set DATABASE_URL to enable)");
     }
   })
   .then(() => {

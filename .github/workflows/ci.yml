@@ -169,3 +169,6 @@ jobs:
       - name: Run db:migrate
         working-directory: backend
         run: npm run db:migrate
+      - name: Catalog/order helper + Postgres tests
+        working-directory: backend
+        run: npm run test:catalog

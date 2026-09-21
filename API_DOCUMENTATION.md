@@ -127,7 +127,7 @@ curl -i http://127.0.0.1:8080/api/orders \
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET` | `/api/products` | `approvalStatus`; admin scope headers/query | None | `{ "products": [...] }` | Public only for `approvalStatus=approved`; otherwise admin scope required | `GET /api/products?approvalStatus=approved` |
+| `GET` | `/api/products` | `approvalStatus`; optional `limit`/`offset`; admin scope headers/query | None | `{ "products": [...] }` plus `pagination` when `limit`/`offset` are set | Public only for `approvalStatus=approved`; otherwise admin scope required | `GET /api/products?approvalStatus=approved&limit=50&offset=0` |
 | `POST` | `/api/products` | Legacy tenant hint optional | Product payload | `{ "product": {...}, "message": "Product submitted for super admin review." }` | Signed seller/employee session | `POST /api/products` |
 | `PUT` | `/api/products/{productId}` | `productId` path | Full product update | `{ "product": {...}, "message": "Product updated." }` | Signed seller/employee session, same tenant | `PUT /api/products/prod-1` |
 | `PATCH` | `/api/products/{productId}` | `productId` path | `{ "isActive": true }` | `{ "product": {...}, "message": "Product visibility updated." }` | Signed seller/employee session, same tenant | `PATCH /api/products/prod-1` |
@@ -169,13 +169,13 @@ curl -i http://127.0.0.1:8080/api/orders \
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET` | `/api/orders` | Legacy identity hints optional | None | `{ "orders": [...] }` | Signed session; buyer sees own account, seller/employee sees own tenant | `GET /api/orders` |
+| `GET` | `/api/orders` | Optional `limit`/`offset`; legacy identity hints optional | None | `{ "orders": [...] }` plus `pagination` when `limit`/`offset` are set | Signed session; buyer sees own account, seller/employee sees own tenant | `GET /api/orders?limit=50&offset=0` |
 | `PUT` | `/api/orders` | Legacy identity hints optional | Array or object containing orders | `{ "orders": [...], "total": 0, "message": "Orders synced." }` | Signed session; writes forced to session scope | `PUT /api/orders` |
 | `POST` | `/api/orders` | Legacy identity hints optional | Array or object containing orders | `{ "orders": [...], "mergedCount": 1, "message": "Orders merged." }` | Signed session; writes forced to session scope | `POST /api/orders` |
-| `POST` | `/api/orders/{createdAtEpochMs}/pack` | `createdAtEpochMs` path | `{ "deductInventory": true }` | `{ "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/pack` |
-| `POST` | `/api/orders/{createdAtEpochMs}/ship` | `createdAtEpochMs` path | Optional empty body | `{ "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/ship` |
-| `POST` | `/api/orders/{createdAtEpochMs}/cancel` | `createdAtEpochMs` path | Optional empty body | `{ "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/cancel` |
-| `POST` | `/api/orders/{createdAtEpochMs}/cancel-request/{accept|reject}` | Group ID and decision path | Optional empty body | `{ "decision": "accept", "message": "Cancellation request accepted." }` | Admin scope | `POST /api/orders/1780000000000/cancel-request/accept` |
+| `POST` | `/api/orders/{groupId}/pack` | `groupId` is `orderGroupId` or `createdAtEpochMs` | `{ "deductInventory": true }` | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/pack` |
+| `POST` | `/api/orders/{groupId}/ship` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional empty body | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/ship` |
+| `POST` | `/api/orders/{groupId}/cancel` | `groupId` is `orderGroupId` or `createdAtEpochMs` | Optional empty body | `{ "orderGroupId": "og_…", "createdAtEpochMs": 0, "updatedCount": 1 }` | Admin scope | `POST /api/orders/1780000000000/cancel` |
+| `POST` | `/api/orders/{groupId}/cancel-request/{accept\|reject}` | Group ID and decision path | Optional empty body | `{ "decision": "accept", "message": "Cancellation request accepted." }` | Admin scope | `POST /api/orders/1780000000000/cancel-request/accept` |
 
 ### Chat Support
 
