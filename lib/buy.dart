@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/add_to_cart.dart';
-import 'package:gms_shopping/models/product.dart';
+import 'package:switch_app/add_to_cart.dart';
+import 'package:switch_app/models/product.dart';
 
 typedef BuySelection = AddToCartSelection;
 

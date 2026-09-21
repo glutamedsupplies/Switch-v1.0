@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/account_devices_service_base.dart';
+import 'package:switch_app/services/account_devices_service_base.dart';
 
 AccountDevicesService createAccountDevicesService() =>
     const _UnsupportedAccountDevicesService();

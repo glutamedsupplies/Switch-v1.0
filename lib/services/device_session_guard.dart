@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:gms_shopping/chat_support.dart';
-import 'package:gms_shopping/favorite_products_store.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/services/account_devices_service.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
-import 'package:gms_shopping/cart.dart';
+import 'package:switch_app/chat_support.dart';
+import 'package:switch_app/favorite_products_store.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/services/account_devices_service.dart';
+import 'package:switch_app/utils/auth_session.dart';
+import 'package:switch_app/cart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Logs this phone, computer, or Apple device out when it is signed out

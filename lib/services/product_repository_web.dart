@@ -4,9 +4,9 @@ import 'dart:html';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/services/admin_scope.dart';
-import 'package:gms_shopping/services/product_repository_base.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/product_repository_base.dart';
 
 const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
 const _requestTimeout = Duration(seconds: 3);

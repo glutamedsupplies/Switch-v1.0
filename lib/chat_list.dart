@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/chat_support.dart';
-import 'package:gms_shopping/search_bar.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/widgets/product_online_status_badge.dart';
+import 'package:switch_app/chat_support.dart';
+import 'package:switch_app/search_bar.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/widgets/product_online_status_badge.dart';
 
 Future<void> openChatListPage(BuildContext context) async {
   await ChatSupportStore.instance.ensureLoaded();

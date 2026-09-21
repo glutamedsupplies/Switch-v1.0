@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
 
 const double _kAddToCartVariantCardHeight = 146;
 

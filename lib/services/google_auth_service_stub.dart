@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/google_auth_service_base.dart';
+import 'package:switch_app/services/google_auth_service_base.dart';
 
 GoogleAuthService createGoogleAuthService({String? baseUrl}) {
   return _StubGoogleAuthService();

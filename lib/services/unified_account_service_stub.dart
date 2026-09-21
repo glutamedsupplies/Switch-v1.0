@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/unified_account_service_base.dart';
+import 'package:switch_app/services/unified_account_service_base.dart';
 
 UnifiedAccountService createUnifiedAccountService() =>
     const _UnsupportedUnifiedAccountService();

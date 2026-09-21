@@ -3,19 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:gms_shopping/data/country_dial_codes.dart';
-import 'package:gms_shopping/error_validation.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/login_redirect.dart';
-import 'package:gms_shopping/services/account_registration.dart';
-import 'package:gms_shopping/services/app_language_preference.dart';
-import 'package:gms_shopping/services/google_auth_service.dart';
-import 'package:gms_shopping/services/verification_service.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/theme/app_theme.dart';
-import 'package:gms_shopping/theme/loadingscreen.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/widgets/password_visibility_icon.dart';
+import 'package:switch_app/data/country_dial_codes.dart';
+import 'package:switch_app/error_validation.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/login_redirect.dart';
+import 'package:switch_app/services/account_registration.dart';
+import 'package:switch_app/services/app_language_preference.dart';
+import 'package:switch_app/services/google_auth_service.dart';
+import 'package:switch_app/services/verification_service.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/theme/app_theme.dart';
+import 'package:switch_app/theme/loadingscreen.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/widgets/password_visibility_icon.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({

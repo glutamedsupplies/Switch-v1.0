@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
 
 const _requestTimeout = Duration(seconds: 10);
 const _nominatimUserAgent =

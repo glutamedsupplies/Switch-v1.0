@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/services/workspace_theme_sync.dart';
+import 'package:switch_app/services/workspace_theme_sync.dart';
 
 /// Overrides the global workspace accent while a buyer platform is open.
 class PlatformThemeSync {

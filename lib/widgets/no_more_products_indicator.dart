@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 
 class NoMoreProductsIndicator extends StatefulWidget {
   const NoMoreProductsIndicator({

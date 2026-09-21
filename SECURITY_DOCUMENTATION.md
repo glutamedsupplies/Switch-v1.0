@@ -17,18 +17,18 @@ Browser admin sessions are stored in browser `sessionStorage`/`localStorage`. Th
 - `tenantId`
 - `workspaceId`
 
-Super admin APIs require `x-gms-super-admin-token`, which is returned by the super admin login endpoint.
+Super admin APIs require a signed, expiring `x-gms-super-admin-token`, which is returned by the super admin login endpoint. The token signature uses `ADMIN_API_SESSION_SECRET`; invalid, forged, and expired sessions receive `401`.
 
 ## Authorization
 
-Current authorization is mostly handler-specific:
+Current authorization is mostly handler-specific, with a central guard for all `/api/super-admin/*` routes:
 
-- Super admin handlers call `requireSuperAdmin`.
+- Super admin routes and handlers call `requireSuperAdmin`.
 - Product/order/account/admin resources use `adminId` scope checks.
 - Employee page access is partly enforced in browser JavaScript through `employee_access_guard.js`.
 - Customer ownership is checked in selected flows such as seller follow and chat message deletion.
 
-There is no central authorization middleware, role policy layer, or signed session verification for most admin endpoints.
+There is no shared role policy layer or signed session verification for most non-super-admin endpoints.
 
 ## Password Security
 
@@ -37,7 +37,7 @@ Passwords are compared directly as strings in the backend. The data schema inclu
 Risks:
 
 - Plaintext passwords can be exposed if JSON files leak.
-- Super admin has default fallback credentials in code.
+- Non-super-admin legacy account records may still contain plaintext passwords during migration.
 - No password hashing, salting, rotation policy, lockout, or brute-force protection was found.
 
 Recommendations:
@@ -175,4 +175,3 @@ Endpoints needing rate limits:
 7. Add rate limiting and request size controls per endpoint.
 8. Add structured audit logs for admin/super admin actions.
 9. Move from JSON files to a database with constraints and backups.
-

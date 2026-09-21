@@ -1,5 +1,5 @@
-name: gms_shopping
-description: "Switch shopping app."
+name: switch_app
+description: "Switch marketplace app for buyers, sellers, and administrators."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
 
 const _requestTimeout = Duration(seconds: 8);
 final _client = HttpClient()..connectionTimeout = _requestTimeout;

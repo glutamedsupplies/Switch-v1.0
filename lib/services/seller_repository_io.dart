@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:gms_shopping/models/seller_summary.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/seller_repository_base.dart';
+import 'package:switch_app/models/seller_summary.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/seller_repository_base.dart';
 
 const _requestTimeout = Duration(seconds: 3);
 const _memoryCacheLifetime = Duration.zero;

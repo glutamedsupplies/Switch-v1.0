@@ -1,4 +1,4 @@
-import 'package:gms_shopping/models/store_type_summary.dart';
+import 'package:switch_app/models/store_type_summary.dart';
 
 abstract class StoreTypeRepository {
   Future<List<StoreTypeSummary>> fetchStoreTypes({bool forceRefresh = false});

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 class FavoriteProductsStore {
   FavoriteProductsStore._();

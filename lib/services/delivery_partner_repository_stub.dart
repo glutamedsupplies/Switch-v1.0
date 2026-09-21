@@ -1,5 +1,5 @@
-import 'package:gms_shopping/models/delivery_partner.dart';
-import 'package:gms_shopping/services/delivery_partner_repository_base.dart';
+import 'package:switch_app/models/delivery_partner.dart';
+import 'package:switch_app/services/delivery_partner_repository_base.dart';
 
 DeliveryPartnerRepository createDeliveryPartnerRepository({String? baseUrl}) {
   return _UnsupportedDeliveryPartnerRepository();

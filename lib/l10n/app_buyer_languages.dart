@@ -1,4 +1,4 @@
-import 'package:gms_shopping/l10n/app_login_languages.dart';
+import 'package:switch_app/l10n/app_login_languages.dart';
 
 /// Buyer platform / main home strings (aligned with web BUYER_I18N).
 abstract final class AppBuyerLanguages {

@@ -1,5 +1,5 @@
-import 'package:gms_shopping/models/payment_partner.dart';
-import 'package:gms_shopping/services/payment_partner_repository_base.dart';
+import 'package:switch_app/models/payment_partner.dart';
+import 'package:switch_app/services/payment_partner_repository_base.dart';
 
 PaymentPartnerRepository createPaymentPartnerRepository({String? baseUrl}) {
   return _UnsupportedPaymentPartnerRepository();

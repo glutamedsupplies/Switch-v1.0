@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/theme/app_theme.dart';
+import 'package:switch_app/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'workspace_theme_sync_stub.dart'

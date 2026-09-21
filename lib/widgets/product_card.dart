@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/utils/session_image_cache.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
-import 'package:gms_shopping/widgets/product_company_identity.dart';
-import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/utils/session_image_cache.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/product_company_identity.dart';
+import 'package:switch_app/widgets/product_card_tap_lift.dart';
 
 class ProductCard extends StatelessWidget {
   const ProductCard({

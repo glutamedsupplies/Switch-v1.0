@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 const _requestTimeout = Duration(seconds: 8);
 final _client = HttpClient()..connectionTimeout = _requestTimeout;

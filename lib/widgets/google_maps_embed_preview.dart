@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/services/philippines_places_service.dart';
+import 'package:switch_app/services/philippines_places_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 
 /// Native Google Maps preview used by Add Address and similar pickers.
 class GoogleMapsEmbedPreview extends StatefulWidget {

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:html';
 
-import 'package:gms_shopping/models/payment_partner.dart';
-import 'package:gms_shopping/services/payment_partner_repository_base.dart';
+import 'package:switch_app/models/payment_partner.dart';
+import 'package:switch_app/services/payment_partner_repository_base.dart';
 
 const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
 const _requestTimeout = Duration(seconds: 3);

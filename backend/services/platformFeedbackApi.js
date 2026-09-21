@@ -384,10 +384,10 @@ function createPlatformFeedbackApi(deps) {
         ...current,
         status: nextStatus,
         readAt: current.readAt || now,
-        readBy: current.readBy || SUPER_ADMIN_USERNAME || "root",
+        readBy: current.readBy || SUPER_ADMIN_USERNAME,
         resolvedAt: nextStatus === "resolved" ? current.resolvedAt || now : "",
         resolvedBy:
-          nextStatus === "resolved" ? SUPER_ADMIN_USERNAME || "root" : "",
+          nextStatus === "resolved" ? SUPER_ADMIN_USERNAME : "",
       };
       entries[index] = updated;
       await writePlatformFeedback(entries);

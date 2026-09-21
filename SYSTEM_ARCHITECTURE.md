@@ -109,10 +109,10 @@ Authentication is currently implemented with:
 - Employee login through `/api/employee-login`
 - Super admin login through `/api/super-admin-login`
 - Browser-side session/local storage keys such as `gms-admin-session`, `gms-employee-session`, `gms-super-admin-session`, and `gms-admin-id`
-- Backend super admin authorization through `x-gms-super-admin-token`
+- Backend super admin authorization through signed, expiring `x-gms-super-admin-token` sessions
 - Workspace scoping through `x-gms-admin-id`, `x-admin-id`, or query parameters such as `adminId`, `tenantId`, and `workspaceId`
 
-No JWT library, signed cookie session, password hashing, CSRF middleware, or role-based middleware framework was found.
+Super admin sessions use HMAC signatures and expiry without a JWT dependency. Other roles do not yet share a signed cookie/session or role-based middleware framework.
 
 ## File Storage
 
@@ -178,4 +178,3 @@ flowchart TD
 ## Deployment Shape
 
 For development, the backend runs locally on port `8080` by default. Flutter services use `API_BASE_URL` when supplied, otherwise fall back to local URLs such as `http://127.0.0.1:8080`, `http://localhost:8080`, and `http://10.0.2.2:8080` for Android emulator.
-

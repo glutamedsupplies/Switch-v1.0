@@ -446,7 +446,7 @@ rootLoginForm.addEventListener("submit", async (event) => {
 
   const formData = new FormData(rootLoginForm);
   const username = String(formData.get("username") ?? "").trim();
-  const password = String(formData.get("password") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
 
   if (!username) {
     focusRootInvalidField(rootIdentifierInput, "Please enter the root username.");
@@ -472,6 +472,7 @@ rootLoginForm.addEventListener("submit", async (event) => {
     const rootSession = {
       ...(rootLoginData.root || {}),
       token: rootLoginData.token,
+      expiresAt: rootLoginData.expiresAt,
       role: "root",
       signedInAt: new Date().toISOString(),
     };

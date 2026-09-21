@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/login_service_base.dart';
+import 'package:switch_app/services/login_service_base.dart';
 
 LoginService createLoginService() => const _UnsupportedLoginService();
 

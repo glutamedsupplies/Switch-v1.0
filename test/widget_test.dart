@@ -2,11 +2,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gms_shopping/main.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/profile.dart';
-import 'package:gms_shopping/services/product_repository.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:switch_app/main.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/profile.dart';
+import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

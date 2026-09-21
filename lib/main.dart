@@ -32,8 +32,6 @@ import 'package:gms_shopping/seller.dart';
 import 'package:gms_shopping/search_bar.dart' as app_search;
 import 'package:gms_shopping/services/app_language_preference.dart';
 import 'package:gms_shopping/services/device_session_guard.dart';
-import 'package:gms_shopping/services/for_you_recommendations.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
 import 'package:gms_shopping/services/notification_sound_service.dart';
 import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/services/search_suggestions_service.dart';
@@ -43,7 +41,6 @@ import 'package:gms_shopping/services/platform_repository.dart';
 import 'package:gms_shopping/services/platform_theme_sync.dart';
 import 'package:gms_shopping/services/unified_account_service.dart';
 import 'package:gms_shopping/services/vouchers_service.dart';
-import 'package:gms_shopping/services/flash_deals_service.dart';
 import 'package:gms_shopping/services/visual_product_detector.dart';
 import 'package:gms_shopping/services/workspace_theme_sync.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
@@ -54,11 +51,11 @@ import 'package:gms_shopping/utils/currency_format.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
 import 'package:gms_shopping/utils/session_image_cache.dart';
 import 'package:gms_shopping/widgets/app_price_text.dart';
+import 'package:gms_shopping/widgets/no_more_products_indicator.dart';
 import 'package:gms_shopping/widgets/skeleton_loading.dart';
 import 'package:gms_shopping/widgets/product_company_identity.dart';
 import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
 import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
-import 'package:gms_shopping/widgets/listing_card_video.dart';
 import 'package:gms_shopping/widgets/search_not_found_art.dart';
 import 'package:gms_shopping/utils/buyer_notification_time_sections.dart';
 import 'package:gms_shopping/widgets/buyer_notifications_panel.dart';
@@ -66,6 +63,7 @@ import 'package:gms_shopping/widgets/buyer_account_panel.dart';
 import 'package:gms_shopping/widgets/buyer_platform_activity_list.dart';
 import 'package:gms_shopping/widgets/buyer_right_panel_host.dart';
 import 'package:gms_shopping/services/buyer_delivery_address_store.dart';
+import 'package:gms_shopping/services/local_api_base_urls.dart';
 import 'package:gms_shopping/select_address_page.dart';
 import 'package:gms_shopping/widgets/location_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -122,31 +120,6 @@ const String _lucideSoupIconSvg =
     '<path d="M16.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.73 1.62"/>'
     '<path d="M11.25 3c.27.1.8.53.74 1.36-.05.83-.93 1.2-.98 2.02-.06.78.33 1.24.72 1.62"/>'
     '<path d="M6.25 3c.27.1.8.53.75 1.36-.06.83-.93 1.2-1 2.02-.05.78.34 1.24.74 1.62"/>'
-    '</svg>';
-const String _lucideStarIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" '
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>'
-    '</svg>';
-const String _lucideMessageCircleIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/>'
-    '</svg>';
-const String _lucideTicketCheckIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/>'
-    '<path d="m9 12 2 2 4-4"/>'
-    '</svg>';
-const String _lucideZapIconSvg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
-    'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-    '<path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>'
     '</svg>';
 const String _lucideTruckIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
@@ -440,507 +413,6 @@ Widget _lucideSoupIcon({required Color color, double size = 24}) {
   );
 }
 
-Widget _lucideStarIcon({required Color color, double size = 16}) {
-  return SvgPicture.string(
-    _lucideStarIconSvg,
-    width: size,
-    height: size,
-    colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-  );
-}
-
-/// Fixed filled star (always full — rating is shown as text beside it).
-Widget _productRatingStar({
-  required Color color,
-  double size = 16,
-}) {
-  return _lucideStarIcon(color: color, size: size);
-}
-
-Widget _lucideMessageCircleIcon({required Color color, double size = 15}) {
-  return SvgPicture.string(
-    _lucideMessageCircleIconSvg,
-    width: size,
-    height: size,
-    colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-  );
-}
-
-Widget _lucideTicketCheckIcon({required Color color, double size = 16}) {
-  return SvgPicture.string(
-    _lucideTicketCheckIconSvg,
-    width: size,
-    height: size,
-    colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-  );
-}
-
-Widget _lucideZapIcon({required Color color, double size = 16}) {
-  return SvgPicture.string(
-    _lucideZapIconSvg,
-    width: size,
-    height: size,
-    colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-  );
-}
-
-Widget _lucideTruckIcon({required Color color, double size = 16}) {
-  return SvgPicture.string(
-    _lucideTruckIconSvg,
-    width: size,
-    height: size,
-    colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-  );
-}
-
-/// Bottom-left MEGA-Discount-style ribbon for live Flash Deal product images.
-class _FlashDealImageRibbon extends StatelessWidget {
-  const _FlashDealImageRibbon({
-    this.endsAt,
-    this.isAlmostGone = false,
-    this.iconOnly = false,
-  });
-
-  final DateTime? endsAt;
-  final bool isAlmostGone;
-  /// Carousel chips: zap icon only (no Flash Deal label / countdown).
-  final bool iconOnly;
-
-  static const double _slant = 11;
-  static const EdgeInsets contentPadding = EdgeInsets.fromLTRB(7, 5, 16, 5);
-
-  @override
-  Widget build(BuildContext context) {
-    if (iconOnly) {
-      return CustomPaint(
-        painter: const _FlashDealRibbonShadowPainter(slant: _slant),
-        child: ClipPath(
-          clipper: const _FlashDealRibbonClipper(slant: _slant),
-          child: ColoredBox(
-            color: const Color(0xFFE6005C),
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Color(0xFFE6005C),
-                    Color(0xFFFF2D72),
-                    Color(0xFFFF6B9A),
-                  ],
-                  stops: [0.0, 0.45, 1.0],
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 5, 14, 5),
-                child: _lucideZapIcon(color: Colors.white, size: 14),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final showCountdown =
-        endsAt != null && endsAt!.isAfter(DateTime.now());
-    return CustomPaint(
-      painter: const _FlashDealRibbonShadowPainter(slant: _slant),
-      child: ClipPath(
-        clipper: const _FlashDealRibbonClipper(slant: _slant),
-        child: ColoredBox(
-          color: const Color(0xFFE6005C),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              // Same vibe as Lazada "MEGA Discount": hot pink → lighter pink (L→R).
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Color(0xFFE6005C),
-                  Color(0xFFFF2D72),
-                  Color(0xFFFF6B9A),
-                ],
-                stops: [0.0, 0.45, 1.0],
-              ),
-            ),
-            child: Padding(
-              // Extra right padding so text clears the slanted cut.
-              padding: _FlashDealImageRibbon.contentPadding,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isAlmostGone ? 'ALMOST GONE' : 'Flash Deal',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      height: 1.05,
-                      letterSpacing: -0.35,
-                    ),
-                  ),
-                  if (showCountdown)
-                    _VoucherExpiryCountdown(
-                      expiresAt: endsAt!,
-                      style: GoogleFonts.roboto(
-                        color: const Color(0xF2FFFFFF),
-                        fontSize: 8,
-                        fontWeight: FontWeight.w800,
-                        height: 1.05,
-                        letterSpacing: -0.2,
-                        fontFeatures: const [
-                          ui.FontFeature.tabularFigures(),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FlashDealRibbonClipper extends CustomClipper<Path> {
-  const _FlashDealRibbonClipper({required this.slant});
-
-  final double slant;
-
-  @override
-  Path getClip(Size size) {
-    return Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width - slant, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(covariant _FlashDealRibbonClipper oldClipper) {
-    return oldClipper.slant != slant;
-  }
-}
-
-class _FlashDealRibbonShadowPainter extends CustomPainter {
-  const _FlashDealRibbonShadowPainter({
-    required this.slant,
-    this.color = const Color(0xFFE6005C),
-  });
-
-  final double slant;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width - slant, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawShadow(path, color, 4, false);
-  }
-
-  @override
-  bool shouldRepaint(covariant _FlashDealRibbonShadowPainter oldDelegate) {
-    return oldDelegate.slant != slant || oldDelegate.color != color;
-  }
-}
-
-/// Free-shipping promo ribbon: truck + label, same type as Flash Deal.
-class _FreeShippingImageBadge extends StatelessWidget {
-  const _FreeShippingImageBadge({
-    this.iconOnly = false,
-    this.tuckedUnderFlash = false,
-  });
-
-  /// Carousel chips: truck icon only.
-  final bool iconOnly;
-  /// Extra left fill so the green ribbon tucks under the Flash Deal overlay.
-  final bool tuckedUnderFlash;
-
-  static const double _slant = 11;
-  static const double underlap = 18;
-
-  @override
-  Widget build(BuildContext context) {
-    final tuck = tuckedUnderFlash ? underlap : 0.0;
-    if (iconOnly) {
-      return CustomPaint(
-        painter: tuckedUnderFlash
-            ? null
-            : const _FlashDealRibbonShadowPainter(
-                slant: _slant,
-                color: Color(0xFF0D9488),
-              ),
-        child: ClipPath(
-          clipper: const _FlashDealRibbonClipper(slant: _slant),
-          child: ColoredBox(
-            color: const Color(0xFF0D9488),
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Color(0xFF0D9488),
-                    Color(0xFF14B8A6),
-                    Color(0xFF2DD4BF),
-                  ],
-                  stops: [0.0, 0.45, 1.0],
-                ),
-              ),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(6 + tuck, 5, 14, 5),
-                child: _lucideTruckIcon(color: Colors.white, size: 14),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return CustomPaint(
-      painter: tuckedUnderFlash
-          ? null
-          : const _FlashDealRibbonShadowPainter(
-              slant: _slant,
-              color: Color(0xFF0D9488),
-            ),
-      child: ClipPath(
-        clipper: const _FlashDealRibbonClipper(slant: _slant),
-        child: ColoredBox(
-          color: const Color(0xFF0D9488),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Color(0xFF0D9488),
-                  Color(0xFF14B8A6),
-                  Color(0xFF5EEAD4),
-                ],
-                stops: [0.0, 0.45, 1.0],
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (tuck > 0) SizedBox(width: tuck),
-                Padding(
-                  padding: tuckedUnderFlash
-                      ? const EdgeInsets.fromLTRB(2, 5, 16, 5)
-                      : _FlashDealImageRibbon.contentPadding,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Shipping',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          height: 1.05,
-                          letterSpacing: -0.35,
-                        ),
-                      ),
-                      Text(
-                        'free',
-                        style: GoogleFonts.roboto(
-                          color: const Color(0xF2FFFFFF),
-                          fontSize: 8,
-                          fontWeight: FontWeight.w600,
-                          height: 1.05,
-                          letterSpacing: -0.35,
-                          fontFeatures: const [
-                            ui.FontFeature.tabularFigures(),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bottom-left promo row: Flash Deal overlays a connected Free Shipping ribbon.
-class _ProductImagePromoBadges extends StatelessWidget {
-  const _ProductImagePromoBadges({
-    required this.productId,
-    required this.sellerAdminId,
-    required this.platformId,
-    this.carouselStyle = false,
-  });
-
-  final String productId;
-  final String sellerAdminId;
-  final String platformId;
-  final bool carouselStyle;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<Object?>>(
-      future: Future.wait<Object?>([
-        productLiveFlashDeal(
-          productId: productId,
-          platformId: platformId,
-        ),
-        productSellerVoucherOffer(
-          sellerAdminId: sellerAdminId,
-          platformId: platformId,
-        ),
-      ]),
-      builder: (context, snapshot) {
-        final deal = snapshot.data?[0] as BuyerFlashDeal?;
-        final offer = snapshot.data?[1] as SellerVoucherOffer?;
-        final showFlash = deal != null && deal.isLive;
-        final showShipping =
-            offer != null && offer.available && offer.freeShipping;
-        if (!showFlash && !showShipping) {
-          return const SizedBox.shrink();
-        }
-
-        final flashRibbon = showFlash
-            ? _FlashDealImageRibbon(
-                endsAt: deal.endsAt,
-                isAlmostGone: deal.isAlmostGone,
-                iconOnly: carouselStyle,
-              )
-            : null;
-        final shippingBadge = showShipping
-            ? _FreeShippingImageBadge(
-                iconOnly: carouselStyle,
-                tuckedUnderFlash: showFlash,
-              )
-            : null;
-
-        if (flashRibbon == null) return shippingBadge!;
-        if (shippingBadge == null) return flashRibbon;
-
-        return IntrinsicHeight(
-          child: Stack(
-            alignment: Alignment.bottomLeft,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Opacity(opacity: 0, child: flashRibbon),
-                  Transform.translate(
-                    offset: const Offset(-_FreeShippingImageBadge.underlap, 0),
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: shippingBadge,
-                    ),
-                  ),
-                ],
-              ),
-              flashRibbon,
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Live voucher expiry countdown (d HH:MM:SS / HH:MM:SS).
-class _VoucherExpiryCountdown extends StatefulWidget {
-  const _VoucherExpiryCountdown({
-    required this.expiresAt,
-    this.style,
-  });
-
-  final DateTime expiresAt;
-  final TextStyle? style;
-
-  @override
-  State<_VoucherExpiryCountdown> createState() =>
-      _VoucherExpiryCountdownState();
-}
-
-class _VoucherExpiryCountdownState extends State<_VoucherExpiryCountdown> {
-  Timer? _timer;
-  Duration _remaining = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _tick();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-  }
-
-  @override
-  void didUpdateWidget(covariant _VoucherExpiryCountdown oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.expiresAt != widget.expiresAt) {
-      _tick();
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _tick() {
-    final next = widget.expiresAt.difference(DateTime.now());
-    if (!mounted) return;
-    setState(() {
-      _remaining = next.isNegative ? Duration.zero : next;
-    });
-    if (next.isNegative) {
-      _timer?.cancel();
-      _timer = null;
-    }
-  }
-
-  String get _label {
-    final totalSeconds = _remaining.inSeconds;
-    if (totalSeconds <= 0) return 'Expired';
-    final days = totalSeconds ~/ 86400;
-    final hours = (totalSeconds % 86400) ~/ 3600;
-    final minutes = (totalSeconds % 3600) ~/ 60;
-    final seconds = totalSeconds % 60;
-    String two(int n) => n.toString().padLeft(2, '0');
-    if (days > 0) {
-      return '${days}d ${hours}h ${minutes}m';
-    }
-    return '${two(hours)}:${two(minutes)}:${two(seconds)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      _label,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: widget.style ??
-          GoogleFonts.roboto(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            height: 1,
-            letterSpacing: -0.35,
-            fontFeatures: const [ui.FontFeature.tabularFigures()],
-          ),
-    );
-  }
-}
-
 /// Dashed vertical rule between voucher icon and countdown (ticket perforation).
 class _VoucherChipPerforationDivider extends StatelessWidget {
   const _VoucherChipPerforationDivider({
@@ -1150,7 +622,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<_BuyerPlatformPickerState> _buyerPlatformPickerKey =
       GlobalKey<_BuyerPlatformPickerState>();
-  static const Duration _productAutoRefreshInterval = Duration(seconds: 30);
+  static const Duration _productAutoRefreshInterval = Duration(seconds: 15);
   static const Duration _chatAutoRefreshInterval = Duration(milliseconds: 350);
   static const Duration _exitBackPressWindow = Duration(seconds: 2);
   late final ProductRepository _productRepository;
@@ -1173,8 +645,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
   late final ValueNotifier<String> _buyerPlatformNotifier;
   late final ValueNotifier<StoreTypeSummary?> _selectedStoreTypeNotifier;
   late final ValueNotifier<bool> _categoriesBrowseOpenNotifier;
-  /// Left-nav Categories = all Super Admin published; View All = platform only.
-  late final ValueNotifier<bool> _categoriesBrowseAllPlatformsNotifier;
   late final ValueNotifier<String> _storeTypeCategoryFilterNotifier;
   late final ValueNotifier<bool> _isFavoritesSearchingNotifier;
   late final ValueNotifier<bool> _showsNewMessagePopupNotifier;
@@ -1188,6 +658,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
   /// `0` + New Post off = All. New Post stacks via [_newPostFilterActiveNotifier].
   late final ValueNotifier<int> _dealSortMaskNotifier;
   late final ValueNotifier<bool> _newPostFilterActiveNotifier;
+  late final ValueNotifier<int> _homeBottomOverscrollSignalNotifier;
   late final ValueNotifier<_HeaderAction?> _selectedHeaderActionNotifier;
   late final ValueNotifier<bool> _isShopVisualSearchingNotifier;
   late final ValueNotifier<List<Product>?> _shopVisualSearchProductsNotifier;
@@ -1237,10 +708,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
   bool _isRefreshingChats = false;
   bool _isRefreshingProducts = false;
   final List<int> _tabHistory = <int>[0];
-  /// Previous shop deal-filter states for Android/back-arrow unwind
-  /// (e.g. All → New Arrivals → Flash Deals → back → New Arrivals → back → All).
-  final List<({int dealSortMask, bool newPostActive})> _shopDealFilterHistory =
-      <({int dealSortMask, bool newPostActive})>[];
   int _lastIncomingSupportEvent = 0;
   int _lastHandledOrderTabRequest = 0;
   double _lastKeyboardBottomInset = 0;
@@ -1326,14 +793,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     }
   }
 
-  bool get _categoriesBrowseAllPlatforms =>
-      _categoriesBrowseAllPlatformsNotifier.value;
-  set _categoriesBrowseAllPlatforms(bool value) {
-    if (_categoriesBrowseAllPlatformsNotifier.value != value) {
-      _categoriesBrowseAllPlatformsNotifier.value = value;
-    }
-  }
-
   String get _storeTypeCategoryFilter => _storeTypeCategoryFilterNotifier.value;
   set _storeTypeCategoryFilter(String value) {
     if (_storeTypeCategoryFilterNotifier.value != value) {
@@ -1409,6 +868,14 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
       (_dealSortMask << 1) | (_newPostFilterActive ? 1 : 0);
 
   bool get _isAllDealFilter => _shopDealFilterKey == 0;
+
+  int get _homeBottomOverscrollSignal =>
+      _homeBottomOverscrollSignalNotifier.value;
+  set _homeBottomOverscrollSignal(int value) {
+    if (_homeBottomOverscrollSignalNotifier.value != value) {
+      _homeBottomOverscrollSignalNotifier.value = value;
+    }
+  }
 
   _HeaderAction? get _selectedHeaderAction =>
       _selectedHeaderActionNotifier.value;
@@ -1555,7 +1022,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _buyerPlatformNotifier = ValueNotifier(_kBuyerPlatformNone);
     _selectedStoreTypeNotifier = ValueNotifier<StoreTypeSummary?>(null);
     _categoriesBrowseOpenNotifier = ValueNotifier(false);
-    _categoriesBrowseAllPlatformsNotifier = ValueNotifier(false);
     _storeTypeCategoryFilterNotifier = ValueNotifier('all');
     _isFavoritesSearchingNotifier = ValueNotifier(false);
     _showsNewMessagePopupNotifier = ValueNotifier(false);
@@ -1567,6 +1033,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _selectedOrderStageIndexNotifier = ValueNotifier(0);
     _dealSortMaskNotifier = ValueNotifier(0);
     _newPostFilterActiveNotifier = ValueNotifier(false);
+    _homeBottomOverscrollSignalNotifier = ValueNotifier(0);
     _selectedHeaderActionNotifier = ValueNotifier(null);
     _isShopVisualSearchingNotifier = ValueNotifier(false);
     _shopVisualSearchProductsNotifier = ValueNotifier(null);
@@ -1641,15 +1108,10 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     final resolvedAccountId = ((await AuthSession.getAccountId()) ?? '').trim();
-    final resolvedEmail = ((await AuthSession.getAccountEmail()) ?? '').trim();
     setState(() {
       _profileFirstName = prefs.getString('profile_first_name') ?? '';
       _profileLastName = prefs.getString('profile_last_name') ?? '';
-      // Prefer AuthSession email (source of truth after unified sync) so a
-      // stale profile_email from a previous Google account cannot linger.
-      _profileEmail = resolvedEmail.isNotEmpty
-          ? resolvedEmail
-          : (prefs.getString('profile_email') ?? '');
+      _profileEmail = prefs.getString('profile_email') ?? '';
       _profilePhone = prefs.getString('profile_phone') ?? '';
       _profileImageUrl = prefs.getString('profile_image_url') ?? '';
       _profileAccountId = resolvedAccountId;
@@ -2731,68 +2193,13 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     });
   }
 
-  void _clearShopDealFilterHistory() {
-    _shopDealFilterHistory.clear();
-  }
-
-  void _pushShopDealFilterHistory({
-    required int dealSortMask,
-    required bool newPostActive,
-  }) {
-    if (_shopDealFilterHistory.isNotEmpty) {
-      final last = _shopDealFilterHistory.last;
-      if (last.dealSortMask == dealSortMask &&
-          last.newPostActive == newPostActive) {
-        return;
-      }
-    }
-    _shopDealFilterHistory.add((
-      dealSortMask: dealSortMask,
-      newPostActive: newPostActive,
-    ));
-  }
-
-  /// Restores the previous deal filter (New Arrivals ← Flash, All ← New, …).
-  /// Returns false when already on All / history is empty.
-  bool _restorePreviousShopDealFilter() {
-    if (_shopDealFilterHistory.isEmpty) {
-      if (_isAllDealFilter) {
-        return false;
-      }
-      // No recorded trail — fall back to All rather than leaving the platform.
-      _applyShopDealFilterChange(
-        () {
-          _dealSortMask = 0;
-          _newPostFilterActive = false;
-        },
-        recordHistory: false,
-      );
-      return true;
-    }
-
-    final previous = _shopDealFilterHistory.removeLast();
-    _applyShopDealFilterChange(
-      () {
-        _dealSortMask = previous.dealSortMask;
-        _newPostFilterActive = previous.newPostActive;
-      },
-      recordHistory: false,
-    );
-    return true;
-  }
-
-  void _applyShopDealFilterChange(
-    VoidCallback mutateFilters, {
-    bool recordHistory = true,
-  }) {
+  void _applyShopDealFilterChange(VoidCallback mutateFilters) {
     _resetHeroImageOpacity();
     if (_showsScrollToTopButton) {
       _showsScrollToTopButton = false;
     }
 
     final previousKey = _shopDealFilterKey;
-    final previousMask = _dealSortMask;
-    final previousNewPost = _newPostFilterActive;
     final previousOffset = _shopDealSavedOffset(previousKey);
     _shopDealScrollOffsets[previousKey] = previousOffset;
     _shopDealVisibleCounts[previousKey] = _shopDashboardVisibleCount;
@@ -2800,18 +2207,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     final stickyHeaderWasVisible = _isShopHeaderCollapsed;
     mutateFilters();
     final nextKey = _shopDealFilterKey;
-
-    if (recordHistory && nextKey != previousKey) {
-      if (nextKey == 0) {
-        // Explicit All is the root of the deal-filter stack.
-        _clearShopDealFilterHistory();
-      } else {
-        _pushShopDealFilterHistory(
-          dealSortMask: previousMask,
-          newPostActive: previousNewPost,
-        );
-      }
-    }
 
     final savedTargetOffset = _shopDealScrollOffsets[nextKey] ?? 0.0;
     final targetOffset = stickyHeaderWasVisible ? savedTargetOffset : 0.0;
@@ -2898,38 +2293,20 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     }
 
     _isRefreshingProducts = true;
-    final fetchFuture = _productRepository.fetchProducts(forceRefresh: true);
+    final nextFuture = _productRepository.fetchProducts(forceRefresh: true);
+
+    if (mounted) {
+      _productsFuture = nextFuture;
+    }
 
     try {
-      // Background auto-refresh: wait for data first so cards don't flash empty
-      // while the new Future is in ConnectionState.waiting.
-      if (!includeRefreshDelay && !resetHero) {
-        final products = await fetchFuture;
-        if (mounted) {
-          _productsFuture = Future<List<Product>>.value(products);
-        }
-        unawaited(
-          activeSellerVoucherAdminIds(
-            platformId: _buyerPlatform == _kBuyerPlatformNone
-                ? ''
-                : _buyerPlatform,
-            forceRefresh: true,
-          ),
-        );
-        return;
-      }
-
-      if (mounted) {
-        _productsFuture = fetchFuture;
-      }
-
       if (includeRefreshDelay) {
         await Future.wait<dynamic>([
-          fetchFuture,
+          nextFuture,
           Future<void>.delayed(const Duration(milliseconds: 650)),
         ]);
       } else {
-        await fetchFuture;
+        await nextFuture;
       }
     } catch (_) {
       // The FutureBuilder shows backend errors using the assigned future.
@@ -3009,16 +2386,11 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _shopFrozenListSearchQuery = '';
     _exitShopSearchMode(clearQuery: true);
     _isShopHeaderCollapsed = false;
-    // Fresh storefront entry: All deals + hero header (avoids blank sticky).
-    _dealSortMask = 0;
-    _newPostFilterActive = false;
-    _clearShopDealFilterHistory();
     _resetShopDashboardScroll();
     _platformPageMovesForward = true;
     _buyerPlatform = platformId.trim().toLowerCase();
     _selectedStoreType = null;
     _isCategoriesBrowseOpen = false;
-    _categoriesBrowseAllPlatforms = false;
     _storeTypeCategoryFilter = 'all';
     _cancelFooterChromeRevealTimer();
     _isHomeChromeVisible = true;
@@ -3059,13 +2431,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     }
 
     final platformId = platform.id.trim().toLowerCase();
-    if (platformId == _buyerPlatform) {
-      // Same platform while Categories is open → return to the shop listing.
-      if (_isCategoriesBrowseOpen) {
-        _closeCategoriesBrowse();
-      }
-      return;
-    }
+    if (platformId == _buyerPlatform) return;
     _selectBuyerPlatform(platformId);
   }
 
@@ -3084,10 +2450,9 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
       return;
     }
 
-    // Left nav: every Super Admin published category (all platforms).
+    // Stay inside the shop Scaffold so the left nav can open on Categories.
     _platformPageMovesForward = true;
     _selectedStoreType = null;
-    _categoriesBrowseAllPlatforms = true;
     _isCategoriesBrowseOpen = true;
   }
 
@@ -3095,23 +2460,12 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     if (!_isCategoriesBrowseOpen) return;
     _platformPageMovesForward = false;
     _isCategoriesBrowseOpen = false;
-    _categoriesBrowseAllPlatforms = false;
-    _isHomeChromeVisible = true;
-    // Non-All deal sorts hide the hero and rely on the sticky header.
-    // Re-entering shop with collapse=false left both blank — force sticky on.
-    if (!_isAllDealFilter) {
-      _shopUsesPlainSortHeader = true;
-      _isShopHeaderCollapsed = true;
-    } else {
-      _syncHomeScrollChromeFromControllers();
-    }
   }
 
   void _selectShopStoreType(StoreTypeSummary storeType) {
     _platformPageMovesForward = true;
     _selectedStoreType = storeType;
     _isCategoriesBrowseOpen = false;
-    _categoriesBrowseAllPlatforms = false;
     _storeTypeCategoryFilter = 'all';
     _cancelFooterChromeRevealTimer();
     _isHomeChromeVisible = true;
@@ -3128,17 +2482,12 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _shopFrozenListSearchQuery = '';
     _exitShopSearchMode(clearQuery: true);
     _isShopHeaderCollapsed = false;
-    _dealSortMask = 0;
-    _newPostFilterActive = false;
-    _clearShopDealFilterHistory();
     _resetShopDashboardScroll();
     _platformPageMovesForward = animateForward;
     _buyerPlatform = _kBuyerPlatformNone;
     _selectedStoreType = null;
     _isCategoriesBrowseOpen = false;
-    _categoriesBrowseAllPlatforms = false;
     _storeTypeCategoryFilter = 'all';
-    _isHomeChromeVisible = true;
     PlatformThemeSync.instance.clear();
   }
 
@@ -3390,6 +2739,14 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _handleShopDashboardScroll(_productDashboardScrollController.offset);
   }
 
+  void _handleHomeBottomOverscroll() {
+    if (!mounted) {
+      return;
+    }
+
+    _homeBottomOverscrollSignal = _homeBottomOverscrollSignal + 1;
+  }
+
   Future<void> _scrollDashboardToTop() async {
     if (!_productDashboardScrollController.hasClients) {
       return;
@@ -3465,11 +2822,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
         return false;
       }
       if (_buyerPlatform != _kBuyerPlatformNone) {
-        // Unwind deal filters first: Flash → New Arrivals → All → leave Shop.
-        if (_isProductListingStorefront(_buyerPlatform) &&
-            _restorePreviousShopDealFilter()) {
-          return false;
-        }
         _clearBuyerPlatform();
         return false;
       }
@@ -3534,7 +2886,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _buyerPlatformNotifier.dispose();
     _selectedStoreTypeNotifier.dispose();
     _categoriesBrowseOpenNotifier.dispose();
-    _categoriesBrowseAllPlatformsNotifier.dispose();
     _storeTypeCategoryFilterNotifier.dispose();
     _isFavoritesSearchingNotifier.dispose();
     _showsNewMessagePopupNotifier.dispose();
@@ -3547,6 +2898,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
     _selectedOrderStageIndexNotifier.dispose();
     _dealSortMaskNotifier.dispose();
     _newPostFilterActiveNotifier.dispose();
+    _homeBottomOverscrollSignalNotifier.dispose();
     _selectedHeaderActionNotifier.dispose();
     _isShopVisualSearchingNotifier.dispose();
     _shopVisualSearchProductsNotifier.dispose();
@@ -3575,7 +2927,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
             _buyerPlatformNotifier,
             _selectedStoreTypeNotifier,
             _categoriesBrowseOpenNotifier,
-            _categoriesBrowseAllPlatformsNotifier,
             _platformsFutureNotifier,
           ]),
           builder: (context, child) {
@@ -3584,8 +2935,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
               return _SwitchShopPlatformSidebar(
                 platformsFuture: _platformsFuture,
                 activePlatformId: _buyerPlatform,
-                categoriesSelected:
-                    _isCategoriesBrowseOpen && _categoriesBrowseAllPlatforms,
+                categoriesSelected: _isCategoriesBrowseOpen,
                 primaryColor: _primaryColor,
                 titleColor: _titleColor,
                 secondaryColor: _secondaryColor,
@@ -3593,13 +2943,10 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
                 onClose: () => Navigator.of(context).maybePop(),
                 onHomeTap: () => unawaited(_closeSidebarAndReturnHome()),
                 onCategoriesTap: () {
-                  // Already on global Categories from left nav — just close drawer.
-                  if (_isCategoriesBrowseOpen &&
-                      _categoriesBrowseAllPlatforms) {
+                  if (_isCategoriesBrowseOpen) {
                     Navigator.of(context).maybePop();
                     return;
                   }
-                  // From platform View All (or shop home) → open all published.
                   unawaited(_closeSidebarAndOpenCategories());
                 },
                 onSelectPlatform: (platform) =>
@@ -3729,22 +3076,18 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
                   final isInsidePlatform =
                       selectedIndex == 0 &&
                       _buyerPlatform != _kBuyerPlatformNone;
-                  // Bottom nav (Home/Scan/Activity/Message) only on Home
-                  // picker — hidden inside a platform storefront.
                   final isVisible =
                       !isInsidePlatform &&
                       (!usesAutoHideChrome || _isHomeChromeVisible);
                   final isGuestMode = _isGuestMode;
 
                   return isGuestMode
-                      ? (isInsidePlatform
-                            ? const SizedBox.shrink()
-                            : _GuestAuthFooter(
-                                primaryColor: _primaryColor,
-                                onLogin: _openGuestLoginPage,
-                                onSignUp: _openGuestSignUpPage,
-                                onHelpCentre: _openGuestHelpCentre,
-                              ))
+                      ? _GuestAuthFooter(
+                          primaryColor: _primaryColor,
+                          onLogin: _openGuestLoginPage,
+                          onSignUp: _openGuestSignUpPage,
+                          onHelpCentre: _openGuestHelpCentre,
+                        )
                       : _FooterVisibilityTransition(
                           visible: isVisible,
                           child: _FooterSection(
@@ -3787,7 +3130,6 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
         _buyerPlatformNotifier,
         _selectedStoreTypeNotifier,
         _categoriesBrowseOpenNotifier,
-        _categoriesBrowseAllPlatformsNotifier,
         _storeTypeCategoryFilterNotifier,
         _storeTypesFutureNotifier,
         _platformsFutureNotifier,
@@ -3880,9 +3222,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
         if (selectedStoreType == null) {
           return _buildPlatformPageTransition(
             transitionKey: _isCategoriesBrowseOpen
-                ? (_categoriesBrowseAllPlatforms
-                      ? 'categories-all'
-                      : 'categories-$platformId')
+                ? 'categories-$platformId'
                 : 'platform-$platformId',
             child: FutureBuilder<List<BuyerPlatformSummary>>(
               future: _platformsFuture,
@@ -3908,20 +3248,14 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
                       : (platformId == 'food' ? 'Food' : 'Shop');
 
                   if (_isCategoriesBrowseOpen) {
-                    final showAll = _categoriesBrowseAllPlatforms;
                     return CategoriesOverviewPage(
                       platformId: platformId,
                       platformName: platformLabel,
                       primaryColor: _primaryColor,
                       storeTypesFuture: _storeTypesFuture,
-                      // Left nav: all products for global category counts.
-                      // View All: platform-scoped listing products only.
-                      productsFuture: showAll
-                          ? _productsFuture
-                          : _resolveShopListingProducts(
-                              platformIdFilter: platformId,
-                            ),
-                      showAllPlatforms: showAll,
+                      productsFuture: _resolveShopListingProducts(
+                        platformIdFilter: platformId,
+                      ),
                       onMenuTap: () =>
                           _handleHeaderAction(_HeaderAction.menu),
                     );
@@ -4253,10 +3587,8 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
   }
 
   void _viewAllHomeCategories() {
-    // Platform View All: same Categories UI, scoped to this platform only.
     _platformPageMovesForward = true;
     _selectedStoreType = null;
-    _categoriesBrowseAllPlatforms = false;
     _isCategoriesBrowseOpen = true;
   }
 
@@ -4277,6 +3609,7 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
         _isShopHeaderCollapsedNotifier,
         _shopDealSwitchEpochNotifier,
         _shopDealSwitchReadyNotifier,
+        _homeBottomOverscrollSignalNotifier,
         _showsScrollToTopButtonNotifier,
         _isShopVisualSearchingNotifier,
         _shopVisualSearchProductsNotifier,
@@ -4597,8 +3930,11 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
                         cardWidth: _HomeProductOfferCarousel.cardWidth,
                         listHeight: _HomeProductOfferCarousel.carouselHeight,
                       )
-                    : _FlashDealsHomeCarousel(
+                    : _HomeProductOfferCarousel(
+                        title: 'Flash Deals',
+                        iconAsset: 'assets/images/flash-deals-sort-3d.png',
                         productsFuture: productsFuture,
+                        buildProducts: _buildFlashDealHomeProducts,
                         backgroundColor: _dashboardForegroundColor,
                         surfaceColor: _fieldBackgroundColor,
                         titleColor: _titleColor,
@@ -4711,6 +4047,8 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
                           ? () async => _clearShopVisualSearch()
                           : () => _refreshProducts(resetHero: false),
                       onScrollOffsetChanged: _handleShopDashboardScroll,
+                      bottomOverscrollSignal: _homeBottomOverscrollSignal,
+                      onBottomOverscroll: _handleHomeBottomOverscroll,
                     ),
                   ),
                 ],
@@ -4806,16 +4144,9 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
                 listenable: Listenable.merge([
                   _isShopHeaderCollapsedNotifier,
                   _shopStickyHeaderAnimateNotifier,
-                  _dealSortMaskNotifier,
-                  _newPostFilterActiveNotifier,
                 ]),
                 builder: (context, child) {
-                  // Non-All sorts replace the hero with a spacer — sticky must
-                  // stay visible or the whole header chrome disappears.
-                  final forcePlainSticky =
-                      !_isAllDealFilter && !_isShopSearchMode;
-                  final isVisible =
-                      _isShopHeaderCollapsed || forcePlainSticky;
+                  final isVisible = _isShopHeaderCollapsed;
                   final animate = _shopStickyHeaderAnimateNotifier.value;
                   final slideDuration = animate
                       ? const Duration(milliseconds: 260)
@@ -5964,25 +5295,10 @@ class _NewPostHomeOfferCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(imageRadius),
                       child: Hero(
                         tag: heroTag,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            _ProductImage(
-                              product: product,
-                              primaryColor: primaryColor,
-                              height: imageHeight,
-                            ),
-                            Positioned(
-                              left: 0,
-                              bottom: 0,
-                              child: _ProductImagePromoBadges(
-                                productId: product.id,
-                                sellerAdminId: product.adminId,
-                                platformId: platformId,
-                                carouselStyle: true,
-                              ),
-                            ),
-                          ],
+                        child: _ProductImage(
+                          product: product,
+                          primaryColor: primaryColor,
+                          height: imageHeight,
                         ),
                       ),
                     ),
@@ -6177,75 +5493,6 @@ class _HomeProductOfferCarousel extends StatelessWidget {
               ],
             ),
           ),
-        );
-      },
-    );
-  }
-}
-
-class _FlashDealsHomeCarousel extends StatelessWidget {
-  const _FlashDealsHomeCarousel({
-    required this.productsFuture,
-    required this.backgroundColor,
-    required this.surfaceColor,
-    required this.titleColor,
-    required this.secondaryColor,
-    required this.primaryColor,
-    this.platformId = '',
-    this.onViewAll,
-    this.onReturnedFromProductRoute,
-  });
-
-  final Future<List<Product>> productsFuture;
-  final Color backgroundColor;
-  final Color surfaceColor;
-  final Color titleColor;
-  final Color secondaryColor;
-  final Color primaryColor;
-  final String platformId;
-  final VoidCallback? onViewAll;
-  final VoidCallback? onReturnedFromProductRoute;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<Object>>(
-      future: Future.wait<Object>([
-        productsFuture,
-        loadLiveFlashDealsByProductId(platformId: platformId),
-      ]),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-        final data = snapshot.data;
-        final products = data != null && data.isNotEmpty
-            ? data[0] as List<Product>
-            : const <Product>[];
-        final deals = data != null && data.length > 1
-            ? data[1] as Map<String, BuyerFlashDeal>
-            : const <String, BuyerFlashDeal>{};
-        final offers = _buildFlashDealHomeProducts(
-          products,
-          liveDealsByProductId: deals,
-        );
-        if (offers.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return _HomeProductOfferCarousel(
-          title: 'Flash Deals',
-          iconAsset: 'assets/images/flash-deals-sort-3d.png',
-          productsFuture: Future<List<Product>>.value(offers),
-          buildProducts: (items) => items,
-          backgroundColor: backgroundColor,
-          surfaceColor: surfaceColor,
-          titleColor: titleColor,
-          secondaryColor: secondaryColor,
-          primaryColor: primaryColor,
-          platformId: platformId,
-          onViewAll: onViewAll,
-          onReturnedFromProductRoute: onReturnedFromProductRoute,
         );
       },
     );
@@ -6610,69 +5857,6 @@ class _HeaderIconButton extends StatelessWidget {
   }
 }
 
-/// Three-dot loader for product feed pagination / end-check.
-class _ListingThreeDotsLoader extends StatefulWidget {
-  const _ListingThreeDotsLoader({required this.color});
-
-  final Color color;
-
-  @override
-  State<_ListingThreeDotsLoader> createState() =>
-      _ListingThreeDotsLoaderState();
-}
-
-class _ListingThreeDotsLoaderState extends State<_ListingThreeDotsLoader>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (index) {
-            final phase = (_controller.value + (index * 0.2)) % 1.0;
-            final t = (phase < 0.5 ? phase : 1.0 - phase) * 2;
-            final opacity = 0.35 + (0.65 * t);
-            final scale = 0.75 + (0.25 * t);
-            return Padding(
-              padding: EdgeInsets.only(left: index == 0 ? 0 : 5),
-              child: Transform.scale(
-                scale: scale,
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: widget.color.withValues(alpha: opacity),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            );
-          }),
-        );
-      },
-    );
-  }
-}
-
 class _ProductDashboard extends StatefulWidget {
   const _ProductDashboard({
     required this.productsFuture,
@@ -6685,6 +5869,8 @@ class _ProductDashboard extends StatefulWidget {
     required this.searchQuery,
     required this.scrollController,
     required this.onRefresh,
+    required this.bottomOverscrollSignal,
+    required this.onBottomOverscroll,
     this.leadingContent,
     this.skeletonLeadingContent,
     this.onScrollOffsetChanged,
@@ -6711,6 +5897,8 @@ class _ProductDashboard extends StatefulWidget {
   final Widget? leadingContent;
   final Widget? skeletonLeadingContent;
   final ValueChanged<double>? onScrollOffsetChanged;
+  final int bottomOverscrollSignal;
+  final VoidCallback onBottomOverscroll;
   final String platformId;
   final int preservedVisibleCount;
   final int dealSwitchEpoch;
@@ -6722,13 +5910,7 @@ class _ProductDashboard extends StatefulWidget {
   static const double _homeProductCardBorderRadius = 8;
   /// For You / home grid image size — square (same width & height feel).
   /// Change this number to resize the product card image.
-  static const double _homeProductImageSize = 160;
-
-  /// Tall cards when the listing includes video: square height + 1/4.
-  static double homeProductImageHeight(Product product) {
-    final base = _homeProductImageSize;
-    return product.hasVideo ? base * 1.25 : base;
-  }
+  static const double _homeProductImageSize = 164;
 
   @override
   State<_ProductDashboard> createState() => _ProductDashboardState();
@@ -6741,27 +5923,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
   late int _visibleProductCount;
   List<Product>? _cachedProducts;
   int _dealContentEpoch = 0;
-  List<Product>? _forYouFeedOrdered;
-  int _forYouFeedToken = 0;
-  String? _forYouCatalogFingerprint;
-  Timer? _forYouInterestDebounce;
-  late final Listenable _forYouInterestListenables;
-  bool _endReachedLoading = false;
-  bool _endCheckPending = false;
-  bool _loadingMoreProducts = false;
-  int? _filteredCountAtEndCheckStart;
-  Future<List<Product>>? _productsFutureAtEndCheckStart;
-  DateTime? _lastNoMoreProductsSnackAt;
-  DateTime? _endCheckStartedAt;
-  /// Accumulated bottom overscroll before "no more" check fires.
-  double _bottomPullAccum = 0;
-  bool _endPullArmed = false;
-  static const double _endPullTriggerExtent = 80;
-  Map<String, BuyerFlashDeal> _liveFlashDealsByProductId =
-      const <String, BuyerFlashDeal>{};
-  Future<void>? _liveFlashDealsLoad;
-  Timer? _liveFlashDealsPollTimer;
-  static const Duration _liveFlashDealsPollInterval = Duration(seconds: 20);
 
   @override
   void initState() {
@@ -6769,157 +5930,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
     _visibleProductCount = widget.preservedVisibleCount < _lazyLoadPageSize
         ? _lazyLoadPageSize
         : widget.preservedVisibleCount;
-    _forYouInterestListenables = Listenable.merge([
-      ForYouRecommendations.instance.revisionNotifier,
-      FavoriteProductsStore.instance.favoriteProductIdsNotifier,
-      CartStore.instance.cartItemsNotifier,
-      OrderStore.instance.ordersNotifier,
-    ]);
-    _forYouInterestListenables.addListener(_onForYouInterestsChanged);
-    _reloadLiveFlashDeals();
-    _liveFlashDealsPollTimer = Timer.periodic(
-      _liveFlashDealsPollInterval,
-      (_) => _reloadLiveFlashDeals(quiet: true),
-    );
-  }
-
-  String _flashDealsFingerprint(Map<String, BuyerFlashDeal> deals) {
-    if (deals.isEmpty) return '';
-    final keys = deals.keys.toList()..sort();
-    return keys
-        .map((id) {
-          final deal = deals[id]!;
-          return [
-            id,
-            deal.id,
-            deal.flashPrice.toStringAsFixed(2),
-            deal.dealStockRemaining,
-            deal.endsAt.toUtc().toIso8601String(),
-            deal.status,
-          ].join(':');
-        })
-        .join('|');
-  }
-
-  void _reloadLiveFlashDeals({bool quiet = false}) {
-    clearBuyerFlashDealsCache();
-    final previousFingerprint = _flashDealsFingerprint(
-      _liveFlashDealsByProductId,
-    );
-    final load = loadLiveFlashDealsByProductId(platformId: widget.platformId);
-    _liveFlashDealsLoad = load.then((deals) {
-      if (!mounted) return;
-      final nextFingerprint = _flashDealsFingerprint(deals);
-      if (quiet && nextFingerprint == previousFingerprint) {
-        return;
-      }
-      setState(() {
-        _liveFlashDealsByProductId = deals;
-      });
-    });
-    // Keep reference so hot reload / analyzer see the in-flight load.
-    unawaited(_liveFlashDealsLoad);
-  }
-
-  @override
-  void dispose() {
-    _liveFlashDealsPollTimer?.cancel();
-    _forYouInterestDebounce?.cancel();
-    _forYouInterestListenables.removeListener(_onForYouInterestsChanged);
-    super.dispose();
-  }
-
-  String _catalogFingerprint(List<Product> products) {
-    return products.map((product) => product.id).join('\u0001');
-  }
-
-  bool _sameIdOrder(List<Product> first, List<Product> second) {
-    if (first.length != second.length) return false;
-    for (var i = 0; i < first.length; i++) {
-      if (first[i].id != second[i].id) return false;
-    }
-    return true;
-  }
-
-  List<Product> _remapOrderedFeed(
-    List<Product> catalog,
-    List<Product> ordered,
-  ) {
-    final byId = <String, Product>{
-      for (final product in catalog) product.id: product,
-    };
-    final seen = <String>{};
-    final next = <Product>[];
-    for (final product in ordered) {
-      final fresh = byId[product.id];
-      if (fresh == null || !seen.add(fresh.id)) continue;
-      next.add(fresh);
-    }
-    for (final product in catalog) {
-      if (seen.add(product.id)) {
-        next.add(product);
-      }
-    }
-    return next;
-  }
-
-  void _onForYouInterestsChanged() {
-    _forYouInterestDebounce?.cancel();
-    _forYouInterestDebounce = Timer(const Duration(milliseconds: 900), () {
-      if (!mounted) return;
-      _forYouCatalogFingerprint = null;
-      final products = _cachedProducts;
-      if (products != null) {
-        _scheduleForYouFeed(products, forceRebuild: true);
-      }
-    });
-  }
-
-  void _scheduleForYouFeed(
-    List<Product> products, {
-    bool forceRebuild = false,
-  }) {
-    if (!_isAllDealFilter || widget.searchQuery.trim().isNotEmpty) {
-      return;
-    }
-
-    final fingerprint = _catalogFingerprint(products);
-    if (!forceRebuild &&
-        _forYouCatalogFingerprint == fingerprint &&
-        _forYouFeedOrdered != null) {
-      // Auto-refresh brought the same catalog — keep order, swap fresh rows.
-      final remapped = _remapOrderedFeed(products, _forYouFeedOrdered!);
-      if (_sameIdOrder(_forYouFeedOrdered!, remapped)) {
-        _forYouFeedOrdered = remapped;
-        return;
-      }
-      setState(() {
-        _forYouFeedOrdered = remapped;
-      });
-      return;
-    }
-
-    if (!forceRebuild && _forYouCatalogFingerprint == fingerprint) {
-      return;
-    }
-
-    _forYouCatalogFingerprint = fingerprint;
-    final token = ++_forYouFeedToken;
-    unawaited(
-      ForYouRecommendations.instance
-          .buildHomeListingFeed(products, platformId: widget.platformId)
-          .then((ordered) {
-            if (!mounted || token != _forYouFeedToken) return;
-            final previous = _forYouFeedOrdered;
-            if (previous != null && _sameIdOrder(previous, ordered)) {
-              _forYouFeedOrdered = _remapOrderedFeed(products, previous);
-              return;
-            }
-            setState(() {
-              _forYouFeedOrdered = ordered;
-            });
-          }),
-    );
   }
 
   void _setVisibleProductCount(int count) {
@@ -6950,30 +5960,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
     return products.where(_matchesSearchQuery).toList();
   }
 
-  List<Product> _applyForYouHomeOrdering(List<Product> products) {
-    final ordered = _forYouFeedOrdered;
-    if (ordered == null || ordered.isEmpty) {
-      return products;
-    }
-
-    final byId = <String, Product>{
-      for (final product in products) product.id: product,
-    };
-    final seen = <String>{};
-    final next = <Product>[];
-    for (final product in ordered) {
-      final match = byId[product.id];
-      if (match == null || !seen.add(match.id)) continue;
-      next.add(match);
-    }
-    for (final product in products) {
-      if (seen.add(product.id)) {
-        next.add(product);
-      }
-    }
-    return next;
-  }
-
   List<Product> _filterProducts(List<Product> products) {
     final visibleProducts = filterVisibleProducts(products);
     var filteredProducts = List<Product>.from(visibleProducts);
@@ -6988,9 +5974,7 @@ class _ProductDashboardState extends State<_ProductDashboard> {
     // Stacked sorts AND together (e.g. new + flash + top selling).
     if (hasFlash) {
       filteredProducts = filteredProducts
-          .where(
-            (product) => _liveFlashDealsByProductId.containsKey(product.id),
-          )
+          .where((product) => _discountAmount(product) != null)
           .toList();
     }
     if (hasTopRating) {
@@ -7028,38 +6012,15 @@ class _ProductDashboardState extends State<_ProductDashboard> {
           }
           return second.sold.compareTo(first.sold);
         });
-    } else if (hasFlash) {
-      filteredProducts = [...filteredProducts]
-        ..sort((first, second) {
-          final firstDeal = _liveFlashDealsByProductId[first.id];
-          final secondDeal = _liveFlashDealsByProductId[second.id];
-          final firstDiscount = firstDeal?.discountAmount ?? 0;
-          final secondDiscount = secondDeal?.discountAmount ?? 0;
-          final discountCompare = secondDiscount.compareTo(firstDiscount);
-          if (discountCompare != 0) return discountCompare;
-          final firstEnds = firstDeal?.endsAt;
-          final secondEnds = secondDeal?.endsAt;
-          if (firstEnds != null && secondEnds != null) {
-            final endsCompare = firstEnds.compareTo(secondEnds);
-            if (endsCompare != 0) return endsCompare;
-          }
-          return first.name.toLowerCase().compareTo(second.name.toLowerCase());
-        });
     } else if (!widget.newPostFilterActive && !hasFlash) {
-      // All home: For You first, then remaining listings (stable per-user random).
-      filteredProducts = _applyForYouHomeOrdering(filteredProducts);
+      filteredProducts = [...filteredProducts]
+        ..sort(
+          (first, second) =>
+              first.name.toLowerCase().compareTo(second.name.toLowerCase()),
+        );
     }
 
-    return _applySearchFilter(
-      filteredProducts
-          .map(
-            (product) => _productWithLiveFlashDeal(
-              product,
-              _liveFlashDealsByProductId[product.id],
-            ),
-          )
-          .toList(growable: false),
-    );
+    return _applySearchFilter(filteredProducts);
   }
 
   bool get _hasFlashFilter =>
@@ -7164,23 +6125,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
   void didUpdateWidget(covariant _ProductDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.platformId != widget.platformId ||
-        oldWidget.productsFuture != widget.productsFuture ||
-        oldWidget.dealSwitchEpoch != widget.dealSwitchEpoch) {
-      _reloadLiveFlashDeals();
-    }
-
-    if (oldWidget.platformId != widget.platformId ||
-        !identical(oldWidget.productsFuture, widget.productsFuture)) {
-      // Keep current For You order across quiet auto-refresh; only clear when
-      // the platform changes (different catalog scope).
-      if (oldWidget.platformId != widget.platformId) {
-        _forYouCatalogFingerprint = null;
-        _forYouFeedOrdered = null;
-        clearBuyerFlashDealsCache();
-      }
-    }
-
     if (oldWidget.searchQuery != widget.searchQuery) {
       _dealContentEpoch++;
       _setVisibleProductCount(_lazyLoadPageSize);
@@ -7232,33 +6176,38 @@ class _ProductDashboardState extends State<_ProductDashboard> {
     return lines;
   }
 
-  double _estimateProductCardHeight(Product product) {
+  double _estimateProductCardHeight(
+    Product product, {
+    bool usePortraitImage = false,
+  }) {
     final nameLines = _estimateLineCount(
       product.name,
       charsPerLine: 16,
       maxLines: 2,
     );
 
-    final estimatedImageHeight =
-        _ProductDashboard.homeProductImageHeight(product);
-    const detailsBase = 58.0;
-    // Optional seller-voucher icon line under the 2-line listing name.
-    const voucherIconLine = 20.0;
-    return estimatedImageHeight +
-        detailsBase +
-        voucherIconLine +
+    // Portrait For You cards use ~3:4 media (~218 on typical phone columns).
+    final imageBlock = usePortraitImage ? 218.0 : 180.0;
+    return imageBlock +
+        58 +
         (nameLines * 18) +
         (product.hasCompanyIdentity ? 24 : 0);
   }
 
-  List<List<Product>> _buildProductColumns(List<Product> products) {
+  List<List<Product>> _buildProductColumns(
+    List<Product> products, {
+    bool usePortraitImage = false,
+  }) {
     final columns = [<Product>[], <Product>[]];
     final estimatedHeights = [0.0, 0.0];
 
     for (final product in products) {
       final targetColumn = estimatedHeights[0] <= estimatedHeights[1] ? 0 : 1;
       columns[targetColumn].add(product);
-      estimatedHeights[targetColumn] += _estimateProductCardHeight(product);
+      estimatedHeights[targetColumn] += _estimateProductCardHeight(
+        product,
+        usePortraitImage: usePortraitImage,
+      );
     }
 
     return columns;
@@ -7293,105 +6242,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
     return true;
   }
 
-  Future<void> _startEndReachedCheck(int filteredCount) async {
-    if (_endReachedLoading || _endCheckPending) return;
-    _bottomPullAccum = 0;
-    _endPullArmed = false;
-    _loadingMoreProducts = false;
-
-    final startedAt = DateTime.now();
-    setState(() {
-      _endReachedLoading = true;
-      _endCheckPending = true;
-      _filteredCountAtEndCheckStart = filteredCount;
-      _productsFutureAtEndCheckStart = widget.productsFuture;
-      _endCheckStartedAt = startedAt;
-    });
-
-    try {
-      await Future.wait<void>([
-        widget.onRefresh().catchError((_) {}),
-        Future<void>.delayed(const Duration(seconds: 1)),
-      ]);
-    } catch (_) {
-      // Still resolve below so the dots do not stick.
-    }
-
-    if (!mounted) return;
-
-    // Refresh was a no-op (same future) — finish against the known count.
-    if (identical(widget.productsFuture, _productsFutureAtEndCheckStart)) {
-      unawaited(
-        _finishEndReachedCheck(
-          beforeCount: filteredCount,
-          afterCount: filteredCount,
-        ),
-      );
-    }
-  }
-
-  Future<void> _finishEndReachedCheck({
-    required int beforeCount,
-    required int afterCount,
-  }) async {
-    if (!_endCheckPending || !mounted) return;
-
-    // Keep the spinner visible for at least 1s.
-    final started = _endCheckStartedAt;
-    if (started != null) {
-      final elapsed = DateTime.now().difference(started);
-      const minSpin = Duration(seconds: 1);
-      if (elapsed < minSpin) {
-        await Future<void>.delayed(minSpin - elapsed);
-      }
-    }
-    if (!_endCheckPending || !mounted) return;
-
-    final grew = afterCount > beforeCount;
-    if (grew) {
-      _setVisibleProductCount(
-        math.min(_visibleProductCount + _lazyLoadPageSize, afterCount),
-      );
-    }
-
-    setState(() {
-      _endReachedLoading = false;
-      _endCheckPending = false;
-      _filteredCountAtEndCheckStart = null;
-      _productsFutureAtEndCheckStart = null;
-      _endCheckStartedAt = null;
-    });
-
-    if (grew) return;
-
-    final now = DateTime.now();
-    final last = _lastNoMoreProductsSnackAt;
-    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
-      return;
-    }
-    _lastNoMoreProductsSnackAt = now;
-    AppSnackBar.showInfo(context, message: 'No more products');
-  }
-
-  void _resolvePendingEndCheckIfReady(
-    int filteredCount, {
-    required ConnectionState connectionState,
-  }) {
-    if (!_endCheckPending) return;
-    if (identical(widget.productsFuture, _productsFutureAtEndCheckStart)) {
-      return;
-    }
-    if (connectionState == ConnectionState.waiting) return;
-
-    final before = _filteredCountAtEndCheckStart ?? filteredCount;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_endCheckPending) return;
-      unawaited(
-        _finishEndReachedCheck(beforeCount: before, afterCount: filteredCount),
-      );
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -7404,9 +6254,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
             }
             final products =
                 snapshot.data ?? _cachedProducts ?? const <Product>[];
-            if (snapshot.hasData) {
-              _scheduleForYouFeed(products);
-            }
             final allTopSellingProducts = _buildTopSellingProducts(products);
             final topSellerIds = {
               for (final product in allTopSellingProducts) product.id,
@@ -7439,10 +6286,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                 : _buildProductColumns(visibleProducts);
             final hasMoreProducts =
                 visibleProducts.length < filteredProducts.length;
-            _resolvePendingEndCheckIfReady(
-              filteredProducts.length,
-              connectionState: snapshot.connectionState,
-            );
             final leadingItemCount = widget.leadingContent == null ? 0 : 1;
             final contentSwitchKey = Object.hash(
               widget.searchQuery.trim(),
@@ -7560,11 +6403,10 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                     return false;
                   }
 
-                  final metrics = notification.metrics;
-                  final offset = metrics.pixels;
+                  final offset = notification.metrics.pixels;
                   widget.onScrollOffsetChanged?.call(offset < 0 ? 0 : offset);
                   final remainingDistance =
-                      (metrics.maxScrollExtent - offset).clamp(
+                      (notification.metrics.maxScrollExtent - offset).clamp(
                         0.0,
                         double.infinity,
                       );
@@ -7577,39 +6419,13 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                     );
                   }
 
-                  if (notification is ScrollUpdateNotification) {
-                    final remaining =
-                        metrics.maxScrollExtent - metrics.pixels;
-                    if (remaining > 8) {
-                      _bottomPullAccum = 0;
-                      _endPullArmed = false;
-                    }
-                  } else if (notification is OverscrollNotification &&
+                  if (notification is OverscrollNotification &&
                       notification.overscroll > 0 &&
-                      metrics.pixels >= metrics.maxScrollExtent - 0.5) {
-                    if (!hasMoreProducts &&
-                        !loadedMoreProducts &&
-                        !_endReachedLoading &&
-                        !_endCheckPending) {
-                      _bottomPullAccum += notification.overscroll;
-                      if (_bottomPullAccum >= _endPullTriggerExtent) {
-                        _endPullArmed = true;
-                      }
-                    }
-                  }
-
-                  if (notification is ScrollEndNotification) {
-                    final shouldCheck =
-                        _endPullArmed &&
-                        !hasMoreProducts &&
-                        !_endReachedLoading &&
-                        !_endCheckPending;
-                    _endPullArmed = false;
-                    _bottomPullAccum = 0;
-                    if (shouldCheck) {
-                      unawaited(
-                        _startEndReachedCheck(filteredProducts.length),
-                      );
+                      notification.metrics.pixels >=
+                          notification.metrics.maxScrollExtent) {
+                    if (!loadedMoreProducts &&
+                        !_loadMoreProductsIfNeeded(filteredProducts.length)) {
+                      widget.onBottomOverscroll();
                     }
                   }
 
@@ -7623,9 +6439,7 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                         'shop-deal-scroll-${widget.dealSortMask}-${widget.newPostFilterActive}',
                       ),
                       controller: widget.scrollController,
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: ClampingScrollPhysics(),
-                      ),
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: widget.leadingContent == null
                           ? const EdgeInsets.fromLTRB(10, 10, 10, 0)
                           : EdgeInsets.zero,
@@ -7642,33 +6456,15 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                             ? dashboardIndex == visibleProducts.length
                             : dashboardIndex == 1;
                         if (isIndicatorItem) {
-                          // End inset only — align with floating "Back to top"
-                          // (bottom: system + 10, chip ~42 tall). Card sizes unchanged.
-                          final bottomClearance =
-                              MediaQuery.paddingOf(context).bottom + 10 + 42;
-                          final showDots =
-                              _loadingMoreProducts || _endReachedLoading;
                           return Padding(
                             padding: widget.leadingContent == null
-                                ? EdgeInsets.only(
-                                    top: 18,
-                                    bottom: bottomClearance,
-                                  )
-                                : EdgeInsets.fromLTRB(
-                                    10,
-                                    18,
-                                    10,
-                                    bottomClearance,
-                                  ),
-                            child: SizedBox(
-                              height: 28,
-                              child: showDots
-                                  ? Center(
-                                      child: _ListingThreeDotsLoader(
-                                        color: widget.primaryColor,
-                                      ),
-                                    )
-                                  : null,
+                                ? const EdgeInsets.only(top: 18)
+                                : const EdgeInsets.fromLTRB(10, 18, 10, 0),
+                            child: NoMoreProductsIndicator(
+                              scrollController: widget.scrollController,
+                              overscrollSignal: widget.bottomOverscrollSignal,
+                              primaryColor: widget.primaryColor,
+                              secondaryColor: widget.secondaryColor,
                             ),
                           );
                         }
@@ -7740,10 +6536,6 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                                       if (itemIndex > 0)
                                         const SizedBox(height: 12),
                                       _ProductCard(
-                                        key: ValueKey<String>(
-                                          productColumns[columnIndex][itemIndex]
-                                              .id,
-                                        ),
                                         product:
                                             productColumns[columnIndex][itemIndex],
                                         surfaceColor: widget.surfaceColor,
@@ -7772,52 +6564,13 @@ class _ProductDashboardState extends State<_ProductDashboard> {
                           ],
                         );
 
-                        final showForYouHeading =
-                            isAllView && widget.searchQuery.trim().isEmpty;
-                        final productSection = showForYouHeading
-                            ? Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      4,
-                                      0,
-                                      4,
-                                      10,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.auto_awesome_rounded,
-                                          size: 22,
-                                          color: widget.primaryColor,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'For You',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium
-                                              ?.copyWith(
-                                                color: widget.titleColor,
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  productGrid,
-                                ],
-                              )
-                            : productGrid;
-
                         if (widget.leadingContent == null) {
-                          return productSection;
+                          return productGrid;
                         }
 
                         return Padding(
                           padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-                          child: productSection,
+                          child: productGrid,
                         );
                       },
                     ),
@@ -9123,13 +7876,14 @@ class _BuyerPlatformPickerState extends State<_BuyerPlatformPicker> {
   }
 
   Widget _buildPlatformSearchResults() {
-    // Clear the floating bottom nav (not only the system inset).
-    final bottomClearance = _FooterSection.scrollClearance(context);
-    final searchContentPadding = EdgeInsets.fromLTRB(10, 0, 10, bottomClearance);
+    final navInset = MediaQuery.viewPaddingOf(context).bottom;
+    // No artificial bottom gap — only the device gesture/nav inset so the last
+    // rows can scroll clear while the dashboard shows under a transparent bar.
+    final searchContentPadding = EdgeInsets.fromLTRB(10, 0, 10, navInset);
 
     if (_scanMatching) {
       return SkeletonSearchSuggestionsPanel(
-        padding: EdgeInsets.fromLTRB(10, 24, 10, bottomClearance),
+        padding: EdgeInsets.fromLTRB(10, 24, 10, navInset),
       );
     }
     final draftQuery = _searchController.text.trim();
@@ -9375,7 +8129,7 @@ class _BuyerPlatformPickerState extends State<_BuyerPlatformPicker> {
                   horizontalInset + 6,
                   0,
                   horizontalInset + 6,
-                  _FooterSection.scrollClearance(context),
+                  20,
                 ),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -9457,10 +8211,6 @@ class _BuyerPlatformPickerState extends State<_BuyerPlatformPicker> {
           minWidth: _isSearchActive ? 300 : 360,
           maxWidth: _isSearchActive ? 420 : 360,
         ),
-        // Leave room so focused pill shadow is not hard-clipped.
-        margin: _isSearchActive
-            ? const EdgeInsets.fromLTRB(2, 2, 2, 6)
-            : EdgeInsets.zero,
         child: app_search.ProductSearchBar(
           controller: _searchController,
           focusNode: _searchFocusNode,
@@ -10166,7 +8916,7 @@ class _BuyerPlatformPageSkeleton extends StatelessWidget {
                   horizontalInset + 6,
                   0,
                   horizontalInset + 6,
-                  _FooterSection.scrollClearance(context),
+                  20,
                 ),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -10880,7 +9630,7 @@ class _ShopPlatformHeroBackground extends StatelessWidget {
         Color.lerp(primaryColor, Colors.white, 0.12) ?? primaryColor;
     final header = overlayHeader;
     final statusBarInset = MediaQuery.paddingOf(context).top;
-    final searchModeHeight = statusBarInset + 64;
+    final searchModeHeight = statusBarInset + 56;
 
     final listenables = <Listenable>[
       if (header?.searchFocusNode != null) header!.searchFocusNode,
@@ -10889,197 +9639,190 @@ class _ShopPlatformHeroBackground extends StatelessWidget {
     ];
 
     Widget buildHero({required bool searchIsActive}) {
-      final heroBody = Stack(
-        clipBehavior: Clip.none,
-        fit: StackFit.expand,
-        children: [
-          // Blue branded wash — collapses/fades out while searching.
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedOpacity(
-                duration: _animDuration,
-                curve: Curves.easeOutCubic,
-                opacity: searchIsActive ? 0 : 1,
-                child: ClipPath(
-                  clipper: const _ShopPlatformHeroClipper(),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [highlightColor, primaryColor, deeperColor],
-                        stops: const [0, 0.56, 1],
-                      ),
-                    ),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Positioned(
-                          right: -72,
-                          top: 76,
-                          child: Container(
-                            width: 210,
-                            height: 210,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.055),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: -48,
-                          bottom: 20,
-                          child: Container(
-                            width: 132,
-                            height: 132,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black.withOpacity(0.035),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (header != null)
-            Positioned.fill(
-              child: Stack(
-                clipBehavior: Clip.none,
-                fit: StackFit.expand,
-                children: [
-                  AnimatedPositioned(
-                    duration: _animDuration,
-                    curve: Curves.easeOutCubic,
-                    top:
-                        statusBarInset +
-                        (searchIsActive
-                            ? 6
-                            : (header?.showDeliveryLocation == true
-                                  ? 84
-                                  : 68)),
-                    left: searchIsActive ? 48 : 18,
-                    right: searchIsActive ? 10 : 18,
-                    // Keep room under the pill so focus shadow is not clipped.
-                    bottom: searchIsActive ? 4 : null,
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: searchIsActive ? 520 : 420,
-                        ),
-                        child: app_search.ProductSearchBar(
-                          controller: header.searchController,
-                          focusNode: header.searchFocusNode,
-                          iconColor: const Color(0xFF6B7280),
-                          textColor: const Color(0xFF162033),
-                          backgroundColor: Colors.white,
-                          pillStyle: true,
-                          alwaysUseFocusedStyle: true,
-                          hintText: header.searchHintText,
-                          onChanged: header.onSearchChanged,
-                          onSubmitted: header.onSearchSubmitted,
-                          onClear: header.onSearchClear,
-                          onTapOutside: dismissSearchKeyboardOnTapOutside,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      ignoring: searchIsActive,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 180),
-                        opacity: searchIsActive ? 0 : 1,
-                        child: AnimatedSlide(
-                          duration: _animDuration,
-                          curve: Curves.easeOutCubic,
-                          offset: searchIsActive
-                              ? const Offset(0, -0.7)
-                              : Offset.zero,
-                          child: _SwitchPlatformBrandAppBar(
-                            iconColor: Colors.white,
-                            primaryColor: headerPrimaryColor,
-                            accountName: header.accountName,
-                            accountInitials: header.accountInitials,
-                            accountImageUrl: header.accountImageUrl,
-                            selectedAction: header.selectedAction,
-                            onMenuTap: header.onMenuTap,
-                            onNotificationTap: header.onNotificationTap,
-                            onCartTap: header.onCartTap,
-                            onAccountTap: header.onAccountTap,
-                            showDeliveryLocation: header.showDeliveryLocation,
-                            deliveryLocationTitle: header.deliveryLocationTitle,
-                            onDeliveryLocationTap:
-                                header.onDeliveryLocationTap,
-                            useFoodCartIcon: header.useFoodCartIcon,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Last in the stack so the focused search field cannot
-                  // steal the tap. Exit on pointer-up so the header does
-                  // not slide under the finger and refocus the bar.
-                  Positioned(
-                    top: statusBarInset + (searchIsActive ? 2 : 0),
-                    left: 0,
-                    child: IgnorePointer(
-                      ignoring: !searchIsActive,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 180),
-                        opacity: searchIsActive ? 1 : 0,
-                        child: TextFieldTapRegion(
-                          child: Listener(
-                            behavior: HitTestBehavior.opaque,
-                            onPointerDown: (_) =>
-                                header.onSearchBackHold?.call(),
-                            onPointerUp: (_) => header.onSearchCancel?.call(),
-                            onPointerCancel: (_) =>
-                                header.onSearchCancel?.call(),
-                            child: IconButton(
-                              onPressed: header.onSearchCancel,
-                              tooltip: 'Back',
-                              color: searchIsActive
-                                  ? const Color(0xFF162033)
-                                  : Colors.white,
-                              iconSize: 26,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 48,
-                                height: 48,
-                              ),
-                              icon: const Icon(Icons.chevron_left_rounded),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      );
-
       return AnimatedContainer(
         duration: _animDuration,
         curve: Curves.easeOutCubic,
         width: double.infinity,
         height: searchIsActive ? searchModeHeight : height,
         color: backgroundColor,
-        // Idle: clip branded wash. Focused: let search-bar shadow paint fully
-        // (ClipRect was cutting a hard straight edge through the pill shadow).
-        clipBehavior: searchIsActive ? Clip.none : Clip.hardEdge,
-        child: searchIsActive
-            ? heroBody
-            : ClipRect(child: heroBody),
+        child: ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Blue branded wash — collapses/fades out while searching.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: _animDuration,
+                    curve: Curves.easeOutCubic,
+                    opacity: searchIsActive ? 0 : 1,
+                    child: ClipPath(
+                      clipper: const _ShopPlatformHeroClipper(),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [highlightColor, primaryColor, deeperColor],
+                            stops: const [0, 0.56, 1],
+                          ),
+                        ),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Positioned(
+                              right: -72,
+                              top: 76,
+                              child: Container(
+                                width: 210,
+                                height: 210,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withOpacity(0.055),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: -48,
+                              bottom: 20,
+                              child: Container(
+                                width: 132,
+                                height: 132,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.black.withOpacity(0.035),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (header != null)
+                Positioned.fill(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      AnimatedPositioned(
+                        duration: _animDuration,
+                        curve: Curves.easeOutCubic,
+                        top:
+                            statusBarInset +
+                            (searchIsActive
+                                ? 6
+                                : (header?.showDeliveryLocation == true
+                                      ? 84
+                                      : 68)),
+                        left: searchIsActive ? 48 : 18,
+                        right: searchIsActive ? 10 : 18,
+                        child: Align(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: searchIsActive ? 520 : 420,
+                            ),
+                            child: app_search.ProductSearchBar(
+                              controller: header.searchController,
+                              focusNode: header.searchFocusNode,
+                              iconColor: const Color(0xFF6B7280),
+                              textColor: const Color(0xFF162033),
+                              backgroundColor: Colors.white,
+                              pillStyle: true,
+                              alwaysUseFocusedStyle: true,
+                              hintText: header.searchHintText,
+                              onChanged: header.onSearchChanged,
+                              onSubmitted: header.onSearchSubmitted,
+                              onClear: header.onSearchClear,
+                              onTapOutside: dismissSearchKeyboardOnTapOutside,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: IgnorePointer(
+                          ignoring: searchIsActive,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 180),
+                            opacity: searchIsActive ? 0 : 1,
+                            child: AnimatedSlide(
+                              duration: _animDuration,
+                              curve: Curves.easeOutCubic,
+                              offset: searchIsActive
+                                  ? const Offset(0, -0.7)
+                                  : Offset.zero,
+                              child: _SwitchPlatformBrandAppBar(
+                                iconColor: Colors.white,
+                                primaryColor: headerPrimaryColor,
+                                accountName: header.accountName,
+                                accountInitials: header.accountInitials,
+                                accountImageUrl: header.accountImageUrl,
+                                selectedAction: header.selectedAction,
+                                onMenuTap: header.onMenuTap,
+                                onNotificationTap: header.onNotificationTap,
+                                onCartTap: header.onCartTap,
+                                onAccountTap: header.onAccountTap,
+                                showDeliveryLocation:
+                                    header.showDeliveryLocation,
+                                deliveryLocationTitle:
+                                    header.deliveryLocationTitle,
+                                onDeliveryLocationTap:
+                                    header.onDeliveryLocationTap,
+                                useFoodCartIcon: header.useFoodCartIcon,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Last in the stack so the focused search field cannot
+                      // steal the tap. Exit on pointer-up so the header does
+                      // not slide under the finger and refocus the bar.
+                      Positioned(
+                        top: statusBarInset + (searchIsActive ? 2 : 0),
+                        left: 0,
+                        child: IgnorePointer(
+                          ignoring: !searchIsActive,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 180),
+                            opacity: searchIsActive ? 1 : 0,
+                            child: TextFieldTapRegion(
+                              child: Listener(
+                                behavior: HitTestBehavior.opaque,
+                                onPointerDown: (_) =>
+                                    header.onSearchBackHold?.call(),
+                                onPointerUp: (_) =>
+                                    header.onSearchCancel?.call(),
+                                onPointerCancel: (_) =>
+                                    header.onSearchCancel?.call(),
+                                child: IconButton(
+                                  onPressed: header.onSearchCancel,
+                                  tooltip: 'Back',
+                                  color: searchIsActive
+                                      ? const Color(0xFF162033)
+                                      : Colors.white,
+                                  iconSize: 26,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 48,
+                                    height: 48,
+                                  ),
+                                  icon: const Icon(Icons.chevron_left_rounded),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
       );
     }
 
@@ -12619,7 +11362,7 @@ String _formatProductRating(double rating) => rating.toStringAsFixed(1);
 
 String _formatProductCommentCount(int commentCount) {
   final normalizedCount = commentCount < 0 ? 0 : commentCount;
-  final label = normalizedCount == 1 ? 'review' : 'reviews';
+  final label = normalizedCount == 1 ? 'comment' : 'comments';
   return '${_formatCompactCount(normalizedCount)} $label';
 }
 
@@ -12655,53 +11398,24 @@ List<Product> _buildNewPostProducts(List<Product> products) {
   return recentProducts;
 }
 
-List<Product> _buildFlashDealHomeProducts(
-  List<Product> products, {
-  Map<String, BuyerFlashDeal> liveDealsByProductId = const {},
-}) {
-  if (liveDealsByProductId.isEmpty) {
-    return const <Product>[];
-  }
-
+List<Product> _buildFlashDealHomeProducts(List<Product> products) {
   final flashDeals =
       [
-        ...filterVisibleProducts(products)
-            .where((product) => liveDealsByProductId.containsKey(product.id))
-            .map(
-              (product) => _productWithLiveFlashDeal(
-                product,
-                liveDealsByProductId[product.id],
-              ),
-            ),
+        ...filterVisibleProducts(
+          products,
+        ).where((product) => _discountAmount(product) != null),
       ]..sort((first, second) {
-        final firstDeal = liveDealsByProductId[first.id];
-        final secondDeal = liveDealsByProductId[second.id];
-        final firstDiscount =
-            firstDeal?.discountAmount ?? _discountAmount(first) ?? 0;
-        final secondDiscount =
-            secondDeal?.discountAmount ?? _discountAmount(second) ?? 0;
+        final firstDiscount = _discountAmount(first) ?? 0;
+        final secondDiscount = _discountAmount(second) ?? 0;
         final discountCompare = secondDiscount.compareTo(firstDiscount);
         if (discountCompare != 0) {
           return discountCompare;
         }
-        final firstEnds = firstDeal?.endsAt;
-        final secondEnds = secondDeal?.endsAt;
-        if (firstEnds != null && secondEnds != null) {
-          final endsCompare = firstEnds.compareTo(secondEnds);
-          if (endsCompare != 0) return endsCompare;
-        }
+
         return first.name.toLowerCase().compareTo(second.name.toLowerCase());
       });
 
   return flashDeals;
-}
-
-Product _productWithLiveFlashDeal(Product product, BuyerFlashDeal? deal) {
-  if (deal == null || !deal.isLive) return product;
-  if (!(deal.flashPrice >= 0) || !(deal.flashPrice < product.originalPrice)) {
-    return product;
-  }
-  return product.copyWith(salesPrice: deal.flashPrice);
 }
 
 /// Home All carousel: prefer real top-sellers; if none have sold counts yet,
@@ -13730,6 +12444,9 @@ class _SwitchRefreshIndicatorState extends State<_SwitchRefreshIndicator> {
   double _heldTravel = 0;
   bool _spinWhileDismissing = false;
   Timer? _hideOverlayTimer;
+  /// While refresh is pulled open (finger still down), keep scroll at top so
+  /// only the overlay icon moves — not the platform/list content.
+  final ValueNotifier<bool> _lockContentAtTop = ValueNotifier<bool>(false);
 
   bool get _isDragging =>
       _status == RefreshIndicatorStatus.drag ||
@@ -13753,11 +12470,16 @@ class _SwitchRefreshIndicatorState extends State<_SwitchRefreshIndicator> {
   @override
   void dispose() {
     _hideOverlayTimer?.cancel();
+    _lockContentAtTop.dispose();
     super.dispose();
   }
 
   void _handleStatusChange(RefreshIndicatorStatus? status) {
     if (!mounted || _status == status) return;
+
+    _lockContentAtTop.value =
+        status == RefreshIndicatorStatus.drag ||
+        status == RefreshIndicatorStatus.armed;
 
     final dismissing =
         status == RefreshIndicatorStatus.done ||
@@ -13827,6 +12549,31 @@ class _SwitchRefreshIndicatorState extends State<_SwitchRefreshIndicator> {
       }
     }
     return false;
+  }
+
+  void _clampContentWhileRefreshOpen(ScrollNotification notification) {
+    if (!_lockContentAtTop.value) return;
+    if (notification.depth != 0 ||
+        notification.metrics.axis != Axis.vertical) {
+      return;
+    }
+    if (notification is! ScrollUpdateNotification &&
+        notification is! OverscrollNotification) {
+      return;
+    }
+    if (notification.metrics.pixels <= 0.01) return;
+    final scrollContext = notification.context;
+    if (scrollContext == null) return;
+    final position = Scrollable.maybeOf(scrollContext)?.position;
+    if (position == null || !position.hasPixels) return;
+    if (position.pixels > position.minScrollExtent) {
+      position.jumpTo(position.minScrollExtent);
+    }
+  }
+
+  bool _onRefreshScrollNotification(ScrollNotification notification) {
+    _clampContentWhileRefreshOpen(notification);
+    return _trackPullDistance(notification);
   }
 
   Future<void> _handleRefresh() async {
@@ -14249,12 +12996,7 @@ class _FavoritesPage extends StatelessWidget {
       maxLines: 2,
     );
 
-    final imageHeight = _ProductDashboard.homeProductImageHeight(product);
-    // Details block ≈ 78 without company row (matches prior 238 − 160 base).
-    return imageHeight +
-        78 +
-        (nameLines * 18) +
-        (product.hasCompanyIdentity ? 24 : 0);
+    return 238 + (nameLines * 18) + (product.hasCompanyIdentity ? 24 : 0);
   }
 
   List<List<Product>> _buildProductColumns(List<Product> products) {
@@ -14518,7 +13260,6 @@ class _FavoritesPage extends StatelessWidget {
 
 class _ProductCard extends StatelessWidget {
   const _ProductCard({
-    super.key,
     required this.product,
     required this.surfaceColor,
     required this.titleColor,
@@ -14726,32 +13467,12 @@ class _ProductCard extends StatelessWidget {
   }
 
   Widget _buildProductMedia({required double imageHeight}) {
-    final videoUrl =
-        product.hasVideo ? product.galleryVideoUrls.first.trim() : '';
-    final thumbnailUrl = product.listingVideoCoverUrl;
-    final showListingVideo =
-        videoUrl.isNotEmpty && imageHeight.isFinite;
-
-    final media = Stack(
-      fit: imageHeight.isInfinite ? StackFit.expand : StackFit.loose,
+    return Stack(
       children: [
-        Positioned.fill(
-          child: showListingVideo
-              ? ListingCardVideo(
-                  productId: product.id,
-                  videoUrl: videoUrl,
-                  thumbnailUrl: thumbnailUrl,
-                  fallback: _ProductImage(
-                    product: product,
-                    primaryColor: primaryColor,
-                    height: imageHeight,
-                  ),
-                )
-              : _ProductImage(
-                  product: product,
-                  primaryColor: primaryColor,
-                  height: imageHeight,
-                ),
+        _ProductImage(
+          product: product,
+          primaryColor: primaryColor,
+          height: imageHeight,
         ),
         if (_showsTopSellerImageCornerBadge)
           Positioned(
@@ -14762,26 +13483,7 @@ class _ProductCard extends StatelessWidget {
         if (_showsTopRatedImageCornerBadge)
           Positioned(top: 0, right: 0, child: const _TopRatedImageBadge()),
         if (_showsNewBadge) Positioned(top: 0, right: 0, child: _NewBadge()),
-        Positioned(
-          left: 0,
-          bottom: 0,
-          child: _ProductImagePromoBadges(
-            productId: product.id,
-            sellerAdminId: product.adminId,
-            platformId: platformId,
-          ),
-        ),
       ],
-    );
-
-    if (imageHeight.isInfinite) {
-      return media;
-    }
-
-    return SizedBox(
-      height: imageHeight,
-      width: double.infinity,
-      child: media,
     );
   }
 
@@ -14789,15 +13491,14 @@ class _ProductCard extends StatelessWidget {
     BuildContext context, {
     bool isTopSelling = false,
   }) {
-    // Vertical rhythm between details rows (name → voucher → price → rating → company).
-    const detailsGap = 2.0;
-    final nameSpacing = isTopSelling ? 1.0 : detailsGap;
-    final statsSpacing = isTopSelling ? 1.0 : detailsGap;
+    final categorySpacing = 0.0;
+    final nameSpacing = isTopSelling ? 1.0 : 2.0;
+    final statsSpacing = isTopSelling ? 1.0 : 4.0;
     final productNameStyle = Theme.of(context).textTheme.titleSmall?.copyWith(
-      fontSize: 12,
+      fontSize: 15,
       color: titleColor,
       fontWeight: FontWeight.w500,
-      height: 1.5,
+      height: 1,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -14877,12 +13578,24 @@ class _ProductCard extends StatelessWidget {
             useCompactTopBadges &&
             (_showsTopSellerInlineBadge ||
                 _showsDiscountInlineBadge ||
-                _showsTopRatedInlineBadge);
+                _showsTopRatedInlineBadge ||
+                _showsNewBadge);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            Text(
+              product.category,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: primaryColor,
+                fontWeight: FontWeight.w700,
+                height: 1.15,
+              ),
+            ),
+            SizedBox(height: categorySpacing),
             if (onFavoriteTap != null)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -14908,83 +13621,19 @@ class _ProductCard extends StatelessWidget {
               )
             else
               productNameWidget,
-            // Gap: listing name → voucher chips
-            if (!isTopSelling)
-              FutureBuilder<SellerVoucherOffer>(
-                future: productSellerVoucherOffer(
-                  sellerAdminId: product.adminId,
-                  platformId: platformId,
-                ),
-                builder: (context, snapshot) {
-                  final offer = snapshot.data;
-                  if (offer == null || !offer.available) {
-                    return const SizedBox.shrink();
-                  }
-                  final expiresAt = offer.expiresAt;
-                  final showCountdown =
-                      expiresAt != null &&
-                      expiresAt.isAfter(DateTime.now());
-                  const chipRadius = Radius.circular(2);
-                  const chipHeight = 15.0;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: detailsGap),
-                    child: Tooltip(
-                      message: showCountdown
-                          ? 'Voucher expires soon'
-                          : 'Voucher available',
-                      child: Container(
-                        height: chipHeight,
-                        decoration: BoxDecoration(
-                          color: primaryColor,
-                          borderRadius: BorderRadius.all(chipRadius),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 3,
-                              ),
-                              child: Center(
-                                child: _lucideTicketCheckIcon(
-                                  color: Colors.white,
-                                  size: 14,
-                                ),
-                              ),
-                            ),
-                            if (showCountdown) ...[
-                              Center(
-                                child: _VoucherChipPerforationDivider(
-                                  height: chipHeight - 4,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 3,
-                                ),
-                                child: Center(
-                                  child: _VoucherExpiryCountdown(
-                                    expiresAt: expiresAt,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
             if (showsCompactBadgeRow) ...[
-              const SizedBox(height: detailsGap),
+              const SizedBox(height: 4),
               Wrap(
                 spacing: 1,
                 runSpacing: 1,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  if (_showsNewBadge)
+                    _buildSecondaryRowBadge(
+                      context,
+                      label: 'New',
+                      color: primaryColor,
+                    ),
                   if (_showsTopSellerInlineBadge)
                     _buildSecondaryRowIconBadge(
                       icon: Icons.emoji_events_rounded,
@@ -15000,57 +13649,52 @@ class _ProductCard extends StatelessWidget {
                 ],
               ),
             ],
-            // Gap: name/voucher → price
             SizedBox(height: nameSpacing),
             Wrap(
-              spacing: 6,
+              spacing: 8,
               runSpacing: 2,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                AppPriceText(
+                _PriceText(
                   amount: _displayPrice,
-                  color: titleColor,
-                  fontSize: _NewPostHomeOfferCard.priceFontSize,
-                  fontWeight: FontWeight.w600,
-                  trimTrailingZeros: false,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: isTopSelling ? 17 : 16,
+                    color: primaryColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (_showsOriginalPrice)
-                  AppPriceText(
+                  _PriceText(
                     amount: product.originalPrice,
-                    color: const Color(0xFF9E9E9E),
-                    fontSize: _NewPostHomeOfferCard.originalPriceFontSize,
-                    fontWeight: _NewPostHomeOfferCard.originalPriceFontWeight,
-                    decoration: TextDecoration.lineThrough,
-                    decorationColor: const Color(0xFF9E9E9E),
-                    trimTrailingZeros: false,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: secondaryColor.withOpacity(0.72),
+                      decoration: TextDecoration.lineThrough,
+                    ),
                   ),
               ],
             ),
-            // Gap: price → rating/reviews
             SizedBox(height: statsSpacing),
             _ProductStatsRow(
               product: product,
               iconColor: const Color(0xFFF9A825),
               textStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF9E9E9E),
+                color: secondaryColor,
                 fontWeight: FontWeight.w200,
-                fontSize: 11,
                 height: 1,
               ),
             ),
-            // Gap: rating → company
             if (product.hasCompanyIdentity) ...[
-              const SizedBox(height: detailsGap),
-              ProductCompanyIdentity(
-                product: product,
-                textColor: secondaryColor,
-                fallbackColor: primaryColor,
-                avatarSize: 18,
-                fontSize: 11,
+              const SizedBox(height: 4),
+              Transform.translate(
+                offset: const Offset(0, -2),
+                child: ProductCompanyIdentity(
+                  product: product,
+                  textColor: secondaryColor,
+                  fallbackColor: primaryColor,
+                  avatarSize: 18,
+                  fontSize: 11,
+                ),
               ),
             ],
           ],
@@ -15072,25 +13716,7 @@ class _ProductCard extends StatelessWidget {
         onReturnedFromDetails?.call();
       },
       builder: (context, liftValue, handleTap, heroTag) {
-        // Same chrome as home search focus: white surface + soft dual shadow
-        // (no hard gray stroke).
-        const searchFocusShadow = <BoxShadow>[
-          BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 1,
-            offset: Offset(0, 1),
-          ),
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ];
-
-        final imageHeight =
-            _ProductDashboard.homeProductImageHeight(product);
-
-        final card = Material(
+        return Material(
           color: surfaceColor,
           borderRadius: BorderRadius.circular(borderRadius),
           clipBehavior: Clip.antiAlias,
@@ -15135,43 +13761,16 @@ class _ProductCard extends StatelessWidget {
                         liftValue: liftValue,
                         child: Hero(
                           tag: heroTag,
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: imageHeight,
-                            child: _buildProductMedia(
-                              imageHeight: imageHeight,
-                            ),
-                          ),
+                          child: _buildProductMedia(imageHeight: 180),
                         ),
                       ),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.only(
-                            bottomLeft: Radius.circular(borderRadius),
-                            bottomRight: Radius.circular(borderRadius),
-                          ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
-                          child: _buildProductDetails(context),
-                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+                        child: _buildProductDetails(context),
                       ),
                     ],
                   ),
           ),
-        );
-
-        if (_isTopSellingCard) {
-          return card;
-        }
-
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(borderRadius),
-            boxShadow: searchFocusShadow,
-          ),
-          child: card,
         );
       },
     );
@@ -15202,47 +13801,33 @@ class _ProductImage extends StatelessWidget {
     final displayImageUrl = product.cardDisplayImageUrl;
     final hasImage = displayImageUrl.isNotEmpty;
 
-    final image = hasImage
-        ? CachedNetworkImage(
-            imageUrl: displayImageUrl,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: height.isInfinite ? double.infinity : height,
-            alignment: product.hasSavedCardImageCrop
-                ? Alignment.center
-                : Alignment(
-                    product.cardImageAlignmentX,
-                    product.cardImageAlignmentY,
-                  ),
-            // Avoid fade blink when For You / auto-refresh rebuilds cards.
-            fadeInDuration: Duration.zero,
-            fadeOutDuration: Duration.zero,
-            placeholderFadeInDuration: Duration.zero,
-            useOldImageOnUrlChange: true,
-            memCacheWidth: 512,
-            placeholder: (context, url) => const ColoredBox(
-              color: Color(0xFFF3F4F6),
-            ),
-            errorWidget: (context, url, error) {
-              return _ProductImageFallback(
-                initial: _initial,
-                primaryColor: primaryColor,
-              );
-            },
-          )
-        : _ProductImageFallback(
-            initial: _initial,
-            primaryColor: primaryColor,
-          );
-
-    if (height.isInfinite) {
-      return SizedBox.expand(child: image);
-    }
-
     return SizedBox(
       height: height,
       width: double.infinity,
-      child: image,
+      child: hasImage
+          ? CachedNetworkImage(
+              imageUrl: displayImageUrl,
+              fit: BoxFit.cover,
+              alignment: product.hasSavedCardImageCrop
+                  ? Alignment.center
+                  : Alignment(
+                      product.cardImageAlignmentX,
+                      product.cardImageAlignmentY,
+                    ),
+              fadeInDuration: const Duration(milliseconds: 300),
+              fadeOutDuration: const Duration(milliseconds: 200),
+              placeholderFadeInDuration: const Duration(milliseconds: 300),
+              errorWidget: (context, url, error) {
+                return _ProductImageFallback(
+                  initial: _initial,
+                  primaryColor: primaryColor,
+                );
+              },
+            )
+          : _ProductImageFallback(
+              initial: _initial,
+              primaryColor: primaryColor,
+            ),
     );
   }
 }
@@ -15455,10 +14040,7 @@ class _ProductStatsRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _productRatingStar(
-          color: iconColor,
-          size: 14,
-        ),
+        Icon(Icons.star_rounded, size: 16, color: iconColor),
         const SizedBox(width: 4),
         Text(
           _formatProductRating(product.rating),
@@ -15467,7 +14049,7 @@ class _ProductStatsRow extends StatelessWidget {
           style: textStyle,
         ),
         const SizedBox(width: 10),
-        _lucideMessageCircleIcon(color: commentIconColor, size: 14),
+        Icon(Icons.mode_comment_outlined, size: 15, color: commentIconColor),
         const SizedBox(width: 4),
         Flexible(
           child: Text(
@@ -15663,24 +14245,13 @@ class _FooterSection extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
-  static const double barHeight = 62;
-  static const double barTopPadding = 18;
-  static const double barBottomPadding = 8;
-
-  /// Space so the last scroll item sits just above the floating bottom nav.
-  static double scrollClearance(BuildContext context) {
-    return barHeight +
-        barTopPadding +
-        barBottomPadding +
-        MediaQuery.paddingOf(context).bottom;
-  }
-
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<List<OrderEntryData>>(
       valueListenable: OrderStore.instance.ordersNotifier,
       builder: (context, orders, _) {
         final bottomPadding = MediaQuery.paddingOf(context).bottom;
+        const barHeight = 62.0;
         final orderBadgeCount = _orderTransactionBadgeCount(orders);
         final isDarkMode = Theme.of(context).brightness == Brightness.dark;
         final fadeColor = isDarkMode ? backgroundColor : Colors.white;
@@ -15730,7 +14301,7 @@ class _FooterSection extends StatelessWidget {
 
             return SizedBox(
               width: double.infinity,
-              height: _FooterSection.barHeight + bottomPadding + 40,
+              height: barHeight + bottomPadding + 40,
               child: Stack(
                 alignment: Alignment.bottomCenter,
                 children: [
@@ -15739,7 +14310,7 @@ class _FooterSection extends StatelessWidget {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    height: _FooterSection.barHeight + bottomPadding + 56,
+                    height: barHeight + bottomPadding + 56,
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -15759,14 +14330,9 @@ class _FooterSection extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      10,
-                      _FooterSection.barTopPadding,
-                      10,
-                      _FooterSection.barBottomPadding + bottomPadding,
-                    ),
+                    padding: EdgeInsets.fromLTRB(10, 18, 10, 8 + bottomPadding),
                     child: Container(
-                      height: _FooterSection.barHeight,
+                      height: barHeight,
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 6,

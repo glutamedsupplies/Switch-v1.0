@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/seller_repository_base.dart';
+import 'package:switch_app/services/seller_repository_base.dart';
 
 import 'seller_repository_stub.dart'
     if (dart.library.io) 'seller_repository_io.dart'

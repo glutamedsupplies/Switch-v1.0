@@ -11,18 +11,18 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:gms_shopping/chat_support.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/login_redirect.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/product_repository.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
-import 'package:gms_shopping/utils/own_listing.dart';
-import 'package:gms_shopping/product_details.dart';
-import 'package:gms_shopping/widgets/product_card.dart';
+import 'package:switch_app/chat_support.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/login_redirect.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
+import 'package:switch_app/utils/auth_session.dart';
+import 'package:switch_app/utils/own_listing.dart';
+import 'package:switch_app/product_details.dart';
+import 'package:switch_app/widgets/product_card.dart';
 
 // =============================================================================
 // SellerPage Widget

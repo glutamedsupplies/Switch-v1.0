@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/cart.dart';
-import 'package:gms_shopping/change_password.dart';
-import 'package:gms_shopping/chat_support.dart';
-import 'package:gms_shopping/error_validation.dart';
-import 'package:gms_shopping/favorite_products_store.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/services/unified_account_service.dart';
-import 'package:gms_shopping/settings_page.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/cart.dart';
+import 'package:switch_app/change_password.dart';
+import 'package:switch_app/chat_support.dart';
+import 'package:switch_app/error_validation.dart';
+import 'package:switch_app/favorite_products_store.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/services/unified_account_service.dart';
+import 'package:switch_app/settings_page.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/auth_session.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({

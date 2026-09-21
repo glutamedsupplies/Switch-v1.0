@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:gms_shopping/l10n/app_login_languages.dart';
-import 'package:gms_shopping/services/preferred_language_sync.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/l10n/app_login_languages.dart';
+import 'package:switch_app/services/preferred_language_sync.dart';
+import 'package:switch_app/utils/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Guest + per-account language preference.

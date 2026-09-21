@@ -1,17 +1,25 @@
-# gms_shopping
+# Switch
 
-A new Flutter project.
+Switch is a marketplace platform with a Flutter buyer app and a Node.js backend for seller and administrator workflows.
 
-## Getting Started
+## Project Structure
 
-This project is a starting point for a Flutter application.
+- `lib/` contains the Flutter buyer application.
+- `backend/` contains the API server and seller/admin web interfaces.
+- `test/` contains Flutter tests.
 
-A few resources to get you started if this is your first Flutter project:
+## Development
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Install Flutter dependencies and run the app:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter pub get
+flutter run
+```
+
+Start the backend separately from `backend/`:
+
+```sh
+npm install
+npm start
+```

@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/platform_feedback_service_base.dart';
+import 'package:switch_app/services/platform_feedback_service_base.dart';
 
 import 'platform_feedback_service_stub.dart'
     if (dart.library.io) 'platform_feedback_service_io.dart' as service;

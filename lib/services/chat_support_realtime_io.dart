@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:gms_shopping/services/chat_support_realtime_types.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
+import 'package:switch_app/services/chat_support_realtime_types.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
 
 class ChatSupportRealtimeListenerImpl implements ChatSupportRealtimeListener {
   ChatSupportRealtimeListenerImpl(this.onChatUpdate);

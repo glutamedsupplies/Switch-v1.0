@@ -7,20 +7,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 // Navigates to the Change Password screen after successful verification
-import 'package:gms_shopping/change_password.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/login_redirect.dart';
-import 'package:gms_shopping/models/registration_draft.dart';
-import 'package:gms_shopping/services/account_registration.dart';
-import 'package:gms_shopping/services/app_language_preference.dart';
-import 'package:gms_shopping/services/verification_service.dart';
+import 'package:switch_app/change_password.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/login_redirect.dart';
+import 'package:switch_app/models/registration_draft.dart';
+import 'package:switch_app/services/account_registration.dart';
+import 'package:switch_app/services/app_language_preference.dart';
+import 'package:switch_app/services/verification_service.dart';
 // Custom snackbar helper for showing success/error messages
-import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
 // App-wide theme constants (colors, gradients, motion durations)
-import 'package:gms_shopping/theme/app_theme.dart';
+import 'package:switch_app/theme/app_theme.dart';
 // Full-screen loading overlay shown during API calls
-import 'package:gms_shopping/theme/loadingscreen.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/theme/loadingscreen.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 
 enum VerifyCodePurpose {
   passwordReset,

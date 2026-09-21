@@ -1,4 +1,4 @@
-import 'package:gms_shopping/models/buyer_platform_summary.dart';
+import 'package:switch_app/models/buyer_platform_summary.dart';
 
 abstract class PlatformRepository {
   Future<List<BuyerPlatformSummary>> fetchPlatforms({bool forceRefresh = false});

@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:gms_shopping/services/account_devices_service_base.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
+import 'package:switch_app/services/account_devices_service_base.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _deviceKeyPrefs = 'gms_account_device_key';

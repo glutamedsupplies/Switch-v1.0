@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/product_repository_base.dart';
+import 'package:switch_app/services/product_repository_base.dart';
 
 import 'product_repository_stub.dart'
     if (dart.library.io) 'product_repository_io.dart'

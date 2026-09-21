@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 String _trackingMapQuery(String destinationAddress) {

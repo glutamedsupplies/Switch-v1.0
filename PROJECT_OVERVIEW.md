@@ -72,7 +72,7 @@ The project is designed for a shopping marketplace or store-management environme
 ## Folder Structure Overview
 
 ```text
-gms_shopping/
+Switch-v1.0/
   android/                 Flutter Android target
   ios/                     Flutter iOS target
   linux/                   Flutter Linux target
@@ -95,4 +95,3 @@ gms_shopping/
 - The repository contains local runtime data under `backend/data`; documentation describes field names and relationships without copying sensitive record values.
 - Authentication is implemented with credentials, browser session/local storage, trusted headers, and a super admin token. No production JWT/session middleware was found.
 - Payment and delivery partners are represented as configurable records. No direct payment gateway or courier API callback integration was found.
-

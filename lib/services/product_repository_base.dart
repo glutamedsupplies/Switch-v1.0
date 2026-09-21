@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:gms_shopping/models/product.dart';
+import 'package:switch_app/models/product.dart';
 
 abstract class ProductRepository {
   Future<List<Product>> fetchProducts({bool forceRefresh = false});

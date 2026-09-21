@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/theme/default_font.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/theme/default_font.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // Default light accent matches Super Admin default (--accent rgb(37, 99, 235)).

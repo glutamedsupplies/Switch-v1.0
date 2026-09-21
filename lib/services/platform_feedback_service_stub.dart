@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/platform_feedback_service_base.dart';
+import 'package:switch_app/services/platform_feedback_service_base.dart';
 
 PlatformFeedbackService createPlatformFeedbackService() =>
     _StubPlatformFeedbackService();

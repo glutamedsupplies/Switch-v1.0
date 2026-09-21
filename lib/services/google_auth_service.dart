@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/google_auth_service_base.dart';
+import 'package:switch_app/services/google_auth_service_base.dart';
 
 import 'google_auth_service_stub.dart'
     if (dart.library.io) 'google_auth_service_io.dart' as google_auth;

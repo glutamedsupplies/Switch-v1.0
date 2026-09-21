@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/verification_service_base.dart';
+import 'package:switch_app/services/verification_service_base.dart';
 
 VerificationService createVerificationService({String? baseUrl}) {
   return _StubVerificationService();

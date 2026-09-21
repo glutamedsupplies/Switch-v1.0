@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/order_sync_base.dart';
+import 'package:switch_app/services/order_sync_base.dart';
 
 OrderSyncService createOrderSyncService({String? baseUrl}) {
   return _UnsupportedOrderSyncService();

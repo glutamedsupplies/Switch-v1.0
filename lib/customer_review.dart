@@ -1,9 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
-import 'package:gms_shopping/models/product.dart';
+import 'package:switch_app/widgets/horizontal_end_fade.dart';
+import 'package:switch_app/models/product.dart';
 import 'package:video_player/video_player.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 
 class CustomerReviewItem {
   const CustomerReviewItem({

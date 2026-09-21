@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/unified_account_service_base.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/unified_account_service_base.dart';
 
 const _requestTimeout = Duration(seconds: 10);
 const _connectTimeout = Duration(seconds: 4);

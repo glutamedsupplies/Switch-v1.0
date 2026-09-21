@@ -1,5 +1,5 @@
-import 'package:gms_shopping/models/seller_summary.dart';
-import 'package:gms_shopping/services/seller_repository_base.dart';
+import 'package:switch_app/models/seller_summary.dart';
+import 'package:switch_app/services/seller_repository_base.dart';
 
 SellerRepository createSellerRepository({String? baseUrl}) {
   return _UnsupportedSellerRepository();

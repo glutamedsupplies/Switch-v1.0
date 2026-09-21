@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/payment_partner_repository_base.dart';
+import 'package:switch_app/services/payment_partner_repository_base.dart';
 
 import 'payment_partner_repository_stub.dart'
     if (dart.library.io) 'payment_partner_repository_io.dart'

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/theme/app_theme.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/theme/app_theme.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({

@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/category_repository_base.dart';
+import 'package:switch_app/services/category_repository_base.dart';
 
 CategoryRepository createCategoryRepository({String? baseUrl}) {
   return _UnsupportedCategoryRepository();

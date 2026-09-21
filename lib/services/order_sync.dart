@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/order_sync_base.dart';
+import 'package:switch_app/services/order_sync_base.dart';
 
 import 'order_sync_stub.dart'
     if (dart.library.io) 'order_sync_io.dart'

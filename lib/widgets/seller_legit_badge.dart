@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
+import 'package:switch_app/widgets/horizontal_end_fade.dart';
 
 /// Blue verified seal for paid-plan sellers (original products).
 /// Sized to never shrink away when placed beside an ellipsized company name.

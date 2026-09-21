@@ -1,18 +1,18 @@
 import 'dart:async';
 
-import 'package:gms_shopping/comment_rate.dart';
+import 'package:switch_app/comment_rate.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/place_order.dart';
-import 'package:gms_shopping/services/product_repository.dart';
-import 'package:gms_shopping/tacking.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/place_order.dart';
+import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/tacking.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/widgets/horizontal_end_fade.dart';
 
 class OrderPage extends StatefulWidget {
   const OrderPage({

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:gms_shopping/error_validation.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/theme/app_theme.dart';
-import 'package:gms_shopping/theme/loadingscreen.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/widgets/password_visibility_icon.dart';
+import 'package:switch_app/error_validation.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/theme/app_theme.dart';
+import 'package:switch_app/theme/loadingscreen.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/widgets/password_visibility_icon.dart';
 
 class ChangePasswordPage extends StatefulWidget {
   const ChangePasswordPage({

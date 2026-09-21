@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:html';
 import 'dart:typed_data';
 
-import 'package:gms_shopping/services/admin_scope.dart';
-import 'package:gms_shopping/services/chat_support_sync_base.dart';
+import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/chat_support_sync_base.dart';
 
 const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
 const _requestTimeout = Duration(seconds: 3);

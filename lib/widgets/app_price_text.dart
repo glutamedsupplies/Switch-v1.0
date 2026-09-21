@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
+import 'package:switch_app/utils/currency_format.dart';
 
 /// Buyer-facing price: Roboto + ₱ aligned to the same size/weight as digits.
 class AppPriceText extends StatelessWidget {

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/theme/app_theme.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/buyer_right_panel_host.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/theme/app_theme.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/buyer_right_panel_host.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Grouped order row used by the platform activity list.

@@ -4,22 +4,22 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gms_shopping/models/delivery_partner.dart';
-import 'package:gms_shopping/models/payment_partner.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/order_tab_navigation.dart';
-import 'package:gms_shopping/order_store.dart';
-import 'package:gms_shopping/services/delivery_partner_repository.dart';
-import 'package:gms_shopping/services/payment_partner_repository.dart';
-import 'package:gms_shopping/services/vouchers_service.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
-import 'package:gms_shopping/user_details.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
-import 'package:gms_shopping/utils/own_listing.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/models/delivery_partner.dart';
+import 'package:switch_app/models/payment_partner.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/order_tab_navigation.dart';
+import 'package:switch_app/order_store.dart';
+import 'package:switch_app/services/delivery_partner_repository.dart';
+import 'package:switch_app/services/payment_partner_repository.dart';
+import 'package:switch_app/services/vouchers_service.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
+import 'package:switch_app/user_details.dart';
+import 'package:switch_app/utils/auth_session.dart';
+import 'package:switch_app/utils/own_listing.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum BookingFlowSource { cartCheckout, directBuy }

@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/delivery_partner_repository_base.dart';
+import 'package:switch_app/services/delivery_partner_repository_base.dart';
 
 import 'delivery_partner_repository_stub.dart'
     if (dart.library.io) 'delivery_partner_repository_io.dart'

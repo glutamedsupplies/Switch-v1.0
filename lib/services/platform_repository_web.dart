@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:html';
 
-import 'package:gms_shopping/models/buyer_platform_summary.dart';
-import 'package:gms_shopping/services/platform_repository_base.dart';
+import 'package:switch_app/models/buyer_platform_summary.dart';
+import 'package:switch_app/services/platform_repository_base.dart';
 
 const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
 const _requestTimeout = Duration(seconds: 3);

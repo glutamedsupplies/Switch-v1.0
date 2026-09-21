@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
-import 'package:gms_shopping/login_redirect.dart';
-import 'package:gms_shopping/services/platform_feedback_service.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
+import 'package:switch_app/login_redirect.dart';
+import 'package:switch_app/services/platform_feedback_service.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/auth_session.dart';
 import 'package:image_picker/image_picker.dart';
 
 const int _maxFeedbackPhotos = 8;

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:html';
 
-import 'package:gms_shopping/l10n/app_login_languages.dart';
-import 'package:gms_shopping/services/admin_scope.dart';
+import 'package:switch_app/l10n/app_login_languages.dart';
+import 'package:switch_app/services/admin_scope.dart';
 
 const _environmentBaseUrl = String.fromEnvironment('API_BASE_URL');
 

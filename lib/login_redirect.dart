@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/guest_session.dart';
-import 'package:gms_shopping/login.dart';
-import 'package:gms_shopping/platform_login_redirect.dart';
+import 'package:switch_app/guest_session.dart';
+import 'package:switch_app/login.dart';
+import 'package:switch_app/platform_login_redirect.dart';
 
 Future<void> redirectGuestToLogin(
   BuildContext context, {

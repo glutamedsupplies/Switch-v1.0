@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/services/order_sync.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/services/order_sync.dart';
+import 'package:switch_app/utils/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum OrderStageKey {

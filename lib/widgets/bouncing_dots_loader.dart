@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 
 class BouncingDotsLoader extends StatefulWidget {
   const BouncingDotsLoader({

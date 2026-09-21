@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/utils/app_keyboard.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/utils/app_keyboard.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:lottie/lottie.dart';
 
 class LoadingScreen extends StatelessWidget {

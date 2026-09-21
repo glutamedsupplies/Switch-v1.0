@@ -4,10 +4,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/services/admin_scope.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/product_repository_base.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/product_repository_base.dart';
 
 const _requestTimeout = Duration(seconds: 3);
 const _memoryCacheLifetime = Duration.zero;

@@ -6,7 +6,7 @@
 /// On a USB-connected phone, `adb reverse tcp:8080 tcp:8080` makes
 /// `http://127.0.0.1:8080` reach the PC. LAN/Wi-Fi IPs are extra fallbacks when
 /// the phone shares that network with the PC.
-import 'package:gms_shopping/services/generated_local_api_lan_urls.dart';
+import 'package:switch_app/services/generated_local_api_lan_urls.dart';
 
 const localApiEnvironmentBaseUrl = String.fromEnvironment('API_BASE_URL');
 const localApiLoopbackBaseUrl = 'http://127.0.0.1:8080';

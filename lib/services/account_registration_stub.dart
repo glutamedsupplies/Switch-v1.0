@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/account_registration_base.dart';
+import 'package:switch_app/services/account_registration_base.dart';
 
 AccountRegistrationService createAccountRegistrationService({String? baseUrl}) {
   return _UnsupportedAccountRegistrationService();

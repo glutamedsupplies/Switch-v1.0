@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:gms_shopping/select_address_page.dart';
-import 'package:gms_shopping/services/buyer_delivery_address_store.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/select_address_page.dart';
+import 'package:switch_app/services/buyer_delivery_address_store.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 
 const String _lucideMapPinIconSvg =
     '''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>''';

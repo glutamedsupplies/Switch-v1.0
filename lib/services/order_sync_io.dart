@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:gms_shopping/services/admin_scope.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/order_sync_base.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/order_sync_base.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 const _requestTimeout = Duration(seconds: 10);
 String? _preferredBaseUrl;

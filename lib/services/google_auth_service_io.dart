@@ -1,5 +1,5 @@
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:gms_shopping/services/google_auth_service_base.dart';
+import 'package:switch_app/services/google_auth_service_base.dart';
 
 /// Web OAuth client ID (Google Cloud → Credentials → OAuth 2.0 Client IDs → Web).
 /// Required on Android as `serverClientId` so Google returns an ID token the

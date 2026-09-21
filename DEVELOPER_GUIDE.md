@@ -60,8 +60,11 @@ The backend loads `backend/.env` and root `.env` if present.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `8080` | Backend HTTP port. |
-| `SUPER_ADMIN_USERNAME` | `root` | Super admin username. Override in real environments. |
-| `SUPER_ADMIN_PASSWORD` | `Root@12345` | Super admin password. Override in real environments. |
+| `SUPER_ADMIN_USERNAME` | none | Required super admin username. |
+| `SUPER_ADMIN_PASSWORD` | none | Required super admin password or bcrypt hash. |
+| `ADMIN_API_SESSION_SECRET` | none | Required HMAC signing secret for expiring super admin sessions. |
+| `SUPER_ADMIN_SESSION_TTL_SECONDS` | `28800` | Super admin session lifetime, capped at seven days. |
+| `REQUIRE_SECRETS` | `0` | Set to `1` to enforce required secrets outside production. |
 | `CHAT_AI_API_KEY` or `OPENAI_API_KEY` | empty | Enables AI chat replies. |
 | `CHAT_AI_MODEL` or `OPENAI_MODEL` | `gpt-4o-mini` | AI model name. |
 | `CHAT_AI_API_URL` | `https://api.openai.com/v1/chat/completions` | OpenAI-compatible API URL. |
@@ -206,4 +209,3 @@ For production-like deployment:
 - If visual search fails, confirm `sharp` installed successfully in `backend/node_modules`.
 - If AI reply fails, confirm `CHAT_AI_API_KEY` or `OPENAI_API_KEY` is set.
 - If admin data appears empty, check the browser's stored `gms-admin-id` and backend JSON files.
-

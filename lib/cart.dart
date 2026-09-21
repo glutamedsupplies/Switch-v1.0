@@ -3,21 +3,21 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:gms_shopping/place_order.dart';
+import 'package:switch_app/place_order.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:gms_shopping/favorite_products_store.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/product_details.dart';
-import 'package:gms_shopping/search_bar.dart';
-import 'package:gms_shopping/services/flash_deals_service.dart';
-import 'package:gms_shopping/services/product_repository.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
-import 'package:gms_shopping/utils/motion_60fps.dart';
-import 'package:gms_shopping/widgets/search_not_found_art.dart';
+import 'package:switch_app/favorite_products_store.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/product_details.dart';
+import 'package:switch_app/search_bar.dart';
+import 'package:switch_app/services/flash_deals_service.dart';
+import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/auth_session.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
+import 'package:switch_app/widgets/search_not_found_art.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum CartPageAction { openShop }

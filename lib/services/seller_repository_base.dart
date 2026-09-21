@@ -1,4 +1,4 @@
-import 'package:gms_shopping/models/seller_summary.dart';
+import 'package:switch_app/models/seller_summary.dart';
 
 abstract class SellerRepository {
   Future<List<SellerSummary>> fetchSellers({bool forceRefresh = false});

@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:gms_shopping/l10n/app_login_languages.dart';
-import 'package:gms_shopping/services/admin_scope.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
+import 'package:switch_app/l10n/app_login_languages.dart';
+import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
 
 Future<void> updatePreferredLanguage({
   required String accountId,

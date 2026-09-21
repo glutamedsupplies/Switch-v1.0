@@ -1,4 +1,6 @@
 {
+  "name": "switch_app",
+  "private": true,
   "dependencies": {
     "lucide-solid": "^1.39.0"
   }

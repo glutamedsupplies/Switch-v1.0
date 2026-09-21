@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:gms_shopping/theme/app_theme.dart';
+import 'package:switch_app/theme/app_theme.dart';
 
 /// Lucide eye / eye-closed icons for password visibility toggles.
 ///

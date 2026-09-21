@@ -353,8 +353,19 @@ function escapeCssValue(value) {
 function readSuperAdminSession() {
   try {
     const rawSession = window.sessionStorage.getItem("gms-super-admin-session");
-    return rawSession ? JSON.parse(rawSession) : null;
+    const session = rawSession ? JSON.parse(rawSession) : null;
+    const expiresAt = Date.parse(String(session?.expiresAt || ""));
+    if (
+      !session?.token
+      || !Number.isFinite(expiresAt)
+      || expiresAt <= Date.now()
+    ) {
+      window.sessionStorage.removeItem("gms-super-admin-session");
+      return null;
+    }
+    return session;
   } catch (error) {
+    window.sessionStorage.removeItem("gms-super-admin-session");
     return null;
   }
 }

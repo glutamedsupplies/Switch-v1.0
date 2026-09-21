@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/services/product_repository_base.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/services/product_repository_base.dart';
 
 ProductRepository createProductRepository({String? baseUrl}) {
   return _UnsupportedProductRepository();

@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/utils/buyer_notification_time_sections.dart';
-import 'package:gms_shopping/widgets/buyer_right_panel_host.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/utils/buyer_notification_time_sections.dart';
+import 'package:switch_app/widgets/buyer_right_panel_host.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BuyerNotificationItem {

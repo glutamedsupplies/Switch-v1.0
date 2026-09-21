@@ -20,7 +20,7 @@ Flutter services can override this with:
 | --- | --- |
 | `Content-Type: application/json` | JSON request bodies. |
 | `x-gms-admin-id` or `x-admin-id` | Admin/workspace scope for most admin-owned resources. |
-| `x-gms-super-admin-token` | Super admin token returned by `/api/super-admin-login`. |
+| `x-gms-super-admin-token` | Signed, expiring super admin token returned by `/api/super-admin-login`. |
 | `x-gms-account-id`, `x-account-id`, `x-user-id` | Customer account identity for selected customer APIs. |
 | `x-gms-account-email`, `x-account-email` | Customer email identity fallback for selected customer APIs. |
 | `x-file-name` | Source file name for binary upload endpoints. |
@@ -48,7 +48,7 @@ Flutter services can override this with:
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET` | `/health` | None | None | `{ "status": "ok", "message": "GMS Shopping backend is running." }` | None | `GET /health` |
+| `GET` | `/health` | None | None | `{ "status": "ok", "message": "Switch backend is running." }` | None | `GET /health` |
 
 ### Authentication and Accounts
 
@@ -71,7 +71,7 @@ Flutter services can override this with:
 
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST` | `/api/super-admin-login` | None | `{ "username": "root", "password": "secret" }` | `{ "root": {...}, "token": "...", "redirectPath": "/super_admin.html" }` | None | `POST /api/super-admin-login` |
+| `POST` | `/api/super-admin-login` | None | `{ "username": "configured-admin", "password": "secret" }` | `{ "root": {...}, "token": "...", "expiresAt": "...", "expiresInSeconds": 28800, "redirectPath": "/super_admin.html" }` | None | `POST /api/super-admin-login` |
 | `GET` | `/api/super-admin/admins` | None | None | `{ "admins": [...], "total": 0 }` | `x-gms-super-admin-token` | `GET /api/super-admin/admins` |
 | `POST` | `/api/super-admin/admins` | None | Admin account fields | `{ "admin": {...}, "message": "Admin account created." }` | Super admin token | `POST /api/super-admin/admins` |
 | `PATCH`/`POST` | `/api/super-admin/admins/{adminId}/action` | `adminId` path | `{ "action": "notify" \| "deactivate" \| "ban" }` | `{ "admin": {...}, "action": "...", "message": "..." }` | Super admin token | `PATCH /api/super-admin/admins/admin-1/action` |

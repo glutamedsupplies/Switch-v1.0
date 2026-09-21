@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/models/product.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/unified_account_service.dart';
-import 'package:gms_shopping/theme/app_snack_bar.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/models/product.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/unified_account_service.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
+import 'package:switch_app/utils/auth_session.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class OwnListingCompany {

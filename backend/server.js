@@ -4,6 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const fsPromises = require("fs/promises");
 const crypto = require("crypto");
+const { createSuperAdminAuth } = require("./security/superAdminAuth");
 const { createPlatformFeedbackApi } = require("./services/platformFeedbackApi");
 const { createTrendingSearchesApi } = require("./services/trendingSearchesApi");
 const { createMapsPlacesApi } = require("./services/mapsPlacesApi");
@@ -343,7 +344,7 @@ const VISUAL_SEARCH_IMAGE_ANGLE_KEYS = Object.freeze([
 ]);
 const VISUAL_SEARCH_OTHER_IMAGE_PREFIX = "other";
 const DEFAULT_CHAT_AI_SYSTEM_PROMPT =
-  "You are the GMS Shopping AI assistant inside the product support chat. " +
+  "You are the Switch AI assistant inside the product support chat. " +
   "Reply in a warm, concise, and practical way. Use the product context and " +
   "conversation history when possible. If something is uncertain, say that " +
   "a human support agent may need to confirm it. Do not invent stock, price, " +
@@ -381,15 +382,8 @@ const YOLO_INSPECTION_TIMEOUT_MS = Math.max(
   1_000,
   Number(process.env.YOLO_INSPECTION_TIMEOUT_MS) || 20_000,
 );
-const SUPER_ADMIN_USERNAME = String(
-  process.env.SUPER_ADMIN_USERNAME || "root",
-).trim() || "root";
-const SUPER_ADMIN_PASSWORD = String(
-  process.env.SUPER_ADMIN_PASSWORD || "Root@12345",
-).trim() || "Root@12345";
-const SUPER_ADMIN_SESSION_TOKEN = Buffer.from(
-  `${SUPER_ADMIN_USERNAME}:${SUPER_ADMIN_PASSWORD}`,
-).toString("base64url");
+const superAdminAuth = createSuperAdminAuth(process.env);
+const SUPER_ADMIN_USERNAME = superAdminAuth.username;
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -1007,7 +1001,7 @@ function mergeScopedRecordsById(allRecords, scopedRecords, adminId) {
 
 function isSuperAdminAuthorized(request) {
   const token = String(request.headers["x-gms-super-admin-token"] ?? "").trim();
-  return token === SUPER_ADMIN_SESSION_TOKEN;
+  return Boolean(superAdminAuth.verifySession(token));
 }
 
 function requireSuperAdmin(request, response) {
@@ -1017,6 +1011,7 @@ function requireSuperAdmin(request, response) {
 
   sendJson(response, 401, {
     message: "Root access is required.",
+    code: "SUPER_ADMIN_SESSION_INVALID",
   });
   return false;
 }
@@ -9803,7 +9798,7 @@ function createTexturedProductBoxGltf(textureFileNames, frameMetadataByKey) {
   return {
     asset: {
       version: "2.0",
-      generator: "GMS Shopping six-frame model generator",
+      generator: "Switch six-frame model generator",
     },
     scene: 0,
     scenes: [{ nodes: [0] }],
@@ -10002,7 +9997,7 @@ function createTexturedProductCurvedGltf(textureFileNames, frameMetadataByKey) {
   return {
     asset: {
       version: "2.0",
-      generator: "GMS Shopping curved six-frame model generator",
+      generator: "Switch curved six-frame model generator",
     },
     scene: 0,
     scenes: [{ nodes: [0] }],
@@ -10327,7 +10322,7 @@ function createProductScanShellGltf(textureFileNames, frameMetadata) {
   return {
     asset: {
       version: "2.0",
-      generator: "GMS Shopping any-shape photo scan generator",
+      generator: "Switch any-shape photo scan generator",
     },
     scene: 0,
     scenes: [{ nodes: [0] }],
@@ -23270,24 +23265,35 @@ async function handleSuperAdminLoginApi(request, response) {
     return;
   }
 
+  if (!superAdminAuth.isConfigured()) {
+    sendJson(response, 503, {
+      message: "Super-admin authentication is not configured.",
+      code: "SUPER_ADMIN_AUTH_NOT_CONFIGURED",
+    });
+    return;
+  }
+
   try {
     const payload = await parseRequestBody(request);
     const username = String(payload.username ?? payload.email ?? "").trim();
-    const password = String(payload.password ?? "").trim();
+    const password = String(payload.password ?? "");
 
-    if (username !== SUPER_ADMIN_USERNAME || password !== SUPER_ADMIN_PASSWORD) {
+    if (!(await superAdminAuth.verifyCredentials(username, password))) {
       sendJson(response, 401, {
         message: "Root username or password is incorrect.",
       });
       return;
     }
 
+    const session = superAdminAuth.issueSession();
     sendJson(response, 200, {
       root: {
         username: SUPER_ADMIN_USERNAME,
         role: "super-admin",
       },
-      token: SUPER_ADMIN_SESSION_TOKEN,
+      token: session.token,
+      expiresAt: session.expiresAt,
+      expiresInSeconds: session.expiresInSeconds,
       redirectPath: "/super_admin.html",
       message: "Root login verified.",
     });
@@ -31019,6 +31025,13 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (
+    requestUrl.pathname.startsWith("/api/super-admin/")
+    && !requireSuperAdmin(request, response)
+  ) {
+    return;
+  }
+
   if (requestUrl.pathname === "/health") {
     sendJson(response, 200, {
       status: "ok",
@@ -31771,7 +31784,17 @@ const server = http.createServer(async (request, response) => {
   await serveStaticFile(request, requestUrl.pathname, response);
 });
 
-ensureStoragePaths()
+Promise.resolve()
+  .then(() => {
+    superAdminAuth.assertStartupConfiguration();
+    if (!superAdminAuth.isConfigured()) {
+      const reason = superAdminAuth.hasLegacyDefaultCredentials
+        ? "the retired default credentials are configured"
+        : `missing: ${superAdminAuth.missingConfiguration.join(", ")}`;
+      console.warn(`Super-admin login disabled; ${reason}`);
+    }
+  })
+  .then(() => ensureStoragePaths())
   .then(async () => {
     const migratedLegacyGallery = await migrateProductsForImageGallery();
 
@@ -31799,7 +31822,7 @@ ensureStoragePaths()
   .then(() => {
     server.listen(PORT, () => {
       writeFlutterLocalApiLanUrls();
-      console.log("GMS Shopping backend running at:");
+      console.log("Switch backend running at:");
       for (const url of getServerUrls()) {
         console.log(`- ${url}`);
       }

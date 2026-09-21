@@ -16,17 +16,17 @@ import 'package:flutter/cupertino.dart';
 
 // flutter/material — Core Flutter UI framework.
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
 
 // app_snack_bar — Custom snack bar utility for showing success/error messages.
-import 'package:gms_shopping/theme/app_snack_bar.dart';
+import 'package:switch_app/theme/app_snack_bar.dart';
 
 // auth_session — Provides getAccountId() and getAccountEmail() to build a
 // per-user SharedPreferences key so each account's saved entries are isolated.
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 // google_maps_embed_preview — Native Google Maps address preview.
-import 'package:gms_shopping/widgets/google_maps_embed_preview.dart';
+import 'package:switch_app/widgets/google_maps_embed_preview.dart';
 
 // shared_preferences — Flutter plugin for persistent key-value storage on disk.
 import 'package:shared_preferences/shared_preferences.dart';

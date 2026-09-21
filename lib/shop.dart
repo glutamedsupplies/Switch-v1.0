@@ -19,39 +19,39 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 // Product model used throughout the shop page
-import 'package:gms_shopping/models/product.dart';
+import 'package:switch_app/models/product.dart';
 
 // Navigation to product details page when user taps a product
-import 'package:gms_shopping/product_details.dart';
+import 'package:switch_app/product_details.dart';
 
 // Repository for fetching categories from the backend
-import 'package:gms_shopping/services/category_repository.dart';
+import 'package:switch_app/services/category_repository.dart';
 
 // Repository for fetching products from the backend
-import 'package:gms_shopping/services/product_repository.dart';
+import 'package:switch_app/services/product_repository.dart';
 
 // Utility for formatting currency values (PHP symbol and amount)
-import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
+import 'package:switch_app/utils/currency_format.dart';
+import 'package:switch_app/widgets/app_price_text.dart';
 
 // Utility for smooth animations (60fps motion framework)
-import 'package:gms_shopping/utils/motion_60fps.dart';
+import 'package:switch_app/utils/motion_60fps.dart';
 
 // Session-based image caching to avoid reloading images
-import 'package:gms_shopping/utils/session_image_cache.dart';
+import 'package:switch_app/utils/session_image_cache.dart';
 
 // Loading indicator with bouncing dots animation
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
-import 'package:gms_shopping/widgets/horizontal_end_fade.dart';
+import 'package:switch_app/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/horizontal_end_fade.dart';
 
 // "No more products" indicator shown at end of product list
-import 'package:gms_shopping/widgets/no_more_products_indicator.dart';
+import 'package:switch_app/widgets/no_more_products_indicator.dart';
 
 // Widget displaying company/store identity on product cards
-import 'package:gms_shopping/widgets/product_company_identity.dart';
+import 'package:switch_app/widgets/product_company_identity.dart';
 
 // Widget that provides tap-lift animation effect on product cards
-import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
+import 'package:switch_app/widgets/product_card_tap_lift.dart';
 
 // ============================================================================
 // ShopPage Widget

@@ -1,4 +1,4 @@
-import 'package:gms_shopping/services/account_registration_base.dart';
+import 'package:switch_app/services/account_registration_base.dart';
 
 import 'account_registration_stub.dart'
     if (dart.library.io) 'account_registration_io.dart'

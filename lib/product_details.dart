@@ -17,15 +17,12 @@ import 'package:gms_shopping/utils/auth_session.dart';
 import 'package:gms_shopping/utils/own_listing.dart';
 import 'package:gms_shopping/models/product.dart';
 import 'package:gms_shopping/search_bar.dart' as app_search;
-import 'package:gms_shopping/services/for_you_recommendations.dart';
-import 'package:gms_shopping/services/flash_deals_service.dart';
 import 'package:gms_shopping/services/product_repository.dart';
 import 'package:gms_shopping/theme/app_snack_bar.dart';
 import 'package:gms_shopping/utils/currency_format.dart';
-import 'package:gms_shopping/widgets/app_price_text.dart';
 import 'package:gms_shopping/utils/motion_60fps.dart';
 import 'package:gms_shopping/utils/session_image_cache.dart';
-import 'package:gms_shopping/widgets/skeleton_loading.dart';
+import 'package:gms_shopping/widgets/bouncing_dots_loader.dart';
 import 'package:video_player/video_player.dart';
 import 'package:gms_shopping/widgets/product_company_identity.dart';
 import 'package:gms_shopping/widgets/product_card_tap_lift.dart';
@@ -49,9 +46,6 @@ Future<void> openProductDetailsPage(
     );
     return Future<void>.value();
   }
-
-  // Feed "For You" with browse affinity (categories / similar items).
-  unawaited(ForYouRecommendations.instance.recordProductView(product));
 
   return Navigator.of(context).push(
     _ProductDetailsPageRoute(
@@ -170,7 +164,6 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
   bool _isCartFlightAnimating = false;
   final ValueNotifier<bool> _showsScrollToTopButtonNotifier =
       ValueNotifier<bool>(false);
-  BuyerFlashDeal? _liveFlashDeal;
 
   bool get _showsHeaderUtilityActions =>
       widget.source != ProductDetailsEntrySource.cart;
@@ -247,18 +240,6 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       if (mounted) {
         _precacheHeroImages();
       }
-    });
-    unawaited(_loadLiveFlashDeal());
-  }
-
-  Future<void> _loadLiveFlashDeal() async {
-    final deal = await productLiveFlashDeal(
-      productId: widget.product.id,
-      platformId: _cartPlatformId,
-    );
-    if (!mounted) return;
-    setState(() {
-      _liveFlashDeal = deal;
     });
   }
 
@@ -403,35 +384,14 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
     }
   }
 
-  bool get _hasSalesPrice {
-    final flash = _liveFlashDeal;
-    if (flash != null &&
-        flash.isLive &&
-        flash.flashPrice >= 0 &&
-        flash.flashPrice < _originalPrice) {
-      return true;
-    }
-    return _salesPriceFromProduct != null &&
-        _salesPriceFromProduct! >= 0 &&
-        _salesPriceFromProduct! < _originalPrice;
-  }
+  bool get _hasSalesPrice =>
+      _salesPrice != null && _salesPrice! >= 0 && _salesPrice! < _originalPrice;
 
   double get _displayPrice => _hasSalesPrice ? _salesPrice! : _originalPrice;
 
   double get _originalPrice => _product.originalPrice;
 
-  double? get _salesPriceFromProduct => _product.salesPrice;
-
-  double? get _salesPrice {
-    final flash = _liveFlashDeal;
-    if (flash != null &&
-        flash.isLive &&
-        flash.flashPrice >= 0 &&
-        flash.flashPrice < _originalPrice) {
-      return flash.flashPrice;
-    }
-    return _salesPriceFromProduct;
-  }
+  double? get _salesPrice => _product.salesPrice;
 
   int get _availableStock => _product.stock;
 
@@ -1072,29 +1032,16 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return;
     }
 
-    try {
-      await CartStore.instance.addItem(
-        _product,
-        quantity: addToCartSelection.quantity,
-        selectedVariant: addToCartSelection.selectedVariant,
-        catalogProducts: catalogProducts,
-        showsTopBrand:
-            catalogProducts.isNotEmpty &&
-            _isProductInTopSelling(_product, catalogProducts),
-        platformId: _cartPlatformId,
-      );
-    } on FlashDealReserveException catch (error) {
-      if (!mounted) return;
-      AppSnackBar.showError(context, message: error.message);
-      return;
-    } catch (_) {
-      if (!mounted) return;
-      AppSnackBar.showError(
-        context,
-        message: 'Unable to add this product to your cart.',
-      );
-      return;
-    }
+    await CartStore.instance.addItem(
+      _product,
+      quantity: addToCartSelection.quantity,
+      selectedVariant: addToCartSelection.selectedVariant,
+      catalogProducts: catalogProducts,
+      showsTopBrand:
+          catalogProducts.isNotEmpty &&
+          _isProductInTopSelling(_product, catalogProducts),
+      platformId: _cartPlatformId,
+    );
 
     if (!mounted) {
       return;
@@ -1150,66 +1097,23 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
       return;
     }
 
-    var bookingItem = BookingLineItem.fromProduct(
-      product: _product,
-      quantity: buySelection.quantity,
-      selectedVariant: buySelection.selectedVariant,
-      availableStock: resolveProductAvailableStock(
-        _product,
-        variant: buySelection.selectedVariant,
-        catalogProducts: catalogProducts,
-      ),
-      showsTopBrand:
-          catalogProducts.isNotEmpty &&
-          _isProductInTopSelling(_product, catalogProducts),
-    );
-
-    final liveDeal = await productLiveFlashDeal(
-      productId: _product.id,
-      platformId: _cartPlatformId,
-      variantId: buySelection.selectedVariant?.id,
-    );
-    if (liveDeal != null &&
-        liveDeal.isLive &&
-        liveDeal.flashPrice >= 0 &&
-        liveDeal.flashPrice < bookingItem.originalUnitPrice) {
-      try {
-        final reservation = await reserveFlashDealStock(
-          dealId: liveDeal.id,
-          quantity: bookingItem.quantity,
-          variantId: bookingItem.variantId,
-        );
-        bookingItem = bookingItem.copyWith(
-          unitPrice: reservation.lockedUnitPrice > 0
-              ? reservation.lockedUnitPrice
-              : liveDeal.flashPrice,
-          quantity: reservation.quantity > 0
-              ? reservation.quantity
-              : bookingItem.quantity,
-          flashDealId: reservation.dealId,
-          flashReservationId: reservation.id,
-          reservationExpiresAt:
-              reservation.expiresAt.toUtc().toIso8601String(),
-        );
-      } on FlashDealReserveException catch (error) {
-        if (!mounted) return;
-        AppSnackBar.showError(context, message: error.message);
-        return;
-      } catch (_) {
-        if (!mounted) return;
-        AppSnackBar.showError(
-          context,
-          message: 'Unable to lock Flash Deal price right now.',
-        );
-        return;
-      }
-    }
-
-    if (!mounted) return;
-
     final bookingAction = await openBookingPage(
       context,
-      items: [bookingItem],
+      items: [
+        BookingLineItem.fromProduct(
+          product: _product,
+          quantity: buySelection.quantity,
+          selectedVariant: buySelection.selectedVariant,
+          availableStock: resolveProductAvailableStock(
+            _product,
+            variant: buySelection.selectedVariant,
+            catalogProducts: catalogProducts,
+          ),
+          showsTopBrand:
+              catalogProducts.isNotEmpty &&
+              _isProductInTopSelling(_product, catalogProducts),
+        ),
+      ],
       source: BookingFlowSource.directBuy,
       platformId: _cartPlatformId,
     );
@@ -1813,13 +1717,6 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
                                                 ),
                                             ],
                                           ),
-                                          if (_liveFlashDeal != null &&
-                                              _liveFlashDeal!.isLive) ...[
-                                            const SizedBox(height: 8),
-                                            _ProductDetailsFlashDealChip(
-                                              deal: _liveFlashDeal!,
-                                            ),
-                                          ],
                                           const SizedBox(height: 8),
                                           InkWell(
                                             onTap: () {
@@ -2010,13 +1907,17 @@ class _ProductDetailsPageState extends State<ProductDetailsPage>
                                         if (snapshot.connectionState ==
                                                 ConnectionState.waiting &&
                                             !snapshot.hasData) {
-                                          return const Padding(
-                                            padding: EdgeInsets.symmetric(
-                                              vertical: 8,
-                                            ),
-                                            child: SkeletonProductGrid(
-                                              count: 4,
-                                              crossAxisCount: 2,
+                                          return Center(
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 18,
+                                                  ),
+                                              child: BouncingDotsLoader(
+                                                activeColor: primaryColor,
+                                                inactiveColor: secondaryColor
+                                                    .withOpacity(0.28),
+                                              ),
                                             ),
                                           );
                                         }
@@ -2369,8 +2270,11 @@ class _ProductDetailsHero extends StatelessWidget {
                         primaryColor: primaryColor,
                         initial: _initial,
                       ),
-                      loadingFallback: const SkeletonShimmer(
-                        baseColor: kSkeletonBaseColor,
+                      loadingFallback: Center(
+                        child: BouncingDotsLoader(
+                          activeColor: primaryColor,
+                          inactiveColor: primaryColor.withOpacity(0.24),
+                        ),
                       ),
                     ),
                   );
@@ -2871,8 +2775,9 @@ class _ProductMediaPreviewPageState extends State<_ProductMediaPreviewPage> {
                           primaryColor: widget.primaryColor,
                           initial: title[0].toUpperCase(),
                         ),
-                        loadingFallback: const SkeletonShimmer(
-                          baseColor: kSkeletonBaseColor,
+                        loadingFallback: BouncingDotsLoader(
+                          activeColor: widget.primaryColor,
+                          inactiveColor: widget.primaryColor.withOpacity(0.24),
                         ),
                       ),
                     );
@@ -3408,7 +3313,12 @@ class _ProductDetailsHeroVideoState extends State<_ProductDetailsHeroVideo> {
           fit: StackFit.expand,
           children: [
             _buildThumbnailLayer(),
-            const SkeletonShimmer(baseColor: kSkeletonBaseColor),
+            Center(
+              child: BouncingDotsLoader(
+                activeColor: widget.primaryColor,
+                inactiveColor: widget.primaryColor.withOpacity(0.24),
+              ),
+            ),
           ],
         ),
       );
@@ -3600,7 +3510,7 @@ class _ProductDetailsFullscreenVideoPlayerState
                   color: Colors.black,
                   child: _buildThumbnail(fit: BoxFit.cover),
                 ),
-                const SkeletonShimmer(baseColor: kSkeletonBaseColor),
+                const Center(child: CircularProgressIndicator()),
               ],
             ),
           ),
@@ -3913,7 +3823,14 @@ class _ProductDetailsFooterBar extends StatelessWidget {
                                 ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                           child: listingInsightBusy
-                              ? const SkeletonCircle(size: 18)
+                              ? SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: resolvedBuyForegroundColor,
+                                  ),
+                                )
                               : FittedBox(
                                   fit: BoxFit.scaleDown,
                                   child: isOwnListing
@@ -4911,12 +4828,14 @@ class _RelatedProductCard extends StatelessWidget {
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
+          letterSpacing: 0,
           height: 1,
         ) ??
         const TextStyle(
           color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w800,
+          letterSpacing: 0,
           height: 1,
         );
   }
@@ -4983,6 +4902,7 @@ class _RelatedProductCard extends StatelessWidget {
           fontSize: 16,
           color: theme.colorScheme.onSurface,
           fontWeight: FontWeight.w500,
+          letterSpacing: 0,
           height: 1,
         );
         final nameLayout = _resolveProductTextFit(
@@ -5000,6 +4920,7 @@ class _RelatedProductCard extends StatelessWidget {
         final statsTextStyle = theme.textTheme.bodySmall?.copyWith(
           color: secondaryColor,
           fontWeight: FontWeight.w200,
+          letterSpacing: 0,
           height: 1,
         );
 
@@ -5016,6 +4937,7 @@ class _RelatedProductCard extends StatelessWidget {
               style: theme.textTheme.labelSmall?.copyWith(
                 color: primaryColor,
                 fontWeight: FontWeight.w700,
+                letterSpacing: 0,
                 height: 1.15,
               ),
             ),
@@ -5193,12 +5115,35 @@ class _ProductDetailPrice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppPriceText(
-      amount: amount,
-      color: color,
-      fontWeight: fontWeight,
-      fontSize: fontSize,
-      decoration: decoration,
+    final symbolFontSize = fontSize * 0.75;
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '\u20B1',
+            style: TextStyle(
+              color: color,
+              fontWeight: fontWeight,
+              fontSize: symbolFontSize,
+              decoration: decoration,
+              letterSpacing: 0,
+              height: 1,
+            ),
+          ),
+          TextSpan(
+            text: formatCurrencyAmount(amount),
+            style: TextStyle(
+              color: color,
+              fontWeight: fontWeight,
+              fontSize: fontSize,
+              decoration: decoration,
+              letterSpacing: 0,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -5400,124 +5345,3 @@ List<Product> _buildTopSellingProducts(
 
   return rankedProducts.take(limit).toList();
 }
-
-class _ProductDetailsFlashDealChip extends StatelessWidget {
-  const _ProductDetailsFlashDealChip({required this.deal});
-
-  final BuyerFlashDeal deal;
-
-  @override
-  Widget build(BuildContext context) {
-    final showCountdown = deal.endsAt.isAfter(DateTime.now());
-    return Row(
-      children: [
-        Container(
-          height: 18,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF59E0B),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bolt_rounded, size: 14, color: Colors.white),
-              const SizedBox(width: 4),
-              Text(
-                showCountdown ? 'Flash Deal' : 'Flash Deal',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  height: 1,
-                ),
-              ),
-              if (showCountdown) ...[
-                const SizedBox(width: 6),
-                _ProductDetailsFlashCountdown(expiresAt: deal.endsAt),
-              ],
-            ],
-          ),
-        ),
-        if (deal.isAlmostGone) ...[
-          const SizedBox(width: 8),
-          const Text(
-            'Almost gone',
-            style: TextStyle(
-              color: Color(0xFFB45309),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              height: 1,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ProductDetailsFlashCountdown extends StatefulWidget {
-  const _ProductDetailsFlashCountdown({required this.expiresAt});
-
-  final DateTime expiresAt;
-
-  @override
-  State<_ProductDetailsFlashCountdown> createState() =>
-      _ProductDetailsFlashCountdownState();
-}
-
-class _ProductDetailsFlashCountdownState
-    extends State<_ProductDetailsFlashCountdown> {
-  Timer? _timer;
-  Duration _remaining = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _tick();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _tick() {
-    final next = widget.expiresAt.difference(DateTime.now());
-    if (!mounted) return;
-    setState(() {
-      _remaining = next.isNegative ? Duration.zero : next;
-    });
-  }
-
-  String _format(Duration value) {
-    final totalSeconds = value.inSeconds;
-    if (totalSeconds <= 0) return '00:00:00';
-    final days = value.inDays;
-    final hours = value.inHours.remainder(24);
-    final minutes = value.inMinutes.remainder(60);
-    final seconds = value.inSeconds.remainder(60);
-    if (days >= 1) {
-      return '${days}d ${hours}h ${minutes}m';
-    }
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(hours)}:${two(minutes)}:${two(seconds)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      _format(_remaining),
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        fontFeatures: [FontFeature.tabularFigures()],
-        height: 1,
-      ),
-    );
-  }
-}
-

@@ -1,5 +1,5 @@
-import 'package:gms_shopping/models/buyer_platform_summary.dart';
-import 'package:gms_shopping/services/platform_repository_base.dart';
+import 'package:switch_app/models/buyer_platform_summary.dart';
+import 'package:switch_app/services/platform_repository_base.dart';
 
 PlatformRepository createPlatformRepository({String? baseUrl}) {
   return _StubPlatformRepository();

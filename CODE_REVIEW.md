@@ -9,12 +9,11 @@
 - **Evidence:** Login handlers compare `String(account.password)` directly with submitted password. Account schema includes `password`.
 - **Recommendation:** Migrate passwords to Argon2id or bcrypt hashes, remove plaintext fields, and add reset/migration flow.
 
-### Critical: Default Super Admin Credentials Exist in Code
+### Resolved: Default Super Admin Credentials
 
 - **Area:** `backend/server.js`
-- **Impact:** Any deployment that does not override environment variables has predictable root access.
-- **Evidence:** `SUPER_ADMIN_USERNAME` defaults to `root`; `SUPER_ADMIN_PASSWORD` defaults to `Root@12345`.
-- **Recommendation:** Require credentials through environment variables and fail startup when missing in production.
+- **Status:** Resolved in Phase 1 / Step 1.
+- **Implementation:** Credentials have no code defaults, production startup requires all super-admin secrets, and login issues signed expiring sessions.
 
 ### High: Tenant/Admin Scope Is Caller-Controlled
 
@@ -133,4 +132,3 @@ No files were deleted as part of this documentation pass.
 - The Flutter service abstraction pattern supports web, IO, and stub builds.
 - Upload handlers enforce size limits and basic type checks.
 - Recent Store Type work records categories, status, company usage, product count, commission, and service fee.
-

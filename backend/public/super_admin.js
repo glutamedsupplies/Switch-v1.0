@@ -1692,8 +1692,19 @@
   function readRootSession() {
     try {
       const rawSession = window.sessionStorage.getItem(sessionKey);
-      return rawSession ? JSON.parse(rawSession) : null;
+      const session = rawSession ? JSON.parse(rawSession) : null;
+      const expiresAt = Date.parse(String(session?.expiresAt || ""));
+      if (
+        !session?.token
+        || !Number.isFinite(expiresAt)
+        || expiresAt <= Date.now()
+      ) {
+        window.sessionStorage.removeItem(sessionKey);
+        return null;
+      }
+      return session;
     } catch (error) {
+      window.sessionStorage.removeItem(sessionKey);
       return null;
     }
   }

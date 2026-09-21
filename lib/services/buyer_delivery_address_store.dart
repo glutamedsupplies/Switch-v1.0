@@ -4,9 +4,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:gms_shopping/services/local_api_base_urls.dart';
-import 'package:gms_shopping/services/philippines_places_service.dart';
-import 'package:gms_shopping/utils/auth_session.dart';
+import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/services/philippines_places_service.dart';
+import 'package:switch_app/utils/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String kBuyerCurrentLocationAddressId = 'current-location';

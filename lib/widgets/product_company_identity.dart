@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:gms_shopping/models/product.dart';
+import 'package:switch_app/models/product.dart';
 
 class ProductCompanyIdentity extends StatelessWidget {
   const ProductCompanyIdentity({
