@@ -3843,17 +3843,34 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
             : 0.0;
         Widget? buildShopScrollHeader({
           required bool skeletonizeMostPopular,
+          bool attachHeroKey = true,
         }) {
           if (!showProductShowcase) return null;
+          // MinimumSkeletonReveal keeps skeleton + live mounted during fade.
+          // Only the live header may hold `_shopPlatformHeroKey`.
+          final Widget? headerHero;
+          if (_isShopSearchMode) {
+            headerHero = const SizedBox(
+              height: _ShopPlatformHeroBackground.height,
+            );
+          } else if (usePlainSortHeader) {
+            headerHero = SizedBox(height: plainSortHeaderInset);
+          } else if (attachHeroKey) {
+            headerHero = shopHero;
+          } else {
+            headerHero = _ShopPlatformHeroBackground(
+              primaryColor: _primaryColor,
+              backgroundColor: _dashboardForegroundColor,
+              overlayHeader: _isShopHeaderCollapsed && !_isShopSearchMode
+                  ? null
+                  : showcaseOverlayHeader,
+              headerPrimaryColor: _primaryColor,
+            );
+          }
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_isShopSearchMode)
-                const SizedBox(height: _ShopPlatformHeroBackground.height)
-              else if (usePlainSortHeader)
-                SizedBox(height: plainSortHeaderInset)
-              else if (shopHero != null)
-                shopHero,
+              if (headerHero != null) headerHero,
               if (!usePlainSortHeader)
                 skeletonizeMostPopular
                     ? _DealsCarouselSkeleton(
@@ -3994,9 +4011,11 @@ class _HeaderFooterPageState extends State<HeaderFooterPage>
 
         final shopScrollHeader = buildShopScrollHeader(
           skeletonizeMostPopular: false,
+          attachHeroKey: true,
         );
         final shopSkeletonScrollHeader = buildShopScrollHeader(
           skeletonizeMostPopular: true,
+          attachHeroKey: false,
         );
 
         final dealsAndProducts = Stack(
