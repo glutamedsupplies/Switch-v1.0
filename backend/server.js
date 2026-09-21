@@ -7218,7 +7218,18 @@ async function notifySellerAdminInboxByAdminId(adminId, notification) {
   }
 
   const accounts = await readAccounts();
-  const account = findAdminAccountByScopeId(accounts, normalizedAdminId);
+  let account = findAdminAccountByScopeId(accounts, normalizedAdminId);
+  if (!account) {
+    account = accounts.find((entry) =>
+      [
+        entry?.id,
+        entry?.accountId,
+        entry?.adminId,
+      ]
+        .map((value) => normalizeAdminTenantId(value, ""))
+        .includes(normalizedAdminId),
+    ) || null;
+  }
   if (!account) {
     return null;
   }
