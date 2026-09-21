@@ -8,7 +8,7 @@ Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, st
 | --- | --- | --- |
 | Accounts / auth / trending searches | PostgreSQL (`001`–`012`) | JSON only if Postgres is unset or unreachable |
 | Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`019`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
-| Marketplace analytics events + funnel/GMV | PostgreSQL (`020`) | none (append-only events; no JSON fallback) |
+| Marketplace analytics events + funnel/GMV | PostgreSQL (`021`) | none (append-only events; no JSON fallback) |
 | Chat, partners, activity, followers, and similar | JSON files | n/a (Phase B will move chat) |
 
 `npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`.
@@ -93,7 +93,7 @@ JSON fallback (when `DATABASE_URL` is unset):
 
 ## PostgreSQL tables (Phase A catalog / orders)
 
-Applied by `013_store_types.sql` through `020_analytics_events.sql`.
+Applied by `013_store_types.sql` through `019_order_payment_tracking.sql`, plus `021_analytics_events.sql`.
 
 ### `store_types`
 
@@ -138,7 +138,7 @@ Step 6 payment / tracking columns (migration `019`) live on the **group** (`orde
 
 ### `analytics_events`
 
-Append-only funnel events (migration `020`). See [ANALYTICS.md](ANALYTICS.md) for the taxonomy (`product_view`, `add_to_cart`, `begin_checkout`, `place_order`, `payment_success`, `payment_fail`, `pack`, `ship`, `cancel`).
+Append-only funnel events (migration `021`). See [ANALYTICS.md](ANALYTICS.md) for the taxonomy (`product_view`, `add_to_cart`, `begin_checkout`, `place_order`, `payment_success`, `payment_fail`, `pack`, `ship`, `cancel`).
 
 | Column | Notes |
 | --- | --- |

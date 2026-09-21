@@ -1,4 +1,5 @@
--- Step 5: append-only marketplace analytics events.
+-- Step 5: append-only marketplace analytics events (migration 021).
+-- Numbered 021 so 020 can own the payment_provider/payment_intent_id unique index.
 -- Funnel: browse → cart → checkout → order → payment → pack/ship/cancel.
 -- Client events (product_view, add_to_cart, begin_checkout) are ingested via
 -- POST /api/analytics/events. Server lifecycle (place_order, payment_*, pack,

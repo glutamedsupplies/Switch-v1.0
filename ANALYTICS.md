@@ -2,7 +2,7 @@
 
 Launch-day funnel visibility for Switch: browse → cart → checkout → order → payment → pack/ship/cancel.
 
-Events are **append-only** in PostgreSQL (`analytics_events`, migration `020`). Funnel and GMV summaries are computed on the server from that table plus `orders` / `order_items`. Clients must not aggregate JSON locally.
+Events are **append-only** in PostgreSQL (`analytics_events`, migration `021`). Funnel and GMV summaries are computed on the server from that table plus `orders` / `order_items`. Clients must not aggregate JSON locally.
 
 ## Event taxonomy
 

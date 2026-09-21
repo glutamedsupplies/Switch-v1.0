@@ -119,7 +119,7 @@
 ### Marketplace analytics (funnel + GMV)
 
 - **Purpose:** Pre-launch baseline so launch day has browse → cart → checkout → order → payment → pack/ship/cancel visibility.
-- **Main files:** `backend/db/migrations/020_analytics_events.sql`, `backend/services/analyticsApi.js`, `ANALYTICS.md`.
+- **Main files:** `backend/db/migrations/021_analytics_events.sql`, `backend/services/analyticsApi.js`, `ANALYTICS.md`.
 - **User flow:** Clients POST `product_view` / `add_to_cart` / `begin_checkout`. Order writes and pack/ship/cancel record the remaining stages. Seller/super-admin GET funnel conversion rates and GMV/AOV/cancel rate.
 - **Dependencies:** Signed app session, PostgreSQL `analytics_events` + `orders`.
 - **Future improvements:** Wire Flutter product/cart/checkout screens to the ingest API and chart the funnel in the admin dashboard.
