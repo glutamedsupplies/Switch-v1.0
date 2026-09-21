@@ -1,7 +1,7 @@
 "use strict";
 
 const { query, withTransaction, isPostgresConfigured, getPool } = require("../db/pool");
-const { hashPassword, verifyPassword } = require("../db/password");
+const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("../db/password");
 const {
   consumeVerificationToken,
   findAccountIdByGoogleSubject,
@@ -1079,7 +1079,9 @@ async function upsertCustomerFromLegacyRecord(legacyAccount, plainPassword = nul
   const existing = await findCustomerByEmail(email);
   const passwordSource = plainPassword ?? legacyAccount.password ?? "";
   const passwordHash = passwordSource
-    ? await hashPassword(String(passwordSource))
+    ? looksLikeBcryptHash(passwordSource)
+      ? String(passwordSource)
+      : await hashPassword(String(passwordSource))
     : existing?._passwordHash || null;
 
   // Google Instant Sign-In accounts do not require a local password.

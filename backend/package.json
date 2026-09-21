@@ -13,6 +13,8 @@
   "scripts": {
     "start": "node server.js",
     "test:super-admin-auth": "node --test --test-isolation=none test/superAdminAuth.test.js",
+    "test:password-auth": "node --test --test-isolation=none test/passwordHashOnly.test.js test/superAdminAuth.test.js",
+    "passwords:migrate-json": "node scripts/migrate-json-passwords-to-bcrypt.js",
     "db:migrate": "node db/migrate.js",
     "db:migrate-users": "node scripts/migrate-accounts-json-to-postgres.js",
     "gmail:connect": "node scripts/gmail-oauth-setup.js",

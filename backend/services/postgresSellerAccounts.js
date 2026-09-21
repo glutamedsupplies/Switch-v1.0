@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 const { query, withTransaction, isPostgresConfigured, getPool } = require("../db/pool");
-const { hashPassword, verifyPassword } = require("../db/password");
+const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("../db/password");
 const {
   normalizeEmail,
   normalizePhone,
@@ -875,7 +875,9 @@ async function upsertSellerFromLegacyRecord(legacyAccount, plainPassword = null)
   const existing = await findSellerByEmail(email);
   const passwordSource = plainPassword ?? legacyAccount.password ?? "";
   const passwordHash = passwordSource
-    ? await hashPassword(String(passwordSource))
+    ? looksLikeBcryptHash(passwordSource)
+      ? String(passwordSource)
+      : await hashPassword(String(passwordSource))
     : existing?._passwordHash || null;
 
   // Google Instant Sign-In sellers do not require a local password.

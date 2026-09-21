@@ -2,12 +2,11 @@
 
 ## Findings
 
-### Critical: Passwords Are Stored and Compared as Plaintext
+### Resolved: Plaintext Password Storage and Comparison
 
 - **Area:** `backend/server.js`, `backend/data/accounts.json`
-- **Impact:** Account compromise if local data files leak. Plaintext comparison also prevents safe password rotation/auditing.
-- **Evidence:** Login handlers compare `String(account.password)` directly with submitted password. Account schema includes `password`.
-- **Recommendation:** Migrate passwords to Argon2id or bcrypt hashes, remove plaintext fields, and add reset/migration flow.
+- **Status:** Resolved in Phase 1 / Step 2.
+- **Implementation:** Login verification is bcrypt-only, JSON writes reject plaintext passwords, and an idempotent dry-run migration hashes legacy JSON records.
 
 ### Resolved: Default Super Admin Credentials
 

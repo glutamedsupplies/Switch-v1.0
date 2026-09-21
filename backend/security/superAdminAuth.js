@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("crypto");
-const { verifyPassword } = require("../db/password");
+const { verifyPassword, looksLikeBcryptHash } = require("../db/password");
 
 const DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const MAX_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -48,6 +48,7 @@ function createSuperAdminAuth(environment = process.env, options = {}) {
     .filter(([, value]) => !value)
     .map(([name]) => name);
   const hasLegacyDefaultCredentials = isLegacyDefaultCredentialPair(username, password);
+  const hasInvalidPasswordHash = Boolean(password) && !looksLikeBcryptHash(password);
 
   function assertStartupConfiguration() {
     if (requireSecrets && missingConfiguration.length > 0) {
@@ -58,10 +59,17 @@ function createSuperAdminAuth(environment = process.env, options = {}) {
     if (requireSecrets && hasLegacyDefaultCredentials) {
       throw new Error("The retired default super-admin credentials are not allowed.");
     }
+    if (requireSecrets && hasInvalidPasswordHash) {
+      throw new Error("SUPER_ADMIN_PASSWORD must contain a bcrypt hash.");
+    }
   }
 
   function isConfigured() {
-    return missingConfiguration.length === 0 && !hasLegacyDefaultCredentials;
+    return (
+      missingConfiguration.length === 0
+      && !hasLegacyDefaultCredentials
+      && !hasInvalidPasswordHash
+    );
   }
 
   async function verifyCredentials(submittedUsername, submittedPassword) {
@@ -158,6 +166,7 @@ function createSuperAdminAuth(environment = process.env, options = {}) {
     username,
     sessionTtlSeconds,
     hasLegacyDefaultCredentials,
+    hasInvalidPasswordHash,
     missingConfiguration: Object.freeze([...missingConfiguration]),
     assertStartupConfiguration,
     isConfigured,

@@ -74,7 +74,7 @@ const {
   createHostedCheckoutSession,
   verifyPaymongoWebhook,
 } = require("./services/sellerCheckoutGateway");
-const { verifyPassword } = require("./db/password");
+const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("./db/password");
 const {
   isEmployeePostgresReady,
   createEmployeeAccount,
@@ -1260,6 +1260,23 @@ async function readAccounts() {
 }
 
 async function writeAccounts(accounts) {
+  const invalidPasswordAccount = (Array.isArray(accounts) ? accounts : []).find((account) => {
+    const storedPassword = String(account?.password ?? "");
+    return storedPassword && !looksLikeBcryptHash(storedPassword);
+  });
+  if (invalidPasswordAccount) {
+    const accountId = String(
+      invalidPasswordAccount.id
+        ?? invalidPasswordAccount.accountId
+        ?? invalidPasswordAccount.employeeId
+        ?? invalidPasswordAccount.email
+        ?? "unknown",
+    ).trim();
+    throw new Error(
+      `Refusing to persist a non-bcrypt password for account ${accountId}. Run the JSON password migration first.`,
+    );
+  }
+
   if (await isAccountsPostgresReady()) {
     await syncAccountsToPostgres(accounts);
     return;
@@ -6920,7 +6937,7 @@ async function verifySellerAccountPassword(account, password) {
       return verifyPassword(submitted, seller._passwordHash);
     }
   }
-  return submitted === String(account.password ?? "");
+  return verifyPassword(submitted, account.password);
 }
 
 function applyScheduledSellerAccountDeletion(account, now, requestedBy = "seller-admin") {
@@ -6976,7 +6993,6 @@ function applyFinalizedSellerAccountDeletion(account, now) {
     presenceStatus: "offline",
     email: `deleted.${accountId.replace(/[^a-z0-9]/gi, "").slice(0, 18) || "seller"}.${Date.now()}@deleted.switch.invalid`,
     mobileNumber: "",
-    password: `deleted-${crypto.randomBytes(24).toString("hex")}`,
     googleProfile: null,
     accountDeletedAt: now,
     deletedAt: now,
@@ -6985,6 +7001,7 @@ function applyFinalizedSellerAccountDeletion(account, now) {
     storeName: String(account?.storeName || companyName).trim() || companyName,
     planStatus: "canceled",
   });
+  delete account.password;
   return account;
 }
 
@@ -20811,11 +20828,14 @@ function findEmployeeLoginAccount(accounts, employeeId) {
   return getEmployeeLoginAccountMatches(accounts, employeeId)[0] || null;
 }
 
-function findEmployeeLoginAccountWithPassword(accounts, employeeId, password) {
-  const normalizedPassword = String(password ?? "").trim();
-  return getEmployeeLoginAccountMatches(accounts, employeeId).find((candidate) =>
-    String(candidate.password ?? "") === normalizedPassword
-  ) || null;
+async function findEmployeeLoginAccountWithPassword(accounts, employeeId, password) {
+  const submittedPassword = String(password ?? "").trim();
+  for (const candidate of getEmployeeLoginAccountMatches(accounts, employeeId)) {
+    if (await verifyPassword(submittedPassword, candidate.password)) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function setAdminAccountPresence(account, isOnline, options = {}) {
@@ -20957,7 +20977,7 @@ async function handleAdminLoginApi(request, response) {
       String(candidate.email ?? "").trim().toLowerCase() === email
     );
 
-    if (!account || String(account.password ?? "") !== password) {
+    if (!account || !(await verifyPassword(password, account.password))) {
       sendJson(response, 401, {
         message: "Admin email or password is incorrect.",
       });
@@ -21495,7 +21515,7 @@ async function handleBuyerChangePasswordApi(request, response) {
       const now = new Date().toISOString();
       accounts[accountIndex] = {
         ...account,
-        password: newPassword,
+        password: await hashPassword(newPassword),
         passwordUpdatedAt: now,
         updatedAt: now,
       };
@@ -22410,7 +22430,7 @@ async function handleAuthPasswordResetApi(request, response) {
       const previousAccount = accounts[accountIndex];
       accounts[accountIndex] = {
         ...previousAccount,
-        password,
+        password: await hashPassword(password),
         passwordUpdatedAt: now,
         passwordResetRequired: false,
         mustChangePassword: false,
@@ -22747,7 +22767,7 @@ async function handleAppUserLoginApi(request, response) {
       return;
     }
 
-    if (String(account.password ?? "") !== password) {
+    if (!(await verifyPassword(password, account.password))) {
       sendJson(response, 401, {
         message: "Incorrect Password",
       });
@@ -22939,10 +22959,10 @@ async function handleAdminAccountApi(request, response) {
         throw new Error("New password must be at least 6 characters long.");
       }
 
-      const passwordWasChanged = Boolean(
-        submittedPassword &&
-        submittedPassword !== String(existingAccount.password ?? ""),
-      );
+      const passwordWasChanged = Boolean(submittedPassword);
+      const storedPassword = submittedPassword
+        ? await hashPassword(submittedPassword)
+        : existingAccount.password;
       const businessTypeWasChanged = requestedStoreType !== previousStoreType;
       const previousProfileSnapshot = JSON.stringify({
         companyName: String(existingAccount.companyName ?? existingAccount.storeName ?? "").trim(),
@@ -22996,7 +23016,7 @@ async function handleAdminAccountApi(request, response) {
         email,
         countryCode,
         mobileNumber,
-        password: submittedPassword || existingAccount.password,
+        password: storedPassword,
         passwordUpdatedAt: passwordWasChanged
           ? accountUpdatedAt
           : existingAccount.passwordUpdatedAt ?? existingAccount.createdAt ?? accountUpdatedAt,
@@ -23422,7 +23442,7 @@ async function handlePaymentPartnerApiKeyApi(request, response) {
 }
 
 async function createAdminAccountFromPayload(payload) {
-  const normalizedAdmin = normalizeAdminAccountRecord({
+  let normalizedAdmin = normalizeAdminAccountRecord({
     ...payload,
     verificationToken: payload.verificationToken,
     verificationChannel: payload.verificationChannel,
@@ -23436,6 +23456,11 @@ async function createAdminAccountFromPayload(payload) {
       authStore: "postgres",
     };
   }
+
+  normalizedAdmin = {
+    ...normalizedAdmin,
+    password: await hashPassword(normalizedAdmin.password),
+  };
 
   const accounts = await readAccounts();
   const emailTaken = accounts.some((account) =>
@@ -24822,6 +24847,7 @@ async function handleSuperAdminAdminPasswordResetApi(request, response, adminId)
 
     const now = new Date().toISOString();
     const temporaryPassword = generateTemporaryAccountPassword(12);
+    const temporaryPasswordHash = await hashPassword(temporaryPassword);
     const previousAccount = accounts[accountIndex];
     const companyName = [
       previousAccount.companyName,
@@ -24855,7 +24881,7 @@ async function handleSuperAdminAdminPasswordResetApi(request, response, adminId)
 
     const updatedAccount = {
       ...previousAccount,
-      password: temporaryPassword,
+      password: temporaryPasswordHash,
       passwordUpdatedAt: now,
       passwordResetRequired: true,
       mustChangePassword: true,
@@ -24929,6 +24955,7 @@ async function handleSuperAdminBuyerPasswordResetApi(request, response, buyerId)
 
     const now = new Date().toISOString();
     const temporaryPassword = generateTemporaryAccountPassword(12);
+    const temporaryPasswordHash = await hashPassword(temporaryPassword);
     const previousAccount = accounts[accountIndex];
     const notification = createBuyerNotification(
       "require-password-reset",
@@ -24946,7 +24973,7 @@ async function handleSuperAdminBuyerPasswordResetApi(request, response, buyerId)
 
     const updatedAccount = {
       ...previousAccount,
-      password: temporaryPassword,
+      password: temporaryPasswordHash,
       passwordUpdatedAt: now,
       passwordResetRequired: true,
       mustChangePassword: true,
@@ -27893,7 +27920,7 @@ async function handleEmployeeLoginApi(request, response) {
     }
 
     const accounts = await readAccounts();
-    const account = findEmployeeLoginAccountWithPassword(accounts, employeeId, password);
+    const account = await findEmployeeLoginAccountWithPassword(accounts, employeeId, password);
 
     if (!account) {
       sendJson(response, 401, {
@@ -28105,6 +28132,7 @@ async function handleAccountsApi(request, response) {
       const accounts = await readAccounts();
       const normalizedAccount = applyAdminId(normalizeAccountRecord({
         ...payload,
+        password: await hashPassword(payload.password),
         adminId: payload.adminId ?? requestAdminId,
       }), requestAdminId);
       const hasEmployeeId = normalizedAccount.employeeId.trim().length > 0;
@@ -28221,10 +28249,10 @@ async function handleAccountsApi(request, response) {
 
       const submittedPassword = String(payload.password ?? "").trim();
       const accountUpdatedAt = new Date().toISOString();
-      const passwordWasChanged = Boolean(
-        submittedPassword &&
-        submittedPassword !== String(existingAccount.password ?? ""),
-      );
+      const passwordWasChanged = Boolean(submittedPassword);
+      const storedPassword = submittedPassword
+        ? await hashPassword(submittedPassword)
+        : existingAccount.password;
       const mergedPayload = {
         ...existingAccount,
         ...payload,
@@ -28236,7 +28264,7 @@ async function handleAccountsApi(request, response) {
         employeeId: existingAccount.employeeId,
         source: "web",
         adminId: getRecordAdminId(existingAccount, requestAdminId),
-        password: submittedPassword || existingAccount.password,
+        password: storedPassword,
         passwordUpdatedAt: passwordWasChanged
           ? accountUpdatedAt
           : existingAccount.passwordUpdatedAt ?? null,
@@ -31790,7 +31818,9 @@ Promise.resolve()
     if (!superAdminAuth.isConfigured()) {
       const reason = superAdminAuth.hasLegacyDefaultCredentials
         ? "the retired default credentials are configured"
-        : `missing: ${superAdminAuth.missingConfiguration.join(", ")}`;
+        : superAdminAuth.hasInvalidPasswordHash
+          ? "SUPER_ADMIN_PASSWORD is not a bcrypt hash"
+          : `missing: ${superAdminAuth.missingConfiguration.join(", ")}`;
       console.warn(`Super-admin login disabled; ${reason}`);
     }
   })

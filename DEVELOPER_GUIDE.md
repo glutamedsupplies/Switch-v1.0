@@ -61,7 +61,7 @@ The backend loads `backend/.env` and root `.env` if present.
 | --- | --- | --- |
 | `PORT` | `8080` | Backend HTTP port. |
 | `SUPER_ADMIN_USERNAME` | none | Required super admin username. |
-| `SUPER_ADMIN_PASSWORD` | none | Required super admin password or bcrypt hash. |
+| `SUPER_ADMIN_PASSWORD` | none | Required bcrypt hash for the super admin password; plaintext is rejected. |
 | `ADMIN_API_SESSION_SECRET` | none | Required HMAC signing secret for expiring super admin sessions. |
 | `SUPER_ADMIN_SESSION_TTL_SECONDS` | `28800` | Super admin session lifetime, capped at seven days. |
 | `REQUIRE_SECRETS` | `0` | Set to `1` to enforce required secrets outside production. |
@@ -179,7 +179,21 @@ flutter analyze
 flutter test
 node --check backend/server.js
 node --check backend/public/super_admin.js
+npm --prefix backend run test:password-auth
 ```
+
+### JSON Password Migration
+
+Run the migration before deploying the hash-only login code. It preserves account data, changes only non-empty plaintext `password` values, skips existing bcrypt hashes, and creates a timestamped backup when writing.
+
+```bash
+cd backend
+npm run passwords:migrate-json -- --dry-run
+npm run passwords:migrate-json -- --write
+npm run passwords:migrate-json -- --dry-run
+```
+
+The final dry run must report `plaintext=0`. Use `--file <path>` to migrate a non-default accounts JSON file. Plaintext records cannot authenticate after this change.
 
 For web/admin changes, manually test:
 
@@ -195,11 +209,11 @@ For web/admin changes, manually test:
 
 For production-like deployment:
 
-1. Set strong `SUPER_ADMIN_USERNAME` and `SUPER_ADMIN_PASSWORD`.
+1. Set `SUPER_ADMIN_USERNAME`, a bcrypt hash in `SUPER_ADMIN_PASSWORD`, and `ADMIN_API_SESSION_SECRET`.
 2. Set an API URL for Flutter builds with `--dart-define=API_BASE_URL=...`.
 3. Move JSON persistence to a real database or enforce file locks/backups.
 4. Move uploads to object storage or protected storage.
-5. Add HTTPS, secure sessions, password hashing, authorization middleware, CSRF protection, rate limiting, and audit logs.
+5. Add HTTPS, authorization middleware, CSRF protection, rate limiting, and audit logs.
 6. Ensure `backend/data` and `backend/public/uploads` are persisted outside ephemeral runtime directories.
 
 ## Troubleshooting

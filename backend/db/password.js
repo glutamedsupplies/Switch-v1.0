@@ -16,19 +16,14 @@ async function hashPassword(plainPassword) {
   return bcrypt.hash(password, BCRYPT_ROUNDS);
 }
 
-async function verifyPassword(plainPassword, passwordHashOrLegacy) {
+async function verifyPassword(plainPassword, passwordHash) {
   const password = String(plainPassword ?? "");
-  const stored = String(passwordHashOrLegacy ?? "");
-  if (!password || !stored) {
+  const stored = String(passwordHash ?? "");
+  if (!password || !looksLikeBcryptHash(stored)) {
     return false;
   }
 
-  if (looksLikeBcryptHash(stored)) {
-    return bcrypt.compare(password, stored);
-  }
-
-  // Legacy plaintext from accounts.json during migration window.
-  return password === stored;
+  return bcrypt.compare(password, stored);
 }
 
 module.exports = {

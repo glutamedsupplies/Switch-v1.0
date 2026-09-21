@@ -1,7 +1,7 @@
 "use strict";
 
 const { query, withTransaction, isPostgresConfigured, getPool } = require("../db/pool");
-const { hashPassword, verifyPassword } = require("../db/password");
+const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("../db/password");
 const {
   normalizeEmail,
   normalizePhone,
@@ -480,7 +480,9 @@ async function upsertEmployeeFromLegacyRecord(legacyAccount, plainPassword = nul
 
   const passwordSource = plainPassword ?? legacyAccount.password ?? "";
   const passwordHash = passwordSource
-    ? await hashPassword(String(passwordSource))
+    ? looksLikeBcryptHash(passwordSource)
+      ? String(passwordSource)
+      : await hashPassword(String(passwordSource))
     : existing?._passwordHash;
 
   if (!passwordHash) {

@@ -62,12 +62,24 @@ test("strict startup rejects explicitly configured legacy defaults", () => {
   assert.throws(auth.assertStartupConfiguration, /retired default/);
 });
 
-test("signed sessions are random, reject forgery, and expire", () => {
+test("strict startup rejects plaintext super-admin passwords", () => {
+  const auth = createSuperAdminAuth({
+    NODE_ENV: "production",
+    SUPER_ADMIN_USERNAME: "security-test-admin",
+    SUPER_ADMIN_PASSWORD: "test-only-password-8f4e",
+    ADMIN_API_SESSION_SECRET: "test-session-secret-with-at-least-32-bytes",
+  });
+
+  assert.equal(auth.isConfigured(), false);
+  assert.throws(auth.assertStartupConfiguration, /bcrypt hash/);
+});
+
+test("signed sessions are random, reject forgery, and expire", async () => {
   let currentTime = Date.UTC(2026, 0, 1, 0, 0, 0);
   const auth = createSuperAdminAuth(
     {
       SUPER_ADMIN_USERNAME: "security-test-admin",
-      SUPER_ADMIN_PASSWORD: "test-only-password-8f4e",
+      SUPER_ADMIN_PASSWORD: await bcrypt.hash("test-only-password-8f4e", 4),
       ADMIN_API_SESSION_SECRET: "test-session-secret-with-at-least-32-bytes",
       SUPER_ADMIN_SESSION_TTL_SECONDS: "2",
     },

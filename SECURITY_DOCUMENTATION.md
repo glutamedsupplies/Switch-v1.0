@@ -32,27 +32,23 @@ There is no shared role policy layer or signed session verification for most non
 
 ## Password Security
 
-Passwords are compared directly as strings in the backend. The data schema includes a `password` field on account records.
+Passwords are verified only through bcrypt. PostgreSQL stores them in `password_hash`; JSON account records retain the legacy `password` field name, but its value must be a bcrypt hash. The JSON writer rejects non-empty values that are not valid bcrypt hashes.
 
-Risks:
+Operational requirements:
 
-- Plaintext passwords can be exposed if JSON files leak.
-- Non-super-admin legacy account records may still contain plaintext passwords during migration.
-- No password hashing, salting, rotation policy, lockout, or brute-force protection was found.
+- Run `npm run passwords:migrate-json -- --dry-run` from `backend` before deploying hash-only login.
+- Run `npm run passwords:migrate-json -- --write` after reviewing the counts. The script creates a timestamped backup and is idempotent.
+- Confirm a second dry run reports `plaintext=0` before starting the updated backend.
+- Plaintext JSON records are intentionally unable to log in until migrated.
 
-Recommendations:
+Remaining recommendations:
 
-- Hash passwords with Argon2id or bcrypt.
-- Require strong super admin credentials through environment variables.
-- Add password reset tokens with expiration.
 - Add login rate limiting and account lockout.
 - Never log or return password fields.
 
 ## JWT and Sessions
 
-No JWT library or signed cookie session middleware was found.
-
-Current super admin token is derived from username and password and sent in a custom header. Admin and employee sessions are primarily browser-stored client data.
+Super admin authentication uses short-lived HMAC-signed tokens sent in a custom header. Admin and employee sessions are primarily browser-stored client data and do not yet use the same signed-session model.
 
 Recommendations:
 
