@@ -14,11 +14,16 @@ const { createTrendingSearchesApi } = require("./services/trendingSearchesApi");
 const { createMapsPlacesApi } = require("./services/mapsPlacesApi");
 const { createVouchersApi } = require("./services/vouchersApi");
 const { createFlashDealsApi } = require("./services/flashDealsApi");
+const {
+  createAnalyticsApi,
+  getAnalyticsSessionPolicy,
+} = require("./services/analyticsApi");
 const { createAccountDevicesApi } = require("./services/accountDevicesApi");
 const {
   createBuyerDeliveryAddressesApi,
 } = require("./services/buyerDeliveryAddressesApi");
 let accountDevicesApi = null;
+let analyticsApi = null;
 const { createRestoreMissingSaApis } = require("./services/restoreMissingSaApis");
 const {
   createOrdersWaybillApi,
@@ -29596,6 +29601,11 @@ async function handleOrdersApi(request, response) {
         adminId: requestShouldUseAdminScope ? requestAdminId : "",
         accountId: requestShouldUseAccountScope ? requestAccountId : "",
       }));
+      await emitOrderAnalyticsSafely(existingOrders, nextOrders, {
+        adminId: requestShouldUseAdminScope ? requestAdminId : "",
+        userId: request?.authSession?.accountId || requestAccountId,
+        source: "orders_put",
+      });
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
@@ -29678,6 +29688,11 @@ async function handleOrdersApi(request, response) {
         adminId: requestShouldUseAdminScope ? requestAdminId : "",
         accountId: requestShouldUseAccountScope ? requestAccountId : "",
       }));
+      await emitOrderAnalyticsSafely(existingOrders, nextOrders, {
+        adminId: requestShouldUseAdminScope ? requestAdminId : "",
+        userId: request?.authSession?.accountId || requestAccountId,
+        source: "orders_post",
+      });
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
@@ -29805,6 +29820,11 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
     });
 
     await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+    await emitOrderAnalyticsSafely(orders, nextOrders, {
+      adminId: requestAdminId,
+      userId: request?.authSession?.accountId,
+      source: "pack",
+    });
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -29928,6 +29948,11 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
     }
 
     await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+    await emitOrderAnalyticsSafely(orders, nextOrders, {
+      adminId: requestAdminId,
+      userId: request?.authSession?.accountId,
+      source: "ship",
+    });
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(
         nextOrders.filter((entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey)),
@@ -30031,6 +30056,11 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
     }
 
     await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+    await emitOrderAnalyticsSafely(orders, nextOrders, {
+      adminId: requestAdminId,
+      userId: request?.authSession?.accountId,
+      source: "cancel",
+    });
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -30150,6 +30180,11 @@ async function handleCancelOrderRequestDecisionApi(
     });
 
     await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+    await emitOrderAnalyticsSafely(orders, nextOrders, {
+      adminId: requestAdminId,
+      userId: request?.authSession?.accountId,
+      source: "cancel_request",
+    });
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -31764,11 +31799,32 @@ const ordersWaybillApi = createOrdersWaybillApi({
   normalizeStoredOrderEntry,
 });
 
+analyticsApi = createAnalyticsApi({
+  sendJson,
+  parseRequestBody,
+  isSuperAdminAuthorized,
+});
+
+async function emitOrderAnalyticsSafely(previousOrders, nextOrders, extra = {}) {
+  if (!analyticsApi || typeof analyticsApi.recordOrderLifecycleEvents !== "function") {
+    return;
+  }
+  try {
+    await analyticsApi.recordOrderLifecycleEvents(previousOrders, nextOrders, extra);
+  } catch (error) {
+    console.error("analytics lifecycle emit failed:", error?.message || error);
+  }
+}
+
 function getRequiredAppSessionPolicy(requestUrl, methodValue) {
   const pathname = String(requestUrl?.pathname || "");
   const method = String(methodValue || "GET").toUpperCase();
   const allAccountRoles = ["buyer", "seller", "employee"];
   const tenantRoles = ["seller", "employee"];
+  const analyticsPolicy = getAnalyticsSessionPolicy(pathname, method);
+  if (analyticsPolicy) {
+    return analyticsPolicy;
+  }
 
   if (
     pathname === "/api/auth/session"
@@ -32494,6 +32550,13 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/activity") {
     await handleActivityApi(request, response, requestUrl);
+    return;
+  }
+
+  if (
+    analyticsApi
+    && await analyticsApi.tryHandleAnalyticsRoutes(request, response, requestUrl)
+  ) {
     return;
   }
 

@@ -126,16 +126,16 @@ Use the equivalent device ID for macOS, Linux, iOS, or other targets.
 
 ## Database Setup
 
-PostgreSQL is required for durable accounts, products, and orders.
+PostgreSQL is required for durable accounts, products, orders, and analytics events.
 
 1. Create a database and set `DATABASE_URL` in `backend/.env` (see `backend/.env.example`).
 2. Apply schema: `cd backend && npm run db:migrate`
 3. Optional JSON import (idempotent upserts, does not delete extra Postgres rows):
    - `npm run db:migrate-users` — `accounts.json`
    - `npm run db:migrate-catalog` — `store_types.json`, `products.json`, `orders.json`
-4. Without `DATABASE_URL`, the backend still creates JSON files in `backend/data` on startup.
+4. Without `DATABASE_URL`, the backend still creates JSON files in `backend/data` on startup. Analytics ingest/funnel/summary return `503` until Postgres is migrated (`020_analytics_events.sql`).
 
-Product/order/line IDs keep existing JSON string values across migrate and dual-write. Order groups without `orderGroupId` get a deterministic `og_*`. Lifecycle columns (`created_at`, `paid_at`, `packed_at`, `shipped_at`, `cancelled_at`, product `submitted_at` / `approved_at` / `listed_at`) are first-class so Step 5 funnel queries do not need a schema rewrite. Order groups also store PayMongo prep columns (`payment_intent_id`, `payment_idempotency_key`) and optional `tracking_number`. List/page APIs are tenant-scoped (`adminId` / buyer `accountId`); public product listings are approved-only.
+Product/order/line IDs keep existing JSON string values across migrate and dual-write. Order groups without `orderGroupId` get a deterministic `og_*`. Lifecycle columns (`created_at`, `paid_at`, `packed_at`, `shipped_at`, `cancelled_at`, product `submitted_at` / `approved_at` / `listed_at`) are first-class so funnel queries do not need a schema rewrite. Order groups also store PayMongo prep columns (`payment_intent_id`, `payment_idempotency_key`) and optional `tracking_number`. List/page APIs are tenant-scoped (`adminId` / buyer `accountId`); public product listings are approved-only. Launch funnel APIs are documented in [ANALYTICS.md](ANALYTICS.md).
 
 JSON-only collections (chat, partners, activity, followers, and similar) remain files under `backend/data/` and are ignored by Git.
 

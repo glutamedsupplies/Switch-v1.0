@@ -254,6 +254,20 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
       });
       assert.equal(missing.status, 401);
 
+      const analyticsMissing = await requestHttp(HTTP_PORT, {
+        method: "POST",
+        path: "/api/analytics/events",
+        body: { eventName: "product_view", productId: "prd-1" },
+      });
+      assert.equal(analyticsMissing.status, 401);
+      assert.equal(analyticsMissing.json?.code, "APP_SESSION_INVALID");
+
+      const funnelMissing = await requestHttp(HTTP_PORT, {
+        method: "GET",
+        path: "/api/analytics/funnel",
+      });
+      assert.equal(funnelMissing.status, 401);
+
       const forged = await requestHttp(HTTP_PORT, {
         method: "GET",
         path: "/api/orders",
@@ -290,6 +304,13 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
         body: { name: "Nope" },
       });
       assert.equal(wrongRole.status, 403);
+
+      const buyerFunnel = await requestHttp(HTTP_PORT, {
+        method: "GET",
+        path: "/api/analytics/funnel",
+        headers: { "x-switch-session": buyer.token },
+      });
+      assert.equal(buyerFunnel.status, 403);
 
       const seller = liveAuth.issueSession({
         accountId: "seller-1",
