@@ -202,7 +202,6 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
   const env = {
     ...process.env,
     PORT: String(HTTP_PORT),
-    BIND_HOST: "127.0.0.1",
     REQUIRE_SECRETS: "0",
     SUPER_ADMIN_USERNAME: "security-p0-root",
     SUPER_ADMIN_PASSWORD: passwordHash,
@@ -218,6 +217,7 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
   };
   delete env.DATABASE_URL;
   delete env.PAYMONGO_SECRET_KEY;
+  delete env.BIND_HOST;
 
   const child = spawn(process.execPath, ["server.js"], {
     cwd: path.join(__dirname, ".."),
@@ -228,6 +228,21 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
   try {
     const startupLog = await waitForOutput(child, /listening on 127\.0\.0\.1:18123/);
     assert.match(startupLog, /listening on 127\.0\.0\.1:18123/);
+
+    await t.test("/health is 200 on the default loopback bind and never ACAO *", async () => {
+      const res = await requestHttp(HTTP_PORT, { method: "GET", path: "/health" });
+      assert.equal(res.status, 200);
+      assert.equal(res.json?.status, "ok");
+
+      const evilHealth = await requestHttp(HTTP_PORT, {
+        method: "GET",
+        path: "/health",
+        origin: "http://evil.example",
+      });
+      assert.equal(evilHealth.status, 200);
+      assert.notEqual(evilHealth.headers["access-control-allow-origin"], "*");
+      assert.equal(evilHealth.headers["access-control-allow-origin"], undefined);
+    });
 
     await t.test("unauthenticated uploads return 401 before validation", async () => {
       for (const urlPath of [
@@ -441,7 +456,6 @@ test("PayMongo webhook without shared secret returns 503", { timeout: 45_000 }, 
   const env = {
     ...process.env,
     PORT: String(port),
-    BIND_HOST: "127.0.0.1",
     REQUIRE_SECRETS: "0",
     SUPER_ADMIN_USERNAME: "security-p0-root",
     SUPER_ADMIN_PASSWORD: passwordHash,
@@ -451,6 +465,7 @@ test("PayMongo webhook without shared secret returns 503", { timeout: 45_000 }, 
   };
   delete env.DATABASE_URL;
   delete env.PAYMONGO_SECRET_KEY;
+  delete env.BIND_HOST;
 
   const child = spawn(process.execPath, ["server.js"], {
     cwd: path.join(__dirname, ".."),
