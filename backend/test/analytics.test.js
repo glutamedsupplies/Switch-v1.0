@@ -23,6 +23,8 @@ test("analytics event allowlist accepts taxonomy names only", () => {
   assert.equal(isAllowedEventName("PRODUCT_VIEW"), true);
   assert.equal(isAllowedEventName("page_view"), false);
   assert.equal(isAllowedEventName("click"), false);
+  assert.equal(isAllowedEventName("payment_success"), false);
+  assert.equal(isAllowedEventName("payment_fail"), false);
   assert.equal(isAllowedEventName(""), false);
 });
 
@@ -78,11 +80,12 @@ test("funnel math uses order-backed counts when present and computes conversion 
       add_to_cart: 40,
       begin_checkout: 20,
       place_order: 99,
-      payment_fail: 3,
+      payment_failed: 3,
     },
     orderCounts: {
       place_order: 10,
-      payment_success: 8,
+      payment_initiated: 9,
+      payment_succeeded: 8,
       pack: 6,
       ship: 5,
       cancel: 2,
@@ -95,13 +98,17 @@ test("funnel math uses order-backed counts when present and computes conversion 
   assert.equal(funnel.stages[3].eventName, "place_order");
   assert.equal(funnel.stages[3].count, 10, "orders win over inflated event count");
   assert.equal(funnel.stages[3].source, "orders");
-  assert.equal(funnel.stages[4].count, 8);
+  assert.equal(funnel.stages[4].eventName, "payment_initiated");
+  assert.equal(funnel.stages[4].count, 9);
+  assert.equal(funnel.stages[5].eventName, "payment_succeeded");
+  assert.equal(funnel.stages[5].count, 8);
   assert.equal(funnel.stages[1].conversionFromPrevious, 0.4);
   assert.equal(funnel.stages[3].conversionFromPrevious, 0.5);
-  assert.equal(funnel.stages[4].conversionFromPrevious, 0.8);
+  assert.equal(funnel.stages[4].conversionFromPrevious, 0.9);
+  assert.equal(funnel.stages[5].conversionFromPrevious, 0.8889);
   assert.equal(funnel.cancel.count, 2);
   assert.equal(funnel.cancel.rate, 0.2);
-  assert.equal(funnel.paymentFail.count, 3);
+  assert.equal(funnel.paymentFailed.count, 3);
 });
 
 test("funnel falls back to events when no orders exist yet", () => {
@@ -141,7 +148,7 @@ test("lifecycle diff emits place_order, payment, pack, ship, and cancel once", (
   const placed = diffOrderLifecycleEvents([], created);
   assert.deepEqual(
     placed.map((event) => event.eventName),
-    ["place_order"],
+    ["place_order", "payment_initiated"],
   );
 
   const paid = diffOrderLifecycleEvents(created, [
@@ -149,7 +156,7 @@ test("lifecycle diff emits place_order, payment, pack, ship, and cancel once", (
   ]);
   assert.deepEqual(
     paid.map((event) => event.eventName),
-    ["payment_success"],
+    ["payment_succeeded"],
   );
 
   const packed = diffOrderLifecycleEvents(
@@ -179,7 +186,15 @@ test("lifecycle diff emits place_order, payment, pack, ship, and cancel once", (
   ]);
   assert.deepEqual(
     failedPay.map((event) => event.eventName),
-    ["payment_fail"],
+    ["payment_failed"],
+  );
+
+  const paidAtCreate = diffOrderLifecycleEvents([], [
+    { ...created[0], stage: "toPrepare", paidAt: "2026-09-21T00:00:00.000Z" },
+  ]);
+  assert.deepEqual(
+    paidAtCreate.map((event) => event.eventName),
+    ["place_order", "payment_initiated", "payment_succeeded"],
   );
 
   const unchanged = diffOrderLifecycleEvents(created, created);

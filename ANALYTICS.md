@@ -12,8 +12,9 @@ Events are **append-only** in PostgreSQL (`analytics_events`, migration `021`). 
 | `add_to_cart` | Buyer app / web (POST) | `productId`, `quantity`, `variantId` |
 | `begin_checkout` | Buyer app / web (POST) | `productId`, optional `orderId` |
 | `place_order` | Server, when a new order group is written | `orderId` (`orders.id` / `orderGroupId`) |
-| `payment_success` | Server, when an order leaves unpaid (`paid_at` / paid stages) | `orderId` |
-| `payment_fail` | Server, when `paymentStatus` becomes failed/declined/expired without a paid stamp | `orderId` |
+| `payment_initiated` | Server, when checkout enters unpaid `toPay` (or a paid/failed attempt is first seen) | `orderId` |
+| `payment_succeeded` | Server, when an order leaves unpaid (`paid_at` / paid stages) | `orderId` |
+| `payment_failed` | Server, when `paymentStatus` becomes failed/declined/expired without a paid stamp | `orderId` |
 | `pack` | Server pack path (`toShip` / `packed_at`) | `orderId` |
 | `ship` | Server ship path (`toReceive` / `shipped_at`) | `orderId` |
 | `cancel` | Server cancel / accepted cancel-request (`cancelled`) | `orderId` |
@@ -37,7 +38,8 @@ Default window is **7 days** (`from = now - 7d`, `to = now`). Override with `day
 `GET /api/analytics/funnel` uses:
 
 - `product_view` / `add_to_cart` / `begin_checkout` from `analytics_events`
-- `place_order` / `payment_success` / `pack` / `ship` / `cancel` from `orders` timestamps when those rows exist, otherwise from events
+- `place_order` / `payment_initiated` / `payment_succeeded` / `pack` / `ship` / `cancel` from `orders` timestamps when those rows exist, otherwise from events
+- `payment_failed` from events (side exit; not a conversion stage)
 
 Conversion rate is `stage_n / stage_{n-1}` (0 when the previous stage is 0). Cancel is a side exit (`cancel.rate = cancelled / placed`).
 

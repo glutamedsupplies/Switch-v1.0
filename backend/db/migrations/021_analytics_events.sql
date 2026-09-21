@@ -2,8 +2,9 @@
 -- Numbered 021 so 020 can own the payment_provider/payment_intent_id unique index.
 -- Funnel: browse → cart → checkout → order → payment → pack/ship/cancel.
 -- Client events (product_view, add_to_cart, begin_checkout) are ingested via
--- POST /api/analytics/events. Server lifecycle (place_order, payment_*, pack,
--- ship, cancel) is also written here when order status changes.
+-- POST /api/analytics/events. Server lifecycle (place_order, payment_initiated /
+-- payment_succeeded / payment_failed, pack, ship, cancel) is also written here
+-- when order status changes.
 --
 -- order_id FK is optional: browse/cart events have no order yet. Missing order
 -- ids are stored as NULL so ingest never fails a batch on a stale client id.

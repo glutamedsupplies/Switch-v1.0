@@ -248,7 +248,8 @@ test("Postgres analytics ingest, funnel, and summary", { skip }, async (t) => {
   assert.equal(byName.add_to_cart.count, 1);
   assert.equal(byName.begin_checkout.count, 2, "includes the stale-order begin_checkout row");
   assert.ok(byName.place_order.count >= 1);
-  assert.ok(byName.payment_success.count >= 1);
+  assert.ok(byName.payment_initiated.count >= 1);
+  assert.ok(byName.payment_succeeded.count >= 1);
   assert.ok(byName.pack.count >= 1);
   assert.equal(byName.product_view.conversionFromPrevious, null);
   assert.equal(byName.add_to_cart.conversionFromPrevious, 0.5);

@@ -8,8 +8,9 @@ const ANALYTICS_EVENT_NAMES = Object.freeze([
   "add_to_cart",
   "begin_checkout",
   "place_order",
-  "payment_success",
-  "payment_fail",
+  "payment_initiated",
+  "payment_succeeded",
+  "payment_failed",
   "pack",
   "ship",
   "cancel",
@@ -22,14 +23,16 @@ const FUNNEL_STAGE_NAMES = Object.freeze([
   "add_to_cart",
   "begin_checkout",
   "place_order",
-  "payment_success",
+  "payment_initiated",
+  "payment_succeeded",
   "pack",
   "ship",
 ]);
 
 const ORDER_BACKED_EVENT_NAMES = new Set([
   "place_order",
-  "payment_success",
+  "payment_initiated",
+  "payment_succeeded",
   "pack",
   "ship",
   "cancel",
@@ -318,9 +321,9 @@ function computeFunnelFromCounts(counts = {}, options = {}) {
       orderCount: Number(orderCounts.cancel) || 0,
       rate: ratio(cancelled, placed),
     },
-    paymentFail: {
-      eventName: "payment_fail",
-      count: Number(eventCounts.payment_fail) || 0,
+    paymentFailed: {
+      eventName: "payment_failed",
+      count: Number(eventCounts.payment_failed) || 0,
     },
   };
 }
@@ -405,6 +408,7 @@ function groupSnapshot(entries) {
       hasTimestamp(item?.paidAt ?? item?.paid_at ?? item?.paidAtEpochMs)
       || PAID_STAGES.has(normalizeText(item?.stage)),
     ),
+    unpaid: items.some((item) => normalizeText(item?.stage) === "toPay"),
     packed: items.some((item) =>
       hasTimestamp(item?.packedAt ?? item?.packed_at ?? item?.packedAtEpochMs)
       || normalizeText(item?.stage) === "toShip"
@@ -445,10 +449,17 @@ function diffOrderLifecycleEvents(previousEntries, nextEntries) {
     if (!previous) {
       events.push({ ...base, eventName: "place_order" });
     }
+    const paymentInitiated = next.unpaid || next.paid || next.paymentFailed;
+    const wasPaymentInitiated = Boolean(
+      previous && (previous.unpaid || previous.paid || previous.paymentFailed),
+    );
+    if (paymentInitiated && !wasPaymentInitiated) {
+      events.push({ ...base, eventName: "payment_initiated" });
+    }
     if (next.paid && !previous?.paid) {
-      events.push({ ...base, eventName: "payment_success" });
+      events.push({ ...base, eventName: "payment_succeeded" });
     } else if (next.paymentFailed && !previous?.paymentFailed && !next.paid) {
-      events.push({ ...base, eventName: "payment_fail" });
+      events.push({ ...base, eventName: "payment_failed" });
     }
     if (next.packed && !previous?.packed) {
       events.push({ ...base, eventName: "pack" });
@@ -560,7 +571,8 @@ async function loadOrderFunnelCounts({ adminId, from, to }) {
     `
     SELECT
       COUNT(*) FILTER (WHERE created_at >= $1 AND created_at < $2)::int AS place_order,
-      COUNT(*) FILTER (WHERE paid_at IS NOT NULL AND paid_at >= $1 AND paid_at < $2)::int AS payment_success,
+      COUNT(*) FILTER (WHERE created_at >= $1 AND created_at < $2)::int AS payment_initiated,
+      COUNT(*) FILTER (WHERE paid_at IS NOT NULL AND paid_at >= $1 AND paid_at < $2)::int AS payment_succeeded,
       COUNT(*) FILTER (WHERE packed_at IS NOT NULL AND packed_at >= $1 AND packed_at < $2)::int AS pack,
       COUNT(*) FILTER (WHERE shipped_at IS NOT NULL AND shipped_at >= $1 AND shipped_at < $2)::int AS ship,
       COUNT(*) FILTER (WHERE cancelled_at IS NOT NULL AND cancelled_at >= $1 AND cancelled_at < $2)::int AS cancel
@@ -572,7 +584,8 @@ async function loadOrderFunnelCounts({ adminId, from, to }) {
   );
   return result.rows[0] || {
     place_order: 0,
-    payment_success: 0,
+    payment_initiated: 0,
+    payment_succeeded: 0,
     pack: 0,
     ship: 0,
     cancel: 0,

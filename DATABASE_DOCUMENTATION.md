@@ -138,7 +138,7 @@ Step 6 payment / tracking columns (migration `019`) live on the **group** (`orde
 
 ### `analytics_events`
 
-Append-only funnel events (migration `021`). See [ANALYTICS.md](ANALYTICS.md) for the taxonomy (`product_view`, `add_to_cart`, `begin_checkout`, `place_order`, `payment_success`, `payment_fail`, `pack`, `ship`, `cancel`).
+Append-only funnel events (migration `021`). See [ANALYTICS.md](ANALYTICS.md) for the taxonomy (`product_view`, `add_to_cart`, `begin_checkout`, `place_order`, `payment_initiated`, `payment_succeeded`, `payment_failed`, `pack`, `ship`, `cancel`).
 
 | Column | Notes |
 | --- | --- |
