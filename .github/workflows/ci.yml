@@ -2,6 +2,8 @@ name: CI
 
 # Flutter buyer + Node seller/super-admin checks. No production deploy.
 # Postgres migrate uses a GitHub Actions service container (no repo secrets).
+# Step 3 security P0 is gated by npm run test:security-p0 plus the health smoke:
+# CORS (no *), session 401 vs 403, localhost /health bind, unauth upload/PayMongo.
 
 on:
   push:
@@ -79,8 +81,16 @@ jobs:
           npm run test:password-auth
           npm run test:session-tenancy
           npm run test:super-admin-auth
+      - name: Step 3 security P0
+        # Explicit gate so a failure is labeled, even if npm test already ran the file.
+        # Covers: CORS never *, session 401/403, bind 127.0.0.1, unauth upload,
+        # PayMongo webhook reject, unauth confirm-payment.
+        if: success() || failure()
+        run: |
+          test -f test/securityP0.test.js
           npm run test:security-p0
-      - name: Health smoke
+      - name: Health smoke (localhost bind + CORS)
+        if: success() || failure()
         run: bash scripts/ci-health-smoke.sh
 
   secret-scan:
