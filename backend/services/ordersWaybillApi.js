@@ -488,7 +488,7 @@ function createOrdersWaybillApi(deps) {
       });
 
       if (groupsToMark.size) {
-        await writeOrders(nextOrders);
+        await writeOrders(nextOrders, { adminId: requestAdminId });
       }
 
       sendJson(response, 200, {

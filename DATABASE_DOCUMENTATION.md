@@ -2,9 +2,17 @@
 
 ## Storage Overview
 
-The project uses local JSON files instead of a SQL or NoSQL database server. Each JSON file acts like a collection. The backend initializes missing files in `backend/server.js` and reads/writes them with `fs/promises`.
+Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, store types, categories, products, and orders when `DATABASE_URL` is set and migrations have been applied. Other collections (chat, partners, activity, followers, vouchers, flash deals) still use JSON files under `backend/data/`.
 
-Runtime files are stored under `backend/data` and are ignored by Git:
+| Domain | Source of truth when `DATABASE_URL` is set | Fallback / backup |
+| --- | --- | --- |
+| Accounts / auth / trending searches | PostgreSQL (`001`–`012`) | JSON only if Postgres is unset or unreachable |
+| Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`019`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
+| Chat, partners, activity, followers, and similar | JSON files | n/a (Phase B will move chat) |
+
+`npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`.
+
+Runtime JSON files are stored under `backend/data` and are ignored by Git:
 
 ```text
 backend/data/accounts.json
@@ -19,6 +27,20 @@ backend/data/followers.json
 backend/data/activity_log.json
 ```
 
+### Catalog / orders cutover strategy (Phase A)
+
+- **Reads:** If the catalog schema is present, `readProducts` / `readOrders` / `readStoreTypes` load from Postgres. Otherwise they read JSON.
+- **Writes:** Postgres is the source of truth. A failed Postgres write fails the request. After a successful Postgres write, the matching JSON file is updated as a best-effort backup unless `CATALOG_JSON_BACKUP=0`.
+- **Stable IDs:** `products.id`, `product_variants.id`, `order_items.id`, and `orders.id` (`order_group_id`) are application-assigned TEXT keys. JSON string IDs are kept on import and dual-write and are never rewritten when present. Order groups without `orderGroupId` get a deterministic `og_*` from `adminId + accountId + createdAtEpochMs` during JSON import so re-running migrate does not mint a new key. `order_group_id` stays stable across dual-write cutover.
+- **New order groups** that have no prior id receive a server-generated `orderGroupId` (`og_*`). `createdAtEpochMs` is still stored so existing pack/ship/cancel/waybill clients keep working. Those endpoints now accept either `orderGroupId` or `createdAtEpochMs`.
+- **Lifecycle timestamps (Step 5 funnel):** orders/order_items expose `created_at`, `paid_at` (left `toPay` → `toPrepare` / `awaitingWaybill`), `packed_at` (`toShip`), `shipped_at` (`toReceive`), `received_at` (`toReview` / `customerReceivedAtEpochMs`), `cancelled_at`, and `return_requested_at`. Products keep `submitted_at`, `approved_at`, `rejected_at`, plus `listed_at`. Historical JSON that lacks per-stage times may infer `paid_at`/`packed_at` from stage using `created_at`; later explicit stamps are first-write-wins.
+- **Payment + tracking (Step 6 prep):** `orders` / `order_items` have `payment_intent_id`, `payment_checkout_session_id`, `payment_idempotency_key`, `payment_client_key`, `payment_reference`, `payment_provider`, `payment_status`, and `tracking_number`. PayMongo adapters are not wired; unique indexes on intent id and idempotency key are ready for later checkout. Ship may persist `trackingNumber` without requiring it.
+- **Tenant scoping:** list/page product and order reads filter by `admin_id` (seller) or `account_id` (buyer). Public product catalog is approved+active only — never another seller's pending listings. Dual-write upserts are session-gated; Postgres deletes are tenant-scoped when `adminId`/`accountId` is passed so one seller cannot wipe another.
+- **Inventory:** `inventory_movements` is the durable ledger. Product `stockHistory` and order `inventoryMovements` remain in JSONB `extra_data` for API compatibility.
+- **Chat is not migrated in this phase.**
+
+List endpoints `GET /api/products` and `GET /api/orders` accept `limit` and `offset` (optional `cursor` is reserved). When those query params are present, the response includes `pagination: { limit, offset, total, hasMore }`. Omitting them keeps the previous full-list response.
+
 ## ER Diagram
 
 ```mermaid
@@ -26,14 +48,15 @@ erDiagram
   ACCOUNTS ||--o{ PRODUCTS : owns
   ACCOUNTS ||--o{ ORDERS : customer_account
   ACCOUNTS ||--o{ CHAT_THREADS : customer_or_admin
-  ACCOUNTS ||--o{ DELIVERY_PARTNERS : admin_scope
-  ACCOUNTS ||--o{ PAYMENT_PARTNERS : admin_scope
-  ACCOUNTS ||--o{ CATEGORIES : admin_scope
-  PRODUCTS ||--o{ ORDERS : ordered_product
-  PRODUCTS ||--o{ CHAT_THREADS : pinned_product
-  PRODUCTS ||--o{ PRODUCT_REVIEWS : reviewed_by_orders
+  STORE_TYPES ||--o{ CATEGORIES : taxonomy
+  CATEGORIES ||--o{ PRODUCT_CATEGORIES : classifies
+  PRODUCTS ||--o{ PRODUCT_VARIANTS : has
+  PRODUCTS ||--o{ PRODUCT_CATEGORIES : tagged
+  PRODUCTS ||--o{ ORDER_ITEMS : ordered_product
+  PRODUCTS ||--o{ INVENTORY_MOVEMENTS : stock_ledger
+  ORDERS ||--o{ ORDER_ITEMS : contains
+  ORDERS ||--o{ INVENTORY_MOVEMENTS : fulfillment
   STORE_TYPES ||--o{ ACCOUNTS : business_type
-  CATEGORIES ||--o{ PRODUCTS : classifies
   ACCOUNTS ||--o{ FOLLOWERS : seller_followed
   ACCOUNTS ||--o{ ACTIVITY_LOG : actor_or_scope
 ```
@@ -45,20 +68,78 @@ erDiagram
 | `adminId` | Accounts, products, orders, categories, partners, chat, activity | Tenant/store/company/workspace owner. |
 | `accountId` | Orders, followers, chat/customer flows | Customer account identifier. |
 | `productId` | Orders, chat threads, reviews, product actions | Product identifier. |
-| `createdAtEpochMs` | Orders | Order group identifier used by pack/ship/cancel endpoints. |
+| `orderGroupId` | Orders / order items | Server-generated checkout group id (`og_*`). Preferred group key. |
+| `createdAtEpochMs` | Orders | Legacy group timestamp; still accepted by pack/ship/cancel. |
 | `threadId` | Chat threads | Chat conversation identifier. |
 | `deliveryPartnerIds`, `paymentPartnerIds` | Products | Partner IDs allowed for product checkout. |
 | `storeType`, `storeTypeName`, `businessType` | Accounts | Store/business type classification. |
 
 ## Constraints and Indexes
 
-- There are no physical indexes because persistence is file based.
-- Uniqueness is enforced in code for several fields, including admin email, phone number, employee ID, account email, and product barcode within an admin scope.
-- `adminId` is the primary scoping field for multi-tenant reads and writes.
-- Many relationships are soft references. Deleting records may leave historical references in orders, activity logs, or chat unless code explicitly cleans them.
-- JSON write operations rewrite whole files and are not transactional.
+PostgreSQL (when configured):
 
-## Collections
+- Unique: `accounts.email`, seller `admin_id`, employee `(admin_id, employee_id)`, `store_types.name_normalized`, category name per store type or admin workspace, product `(admin_id, barcode)` when barcode is non-empty, `orders.order_group_id`.
+- Indexes include `admin_id`, `account_id`, `product_id`, `approval_status`, `created_at`, and order/product lifecycle times (`paid_at`, `packed_at`, `shipped_at`, `submitted_at`, `approved_at`).
+- Catalog writes run in a SQL transaction per sync. JSON backups are not transactional.
+- `adminId` remains the primary multi-tenant scope. Product/order rows do not FK to `accounts` so JSON imports can run before every seller/buyer exists in Postgres.
+
+JSON fallback (when `DATABASE_URL` is unset):
+
+- Uniqueness is enforced in code (admin email, phone, employee ID, account email, barcode within an admin scope).
+- Whole-file rewrites are not transactional.
+
+## PostgreSQL tables (Phase A catalog / orders)
+
+Applied by `013_store_types.sql` through `019_order_payment_tracking.sql`.
+
+### `store_types`
+
+Global Super Admin business types. API still returns `name`, `categories`, and `categoryDetails`; rows now have stable `id` values (`st_*`).
+
+### `categories`
+
+Taxonomy rows linked to a `store_type_id`, plus workspace rows keyed by `admin_id` for product tags. Products join through `product_categories` rather than name-only.
+
+### `products` / `product_variants` / `product_categories`
+
+Queryable columns cover CRUD and catalog filters (`admin_id`, `approval_status`, prices, stock, barcode, primary `category`). Approval lifecycle columns: `submitted_at`, `approved_at`, `rejected_at`, `approval_updated_at`, `listed_at`. Remaining legacy fields (media galleries, visual-search fingerprints, YOLO, `stockHistory`, reviews) live in `extra_data` JSONB for a lossless round-trip with `products.json`. `id` is the JSON product id.
+
+### `orders` / `order_items`
+
+`orders` is the checkout **group** (`id` = `order_group_id`). `order_items` are the flat line items the API still returns as `orders: [...]`. Each reconstructed line includes `orderGroupId` and `createdAtEpochMs`. Line `id` is the JSON order entry id.
+
+Lifecycle columns on both tables (migration `018`), matching codebase stages `toPay` → `toPrepare`/`awaitingWaybill` → `toShip` → `toReceive` → `toReview` (plus `returnRequest`, `cancelled`):
+
+| Column | Stage / source |
+| --- | --- |
+| `created_at` | Order placed (`toPay`) |
+| `paid_at` | Left unpaid (`toPrepare` or `awaitingWaybill`) |
+| `packed_at` | Pack endpoint (`toShip`); also `inventoryDeductedAtEpochMs` |
+| `shipped_at` | Ship endpoint (`toReceive`) |
+| `received_at` | Customer receipt (`toReview` / `customerReceivedAtEpochMs`) |
+| `cancelled_at` | `cancelled` |
+| `return_requested_at` | `returnRequest` |
+| `waybill_printed_at` | `waybillPrintedAtEpochMs` |
+
+Step 6 payment / tracking columns (migration `019`) live on the **group** (`orders`) and are copied onto line items for the flat API:
+
+| Column | Purpose |
+| --- | --- |
+| `payment_intent_id` | PayMongo Payment Intent id (`pi_…`) |
+| `payment_checkout_session_id` | Checkout Session id (`cs_…`) |
+| `payment_idempotency_key` | First-write-wins idempotency key |
+| `payment_client_key` | Client key for a future SDK attach |
+| `payment_reference` | Merchant reference |
+| `payment_provider` / `payment_status` | e.g. `paymongo` |
+| `tracking_number` | Optional ship/pack tracking no. |
+
+### `inventory_movements`
+
+Ledger of deduct / restore / restock / adjust events from order fulfillment and product `stockHistory`. Not a substitute for on-hand `products.stock`; it is the audit trail.
+
+## JSON document shapes (API + fallback)
+
+The JSON collections below describe the document shape the API still speaks. When Postgres is enabled, modules under `backend/services/postgres*Store.js` map these documents to tables and back.
 
 ### `accounts.json`
 
@@ -76,7 +157,7 @@ Stores admin companies, employees, and customer app users in one collection.
 | `firstName`, `middleName`, `lastName`, `suffix` | string | Person name fields. |
 | `email` | string | Login/contact email. |
 | `countryCode`, `mobileNumber` | string | Contact number fields. |
-| `password` | string | Current code stores passwords directly. This should be hashed before production. |
+| `password` | string | bcrypt hash only. Plaintext is rejected on write. |
 | `profileImageUrl` | string | Uploaded profile/logo image. |
 | `accessPermissions` | array | Employee/admin module permissions. |
 | `accessPermissionGrantedAt` | object | Permission grant timestamps keyed by permission ID. |
@@ -97,14 +178,14 @@ Foreign keys/soft references: `adminId` references an admin account/workspace. S
 
 ### `products.json`
 
-Stores catalog products submitted by admins.
+Stores catalog products submitted by admins. Postgres table `products` plus `product_variants` / `product_categories` when `DATABASE_URL` is set.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | string | Primary identifier. |
+| `id` | string | Primary identifier. Kept as-is in Postgres (`products.id`). |
 | `adminId` | string | Owner workspace. |
 | `approvalStatus` | string | Pending/approved state for super admin review. |
-| `submittedAt`, `approvedAt`, `approvedBy`, `approvalUpdatedAt` | string | Approval workflow metadata. |
+| `submittedAt`, `approvedAt`, `approvedBy`, `approvalUpdatedAt`, `rejectedAt`, `listedAt` | string | Approval / listing lifecycle; first-class Postgres columns. |
 | `name`, `description` | string | Product content. |
 | `isActive` | boolean | Visibility/availability toggle. |
 | `originalPrice`, `salesPrice` | number | Pricing. |
@@ -130,22 +211,26 @@ Stock history fields: `id`, `stock`, `addedQuantity`, `deductedQuantity`, `expir
 
 Primary key: `id`.
 
-Foreign keys/soft references: `adminId` -> accounts, partner IDs -> partner collections, categories by name.
+Foreign keys/soft references: `adminId` -> accounts, partner IDs -> partner collections, `categoryIds` -> `categories.id` (names still returned for compatibility).
 
 ### `orders.json`
 
-Stores customer order entries. Multiple entries may share `createdAtEpochMs` as an order group.
+Stores customer order line items. Multiple lines share `orderGroupId` (server-generated) and `createdAtEpochMs` (legacy). Postgres uses `orders` (group) + `order_items` (lines).
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | string | Order line identifier. |
+| `id` | string | Order line identifier. Stable Postgres `order_items.id`. |
+| `orderGroupId` | string | Checkout group id (`og_*`). Stable Postgres `orders.id`. |
 | `adminId` | string | Store/workspace owner. |
 | `accountId` | string | Customer account. |
 | `productId`, `productName`, `productImageUrl` | string | Purchased product snapshot. |
 | `variantId`, `variantName`, `addOns` | string/array | Variant/add-on snapshot. |
 | `quantity`, `unitPrice` | number | Line item quantity/pricing. |
-| `stage` | string | Order stage such as toPay, toPrepare, toShip, toReceive, completed, or cancelled. |
-| `createdAtEpochMs`, `createdAt` | number/string | Group timestamp and timestamp text. |
+| `stage` | string | `toPay`, `awaitingWaybill`, `toPrepare`, `toShip`, `toReceive`, `toReview`, `returnRequest`, or `cancelled`. |
+| `createdAtEpochMs`, `createdAt` | number/string | Placed-at timestamp. |
+| `paidAt`, `packedAt`, `shippedAt`, `receivedAt`, `cancelledAt`, `returnRequestedAt`, `waybillPrintedAt` | string | Funnel transition times (ISO). Epoch-ms twins also stored. |
+| `paymentIntentId`, `paymentCheckoutSessionId`, `paymentIdempotencyKey`, `paymentClientKey`, `paymentReference`, `paymentProvider`, `paymentStatus` | string | Step 6 PayMongo prep columns; adapters not wired. |
+| `trackingNumber` | string | Optional shipment tracking; also accepted as `trackingNo`. |
 | `grandTotalAmount`, `amountToPayAmount`, `remainingBalanceAmount`, `shippingFeeAmount` | number | Payment amount breakdown. |
 | `paymentOptionLabel`, `paymentPartnerName`, `paymentPartnerImageUrl` | string | Payment selection snapshot. |
 | `deliveryPartnerName`, `deliveryPartnerImageUrl` | string | Delivery selection snapshot. |
@@ -181,7 +266,7 @@ Foreign keys/soft references: Products reference categories by name.
 
 ### `store_types.json`
 
-Stores global Store Type/Business Type definitions managed by super admin.
+Stores global Store Type/Business Type definitions managed by super admin. Postgres table `store_types`; nested categories are rows in `categories`.
 
 | Field | Type | Notes |
 | --- | --- | --- |

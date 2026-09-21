@@ -21,6 +21,8 @@
     "passwords:migrate-json": "node scripts/migrate-json-passwords-to-bcrypt.js",
     "db:migrate": "node db/migrate.js",
     "db:migrate-users": "node scripts/migrate-accounts-json-to-postgres.js",
+    "db:migrate-catalog": "node scripts/migrate-catalog-json-to-postgres.js",
+    "test:catalog": "node --test test/catalogHelpers.test.js test/postgresCatalog.test.js",
     "gmail:connect": "node scripts/gmail-oauth-setup.js",
     "gmail:test": "node scripts/test-gmail-otp.js"
   },
