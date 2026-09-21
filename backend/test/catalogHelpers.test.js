@@ -22,6 +22,9 @@ const {
   movementsFromProductStockHistory,
   stableStoreTypeId,
   stableOrderGroupId,
+  stableVariantId,
+  stableOrderItemId,
+  resolveOrderLifecycleTimestamps,
   isCatalogJsonBackupEnabled,
 } = require("../db/catalogHelpers");
 
@@ -194,6 +197,90 @@ test("order group mapping reconstructs line items with orderGroupId", () => {
   assert.equal(restored.productId, "prd-1");
   assert.equal(restored.clientName, "Ada");
   assert.equal(restored.createdAtEpochMs, 1710000000000);
+  assert.ok(itemRow.paid_at, "toPrepare implies paid_at");
+  assert.equal(itemRow.packed_at, null);
+  assert.equal(itemRow.id, "ord-1");
+});
+
+test("variant ids stay stable when JSON omits them", () => {
+  const first = variantToRow({ name: "30ml", originalPrice: 10 }, "prd-1", 0);
+  const second = variantToRow({ name: "30ml", originalPrice: 10 }, "prd-1", 0);
+  assert.equal(first.id, second.id);
+  assert.equal(first.id, stableVariantId({ productId: "prd-1", name: "30ml", sortOrder: 0 }));
+});
+
+test("order line ids keep JSON values and hash only when missing", () => {
+  const kept = orderItemToRow({
+    id: "ord-json-1",
+    productId: "prd-1",
+    variantId: "var-1",
+    stage: "toPay",
+  }, "og_abc", 0);
+  assert.equal(kept.id, "ord-json-1");
+
+  const minted = orderItemToRow({
+    productId: "prd-1",
+    variantId: "var-1",
+    stage: "toPay",
+  }, "og_abc", 0);
+  const again = orderItemToRow({
+    productId: "prd-1",
+    variantId: "var-1",
+    stage: "toPay",
+  }, "og_abc", 0);
+  assert.equal(minted.id, again.id);
+  assert.equal(
+    minted.id,
+    stableOrderItemId({ orderGroupId: "og_abc", productId: "prd-1", variantId: "var-1", index: 0 }),
+  );
+});
+
+test("order lifecycle timestamps follow real stages", () => {
+  const unpaid = resolveOrderLifecycleTimestamps({
+    stage: "toPay",
+    createdAtEpochMs: 1710000000000,
+  });
+  assert.equal(unpaid.paidAt, null);
+  assert.equal(unpaid.packedAt, null);
+
+  const paid = resolveOrderLifecycleTimestamps({
+    stage: "toPrepare",
+    createdAtEpochMs: 1710000000000,
+  });
+  assert.ok(paid.paidAt);
+  assert.equal(paid.packedAt, null);
+
+  const packed = resolveOrderLifecycleTimestamps({
+    stage: "toShip",
+    packedAtEpochMs: 1710000005000,
+    createdAtEpochMs: 1710000000000,
+  });
+  assert.equal(packed.packedAt.getTime(), 1710000005000);
+  assert.ok(packed.paidAt);
+
+  const shipped = resolveOrderLifecycleTimestamps({
+    stage: "toReceive",
+    shippedAt: "2026-01-02T00:00:00.000Z",
+    createdAtEpochMs: 1710000000000,
+  });
+  assert.equal(shipped.shippedAt.toISOString(), "2026-01-02T00:00:00.000Z");
+
+  const cancelled = resolveOrderLifecycleTimestamps({
+    stage: "cancelled",
+    createdAtEpochMs: 1710000000000,
+    cancelRequestResolvedAtEpochMs: 1710000008000,
+  });
+  assert.equal(cancelled.cancelledAt.getTime(), 1710000008000);
+  assert.equal(cancelled.paidAt, null);
+
+  const zeroEpoch = resolveOrderLifecycleTimestamps({
+    stage: "toPay",
+    createdAtEpochMs: 1710000000000,
+    paidAtEpochMs: 0,
+    packedAtEpochMs: 0,
+  });
+  assert.equal(zeroEpoch.paidAt, null);
+  assert.equal(zeroEpoch.packedAt, null);
 });
 
 test("inventory movements are derived from order deductions and stock history", () => {

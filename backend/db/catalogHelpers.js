@@ -83,6 +83,14 @@ function stableOrderGroupId({ adminId = "", accountId = "", createdAtEpochMs = 0
   return `${ORDER_GROUP_PREFIX}${sha16(`${adminId}|${accountId}|${createdAtEpochMs}`)}`;
 }
 
+function stableVariantId({ productId = "", name = "", sortOrder = 0 } = {}) {
+  return `var_${sha16(`${productId}|${normalizeNameKey(name)}|${sortOrder}`)}`;
+}
+
+function stableOrderItemId({ orderGroupId = "", productId = "", variantId = "", index = 0 } = {}) {
+  return `oi_${sha16(`${orderGroupId}|${productId}|${variantId}|${index}`)}`;
+}
+
 function stableMovementId(parts) {
   return `im_${sha16(asArray(parts).join("|"))}`;
 }
@@ -269,7 +277,11 @@ function groupOrderEntries(entries) {
   }
   return [...groups.values()].map((group) => ({
     ...group,
-    orderGroupId: group.orderGroupId || newOrderGroupId(),
+    orderGroupId: group.orderGroupId || stableOrderGroupId({
+      adminId: group.adminId,
+      accountId: group.accountId,
+      createdAtEpochMs: group.createdAtEpochMs,
+    }),
   }));
 }
 
@@ -298,6 +310,7 @@ const PRODUCT_COLUMN_KEYS = new Set([
   "rejectedBy",
   "rejectionReason",
   "approvalUpdatedAt",
+  "listedAt",
   "createdAt",
   "updatedAt",
   "variants",
@@ -379,6 +392,15 @@ function productToRow(product) {
     rejected_by: String(source.rejectedBy ?? "").trim(),
     rejection_reason: String(source.rejectionReason ?? "").trim(),
     approval_updated_at: toTimestamp(source.approvalUpdatedAt),
+    listed_at: toTimestamp(
+      source.listedAt
+      ?? source.listingInsightListedAt
+      ?? source.firstListingInsightListedAt
+      ?? source.firstListedAt
+      ?? (String(source.approvalStatus ?? "").trim().toLowerCase() === "approved"
+        ? source.approvedAt
+        : ""),
+    ),
     extra_data: omitKeys(source, PRODUCT_COLUMN_KEYS),
     created_at: toTimestamp(source.createdAt) || new Date(),
     updated_at: toTimestamp(source.updatedAt) || new Date(),
@@ -387,7 +409,11 @@ function productToRow(product) {
 
 function variantToRow(variant, productId, sortOrder) {
   const source = asObject(variant);
-  const id = String(source.id ?? "").trim() || newId("var");
+  const id = String(source.id ?? "").trim() || stableVariantId({
+    productId,
+    name: source.name,
+    sortOrder,
+  });
   const salesPriceRaw = source.salesPrice;
   const salesPrice =
     salesPriceRaw == null || salesPriceRaw === ""
@@ -465,6 +491,7 @@ function rowToProduct(row, variants = [], categoryNames = [], categoryIds = []) 
     rejectedBy: row.rejected_by || extra.rejectedBy || "",
     rejectionReason: row.rejection_reason || extra.rejectionReason || "",
     approvalUpdatedAt: toIso(row.approval_updated_at) || extra.approvalUpdatedAt || "",
+    listedAt: toIso(row.listed_at) || extra.listedAt || extra.listingInsightListedAt || "",
     createdAt: toIso(row.created_at) || extra.createdAt || "",
     updatedAt: toIso(row.updated_at) || extra.updatedAt || "",
     variants,
@@ -601,6 +628,156 @@ function workspaceCategoryRow(adminId, name) {
   };
 }
 
+const PAID_STAGES = new Set([
+  "awaitingWaybill",
+  "toPrepare",
+  "toShip",
+  "toReceive",
+  "toReview",
+  "returnRequest",
+]);
+const PACKED_STAGES = new Set(["toShip", "toReceive", "toReview", "returnRequest"]);
+const SHIPPED_STAGES = new Set(["toReceive", "toReview", "returnRequest"]);
+const RECEIVED_STAGES = new Set(["toReview", "returnRequest"]);
+
+function firstTimestamp(values) {
+  for (const value of asArray(values)) {
+    if (value == null || value === "" || value === false) {
+      continue;
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime()) && value.getTime() > 0) {
+      return value;
+    }
+    const fromEpoch = Math.trunc(toNumber(value, 0));
+    if (fromEpoch > 1_000_000_000_000) {
+      return new Date(fromEpoch);
+    }
+    if (fromEpoch > 1_000_000_000 && fromEpoch < 1_000_000_000_000) {
+      return new Date(fromEpoch * 1000);
+    }
+    if (typeof value === "number" || (typeof value === "string" && /^\d+$/.test(value.trim()))) {
+      continue;
+    }
+    const parsed = toTimestamp(value);
+    if (parsed && parsed.getTime() > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function earliestTimestamp(values) {
+  const dates = asArray(values)
+    .map((value) => (value instanceof Date ? value : toTimestamp(value)))
+    .filter(Boolean);
+  if (!dates.length) {
+    return null;
+  }
+  return new Date(Math.min(...dates.map((date) => date.getTime())));
+}
+
+function resolveOrderLifecycleTimestamps(entry) {
+  const source = asObject(entry);
+  const stage = String(source.stage ?? source.status ?? "toPay").trim() || "toPay";
+  const createdAt = firstTimestamp([
+    source.createdAt,
+    source.createdAtEpochMs,
+  ]) || new Date();
+  const inferredPaid = PAID_STAGES.has(stage)
+    || (stage === "cancelled" && (
+      PACKED_STAGES.has(String(source.previousStage ?? "").trim())
+      || source.inventoryDeducted === true
+      || Math.trunc(toNumber(source.inventoryDeductedAtEpochMs, 0)) > 0
+      || source.packedAt
+      || source.paidAt
+    ));
+  const inferredPacked = PACKED_STAGES.has(stage)
+    || source.inventoryDeducted === true
+    || Math.trunc(toNumber(source.inventoryDeductedAtEpochMs, 0)) > 0
+    || Boolean(source.packedAt);
+  const inferredShipped = SHIPPED_STAGES.has(stage) || Boolean(source.shippedAt);
+  const inferredReceived = RECEIVED_STAGES.has(stage)
+    || Math.trunc(toNumber(source.customerReceivedAtEpochMs, 0)) > 0
+    || Boolean(source.receivedAt);
+  const inferredCancelled = stage === "cancelled";
+  const inferredReturn = stage === "returnRequest";
+
+  const paidAt = firstTimestamp([
+    source.paidAt,
+    source.paidAtEpochMs,
+    inferredPaid ? createdAt : null,
+  ]);
+  const packedAt = firstTimestamp([
+    source.packedAt,
+    source.packedAtEpochMs,
+    source.inventoryDeductedAtEpochMs,
+    inferredPacked ? createdAt : null,
+  ]);
+  const shippedAt = firstTimestamp([
+    source.shippedAt,
+    source.shippedAtEpochMs,
+    inferredShipped ? createdAt : null,
+  ]);
+  const receivedAt = firstTimestamp([
+    source.receivedAt,
+    source.receivedAtEpochMs,
+    source.customerReceivedAtEpochMs,
+    source.orderReceivedAtEpochMs,
+    inferredReceived ? createdAt : null,
+  ]);
+  const cancelledAt = firstTimestamp([
+    source.cancelledAt,
+    source.canceledAt,
+    source.cancelledAtEpochMs,
+    inferredCancelled ? (source.cancelRequestResolvedAtEpochMs || createdAt) : null,
+  ]);
+  const returnRequestedAt = firstTimestamp([
+    source.returnRequestedAt,
+    source.returnRequestedAtEpochMs,
+    inferredReturn ? createdAt : null,
+  ]);
+  const waybillPrintedAt = firstTimestamp([
+    source.waybillPrintedAt,
+    source.waybillPrintedAtEpochMs,
+  ]);
+
+  return {
+    createdAt,
+    paidAt,
+    packedAt,
+    shippedAt,
+    receivedAt,
+    cancelledAt,
+    returnRequestedAt,
+    waybillPrintedAt,
+  };
+}
+
+function lifecycleFieldsForApi(timestamps) {
+  const createdAt = timestamps.createdAt;
+  const createdAtEpochMs = createdAt ? createdAt.getTime() : 0;
+  const asIso = (value) => toIso(value) || "";
+  const asEpoch = (value) => (value ? value.getTime() : 0);
+  return {
+    createdAt: asIso(createdAt),
+    createdAtEpochMs,
+    paidAt: asIso(timestamps.paidAt),
+    paidAtEpochMs: asEpoch(timestamps.paidAt),
+    packedAt: asIso(timestamps.packedAt),
+    packedAtEpochMs: asEpoch(timestamps.packedAt),
+    shippedAt: asIso(timestamps.shippedAt),
+    shippedAtEpochMs: asEpoch(timestamps.shippedAt),
+    receivedAt: asIso(timestamps.receivedAt),
+    receivedAtEpochMs: asEpoch(timestamps.receivedAt),
+    cancelledAt: asIso(timestamps.cancelledAt),
+    cancelledAtEpochMs: asEpoch(timestamps.cancelledAt),
+    returnRequestedAt: asIso(timestamps.returnRequestedAt),
+    returnRequestedAtEpochMs: asEpoch(timestamps.returnRequestedAt),
+    waybillPrintedAt: asIso(timestamps.waybillPrintedAt),
+    waybillPrintedAtEpochMs: asEpoch(timestamps.waybillPrintedAt),
+  };
+}
+
 const ORDER_ITEM_COLUMN_KEYS = new Set([
   "id",
   "orderGroupId",
@@ -615,12 +792,33 @@ const ORDER_ITEM_COLUMN_KEYS = new Set([
   "createdAtEpochMs",
   "createdAt",
   "updatedAt",
+  "paidAt",
+  "paidAtEpochMs",
+  "packedAt",
+  "packedAtEpochMs",
+  "shippedAt",
+  "shippedAtEpochMs",
+  "receivedAt",
+  "receivedAtEpochMs",
+  "cancelledAt",
+  "cancelledAtEpochMs",
+  "returnRequestedAt",
+  "returnRequestedAtEpochMs",
+  "waybillPrintedAt",
+  "waybillPrintedAtEpochMs",
 ]);
 
-function orderItemToRow(entry, orderGroupId) {
+function orderItemToRow(entry, orderGroupId, index = 0) {
   const source = asObject(entry);
+  const lifecycle = resolveOrderLifecycleTimestamps(source);
+  const id = String(source.id ?? "").trim() || stableOrderItemId({
+    orderGroupId,
+    productId: source.productId,
+    variantId: source.variantId,
+    index,
+  });
   return {
-    id: String(source.id ?? "").trim(),
+    id,
     order_group_id: orderGroupId,
     admin_id: String(source.adminId ?? "").trim(),
     account_id: String(source.accountId ?? "").trim(),
@@ -630,10 +828,15 @@ function orderItemToRow(entry, orderGroupId) {
     unit_price: toNumber(source.unitPrice, 0),
     stage: String(source.stage ?? source.status ?? "toPay").trim() || "toPay",
     created_at_epoch_ms: Math.trunc(toNumber(source.createdAtEpochMs, 0)),
+    paid_at: lifecycle.paidAt,
+    packed_at: lifecycle.packedAt,
+    shipped_at: lifecycle.shippedAt,
+    received_at: lifecycle.receivedAt,
+    cancelled_at: lifecycle.cancelledAt,
+    return_requested_at: lifecycle.returnRequestedAt,
+    waybill_printed_at: lifecycle.waybillPrintedAt,
     extra_data: omitKeys({ ...source, orderGroupId }, ORDER_ITEM_COLUMN_KEYS),
-    created_at: toTimestamp(source.createdAt) || new Date(
-      Math.trunc(toNumber(source.createdAtEpochMs, Date.now())),
-    ),
+    created_at: lifecycle.createdAt,
     updated_at: toTimestamp(source.updatedAt) || new Date(),
   };
 }
@@ -642,6 +845,26 @@ function orderGroupToRow(group) {
   const items = asArray(group.items);
   const primary = items[0] || {};
   const stages = items.map((item) => String(item?.stage ?? "").trim()).filter(Boolean);
+  const itemLifecycles = items.map((item) => resolveOrderLifecycleTimestamps(item));
+  const groupLifecycle = resolveOrderLifecycleTimestamps({
+    ...primary,
+    stage: stages.includes("cancelled") && stages.every((stage) => stage === "cancelled")
+      ? "cancelled"
+      : stages[0] || primary.stage,
+    paidAt: earliestTimestamp(itemLifecycles.map((item) => item.paidAt)),
+    packedAt: earliestTimestamp(itemLifecycles.map((item) => item.packedAt)),
+    shippedAt: earliestTimestamp(itemLifecycles.map((item) => item.shippedAt)),
+    receivedAt: earliestTimestamp(itemLifecycles.map((item) => item.receivedAt)),
+    cancelledAt: earliestTimestamp(itemLifecycles.map((item) => item.cancelledAt)),
+    returnRequestedAt: earliestTimestamp(itemLifecycles.map((item) => item.returnRequestedAt)),
+    waybillPrintedAt: earliestTimestamp(itemLifecycles.map((item) => item.waybillPrintedAt)),
+    createdAt: earliestTimestamp([
+      ...itemLifecycles.map((item) => item.createdAt),
+      group.createdAtEpochMs,
+      primary.createdAt,
+    ]),
+    createdAtEpochMs: group.createdAtEpochMs ?? primary.createdAtEpochMs,
+  });
   return {
     id: group.orderGroupId,
     order_group_id: group.orderGroupId,
@@ -651,12 +874,17 @@ function orderGroupToRow(group) {
       toNumber(group.createdAtEpochMs ?? primary.createdAtEpochMs, 0),
     ),
     stage: stages[0] || "toPay",
+    paid_at: groupLifecycle.paidAt,
+    packed_at: groupLifecycle.packedAt,
+    shipped_at: groupLifecycle.shippedAt,
+    received_at: groupLifecycle.receivedAt,
+    cancelled_at: groupLifecycle.cancelledAt,
+    return_requested_at: groupLifecycle.returnRequestedAt,
+    waybill_printed_at: groupLifecycle.waybillPrintedAt,
     extra_data: {
       itemIds: items.map((item) => String(item?.id ?? "").trim()).filter(Boolean),
     },
-    created_at: toTimestamp(primary.createdAt) || new Date(
-      Math.trunc(toNumber(primary.createdAtEpochMs, Date.now())),
-    ),
+    created_at: groupLifecycle.createdAt,
     updated_at: new Date(),
   };
 }
@@ -668,6 +896,18 @@ function rowToOrderEntry(itemRow, groupRow) {
     itemRow.created_at_epoch_ms,
     extra.createdAtEpochMs || 0,
   );
+  const lifecycle = lifecycleFieldsForApi({
+    createdAt: toTimestamp(itemRow.created_at) || firstTimestamp([createdAtEpochMs]),
+    paidAt: toTimestamp(itemRow.paid_at) || toTimestamp(groupRow?.paid_at),
+    packedAt: toTimestamp(itemRow.packed_at) || toTimestamp(groupRow?.packed_at),
+    shippedAt: toTimestamp(itemRow.shipped_at) || toTimestamp(groupRow?.shipped_at),
+    receivedAt: toTimestamp(itemRow.received_at) || toTimestamp(groupRow?.received_at),
+    cancelledAt: toTimestamp(itemRow.cancelled_at) || toTimestamp(groupRow?.cancelled_at),
+    returnRequestedAt: toTimestamp(itemRow.return_requested_at)
+      || toTimestamp(groupRow?.return_requested_at),
+    waybillPrintedAt: toTimestamp(itemRow.waybill_printed_at)
+      || toTimestamp(groupRow?.waybill_printed_at),
+  });
 
   return {
     ...extra,
@@ -680,10 +920,9 @@ function rowToOrderEntry(itemRow, groupRow) {
     quantity: toInteger(itemRow.quantity, extra.quantity || 1),
     unitPrice: toNumber(itemRow.unit_price, extra.unitPrice || 0),
     stage: itemRow.stage || extra.stage || extra.status || "toPay",
-    createdAtEpochMs,
-    createdAt: toIso(itemRow.created_at) || extra.createdAt || (
-      createdAtEpochMs > 0 ? new Date(createdAtEpochMs).toISOString() : ""
-    ),
+    ...lifecycle,
+    customerReceivedAtEpochMs: lifecycle.receivedAtEpochMs
+      || toInteger(extra.customerReceivedAtEpochMs, 0),
     updatedAt: toIso(itemRow.updated_at) || extra.updatedAt || "",
   };
 }
@@ -812,7 +1051,11 @@ module.exports = {
   stableStoreTypeId,
   stableCategoryId,
   stableOrderGroupId,
+  stableVariantId,
+  stableOrderItemId,
   stableMovementId,
+  resolveOrderLifecycleTimestamps,
+  lifecycleFieldsForApi,
   isCatalogJsonBackupEnabled,
   parsePagination,
   paginateArray,

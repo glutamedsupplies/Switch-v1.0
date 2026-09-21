@@ -167,6 +167,8 @@ curl -i http://127.0.0.1:8080/api/orders \
 
 ### Orders
 
+Order line objects include stable `id` / `orderGroupId` plus funnel timestamps (`createdAt`, `paidAt`, `packedAt`, `shippedAt`, `cancelledAt`) that map to first-class Postgres columns.
+
 | Method | URL | Parameters | Request Body | Response | Auth | Example |
 | --- | --- | --- | --- | --- | --- | --- |
 | `GET` | `/api/orders` | Optional `limit`/`offset`; legacy identity hints optional | None | `{ "orders": [...] }` plus `pagination` when `limit`/`offset` are set | Signed session; buyer sees own account, seller/employee sees own tenant | `GET /api/orders?limit=50&offset=0` |

@@ -200,13 +200,13 @@ async function upsertProductRecord(client, product) {
       original_price, sales_price, stock, sold, barcode, category,
       rating, comment_count, image_url, submitted_at, approved_at,
       approved_by, rejected_at, rejected_by, rejection_reason,
-      approval_updated_at, extra_data, created_at, updated_at
+      approval_updated_at, listed_at, extra_data, created_at, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10, $11, $12,
       $13, $14, $15, $16, $17,
       $18, $19, $20, $21,
-      $22, $23::jsonb, $24, NOW()
+      $22, $23, $24::jsonb, $25, NOW()
     )
     ON CONFLICT (id) DO UPDATE SET
       admin_id = EXCLUDED.admin_id,
@@ -223,13 +223,14 @@ async function upsertProductRecord(client, product) {
       rating = EXCLUDED.rating,
       comment_count = EXCLUDED.comment_count,
       image_url = EXCLUDED.image_url,
-      submitted_at = EXCLUDED.submitted_at,
+      submitted_at = COALESCE(products.submitted_at, EXCLUDED.submitted_at),
       approved_at = EXCLUDED.approved_at,
       approved_by = EXCLUDED.approved_by,
       rejected_at = EXCLUDED.rejected_at,
       rejected_by = EXCLUDED.rejected_by,
       rejection_reason = EXCLUDED.rejection_reason,
       approval_updated_at = EXCLUDED.approval_updated_at,
+      listed_at = COALESCE(products.listed_at, EXCLUDED.listed_at),
       extra_data = EXCLUDED.extra_data,
       updated_at = NOW()
     `,
@@ -256,6 +257,7 @@ async function upsertProductRecord(client, product) {
       row.rejected_by,
       row.rejection_reason,
       row.approval_updated_at,
+      row.listed_at,
       JSON.stringify(row.extra_data || {}),
       row.created_at,
     ],

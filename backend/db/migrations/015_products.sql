@@ -2,6 +2,9 @@
 -- Queryable columns cover CRUD + catalog filters; remaining legacy JSON
 -- (media, visual-search fingerprints, reviews, stockHistory, YOLO, etc.)
 -- lives in extra_data for a lossless round-trip with products.json.
+--
+-- Stable IDs: products.id and product_variants.id keep the existing JSON
+-- string identifiers across migrate + dual-write. Do not rewrite those keys.
 
 CREATE TABLE IF NOT EXISTS products (
   id                    TEXT PRIMARY KEY,

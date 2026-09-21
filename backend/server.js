@@ -125,6 +125,8 @@ const {
   paginateArray,
   buildPaginationMeta,
   isCatalogJsonBackupEnabled,
+  resolveOrderLifecycleTimestamps,
+  lifecycleFieldsForApi,
 } = require("./db/catalogHelpers");
 const { isPostgresConfigured } = require("./db/pool");
 let biometricFirmwareCompile = null;
@@ -5232,8 +5234,18 @@ function normalizePendingOrderStage(entry) {
       : remainingBalanceAmount;
 
   const nextStage = nextAmountToPay > 0.009 ? "toPay" : "toPrepare";
+  const paidNow = currentStage === "toPay" && nextStage !== "toPay";
+  const existingPaidAtEpochMs = Math.trunc(parseFiniteNumber(entry?.paidAtEpochMs, 0));
+  const existingPaidAt = String(entry?.paidAt ?? "").trim();
+  const paymentStamps = {};
+  if (paidNow && !existingPaidAt && existingPaidAtEpochMs <= 0) {
+    const paidAtEpochMs = Date.now();
+    paymentStamps.paidAt = new Date(paidAtEpochMs).toISOString();
+    paymentStamps.paidAtEpochMs = paidAtEpochMs;
+  }
   return {
     ...entry,
+    ...paymentStamps,
     stage: nextStage,
     status: nextStage,
     amountToPayAmount: nextAmountToPay,
@@ -5781,6 +5793,17 @@ function normalizeStoredOrderEntry(input) {
     status: normalizedStage,
     createdAt:
       createdAtEpochMs > 0 ? new Date(createdAtEpochMs).toISOString() : "",
+    ...lifecycleFieldsForApi(resolveOrderLifecycleTimestamps({
+      ...input,
+      stage: normalizedStage,
+      createdAtEpochMs,
+      createdAt: createdAtEpochMs > 0 ? new Date(createdAtEpochMs).toISOString() : "",
+      customerReceivedAtEpochMs,
+      waybillPrintedAtEpochMs,
+      inventoryDeducted,
+      inventoryDeductedAtEpochMs,
+      cancelRequestResolvedAtEpochMs,
+    })),
   }));
 }
 
@@ -29650,6 +29673,8 @@ async function handlePackOrderGroupApi(request, response, createdAtEpochMs) {
       return normalizeStoredOrderEntry({
         ...entry,
         stage: "toShip",
+        packedAt: new Date(packedAtEpochMs).toISOString(),
+        packedAtEpochMs,
         inventoryDeducted: deductInventory || entry?.inventoryDeducted === true,
         inventoryDeductedAtEpochMs:
           deductInventory
@@ -29730,10 +29755,12 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
       }
 
       didUpdateOrderGroup = true;
-      return {
+      return normalizeStoredOrderEntry({
         ...entry,
         stage: "toReceive",
-      };
+        shippedAt: new Date().toISOString(),
+        shippedAtEpochMs: Date.now(),
+      });
     });
 
     if (!didUpdateOrderGroup) {
@@ -29863,6 +29890,8 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
       return normalizeStoredOrderEntry({
         ...entry,
         stage: "cancelled",
+        cancelledAt: new Date(resolvedAtEpochMs).toISOString(),
+        cancelledAtEpochMs: resolvedAtEpochMs,
         cancelRequestStatus: "accepted",
         cancelRequestResolvedAtEpochMs: resolvedAtEpochMs,
         inventoryDeducted: false,
@@ -29975,6 +30004,8 @@ async function handleCancelOrderRequestDecisionApi(
         return normalizeStoredOrderEntry({
           ...entry,
           stage: "cancelled",
+          cancelledAt: new Date(resolvedAtEpochMs).toISOString(),
+          cancelledAtEpochMs: resolvedAtEpochMs,
           cancelRequestStatus: "accepted",
           cancelRequestResolvedAtEpochMs: resolvedAtEpochMs,
           inventoryDeducted: false,

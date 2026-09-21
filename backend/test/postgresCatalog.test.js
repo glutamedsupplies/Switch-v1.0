@@ -64,6 +64,28 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
   await runMigrations();
   assert.equal(await isCatalogPostgresReady(), true);
 
+  const lifecycleCols = await query(`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND (
+        (
+          table_name IN ('orders', 'order_items')
+          AND column_name IN ('paid_at', 'packed_at', 'shipped_at', 'cancelled_at')
+        )
+        OR (
+          table_name = 'products'
+          AND column_name IN ('submitted_at', 'approved_at', 'listed_at')
+        )
+      )
+  `);
+  const colNames = new Set(
+    lifecycleCols.rows.map((row) => `${row.table_name}.${row.column_name}`),
+  );
+  assert.ok(colNames.has("orders.paid_at"));
+  assert.ok(colNames.has("order_items.packed_at"));
+  assert.ok(colNames.has("products.listed_at"));
+
   const suffix = `t${Date.now()}`;
   const adminId = `admin_${suffix}`;
   const accountId = `acct_${suffix}`;
@@ -148,8 +170,36 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
   assert.equal(products.length, 1);
   assert.equal(products[0].adminId, adminId);
   assert.equal(Number(products[0].salesPrice), 150);
-  assert.equal(products[0].variants[0].name, "Default");
-  assert.ok(Array.isArray(products[0].categoryIds) && products[0].categoryIds.length >= 1);
+  assert.equal(products[0].id, productId);
+  assert.equal(products[0].variants[0].id, `var_${suffix}`);
+
+  await syncProductsToPostgres(
+    [{
+      id: productId,
+      adminId,
+      name: "Test serum",
+      description: "PG catalog test",
+      approvalStatus: "approved",
+      approvedAt: "2026-01-01T00:00:00.000Z",
+      submittedAt: "2025-12-31T00:00:00.000Z",
+      isActive: true,
+      originalPrice: 200,
+      salesPrice: 150,
+      stock: 9,
+      sold: 1,
+      barcode: `bc-${suffix}`,
+      category: "Skincare",
+      categories: ["Skincare"],
+      variants: [{ id: `var_${suffix}`, name: "Default", originalPrice: 200, stock: 9 }],
+    }],
+    { deleteMissing: false },
+  );
+  const resyncedProduct = (await listProductsFromPostgres()).find((product) => product.id === productId);
+  assert.equal(resyncedProduct.id, productId);
+  assert.equal(resyncedProduct.variants[0].id, `var_${suffix}`);
+  assert.ok(resyncedProduct.submittedAt);
+  assert.ok(resyncedProduct.approvedAt);
+  assert.ok(resyncedProduct.listedAt);
 
   const page = await listProductsPageFromPostgres({
     adminId,
@@ -175,11 +225,6 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
         unitPrice: 150,
         stage: "toPrepare",
         createdAtEpochMs,
-        inventoryDeducted: true,
-        inventoryDeductedAtEpochMs: createdAtEpochMs,
-        inventoryMovements: [
-          { productId, quantity: 1, role: "main", variantId: `var_${suffix}` },
-        ],
       },
     ],
     { deleteMissing: false },
@@ -189,8 +234,35 @@ test("Postgres catalog stores products, orders, and inventory", { skip }, async 
 
   const orders = (await listOrdersFromPostgres()).filter((entry) => entry.id === `ord_${suffix}`);
   assert.equal(orders.length, 1);
+  assert.equal(orders[0].id, `ord_${suffix}`);
   assert.equal(orders[0].orderGroupId, syncedOrders[0].orderGroupId);
-  assert.equal(orders[0].accountId, accountId);
+  assert.ok(orders[0].paidAt, "toPrepare should stamp paid_at");
+  assert.equal(orders[0].packedAt || "", "");
+
+  const resyncedOrders = await syncOrdersToPostgres(
+    [{
+      id: `ord_${suffix}`,
+      adminId,
+      accountId,
+      productId,
+      productName: "Test serum",
+      quantity: 1,
+      unitPrice: 150,
+      stage: "toPrepare",
+      createdAtEpochMs,
+    }],
+    { deleteMissing: false, mode: "stable" },
+  );
+  assert.equal(resyncedOrders[0].id, `ord_${suffix}`);
+  assert.equal(resyncedOrders[0].orderGroupId, syncedOrders[0].orderGroupId);
+
+  const lifecycleRow = await query(
+    `SELECT id, paid_at, packed_at, shipped_at, cancelled_at FROM order_items WHERE id = $1`,
+    [`ord_${suffix}`],
+  );
+  assert.equal(lifecycleRow.rows[0].id, `ord_${suffix}`);
+  assert.ok(lifecycleRow.rows[0].paid_at);
+  assert.equal(lifecycleRow.rows[0].packed_at, null);
 
   const orderPage = await listOrdersPageFromPostgres({ adminId, accountId, limit: 5, offset: 0 });
   assert.equal(orderPage.items.some((entry) => entry.id === `ord_${suffix}`), true);

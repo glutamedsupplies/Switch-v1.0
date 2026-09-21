@@ -7,7 +7,7 @@ Switch is a **hybrid** store. PostgreSQL is the source of truth for accounts, st
 | Domain | Source of truth when `DATABASE_URL` is set | Fallback / backup |
 | --- | --- | --- |
 | Accounts / auth / trending searches | PostgreSQL (`001`–`012`) | JSON only if Postgres is unset or unreachable |
-| Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`017`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
+| Store types, categories, products, orders, inventory movements | PostgreSQL (`013`–`018`) | JSON dual-write backup (`CATALOG_JSON_BACKUP`, default on) |
 | Chat, partners, activity, followers, and similar | JSON files | n/a (Phase B will move chat) |
 
 `npm run db:migrate` applies numbered SQL files in `backend/db/migrations/`. Import existing catalog/order JSON with `npm run db:migrate-catalog`.
@@ -31,7 +31,9 @@ backend/data/activity_log.json
 
 - **Reads:** If the catalog schema is present, `readProducts` / `readOrders` / `readStoreTypes` load from Postgres. Otherwise they read JSON.
 - **Writes:** Postgres is the source of truth. A failed Postgres write fails the request. After a successful Postgres write, the matching JSON file is updated as a best-effort backup unless `CATALOG_JSON_BACKUP=0`.
-- **New order groups** receive a server-generated `orderGroupId` (`og_*`). `createdAtEpochMs` is still stored so existing pack/ship/cancel/waybill clients keep working. Those endpoints now accept either `orderGroupId` or `createdAtEpochMs`.
+- **Stable IDs:** `products.id`, `product_variants.id`, `order_items.id`, and `orders.id` (`order_group_id`) are application-assigned TEXT keys. JSON string IDs are kept on import and dual-write and are never rewritten when present. Order groups without `orderGroupId` get a deterministic `og_*` from `adminId + accountId + createdAtEpochMs` during JSON import so re-running migrate does not mint a new key.
+- **New order groups** that have no prior id receive a server-generated `orderGroupId` (`og_*`). `createdAtEpochMs` is still stored so existing pack/ship/cancel/waybill clients keep working. Those endpoints now accept either `orderGroupId` or `createdAtEpochMs`.
+- **Lifecycle timestamps (Step 5 funnel):** orders/order_items expose `created_at`, `paid_at` (left `toPay` → `toPrepare` / `awaitingWaybill`), `packed_at` (`toShip`), `shipped_at` (`toReceive`), `received_at` (`toReview` / `customerReceivedAtEpochMs`), `cancelled_at`, and `return_requested_at`. Products keep `submitted_at`, `approved_at`, `rejected_at`, plus `listed_at`. Historical JSON that lacks per-stage times may infer `paid_at`/`packed_at` from stage using `created_at`; later explicit stamps are first-write-wins.
 - **Inventory:** `inventory_movements` is the durable ledger. Product `stockHistory` and order `inventoryMovements` remain in JSONB `extra_data` for API compatibility.
 - **Chat is not migrated in this phase.**
 
@@ -75,7 +77,7 @@ erDiagram
 PostgreSQL (when configured):
 
 - Unique: `accounts.email`, seller `admin_id`, employee `(admin_id, employee_id)`, `store_types.name_normalized`, category name per store type or admin workspace, product `(admin_id, barcode)` when barcode is non-empty, `orders.order_group_id`.
-- Indexes include `admin_id`, `account_id`, `product_id`, `approval_status`, and `created_at` on products, orders, order items, and inventory movements.
+- Indexes include `admin_id`, `account_id`, `product_id`, `approval_status`, `created_at`, and order/product lifecycle times (`paid_at`, `packed_at`, `shipped_at`, `submitted_at`, `approved_at`).
 - Catalog writes run in a SQL transaction per sync. JSON backups are not transactional.
 - `adminId` remains the primary multi-tenant scope. Product/order rows do not FK to `accounts` so JSON imports can run before every seller/buyer exists in Postgres.
 
@@ -86,7 +88,7 @@ JSON fallback (when `DATABASE_URL` is unset):
 
 ## PostgreSQL tables (Phase A catalog / orders)
 
-Applied by `013_store_types.sql` through `017_inventory_movements.sql`.
+Applied by `013_store_types.sql` through `018_order_lifecycle_timestamps.sql`.
 
 ### `store_types`
 
@@ -98,11 +100,24 @@ Taxonomy rows linked to a `store_type_id`, plus workspace rows keyed by `admin_i
 
 ### `products` / `product_variants` / `product_categories`
 
-Queryable columns cover CRUD and catalog filters (`admin_id`, `approval_status`, prices, stock, barcode, primary `category`). Remaining legacy fields (media galleries, visual-search fingerprints, YOLO, `stockHistory`, reviews) live in `extra_data` JSONB for a lossless round-trip with `products.json`.
+Queryable columns cover CRUD and catalog filters (`admin_id`, `approval_status`, prices, stock, barcode, primary `category`). Approval lifecycle columns: `submitted_at`, `approved_at`, `rejected_at`, `approval_updated_at`, `listed_at`. Remaining legacy fields (media galleries, visual-search fingerprints, YOLO, `stockHistory`, reviews) live in `extra_data` JSONB for a lossless round-trip with `products.json`. `id` is the JSON product id.
 
 ### `orders` / `order_items`
 
-`orders` is the checkout **group** (`id` = `order_group_id`). `order_items` are the flat line items the API still returns as `orders: [...]`. Each reconstructed line includes `orderGroupId` and `createdAtEpochMs`.
+`orders` is the checkout **group** (`id` = `order_group_id`). `order_items` are the flat line items the API still returns as `orders: [...]`. Each reconstructed line includes `orderGroupId` and `createdAtEpochMs`. Line `id` is the JSON order entry id.
+
+Lifecycle columns on both tables (migration `018`), matching codebase stages `toPay` → `toPrepare`/`awaitingWaybill` → `toShip` → `toReceive` → `toReview` (plus `returnRequest`, `cancelled`):
+
+| Column | Stage / source |
+| --- | --- |
+| `created_at` | Order placed (`toPay`) |
+| `paid_at` | Left unpaid (`toPrepare` or `awaitingWaybill`) |
+| `packed_at` | Pack endpoint (`toShip`); also `inventoryDeductedAtEpochMs` |
+| `shipped_at` | Ship endpoint (`toReceive`) |
+| `received_at` | Customer receipt (`toReview` / `customerReceivedAtEpochMs`) |
+| `cancelled_at` | `cancelled` |
+| `return_requested_at` | `returnRequest` |
+| `waybill_printed_at` | `waybillPrintedAtEpochMs` |
 
 ### `inventory_movements`
 
@@ -153,10 +168,10 @@ Stores catalog products submitted by admins. Postgres table `products` plus `pro
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | string | Primary identifier. |
+| `id` | string | Primary identifier. Kept as-is in Postgres (`products.id`). |
 | `adminId` | string | Owner workspace. |
 | `approvalStatus` | string | Pending/approved state for super admin review. |
-| `submittedAt`, `approvedAt`, `approvedBy`, `approvalUpdatedAt` | string | Approval workflow metadata. |
+| `submittedAt`, `approvedAt`, `approvedBy`, `approvalUpdatedAt`, `rejectedAt`, `listedAt` | string | Approval / listing lifecycle; first-class Postgres columns. |
 | `name`, `description` | string | Product content. |
 | `isActive` | boolean | Visibility/availability toggle. |
 | `originalPrice`, `salesPrice` | number | Pricing. |
@@ -190,15 +205,16 @@ Stores customer order line items. Multiple lines share `orderGroupId` (server-ge
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | string | Order line identifier. |
-| `orderGroupId` | string | Server-generated checkout group id (`og_*`). |
+| `id` | string | Order line identifier. Stable Postgres `order_items.id`. |
+| `orderGroupId` | string | Checkout group id (`og_*`). Stable Postgres `orders.id`. |
 | `adminId` | string | Store/workspace owner. |
 | `accountId` | string | Customer account. |
 | `productId`, `productName`, `productImageUrl` | string | Purchased product snapshot. |
 | `variantId`, `variantName`, `addOns` | string/array | Variant/add-on snapshot. |
 | `quantity`, `unitPrice` | number | Line item quantity/pricing. |
-| `stage` | string | Order stage such as toPay, toPrepare, toShip, toReceive, completed, or cancelled. |
-| `createdAtEpochMs`, `createdAt` | number/string | Group timestamp and timestamp text. |
+| `stage` | string | `toPay`, `awaitingWaybill`, `toPrepare`, `toShip`, `toReceive`, `toReview`, `returnRequest`, or `cancelled`. |
+| `createdAtEpochMs`, `createdAt` | number/string | Placed-at timestamp. |
+| `paidAt`, `packedAt`, `shippedAt`, `receivedAt`, `cancelledAt`, `returnRequestedAt`, `waybillPrintedAt` | string | Funnel transition times (ISO). Epoch-ms twins also stored. |
 | `grandTotalAmount`, `amountToPayAmount`, `remainingBalanceAmount`, `shippingFeeAmount` | number | Payment amount breakdown. |
 | `paymentOptionLabel`, `paymentPartnerName`, `paymentPartnerImageUrl` | string | Payment selection snapshot. |
 | `deliveryPartnerName`, `deliveryPartnerImageUrl` | string | Delivery selection snapshot. |

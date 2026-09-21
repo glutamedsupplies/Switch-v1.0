@@ -34,7 +34,14 @@ async function isCatalogPostgresReady() {
         to_regclass('public.product_variants') AS product_variants,
         to_regclass('public.orders') AS orders,
         to_regclass('public.order_items') AS order_items,
-        to_regclass('public.inventory_movements') AS inventory_movements
+        to_regclass('public.inventory_movements') AS inventory_movements,
+        EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'orders'
+            AND column_name = 'paid_at'
+        ) AS orders_lifecycle
     `);
     const row = result.rows[0] || {};
     catalogReadyCache = Boolean(
@@ -44,7 +51,8 @@ async function isCatalogPostgresReady() {
       && row.product_variants
       && row.orders
       && row.order_items
-      && row.inventory_movements,
+      && row.inventory_movements
+      && row.orders_lifecycle,
     );
   } catch (_) {
     catalogReadyCache = false;

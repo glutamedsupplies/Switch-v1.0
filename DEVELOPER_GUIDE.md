@@ -135,6 +135,8 @@ PostgreSQL is required for durable accounts, products, and orders.
    - `npm run db:migrate-catalog` — `store_types.json`, `products.json`, `orders.json`
 4. Without `DATABASE_URL`, the backend still creates JSON files in `backend/data` on startup.
 
+Product/order/line IDs keep existing JSON string values across migrate and dual-write. Order groups without `orderGroupId` get a deterministic `og_*`. Lifecycle columns (`created_at`, `paid_at`, `packed_at`, `shipped_at`, `cancelled_at`, product `submitted_at` / `approved_at` / `listed_at`) are first-class so Step 5 funnel queries do not need a schema rewrite.
+
 JSON-only collections (chat, partners, activity, followers, and similar) remain files under `backend/data/` and are ignored by Git.
 
 ## File Uploads

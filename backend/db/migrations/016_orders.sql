@@ -2,6 +2,11 @@
 -- JSON orders.json is a flat array of line items grouped by createdAtEpochMs.
 -- New writes get an opaque og_* group id; created_at_epoch_ms is retained so
 -- existing pack/ship/cancel/waybill clients keep working.
+--
+-- Stable IDs: order_items.id is the JSON line id and never changes on import.
+-- orders.id = order_group_id. If JSON already has orderGroupId, that value is
+-- kept; otherwise migrate uses a deterministic og_* from adminId+accountId+
+-- createdAtEpochMs so re-running import does not mint a new group key.
 
 CREATE TABLE IF NOT EXISTS orders (
   id                    TEXT PRIMARY KEY,
