@@ -43,7 +43,32 @@ function loadEnv(filePath) {
   }
 }
 
-loadEnv(path.join(__dirname, "..", ".env"));
+function upsertEnvValue(filePath, key, value) {
+  const raw = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  const lines = raw.length ? raw.split(/\r?\n/) : [];
+  const prefix = `${key}=`;
+  let found = false;
+  const next = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.startsWith(prefix)) {
+      return line;
+    }
+    found = true;
+    return `${key}=${value}`;
+  });
+  if (!found) {
+    if (next.length && next[next.length - 1] !== "") {
+      next.push("");
+    }
+    next.push(`${key}=${value}`);
+  }
+  const ending = raw.endsWith("\n") || raw.endsWith("\r\n") ? (raw.includes("\r\n") ? "\r\n" : "\n") : "\n";
+  const joined = next.join(raw.includes("\r\n") ? "\r\n" : "\n");
+  fs.writeFileSync(filePath, joined.endsWith("\n") ? joined : `${joined}${ending}`, "utf8");
+}
+
+const ENV_PATH = path.join(__dirname, "..", ".env");
+loadEnv(ENV_PATH);
 
 const CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID ?? "").trim();
 const CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET ?? "").trim();
@@ -144,20 +169,23 @@ const server = http.createServer(async (req, res) => {
       `<h1>Gmail connected</h1><p>Account: <b>${email || "(unknown)"}</b></p><p>Scope gmail.send: OK</p><p>You can close this tab and return to the terminal.</p>`,
     );
 
-    console.log("\n=== Paste these into backend/.env ===\n");
+    console.log("\n=== Gmail OAuth connected ===\n");
     if (email) {
-      console.log(`GMAIL_USER=${email}`);
-      console.log(`EMAIL_FROM=Switch <${email}>`);
+      upsertEnvValue(ENV_PATH, "GMAIL_USER", email);
+      upsertEnvValue(ENV_PATH, "EMAIL_FROM", `Switch <${email}>`);
+      console.log(`Updated GMAIL_USER=${email}`);
+      console.log(`Updated EMAIL_FROM=Switch <${email}>`);
     }
     if (tokens.refresh_token) {
-      console.log(`GMAIL_REFRESH_TOKEN=${tokens.refresh_token}`);
+      upsertEnvValue(ENV_PATH, "GMAIL_REFRESH_TOKEN", tokens.refresh_token);
+      console.log("Updated GMAIL_REFRESH_TOKEN in backend/.env");
     } else {
       console.log(
-        "# WARNING: No refresh_token returned. Revoke app access and re-run with prompt=consent.",
+        "# WARNING: No refresh_token returned. Revoke app access at https://myaccount.google.com/permissions and re-run with prompt=consent.",
       );
     }
     console.log("\nGranted scopes:", grantedScopes);
-    console.log("\nThen restart: npm start\n");
+    console.log("\nRestart backend: npm start\n");
 
     setTimeout(() => {
       server.close(() => process.exit(0));

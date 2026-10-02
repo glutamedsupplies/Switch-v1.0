@@ -25,8 +25,16 @@
     "db:migrate-chat": "node scripts/migrate-chat-json-to-postgres.js",
     "test:catalog": "node --test test/catalogHelpers.test.js test/postgresCatalog.test.js",
     "test:chat": "node --test test/chatHelpers.test.js test/postgresChat.test.js",
+    "uploads:migrate-cloud": "node scripts/migrate-uploads-to-cloud.js",
     "gmail:connect": "node scripts/gmail-oauth-setup.js",
-    "gmail:test": "node scripts/test-gmail-otp.js"
+    "gmail:test": "node scripts/test-gmail-otp.js",
+    "ai:check": "node scripts/check-ai-provider.js",
+    "seed:test-mode-reporter-shawn": "node scripts/seed-test-mode-reporter-shawn.js",
+    "seed:company-reports": "node scripts/seed-sample-company-reports.js",
+    "seed:switch-rider-order": "node scripts/seed-switch-rider-mock-order.js",
+    "seed:trending-searches": "node scripts/seed-sample-trending-searches.js",
+    "seed:variant-desc-listing": "node scripts/seed-variant-description-photo-listing.js",
+    "seed:listing-details": "node scripts/seed-product-listing-details.js"
   },
   "engines": {
     "node": ">=20"

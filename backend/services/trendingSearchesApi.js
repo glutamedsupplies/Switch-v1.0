@@ -4,6 +4,11 @@ const path = require("path");
 const crypto = require("crypto");
 const fsPromises = require("fs/promises");
 const { isPostgresConfigured, query } = require("../db/pool");
+const {
+  evaluateTrendingSearchEligibility,
+  isTrendingTermCatalogValid,
+  collectListingPreviewImages,
+} = require("./trendingSearchQuality");
 
 const MAX_TRENDING_PUBLIC = 24;
 const MAX_RECENT_PER_USER = 30;
@@ -19,7 +24,256 @@ function createTrendingSearchesApi(deps) {
     sendJson,
     parseRequestBody,
     getRequestAccountIdentifier,
+    loadSearchCatalogTerms,
+    loadPublicListingProducts,
+    countSearchAudienceUsers,
   } = deps;
+
+  async function resolveSearchCatalogTerms() {
+    if (typeof loadSearchCatalogTerms !== "function") {
+      return [];
+    }
+    try {
+      const terms = await loadSearchCatalogTerms();
+      return Array.isArray(terms) ? terms : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function resolvePublicListingProducts() {
+    if (typeof loadPublicListingProducts !== "function") {
+      return [];
+    }
+    try {
+      const products = await loadPublicListingProducts();
+      return Array.isArray(products) ? products : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function attachListingPreviewImages(trending = []) {
+    if (!Array.isArray(trending) || !trending.length) {
+      return Array.isArray(trending) ? trending : [];
+    }
+    const products = await resolvePublicListingProducts();
+    if (!products.length) {
+      return trending.map((item) => ({
+        ...item,
+        listingImages: Array.isArray(item.listingImages) ? item.listingImages : [],
+      }));
+    }
+    return trending.map((item) => ({
+      ...item,
+      listingImages: collectListingPreviewImages(item.term, products, { limit: 3 }),
+    }));
+  }
+
+  function uniqueSearcherMapFromRows(rows, { monthKeys, startYmd, endYmd } = {}) {
+    const keys = Array.isArray(monthKeys)
+      ? monthKeys.map((key) => normalizeMonthKey(key))
+      : [];
+    const byTerm = new Map();
+    for (const row of rows) {
+      if (keys.length) {
+        const month = String(row.monthKey || row.month_key || "");
+        if (!keys.includes(month)) continue;
+      }
+      if (startYmd || endYmd) {
+        const ymd = createdAtToManilaYmd(row.createdAt || row.created_at);
+        if (startYmd && ymd < startYmd) continue;
+        if (endYmd && ymd > endYmd) continue;
+      }
+      const termKey = String(row.termNormalized || row.term_normalized || "").trim();
+      const actor = String(row.actorKey || row.actor_key || "").trim();
+      if (!termKey || !actor) continue;
+      if (!byTerm.has(termKey)) byTerm.set(termKey, new Set());
+      byTerm.get(termKey).add(actor);
+    }
+    const out = new Map();
+    for (const [termKey, actors] of byTerm.entries()) {
+      out.set(termKey, actors.size);
+    }
+    return out;
+  }
+
+  async function countUniqueSearchersByTermJson(monthKey, monthKeys) {
+    const keys = Array.isArray(monthKeys) && monthKeys.length
+      ? monthKeys
+      : [normalizeMonthKey(monthKey)];
+    return uniqueSearcherMapFromRows(await readJsonArray(UNIQUE_HITS_FILE), {
+      monthKeys: keys,
+    });
+  }
+
+  async function countUniqueSearchersByTermPostgres(monthKey, monthKeys) {
+    const keys = Array.isArray(monthKeys) && monthKeys.length
+      ? monthKeys.map((key) => normalizeMonthKey(key))
+      : [normalizeMonthKey(monthKey)];
+    await ensureMonthlySchema();
+    const result = await query(
+      `SELECT term_normalized AS "termNormalized",
+              COUNT(DISTINCT actor_key)::bigint AS "uniqueSearchers"
+       FROM trending_search_unique_hits
+       WHERE month_key = ANY($1::text[])
+       GROUP BY term_normalized`,
+      [keys],
+    );
+    const out = new Map();
+    for (const row of result.rows) {
+      const termKey = String(row.termNormalized || "").trim();
+      if (!termKey) continue;
+      out.set(termKey, Number(row.uniqueSearchers || 0) || 0);
+    }
+    return out;
+  }
+
+  async function countUniqueSearchersByTerm(monthKey, monthKeys) {
+    if (isPostgresConfigured()) {
+      try {
+        return await countUniqueSearchersByTermPostgres(monthKey, monthKeys);
+      } catch (_) {
+        // Fall through to JSON.
+      }
+    }
+    return countUniqueSearchersByTermJson(monthKey, monthKeys);
+  }
+
+  async function countUniqueSearchersByTermForRangeJson(startYmd, endYmd) {
+    return uniqueSearcherMapFromRows(await readJsonArray(UNIQUE_HITS_FILE), {
+      startYmd,
+      endYmd,
+    });
+  }
+
+  async function countUniqueSearchersByTermForRangePostgres(startYmd, endYmd) {
+    await ensureMonthlySchema();
+    const result = await query(
+      `SELECT term_normalized AS "termNormalized",
+              COUNT(DISTINCT actor_key)::bigint AS "uniqueSearchers"
+       FROM trending_search_unique_hits
+       WHERE (created_at AT TIME ZONE 'Asia/Manila')::date
+             BETWEEN $1::date AND $2::date
+       GROUP BY term_normalized`,
+      [startYmd, endYmd],
+    );
+    const out = new Map();
+    for (const row of result.rows) {
+      const termKey = String(row.termNormalized || "").trim();
+      if (!termKey) continue;
+      out.set(termKey, Number(row.uniqueSearchers || 0) || 0);
+    }
+    return out;
+  }
+
+  async function countUniqueSearchersByTermForRange(startYmd, endYmd) {
+    if (isPostgresConfigured()) {
+      try {
+        return await countUniqueSearchersByTermForRangePostgres(startYmd, endYmd);
+      } catch (_) {
+        // Fall through to JSON.
+      }
+    }
+    return countUniqueSearchersByTermForRangeJson(startYmd, endYmd);
+  }
+
+  async function countHitsInRangeJson(startYmd, endYmd) {
+    const rows = await readJsonArray(UNIQUE_HITS_FILE);
+    let total = 0;
+    for (const row of rows) {
+      const ymd = createdAtToManilaYmd(row.createdAt || row.created_at);
+      if (startYmd && ymd < startYmd) continue;
+      if (endYmd && ymd > endYmd) continue;
+      total += 1;
+    }
+    return total;
+  }
+
+  async function countHitsInRangePostgres(startYmd, endYmd) {
+    await ensureMonthlySchema();
+    const result = await query(
+      `SELECT COUNT(*)::bigint AS total
+       FROM trending_search_unique_hits
+       WHERE (created_at AT TIME ZONE 'Asia/Manila')::date
+             BETWEEN $1::date AND $2::date`,
+      [startYmd, endYmd],
+    );
+    return Number(result.rows[0]?.total || 0) || 0;
+  }
+
+  async function countHitsInRange(startYmd, endYmd) {
+    if (isPostgresConfigured()) {
+      try {
+        return await countHitsInRangePostgres(startYmd, endYmd);
+      } catch (_) {
+        // Fall through to JSON.
+      }
+    }
+    return countHitsInRangeJson(startYmd, endYmd);
+  }
+
+  async function resolveSearchAudienceUserCount() {
+    if (typeof countSearchAudienceUsers !== "function") {
+      return 0;
+    }
+    try {
+      const count = await countSearchAudienceUsers();
+      return Math.max(0, Math.trunc(Number(count) || 0));
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function computeSearchSharePct(uniqueSearchers, totalUsers) {
+    const searchers = Math.max(0, Math.trunc(Number(uniqueSearchers) || 0));
+    const users = Math.max(0, Math.trunc(Number(totalUsers) || 0));
+    if (!users || !searchers) return 0;
+    return Math.min(100, Number(((searchers / users) * 100).toFixed(1)));
+  }
+
+  async function attachSearchShareMetrics(trending = [], monthKey, periodContext = {}) {
+    if (!Array.isArray(trending) || !trending.length) {
+      return {
+        trending: Array.isArray(trending) ? trending : [],
+        totalUsers: 0,
+      };
+    }
+    const period = normalizePeriod(periodContext.period);
+    const [byTerm, totalUsers] = await Promise.all([
+      period === "daily" || period === "weekly"
+        ? countUniqueSearchersByTermForRange(
+            periodContext.startYmd,
+            periodContext.endYmd,
+          )
+        : countUniqueSearchersByTerm(monthKey, periodContext.monthKeys),
+      resolveSearchAudienceUserCount(),
+    ]);
+    const monthHits = trending.reduce(
+      (sum, row) => sum + (Number(row.hitCount) || 0),
+      0,
+    );
+    const enriched = trending.map((item) => {
+      const termKey =
+        String(item.termNormalized || "").trim() || normalizeTermKey(item.term);
+      const uniqueSearchers = byTerm.get(termKey) || 0;
+      // Prefer unique people who searched this term ÷ all platform users.
+      // Fallback: share of monthly hits when audience count is unavailable.
+      let searchSharePct = computeSearchSharePct(uniqueSearchers, totalUsers);
+      if (!totalUsers) {
+        const hits = Math.max(0, Number(item.hitCount) || 0);
+        searchSharePct = monthHits > 0
+          ? Math.min(100, Number(((hits / monthHits) * 100).toFixed(1)))
+          : 0;
+      }
+      return {
+        ...item,
+        uniqueSearchers,
+        searchSharePct,
+      };
+    });
+    return { trending: enriched, totalUsers };
+  }
 
   const TRENDING_FILE = path.join(DATA_DIR, "trending_searches.json");
   const MONTHLY_FILE = path.join(DATA_DIR, "trending_searches_monthly.json");
@@ -63,6 +317,31 @@ function createTrendingSearchesApi(deps) {
     return crypto.randomBytes(12).toString("hex");
   }
 
+  /** Public Super Admin catalog id — same pattern as voucher- / flash-. */
+  function newTrendingId() {
+    return `trend-${crypto.randomBytes(8).toString("hex")}`;
+  }
+
+  function ensureTrendingPublicId(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.startsWith("trend-") || raw.startsWith("monthly-")) return raw;
+    return `trend-${raw}`;
+  }
+
+  function trendingIdCandidates(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return [];
+    const out = [raw];
+    if (raw.startsWith("trend-")) {
+      const bare = raw.slice("trend-".length);
+      if (bare) out.push(bare);
+    } else if (!raw.startsWith("monthly-")) {
+      out.push(`trend-${raw}`);
+    }
+    return [...new Set(out)];
+  }
+
   function nowIso() {
     return new Date().toISOString();
   }
@@ -84,6 +363,167 @@ function createTrendingSearchesApi(deps) {
     const raw = String(value || "").trim();
     if (/^\d{4}-\d{2}$/.test(raw)) return raw;
     return currentMonthKey();
+  }
+
+  function normalizePeriod(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (raw === "all") return "overall";
+    if (
+      raw === "daily" ||
+      raw === "weekly" ||
+      raw === "monthly" ||
+      raw === "yearly" ||
+      raw === "overall"
+    ) {
+      return raw;
+    }
+    return "monthly";
+  }
+
+  function manilaTodayYmd() {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  }
+
+  function createdAtToManilaYmd(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  }
+
+  function addYmdDays(ymd, days) {
+    const raw = String(ymd || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return "";
+    const [year, month, day] = raw.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + Number(days || 0)));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  }
+
+  function manilaWeekStart(ymd) {
+    const raw = String(ymd || manilaTodayYmd()).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const [year, month, day] = raw.split("-").map(Number);
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    const offset = weekday === 0 ? -6 : 1 - weekday;
+    return addYmdDays(raw, offset);
+  }
+
+  function resolvePeriodContext(period, fallbackMonthKey) {
+    const normalized = normalizePeriod(period);
+    const today = manilaTodayYmd();
+    const currentMonth = currentMonthKey();
+    if (normalized === "daily") {
+      return {
+        period: "daily",
+        monthKey: currentMonth,
+        startYmd: today,
+        endYmd: today,
+        label: "Daily",
+        previousLabel: "yesterday",
+      };
+    }
+    if (normalized === "weekly") {
+      return {
+        period: "weekly",
+        monthKey: currentMonth,
+        startYmd: manilaWeekStart(today),
+        endYmd: today,
+        label: "Weekly",
+        previousLabel: "last week",
+      };
+    }
+    if (normalized === "yearly") {
+      const year = currentMonth.slice(0, 4);
+      return {
+        period: "yearly",
+        monthKey: currentMonth,
+        startYmd: `${year}-01-01`,
+        endYmd: today,
+        yearPrefix: year,
+        label: "Yearly",
+        previousLabel: "last year",
+      };
+    }
+    if (normalized === "overall") {
+      return {
+        period: "overall",
+        monthKey: currentMonth,
+        startYmd: "",
+        endYmd: today,
+        allMonths: true,
+        label: "Overall",
+        previousLabel: "all time",
+      };
+    }
+    const monthKey = normalizeMonthKey(fallbackMonthKey || currentMonth);
+    return {
+      period: "monthly",
+      monthKey,
+      startYmd: `${monthKey}-01`,
+      endYmd: monthKey === currentMonth ? today : `${monthKey}-31`,
+      monthKeys: [monthKey],
+      label: "Monthly",
+      previousLabel: "last month",
+    };
+  }
+
+  function previousMonthKey(value) {
+    const key = normalizeMonthKey(value);
+    const [yearRaw, monthRaw] = key.split("-").map(Number);
+    const year = Number(yearRaw) || 1970;
+    const month = Number(monthRaw) || 1;
+    const previous = new Date(Date.UTC(year, month - 2, 1));
+    const y = previous.getUTCFullYear();
+    const m = String(previous.getUTCMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  }
+
+  function monthHitsFromMonths(months, monthKey) {
+    const key = normalizeMonthKey(monthKey);
+    const match = (Array.isArray(months) ? months : []).find(
+      (row) => String(row.monthKey || "") === key,
+    );
+    return {
+      totalHits: Number(match?.totalHits || 0) || 0,
+      termCount: Number(match?.termCount || 0) || 0,
+    };
+  }
+
+  function buildMonthOverMonthSummary(months, monthKey) {
+    const currentKey = normalizeMonthKey(monthKey);
+    const previousKey = previousMonthKey(currentKey);
+    const current = monthHitsFromMonths(months, currentKey);
+    const previous = monthHitsFromMonths(months, previousKey);
+    let changePct = null;
+    if (previous.totalHits > 0) {
+      changePct = Number(
+        (((current.totalHits - previous.totalHits) / previous.totalHits) * 100).toFixed(1),
+      );
+    } else if (current.totalHits > 0) {
+      changePct = 100;
+    } else {
+      changePct = 0;
+    }
+    return {
+      monthKey: currentKey,
+      previousMonthKey: previousKey,
+      totalHits: current.totalHits,
+      termCount: current.termCount,
+      previousTotalHits: previous.totalHits,
+      previousTermCount: previous.termCount,
+      changePct,
+      direction:
+        changePct > 0 ? "up" : changePct < 0 ? "down" : "flat",
+    };
   }
 
   function normalizeDimValue(value, { max = 80 } = {}) {
@@ -204,7 +644,7 @@ function createTrendingSearchesApi(deps) {
 
   function mapTrendingRow(row) {
     return {
-      id: String(row.id ?? ""),
+      id: String(row.id ?? "").trim(),
       term: String(row.term ?? ""),
       termNormalized: String(row.term_normalized ?? row.termNormalized ?? ""),
       isActive: Boolean(row.is_active ?? row.isActive ?? true),
@@ -347,7 +787,24 @@ function createTrendingSearchesApi(deps) {
 
   async function listCatalogJson() {
     const existing = await readJsonArray(TRENDING_FILE);
-    return existing.map(mapTrendingRow);
+    let changed = false;
+    const mapped = existing.map((row) => {
+      const next = mapTrendingRow(row);
+      const rawId = String(row.id ?? "").trim();
+      if (
+        rawId &&
+        !rawId.startsWith("trend-") &&
+        !rawId.startsWith("monthly-")
+      ) {
+        next.id = ensureTrendingPublicId(rawId);
+        changed = true;
+      }
+      return next;
+    });
+    if (changed) {
+      await writeJsonArray(TRENDING_FILE, mapped);
+    }
+    return mapped;
   }
 
   async function listMonthlyJson(monthKey) {
@@ -618,15 +1075,17 @@ function createTrendingSearchesApi(deps) {
     return sortByHits(result.rows.map(mapTrendingRow), sort);
   }
 
-  async function listFilterOptionsJson(monthKey) {
-    const key = normalizeMonthKey(monthKey);
+  async function listFilterOptionsJson(monthKey, monthKeys) {
+    const keys = Array.isArray(monthKeys) && monthKeys.length
+      ? monthKeys.map((key) => normalizeMonthKey(key))
+      : [normalizeMonthKey(monthKey)];
     const rows = await readJsonArray(DIM_MONTHLY_FILE);
     const platforms = new Map();
     const categories = new Map();
     const storeTypes = new Map();
     const clients = new Map();
     for (const row of rows) {
-      if (String(row.monthKey || row.month_key || "") !== key) continue;
+      if (!keys.includes(String(row.monthKey || row.month_key || ""))) continue;
       const hits = Number(row.hitCount || row.hit_count || 0) || 0;
       if (hits <= 0) continue;
       const platformId = String(row.platformId || row.platform_id || "").trim();
@@ -665,41 +1124,43 @@ function createTrendingSearchesApi(deps) {
     };
   }
 
-  async function listFilterOptionsPostgres(monthKey) {
-    const key = normalizeMonthKey(monthKey);
+  async function listFilterOptionsPostgres(monthKey, monthKeys) {
+    const keys = Array.isArray(monthKeys) && monthKeys.length
+      ? monthKeys.map((key) => normalizeMonthKey(key))
+      : [normalizeMonthKey(monthKey)];
     await ensureMonthlySchema();
     const [platforms, categories, storeTypes, clients] = await Promise.all([
       query(
         `SELECT platform_id AS id, COALESCE(SUM(hit_count), 0)::bigint AS "totalHits"
          FROM trending_search_dim_monthly
-         WHERE month_key = $1 AND platform_id <> '' AND hit_count > 0
+         WHERE month_key = ANY($1::text[]) AND platform_id <> '' AND hit_count > 0
          GROUP BY platform_id
          ORDER BY "totalHits" DESC, platform_id ASC`,
-        [key],
+        [keys],
       ),
       query(
         `SELECT category AS id, COALESCE(SUM(hit_count), 0)::bigint AS "totalHits"
          FROM trending_search_dim_monthly
-         WHERE month_key = $1 AND category <> '' AND hit_count > 0
+         WHERE month_key = ANY($1::text[]) AND category <> '' AND hit_count > 0
          GROUP BY category
          ORDER BY "totalHits" DESC, category ASC`,
-        [key],
+        [keys],
       ),
       query(
         `SELECT store_type AS id, COALESCE(SUM(hit_count), 0)::bigint AS "totalHits"
          FROM trending_search_dim_monthly
-         WHERE month_key = $1 AND store_type <> '' AND hit_count > 0
+         WHERE month_key = ANY($1::text[]) AND store_type <> '' AND hit_count > 0
          GROUP BY store_type
          ORDER BY "totalHits" DESC, store_type ASC`,
-        [key],
+        [keys],
       ),
       query(
         `SELECT client AS id, COALESCE(SUM(hit_count), 0)::bigint AS "totalHits"
          FROM trending_search_dim_monthly
-         WHERE month_key = $1 AND client <> '' AND hit_count > 0
+         WHERE month_key = ANY($1::text[]) AND client <> '' AND hit_count > 0
          GROUP BY client
          ORDER BY "totalHits" DESC, client ASC`,
-        [key],
+        [keys],
       ),
     ]);
     const mapRows = (result, labelFn) =>
@@ -725,15 +1186,15 @@ function createTrendingSearchesApi(deps) {
     };
   }
 
-  async function listFilterOptions(monthKey) {
+  async function listFilterOptions(monthKey, monthKeys) {
     if (isPostgresConfigured()) {
       try {
-        return await listFilterOptionsPostgres(monthKey);
+        return await listFilterOptionsPostgres(monthKey, monthKeys);
       } catch (_) {
         // fall through
       }
     }
-    return listFilterOptionsJson(monthKey);
+    return listFilterOptionsJson(monthKey, monthKeys);
   }
 
   async function listAvailableMonths() {
@@ -798,6 +1259,377 @@ function createTrendingSearchesApi(deps) {
 
   async function listAllTrending(monthKey, options = {}) {
     return listTrendingForMonth(monthKey || currentMonthKey(), options);
+  }
+
+  async function resolveMonthKeysForPeriod(periodContext) {
+    if (Array.isArray(periodContext.monthKeys) && periodContext.monthKeys.length) {
+      return periodContext.monthKeys.map((key) => normalizeMonthKey(key));
+    }
+    const months = await listAvailableMonths();
+    const keys = months
+      .map((row) => String(row.monthKey || "").trim())
+      .filter((key) => /^\d{4}-\d{2}$/.test(key));
+    if (periodContext.allMonths) {
+      return keys.length ? keys : [periodContext.monthKey || currentMonthKey()];
+    }
+    if (periodContext.yearPrefix) {
+      const yearKeys = keys.filter((key) => key.startsWith(periodContext.yearPrefix));
+      return yearKeys.length
+        ? yearKeys
+        : [periodContext.monthKey || currentMonthKey()];
+    }
+    return [normalizeMonthKey(periodContext.monthKey)];
+  }
+
+  async function listTrendingForMonthsJson(monthKeys, options = {}) {
+    const keys = [...new Set((monthKeys || []).map((key) => normalizeMonthKey(key)))];
+    if (keys.length <= 1) {
+      return listTrendingForMonthJson(keys[0] || currentMonthKey(), options);
+    }
+    const monthly = await readJsonArray(MONTHLY_FILE);
+    const catalog = await listCatalogJson();
+    const catalogByKey = new Map(
+      catalog.map((item) => [item.termNormalized, item]),
+    );
+    const byTerm = new Map();
+    for (const row of monthly) {
+      const monthKey = String(row.monthKey || row.month_key || "");
+      if (!keys.includes(monthKey)) continue;
+      const termNormalized = String(row.termNormalized || row.term_normalized || "");
+      if (!termNormalized) continue;
+      const hits = Number(row.hitCount || row.hit_count || 0) || 0;
+      if (hits <= 0) continue;
+      const prev = byTerm.get(termNormalized) || {
+        term: String(row.term || ""),
+        termNormalized,
+        hitCount: 0,
+        updatedAt: String(row.updatedAt || row.updated_at || nowIso()),
+        monthKey,
+      };
+      prev.hitCount += hits;
+      if (String(row.updatedAt || row.updated_at || "") > prev.updatedAt) {
+        prev.updatedAt = String(row.updatedAt || row.updated_at || prev.updatedAt);
+        prev.term = String(row.term || prev.term);
+        prev.monthKey = monthKey;
+      }
+      byTerm.set(termNormalized, prev);
+    }
+    const items = [...byTerm.values()]
+      .map((row) => {
+        const meta = catalogByKey.get(row.termNormalized);
+        return mapTrendingRow({
+          id: meta?.id || `monthly-${row.termNormalized}-${row.monthKey}`,
+          term: meta?.term || row.term,
+          term_normalized: row.termNormalized,
+          is_active: meta ? meta.isActive : true,
+          is_manual: meta ? meta.isManual : false,
+          manual_rank: 0,
+          hit_count: row.hitCount,
+          month_key: row.monthKey,
+          created_at: meta?.createdAt || row.updatedAt,
+          updated_at: row.updatedAt,
+        });
+      })
+      .filter((item) => item.term && item.hitCount > 0);
+    return sortByHits(items, options.sort || "hits-desc");
+  }
+
+  async function listTrendingForMonthsDimJson(monthKeys, filters = {}, options = {}) {
+    const keys = [...new Set((monthKeys || []).map((key) => normalizeMonthKey(key)))];
+    const rows = await readJsonArray(DIM_MONTHLY_FILE);
+    const catalog = await listCatalogJson();
+    const catalogByKey = new Map(
+      catalog.map((item) => [item.termNormalized, item]),
+    );
+    const byTerm = new Map();
+    for (const row of rows) {
+      const monthKey = String(row.monthKey || row.month_key || "");
+      if (keys.length && !keys.includes(monthKey)) continue;
+      if (!matchesDimFilters(row, filters)) continue;
+      const termNormalized = String(row.termNormalized || row.term_normalized || "");
+      if (!termNormalized) continue;
+      const hits = Number(row.hitCount || row.hit_count || 0) || 0;
+      if (hits <= 0) continue;
+      const prev = byTerm.get(termNormalized) || {
+        term: String(row.term || ""),
+        termNormalized,
+        hitCount: 0,
+        updatedAt: String(row.updatedAt || row.updated_at || nowIso()),
+        monthKey,
+      };
+      prev.hitCount += hits;
+      if (String(row.updatedAt || row.updated_at || "") > prev.updatedAt) {
+        prev.updatedAt = String(row.updatedAt || row.updated_at || prev.updatedAt);
+        prev.term = String(row.term || prev.term);
+        prev.monthKey = monthKey;
+      }
+      byTerm.set(termNormalized, prev);
+    }
+    const items = [...byTerm.values()]
+      .map((row) => {
+        const meta = catalogByKey.get(row.termNormalized);
+        return mapTrendingRow({
+          id: meta?.id || `dim-${row.termNormalized}-${row.monthKey}`,
+          term: meta?.term || row.term,
+          term_normalized: row.termNormalized,
+          is_active: meta ? meta.isActive : true,
+          is_manual: meta ? meta.isManual : false,
+          manual_rank: 0,
+          hit_count: row.hitCount,
+          month_key: row.monthKey,
+          created_at: meta?.createdAt || row.updatedAt,
+          updated_at: row.updatedAt,
+        });
+      })
+      .filter((item) => item.term && item.hitCount > 0);
+    return sortByHits(items, options.sort || "hits-desc");
+  }
+
+  async function listTrendingForMonthsPostgres(monthKeys, options = {}) {
+    const keys = [...new Set((monthKeys || []).map((key) => normalizeMonthKey(key)))];
+    if (keys.length <= 1) {
+      return listTrendingForMonthPostgres(keys[0] || currentMonthKey(), options);
+    }
+    await ensureMonthlySchema();
+    const result = await query(
+      `SELECT
+          COALESCE(MAX(t.id), MIN(m.id)) AS id,
+          COALESCE(MAX(t.term), MAX(m.term)) AS term,
+          m.term_normalized,
+          COALESCE(BOOL_OR(t.is_active), TRUE) AS is_active,
+          COALESCE(BOOL_OR(t.is_manual), FALSE) AS is_manual,
+          0 AS manual_rank,
+          SUM(m.hit_count)::bigint AS hit_count,
+          MAX(m.month_key) AS month_key,
+          MIN(COALESCE(t.created_at, m.created_at)) AS created_at,
+          MAX(m.updated_at) AS updated_at
+       FROM trending_search_monthly m
+       LEFT JOIN trending_searches t
+         ON t.term_normalized = m.term_normalized
+       WHERE m.month_key = ANY($1::text[])
+         AND m.hit_count > 0
+       GROUP BY m.term_normalized
+       HAVING SUM(m.hit_count) > 0
+       ORDER BY hit_count DESC, updated_at DESC`,
+      [keys],
+    );
+    return sortByHits(result.rows.map(mapTrendingRow), options.sort || "hits-desc");
+  }
+
+  async function listTrendingForMonthsDimPostgres(monthKeys, filters = {}, options = {}) {
+    const keys = [...new Set((monthKeys || []).map((key) => normalizeMonthKey(key)))];
+    await ensureMonthlySchema();
+    const clauses = ["m.month_key = ANY($1::text[])", "m.hit_count > 0"];
+    const params = [keys];
+    if (filters.platform && filters.platform !== "all") {
+      params.push(filters.platform);
+      clauses.push(`m.platform_id = $${params.length}`);
+    }
+    if (filters.category && filters.category !== "all") {
+      params.push(filters.category);
+      clauses.push(`LOWER(m.category) = LOWER($${params.length})`);
+    }
+    if (filters.storeType && filters.storeType !== "all") {
+      params.push(filters.storeType);
+      clauses.push(`LOWER(m.store_type) = LOWER($${params.length})`);
+    }
+    if (filters.client && filters.client !== "all") {
+      params.push(filters.client);
+      clauses.push(`m.client = $${params.length}`);
+    }
+    const result = await query(
+      `SELECT
+          COALESCE(MAX(t.id), MIN(m.id)) AS id,
+          COALESCE(MAX(t.term), MAX(m.term)) AS term,
+          m.term_normalized,
+          COALESCE(BOOL_OR(t.is_active), TRUE) AS is_active,
+          COALESCE(BOOL_OR(t.is_manual), FALSE) AS is_manual,
+          0 AS manual_rank,
+          SUM(m.hit_count)::bigint AS hit_count,
+          MAX(m.month_key) AS month_key,
+          MIN(COALESCE(t.created_at, m.created_at)) AS created_at,
+          MAX(m.updated_at) AS updated_at
+       FROM trending_search_dim_monthly m
+       LEFT JOIN trending_searches t
+         ON t.term_normalized = m.term_normalized
+       WHERE ${clauses.join(" AND ")}
+       GROUP BY m.term_normalized
+       HAVING SUM(m.hit_count) > 0
+       ORDER BY hit_count DESC, updated_at DESC`,
+      params,
+    );
+    return sortByHits(result.rows.map(mapTrendingRow), options.sort || "hits-desc");
+  }
+
+  async function listTrendingForMonths(monthKeys, options = {}) {
+    const sort = options.sort || "hits-desc";
+    const filters = {
+      platform: options.platform || "all",
+      category: options.category || "all",
+      storeType: options.storeType || "all",
+      client: options.client || "all",
+      source: options.source || "all",
+      visibility: options.visibility || "all",
+      q: options.q || "",
+    };
+    const useDim = hasDimensionalFilter(filters);
+    let items = [];
+    if (isPostgresConfigured()) {
+      try {
+        items = useDim
+          ? await listTrendingForMonthsDimPostgres(monthKeys, filters, { sort })
+          : await listTrendingForMonthsPostgres(monthKeys, { sort });
+      } catch (_) {
+        items = useDim
+          ? await listTrendingForMonthsDimJson(monthKeys, filters, { sort })
+          : await listTrendingForMonthsJson(monthKeys, { sort });
+      }
+    } else {
+      items = useDim
+        ? await listTrendingForMonthsDimJson(monthKeys, filters, { sort })
+        : await listTrendingForMonthsJson(monthKeys, { sort });
+    }
+    return sortByHits(applyMetaFilters(items, filters), sort);
+  }
+
+  async function listTrendingForHitRangeJson({ startYmd, endYmd }, filters = {}, { sort = "hits-desc" } = {}) {
+    const useDim = hasDimensionalFilter(filters);
+    const rows = await readJsonArray(useDim ? DIM_UNIQUE_HITS_FILE : UNIQUE_HITS_FILE);
+    const catalog = await listCatalogJson();
+    const catalogByKey = new Map(
+      catalog.map((item) => [item.termNormalized, item]),
+    );
+    const byTerm = new Map();
+    for (const row of rows) {
+      const ymd = createdAtToManilaYmd(row.createdAt || row.created_at);
+      if (startYmd && ymd < startYmd) continue;
+      if (endYmd && ymd > endYmd) continue;
+      if (useDim && !matchesDimFilters(row, filters)) continue;
+      const termNormalized = String(row.termNormalized || row.term_normalized || "");
+      if (!termNormalized) continue;
+      const prev = byTerm.get(termNormalized) || {
+        termNormalized,
+        hitCount: 0,
+        monthKey: String(row.monthKey || row.month_key || ""),
+        updatedAt: String(row.createdAt || row.created_at || nowIso()),
+      };
+      prev.hitCount += 1;
+      if (String(row.createdAt || row.created_at || "") > prev.updatedAt) {
+        prev.updatedAt = String(row.createdAt || row.created_at || prev.updatedAt);
+        prev.monthKey = String(row.monthKey || row.month_key || prev.monthKey);
+      }
+      byTerm.set(termNormalized, prev);
+    }
+    const items = [...byTerm.values()]
+      .map((row) => {
+        const meta = catalogByKey.get(row.termNormalized);
+        return mapTrendingRow({
+          id: meta?.id || `range-${row.termNormalized}-${row.monthKey}`,
+          term: meta?.term || row.termNormalized,
+          term_normalized: row.termNormalized,
+          is_active: meta ? meta.isActive : true,
+          is_manual: meta ? meta.isManual : false,
+          manual_rank: 0,
+          hit_count: row.hitCount,
+          month_key: row.monthKey,
+          created_at: meta?.createdAt || row.updatedAt,
+          updated_at: row.updatedAt,
+        });
+      })
+      .filter((item) => item.term && item.hitCount > 0);
+    return sortByHits(items, sort);
+  }
+
+  async function listTrendingForHitRangePostgres({ startYmd, endYmd }, filters = {}, { sort = "hits-desc" } = {}) {
+    await ensureMonthlySchema();
+    const useDim = hasDimensionalFilter(filters);
+    const table = useDim
+      ? "trending_search_dim_unique_hits"
+      : "trending_search_unique_hits";
+    const clauses = [
+      `(h.created_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1::date AND $2::date`,
+    ];
+    const params = [startYmd, endYmd];
+    if (useDim) {
+      if (filters.platform && filters.platform !== "all") {
+        params.push(filters.platform);
+        clauses.push(`h.platform_id = $${params.length}`);
+      }
+      if (filters.category && filters.category !== "all") {
+        params.push(filters.category);
+        clauses.push(`LOWER(h.category) = LOWER($${params.length})`);
+      }
+      if (filters.storeType && filters.storeType !== "all") {
+        params.push(filters.storeType);
+        clauses.push(`LOWER(h.store_type) = LOWER($${params.length})`);
+      }
+      if (filters.client && filters.client !== "all") {
+        params.push(filters.client);
+        clauses.push(`h.client = $${params.length}`);
+      }
+    }
+    const result = await query(
+      `SELECT
+          COALESCE(MAX(t.id), MIN(h.id)) AS id,
+          COALESCE(MAX(t.term), MAX(h.term_normalized)) AS term,
+          h.term_normalized,
+          COALESCE(BOOL_OR(t.is_active), TRUE) AS is_active,
+          COALESCE(BOOL_OR(t.is_manual), FALSE) AS is_manual,
+          0 AS manual_rank,
+          COUNT(*)::bigint AS hit_count,
+          MAX(h.month_key) AS month_key,
+          MIN(COALESCE(t.created_at, h.created_at)) AS created_at,
+          MAX(h.created_at) AS updated_at
+       FROM ${table} h
+       LEFT JOIN trending_searches t
+         ON t.term_normalized = h.term_normalized
+       WHERE ${clauses.join(" AND ")}
+       GROUP BY h.term_normalized
+       HAVING COUNT(*) > 0
+       ORDER BY hit_count DESC, updated_at DESC`,
+      params,
+    );
+    return sortByHits(result.rows.map(mapTrendingRow), sort);
+  }
+
+  async function listTrendingForHitRange(range, options = {}) {
+    const sort = options.sort || "hits-desc";
+    const filters = {
+      platform: options.platform || "all",
+      category: options.category || "all",
+      storeType: options.storeType || "all",
+      client: options.client || "all",
+      source: options.source || "all",
+      visibility: options.visibility || "all",
+      q: options.q || "",
+    };
+    let items = [];
+    if (isPostgresConfigured()) {
+      try {
+        items = await listTrendingForHitRangePostgres(range, filters, { sort });
+      } catch (_) {
+        items = await listTrendingForHitRangeJson(range, filters, { sort });
+      }
+    } else {
+      items = await listTrendingForHitRangeJson(range, filters, { sort });
+    }
+    return sortByHits(applyMetaFilters(items, filters), sort);
+  }
+
+  async function listTrendingForPeriod(period, options = {}) {
+    const context = resolvePeriodContext(period, options.monthKey);
+    if (context.period === "daily" || context.period === "weekly") {
+      return listTrendingForHitRange(
+        { startYmd: context.startYmd, endYmd: context.endYmd },
+        options,
+      );
+    }
+    if (context.period === "monthly") {
+      return listTrendingForMonth(context.monthKey, options);
+    }
+    const monthKeys = await resolveMonthKeysForPeriod(context);
+    context.monthKeys = monthKeys;
+    return listTrendingForMonths(monthKeys, options);
   }
 
   async function readMonthlyHitCountJson(termNormalized, monthKey) {
@@ -1058,7 +1890,7 @@ function createTrendingSearchesApi(deps) {
       return items[index];
     }
     const created = mapTrendingRow({
-      id: newId(),
+      id: newTrendingId(),
       term: display,
       term_normalized: key,
       is_active: true,
@@ -1185,7 +2017,7 @@ function createTrendingSearchesApi(deps) {
            term = CASE WHEN trending_searches.is_manual THEN trending_searches.term ELSE EXCLUDED.term END,
            updated_at = NOW()
          RETURNING id, term, term_normalized, is_active, is_manual, manual_rank, hit_count, created_at, updated_at`,
-        [newId(), display, key],
+        [newTrendingId(), display, key],
       );
       const base = mapTrendingRow(catalog.rows[0]);
 
@@ -1450,17 +2282,19 @@ function createTrendingSearchesApi(deps) {
     if (!targetId) {
       throw new Error("Trending search id is required.");
     }
+    const idCandidates = trendingIdCandidates(targetId);
 
     if (isPostgresConfigured()) {
       try {
         const current = await query(
           `SELECT id, term, term_normalized, is_active, is_manual, manual_rank, hit_count, created_at, updated_at
-           FROM trending_searches WHERE id = $1 LIMIT 1`,
-          [targetId],
+           FROM trending_searches WHERE id = ANY($1::text[]) LIMIT 1`,
+          [idCandidates],
         );
         if (!current.rows.length) {
           throw new Error("Trending search not found.");
         }
+        const dbId = String(current.rows[0].id || "").trim();
         const prev = mapTrendingRow(current.rows[0]);
         const nextActive =
           patch.isActive === undefined ? prev.isActive : Boolean(patch.isActive);
@@ -1473,7 +2307,7 @@ function createTrendingSearchesApi(deps) {
                updated_at = NOW()
            WHERE id = $1
            RETURNING id, term, term_normalized, is_active, is_manual, manual_rank, hit_count, created_at, updated_at`,
-          [targetId, nextActive, nextManual],
+          [dbId, nextActive, nextManual],
         );
         return mapTrendingRow(updated.rows[0]);
       } catch (error) {
@@ -1484,7 +2318,9 @@ function createTrendingSearchesApi(deps) {
     }
 
     const items = await listCatalogJson();
-    const index = items.findIndex((item) => item.id === targetId);
+    const index = items.findIndex((item) =>
+      idCandidates.includes(String(item.id || "").trim()),
+    );
     if (index < 0) {
       throw new Error("Trending search not found.");
     }
@@ -1505,20 +2341,26 @@ function createTrendingSearchesApi(deps) {
     if (!targetId) {
       throw new Error("Trending search id is required.");
     }
+    const idCandidates = trendingIdCandidates(targetId);
 
     if (isPostgresConfigured()) {
       try {
         const current = await query(
-          `SELECT term_normalized FROM trending_searches WHERE id = $1 LIMIT 1`,
-          [targetId],
+          `SELECT id, term_normalized FROM trending_searches WHERE id = ANY($1::text[]) LIMIT 1`,
+          [idCandidates],
         );
         if (current.rows.length) {
+          const dbId = String(current.rows[0].id || "").trim();
           const termKey = String(current.rows[0].term_normalized || "");
-          await query(`DELETE FROM trending_searches WHERE id = $1`, [targetId]);
+          await query(`DELETE FROM trending_searches WHERE id = $1`, [dbId]);
           if (termKey) {
             await ensureMonthlySchema();
             await query(
               `DELETE FROM trending_search_monthly WHERE term_normalized = $1`,
+              [termKey],
+            );
+            await query(
+              `DELETE FROM trending_search_unique_hits WHERE term_normalized = $1`,
               [termKey],
             );
             await query(
@@ -1538,18 +2380,31 @@ function createTrendingSearchesApi(deps) {
     }
 
     const items = await listCatalogJson();
-    const target = items.find((item) => item.id === targetId);
+    const target = items.find((item) =>
+      idCandidates.includes(String(item.id || "").trim()),
+    );
     if (!target) {
       throw new Error("Trending search not found.");
     }
     await writeJsonArray(
       TRENDING_FILE,
-      items.filter((item) => item.id !== targetId),
+      items.filter(
+        (item) => !idCandidates.includes(String(item.id || "").trim()),
+      ),
     );
     const monthly = await readJsonArray(MONTHLY_FILE);
     await writeJsonArray(
       MONTHLY_FILE,
       monthly.filter(
+        (row) =>
+          String(row.termNormalized || row.term_normalized || "") !==
+          target.termNormalized,
+      ),
+    );
+    const uniqueHits = await readJsonArray(UNIQUE_HITS_FILE);
+    await writeJsonArray(
+      UNIQUE_HITS_FILE,
+      uniqueHits.filter(
         (row) =>
           String(row.termNormalized || row.term_normalized || "") !==
           target.termNormalized,
@@ -1568,17 +2423,292 @@ function createTrendingSearchesApi(deps) {
     await writeJsonArray(
       DIM_UNIQUE_HITS_FILE,
       dimUnique.filter(
-        (row) => String(row.termNormalized || "") !== target.termNormalized,
+        (row) =>
+          String(row.termNormalized || row.term_normalized || "") !==
+          target.termNormalized,
       ),
     );
     return true;
   }
 
-  async function buildSuperAdminListPayload(monthKey, sort, filters = {}) {
-    const trending = await listTrendingForMonth(monthKey, { sort, ...filters });
-    const filterOptions = await listFilterOptions(monthKey);
+  async function buildPeriodSummary(periodContext, months, filteredHits, termCount) {
+    const period = normalizePeriod(periodContext.period);
+    if (period === "monthly") {
+      return {
+        ...buildMonthOverMonthSummary(months, periodContext.monthKey),
+        period,
+        periodLabel: periodContext.label,
+        previousPeriodLabel: periodContext.previousLabel,
+      };
+    }
+
+    let totalHits = Number(filteredHits) || 0;
+    let previousTotalHits = 0;
+    if (period === "daily" || period === "weekly") {
+      totalHits = await countHitsInRange(periodContext.startYmd, periodContext.endYmd);
+      const prevStart = addYmdDays(
+        periodContext.startYmd,
+        period === "daily" ? -1 : -7,
+      );
+      const prevEnd = addYmdDays(
+        periodContext.endYmd,
+        period === "daily" ? -1 : -7,
+      );
+      previousTotalHits = await countHitsInRange(prevStart, prevEnd);
+    } else if (period === "yearly") {
+      const year = periodContext.yearPrefix || currentMonthKey().slice(0, 4);
+      const previousYear = String(Number(year) - 1);
+      const yearHits = (Array.isArray(months) ? months : []).filter((row) =>
+        String(row.monthKey || "").startsWith(year),
+      );
+      const prevHits = (Array.isArray(months) ? months : []).filter((row) =>
+        String(row.monthKey || "").startsWith(previousYear),
+      );
+      totalHits = yearHits.reduce((sum, row) => sum + (Number(row.totalHits) || 0), 0);
+      previousTotalHits = prevHits.reduce(
+        (sum, row) => sum + (Number(row.totalHits) || 0),
+        0,
+      );
+    } else {
+      totalHits = (Array.isArray(months) ? months : []).reduce(
+        (sum, row) => sum + (Number(row.totalHits) || 0),
+        0,
+      );
+      previousTotalHits = totalHits;
+    }
+
+    let changePct = 0;
+    if (period !== "overall" && previousTotalHits > 0) {
+      changePct = Number(
+        (((totalHits - previousTotalHits) / previousTotalHits) * 100).toFixed(1),
+      );
+    } else if (period !== "overall" && totalHits > 0) {
+      changePct = 100;
+    }
+
     return {
-      monthKey,
+      monthKey: periodContext.monthKey,
+      previousMonthKey: "",
+      period,
+      periodLabel: periodContext.label,
+      previousPeriodLabel: periodContext.previousLabel,
+      totalHits,
+      termCount,
+      previousTotalHits,
+      previousTermCount: 0,
+      changePct,
+      direction: changePct > 0 ? "up" : changePct < 0 ? "down" : "flat",
+    };
+  }
+
+  function trendingTermKey(item) {
+    return String(item?.termNormalized || normalizeTermKey(item?.term || "")).trim();
+  }
+
+  function rankLookupByTerm(items) {
+    const map = new Map();
+    for (const item of Array.isArray(items) ? items : []) {
+      const key = trendingTermKey(item);
+      if (!key) continue;
+      map.set(key, {
+        rank: Math.max(1, Math.trunc(Number(item.rank) || 0) || 0),
+        hitCount: Number(item.hitCount) || 0,
+      });
+    }
+    return map;
+  }
+
+  function resolveRankMovement(current, previous) {
+    const currentRank = Math.max(1, Math.trunc(Number(current?.rank) || 1));
+    const currentHits = Number(current?.hitCount) || 0;
+    if (!previous || !Number(previous.rank)) {
+      return {
+        previousRank: null,
+        previousHitCount: 0,
+        rankChange: null,
+        hitChange: currentHits,
+        rankDirection: currentHits > 0 ? "up" : "flat",
+      };
+    }
+    const previousRank = Math.max(1, Math.trunc(Number(previous.rank) || 1));
+    const previousHits = Number(previous.hitCount) || 0;
+    let rankDirection = "flat";
+    if (currentRank < previousRank) rankDirection = "up";
+    else if (currentRank > previousRank) rankDirection = "down";
+    else if (currentHits > previousHits) rankDirection = "up";
+    else if (currentHits < previousHits) rankDirection = "down";
+    return {
+      previousRank,
+      previousHitCount: previousHits,
+      rankChange: previousRank - currentRank,
+      hitChange: currentHits - previousHits,
+      rankDirection,
+    };
+  }
+
+  function resolvePreviousPeriodContext(periodContext) {
+    const period = periodContext?.period;
+    if (period === "daily") {
+      const prev = addYmdDays(periodContext.startYmd, -1);
+      if (!prev) return null;
+      return {
+        period: "daily",
+        monthKey: prev.slice(0, 7),
+        startYmd: prev,
+        endYmd: prev,
+      };
+    }
+    if (period === "weekly") {
+      const startYmd = addYmdDays(periodContext.startYmd, -7);
+      const endYmd = addYmdDays(periodContext.endYmd, -7);
+      if (!startYmd || !endYmd) return null;
+      return {
+        period: "weekly",
+        monthKey: startYmd.slice(0, 7),
+        startYmd,
+        endYmd,
+      };
+    }
+    if (period === "monthly") {
+      return {
+        period: "monthly",
+        monthKey: previousMonthKey(periodContext.monthKey),
+      };
+    }
+    if (period === "yearly") {
+      const year = String(
+        periodContext.yearPrefix || String(periodContext.monthKey || "").slice(0, 4) || "",
+      );
+      const previousYear = String(Number(year) - 1);
+      if (!/^\d{4}$/.test(previousYear)) return null;
+      return {
+        period: "yearly",
+        monthKey: `${previousYear}-12`,
+        yearPrefix: previousYear,
+      };
+    }
+    return null;
+  }
+
+  async function listTrendingForPreviousPeriod(periodContext, options = {}) {
+    if (periodContext?.period === "overall") {
+      const lastMonth = previousMonthKey(currentMonthKey());
+      const olderMonth = previousMonthKey(lastMonth);
+      const [recent, older] = await Promise.all([
+        listTrendingForMonth(lastMonth, options),
+        listTrendingForMonth(olderMonth, options),
+      ]);
+      return { mode: "momentum", recent, older };
+    }
+    const previous = resolvePreviousPeriodContext(periodContext);
+    if (!previous) return { mode: "none", items: [] };
+    if (previous.period === "daily" || previous.period === "weekly") {
+      return {
+        mode: "compare",
+        items: await listTrendingForHitRange(
+          { startYmd: previous.startYmd, endYmd: previous.endYmd },
+          options,
+        ),
+      };
+    }
+    if (previous.period === "monthly") {
+      return {
+        mode: "compare",
+        items: await listTrendingForMonth(previous.monthKey, options),
+      };
+    }
+    const monthKeys = await resolveMonthKeysForPeriod(previous);
+    return {
+      mode: "compare",
+      items: await listTrendingForMonths(monthKeys, options),
+    };
+  }
+
+  async function attachRankMovement(trending, periodContext, options = {}) {
+    const items = Array.isArray(trending) ? trending : [];
+    try {
+      const previous = await listTrendingForPreviousPeriod(periodContext, options);
+      if (previous.mode === "momentum") {
+        const recentByTerm = rankLookupByTerm(previous.recent);
+        const olderByTerm = rankLookupByTerm(previous.older);
+        return items.map((item) => {
+          const key = trendingTermKey(item);
+          const recent = recentByTerm.get(key);
+          const older = olderByTerm.get(key) || null;
+          if (!recent && !older) {
+            return {
+              ...item,
+              previousRank: null,
+              previousHitCount: 0,
+              rankChange: null,
+              hitChange: 0,
+              rankDirection: "flat",
+            };
+          }
+          return {
+            ...item,
+            ...resolveRankMovement(recent || { rank: 9999, hitCount: 0 }, older),
+          };
+        });
+      }
+      const previousByTerm = rankLookupByTerm(previous.items);
+      return items.map((item) => ({
+        ...item,
+        ...resolveRankMovement(item, previousByTerm.get(trendingTermKey(item)) || null),
+      }));
+    } catch (_) {
+      return items.map((item) => ({
+        ...item,
+        previousRank: null,
+        previousHitCount: 0,
+        rankChange: null,
+        hitChange: 0,
+        rankDirection: Number(item.hitCount) > 0 ? "up" : "flat",
+      }));
+    }
+  }
+
+  async function buildSuperAdminListPayload(monthKey, sort, filters = {}, period = "monthly") {
+    const periodContext = resolvePeriodContext(period, monthKey);
+    if (periodContext.period === "yearly" || periodContext.period === "overall") {
+      periodContext.monthKeys = await resolveMonthKeysForPeriod(periodContext);
+    } else if (periodContext.period === "monthly" && !periodContext.monthKeys) {
+      periodContext.monthKeys = [periodContext.monthKey];
+    }
+    const withImages = await attachListingPreviewImages(
+      await listTrendingForPeriod(periodContext.period, {
+        sort,
+        ...filters,
+        monthKey: periodContext.monthKey,
+      }),
+    );
+    const { trending: sharedTrending, totalUsers } = await attachSearchShareMetrics(
+      withImages,
+      periodContext.monthKey,
+      periodContext,
+    );
+    const trending = await attachRankMovement(sharedTrending, periodContext, {
+      sort,
+      ...filters,
+    });
+    const filterOptions = await listFilterOptions(
+      periodContext.monthKey,
+      periodContext.monthKeys,
+    );
+    const months = await listAvailableMonths();
+    const filteredHits = trending.reduce(
+      (sum, item) => sum + (Number(item.hitCount) || 0),
+      0,
+    );
+    const monthSummary = await buildPeriodSummary(
+      periodContext,
+      months,
+      filteredHits,
+      trending.length,
+    );
+    return {
+      monthKey: periodContext.monthKey,
+      period: periodContext.period,
       sort,
       filters: {
         platform: filters.platform || "all",
@@ -1590,11 +2720,64 @@ function createTrendingSearchesApi(deps) {
         q: filters.q || "",
       },
       filterOptions,
-      months: await listAvailableMonths(),
+      months,
       trending,
       total: trending.length,
       activeCount: trending.filter((item) => item.isActive).length,
+      summary: {
+        ...monthSummary,
+        filteredTermCount: trending.length,
+        filteredHits,
+        totalUsers,
+      },
     };
+  }
+
+  function escapeCsvCell(value) {
+    const text = String(value ?? "");
+    if (/[",\n\r]/.test(text)) {
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+  }
+
+  function buildTrendingCsv(payload) {
+    const rows = [
+      [
+        "search_id",
+        "rank",
+        "term",
+        "monthly_searches",
+        "source",
+        "visibility",
+        "month",
+        "previous_month",
+        "month_total_hits",
+        "previous_month_total_hits",
+        "mom_change_pct",
+      ].join(","),
+    ];
+    const summary = payload.summary || {};
+    const monthKey = payload.monthKey || "";
+    const trending = Array.isArray(payload.trending) ? payload.trending : [];
+    for (const item of trending) {
+      rows.push(
+        [
+          escapeCsvCell(item.id ?? ""),
+          escapeCsvCell(item.rank ?? ""),
+          escapeCsvCell(item.term ?? ""),
+          escapeCsvCell(item.hitCount ?? 0),
+          escapeCsvCell(item.isManual ? "pinned" : "organic"),
+          escapeCsvCell(item.isActive ? "visible" : "hidden"),
+          escapeCsvCell(monthKey),
+          escapeCsvCell(summary.previousMonthKey || ""),
+          escapeCsvCell(summary.totalHits ?? 0),
+          escapeCsvCell(summary.previousTotalHits ?? 0),
+          escapeCsvCell(summary.changePct ?? ""),
+        ].join(","),
+      );
+    }
+    return `${rows.join("\n")}\n`;
   }
 
   async function tryHandleTrendingSearchRoutes(request, response, requestUrl) {
@@ -1615,9 +2798,19 @@ function createTrendingSearchesApi(deps) {
           sort: "hits-desc",
           ...(platformId ? { platform: platformId } : {}),
         };
-        const trending = (await listTrendingForMonth(monthKey, listOptions))
-          .filter((item) => item.isActive && item.term && item.hitCount > 0)
-          .slice(0, Math.min(MAX_TRENDING_PUBLIC, Math.max(1, limit)));
+        const catalogTerms = await resolveSearchCatalogTerms();
+        const trending = await attachListingPreviewImages(
+          (await listTrendingForMonth(monthKey, listOptions))
+            .filter((item) => item.isActive && item.term && item.hitCount > 0)
+            // Public Top Searches: keep manual pins + terms that still exist in catalog.
+            .filter(
+              (item) =>
+                item.isManual ||
+                !catalogTerms.length ||
+                isTrendingTermCatalogValid(item.term, catalogTerms),
+            )
+            .slice(0, Math.min(MAX_TRENDING_PUBLIC, Math.max(1, limit))),
+        );
         sendJson(response, 200, {
           monthKey,
           platformId: platformId || "",
@@ -1627,6 +2820,13 @@ function createTrendingSearchesApi(deps) {
             hitCount: item.hitCount,
             isManual: item.isManual,
             rank: item.rank,
+            listingImages: Array.isArray(item.listingImages)
+              ? item.listingImages.map((image) => ({
+                  url: image.url,
+                  productId: image.productId || "",
+                  productName: image.productName || "",
+                }))
+              : [],
           })),
         });
       } catch (error) {
@@ -1647,18 +2847,42 @@ function createTrendingSearchesApi(deps) {
         const accountId = String(getRequestAccountIdentifier(request, requestUrl).id).trim();
         const clientKey = String(payload.clientKey ?? payload.deviceKey ?? "").trim();
         const context = normalizeSearchContext(payload);
-        const hit = await recordSearchHit(term, {
-          accountId,
-          clientKey,
-          ...context,
+
+        // Quality gate: nonsense / zero-sense queries and non-catalog terms
+        // never create Top Search evidence. Typos canonicalize to the real term.
+        const catalogTerms = await resolveSearchCatalogTerms();
+        const eligibility = evaluateTrendingSearchEligibility({
+          term,
+          catalogEntries: catalogTerms,
+          clientResultCount:
+            payload.resultCount ?? payload.resultsCount ?? payload.hitCount ?? null,
+          clientHasResults:
+            payload.hasResults ?? payload.hasResult ?? payload.found ?? null,
         });
+
+        let hit = null;
+        if (eligibility.eligible) {
+          hit = await recordSearchHit(eligibility.canonicalTerm || term, {
+            accountId,
+            clientKey,
+            ...context,
+          });
+        }
+
+        // Recent searches keep the typed query for UX; trending uses canonical only.
         const recent = await appendRecentSearch({ term, accountId, clientKey });
+        const skipReason = eligibility.eligible ? "" : eligibility.reason;
         sendJson(response, 201, {
-          message: hit?.counted
-            ? "Search recorded."
-            : "Search recorded (already counted for this user this month).",
+          message: !eligibility.eligible
+            ? "Search noted (not eligible for top searches)."
+            : hit?.counted
+              ? "Search recorded."
+              : "Search recorded (already counted for this user this month).",
           monthKey: currentMonthKey(),
           counted: Boolean(hit?.counted),
+          eligible: Boolean(eligibility.eligible),
+          reason: skipReason || eligibility.reason || "",
+          canonicalTerm: eligibility.canonicalTerm || "",
           trending: hit
             ? { id: hit.id, term: hit.term, hitCount: hit.hitCount }
             : null,
@@ -1723,11 +2947,12 @@ function createTrendingSearchesApi(deps) {
           const monthKey = normalizeMonthKey(
             requestUrl.searchParams.get("month") || currentMonthKey(),
           );
+          const period = normalizePeriod(requestUrl.searchParams.get("period"));
           const sort = String(requestUrl.searchParams.get("sort") || "hits-desc")
             .trim()
             .toLowerCase();
           const filters = parseListFilters(requestUrl.searchParams);
-          const payload = await buildSuperAdminListPayload(monthKey, sort, filters);
+          const payload = await buildSuperAdminListPayload(monthKey, sort, filters, period);
           sendJson(response, 200, payload);
         } catch (error) {
           sendJson(response, 500, {
@@ -1751,13 +2976,14 @@ function createTrendingSearchesApi(deps) {
           const payload = await parseRequestBody(request);
           const id = payload.id ?? payload.trendingId;
           const monthKey = normalizeMonthKey(payload.month || currentMonthKey());
+          const period = normalizePeriod(payload.period);
           const sort = String(payload.sort || "hits-desc").trim().toLowerCase();
           const filters = parseListFilters(payload);
           await updateTrending(id, {
             isActive: payload.isActive,
             isManual: payload.isManual,
           });
-          const list = await buildSuperAdminListPayload(monthKey, sort, filters);
+          const list = await buildSuperAdminListPayload(monthKey, sort, filters, period);
           sendJson(response, 200, {
             ...list,
             message: "Top search updated.",
@@ -1781,6 +3007,9 @@ function createTrendingSearchesApi(deps) {
           const monthKey = normalizeMonthKey(
             payload.month || requestUrl.searchParams.get("month") || currentMonthKey(),
           );
+          const period = normalizePeriod(
+            payload.period || requestUrl.searchParams.get("period"),
+          );
           const sort = String(
             payload.sort || requestUrl.searchParams.get("sort") || "hits-desc",
           )
@@ -1791,7 +3020,7 @@ function createTrendingSearchesApi(deps) {
             ...payload,
           });
           await deleteTrending(id);
-          const list = await buildSuperAdminListPayload(monthKey, sort, filters);
+          const list = await buildSuperAdminListPayload(monthKey, sort, filters, period);
           sendJson(response, 200, {
             ...list,
             message: "Top search removed.",
@@ -1805,6 +3034,41 @@ function createTrendingSearchesApi(deps) {
       }
 
       sendJson(response, 405, { message: "Method not allowed." });
+      return true;
+    }
+
+    if (pathname === "/api/super-admin/trending-searches/export") {
+      if (!requireSuperAdmin(request, response)) {
+        return true;
+      }
+      if (request.method !== "GET") {
+        sendJson(response, 405, { message: "Method not allowed." });
+        return true;
+      }
+      try {
+        const monthKey = normalizeMonthKey(
+          requestUrl.searchParams.get("month") || currentMonthKey(),
+        );
+        const period = normalizePeriod(requestUrl.searchParams.get("period"));
+        const sort = String(requestUrl.searchParams.get("sort") || "hits-desc")
+          .trim()
+          .toLowerCase();
+        const filters = parseListFilters(requestUrl.searchParams);
+        const payload = await buildSuperAdminListPayload(monthKey, sort, filters, period);
+        const csv = buildTrendingCsv(payload);
+        const filename = `trending-searches-${period}-${monthKey}.csv`;
+        response.writeHead(200, {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Cache-Control": "no-store",
+        });
+        response.end(csv);
+      } catch (error) {
+        sendJson(response, 500, {
+          message:
+            error instanceof Error ? error.message : "Unable to export trending searches.",
+        });
+      }
       return true;
     }
 

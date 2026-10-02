@@ -24,10 +24,11 @@
   };
 
   const DEFAULT_PLATFORMS = [
-    { id: "shop", name: "Shop", status: "active", comingSoon: false, sortOrder: 1, iconName: "store", iconImageUrl: "/assets/platform-shop-art.png" },
-    { id: "food", name: "Food", status: "active", comingSoon: false, sortOrder: 2, iconName: "utensils", iconImageUrl: "/assets/platform-food-art.png" },
-    { id: "hotels", name: "Hotels", status: "active", comingSoon: false, sortOrder: 3, iconName: "hotel" },
-    { id: "resort", name: "Resort", status: "active", comingSoon: false, sortOrder: 4, iconName: "tree-palm" },
+    { id: "shop", name: "Shop", status: "active", comingSoon: false, sortOrder: 1, iconName: "store", iconImageUrl: "/assets/platform-shop-art.png", storefrontMode: "commerce" },
+    { id: "food", name: "Food", status: "active", comingSoon: false, sortOrder: 2, iconName: "utensils", iconImageUrl: "/assets/platform-food-art.png", storefrontMode: "commerce" },
+    { id: "hotels", name: "Hotels", status: "active", comingSoon: true, sortOrder: 3, iconName: "hotel", storefrontMode: "booking" },
+    { id: "resort", name: "Resort", status: "active", comingSoon: true, sortOrder: 4, iconName: "tree-palm", storefrontMode: "booking" },
+    { id: "groceries", name: "Groceries", status: "active", comingSoon: true, sortOrder: 5, iconName: "shopping-basket", storefrontMode: "commerce" },
   ];
   const DEFAULT_PLATFORM_ART_URLS = Object.freeze({
     shop: "/assets/platform-shop-art.png",
@@ -40,6 +41,7 @@
     hotel: "platform.name.hotels",
     hotels: "platform.name.hotels",
     resort: "platform.name.resort",
+    groceries: "platform.name.groceries",
   };
 
   const PLATFORM_ICON_SVGS = {
@@ -47,6 +49,7 @@
     utensils: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>`,
     hotel: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 22v-6.57"/><path d="M12 11h.01"/><path d="M12 7h.01"/><path d="M14 15.43V22"/><path d="M15 16a5 5 0 0 0-6 0"/><path d="M16 11h.01"/><path d="M16 7h.01"/><path d="M8 11h.01"/><path d="M8 7h.01"/><rect x="4" y="2" width="16" height="20" rx="2"/></svg>`,
     "tree-palm": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4"/><path d="M13 7.14A7.76 7.76 0 0 1 15.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-2 2-4 2-6"/></svg>`,
+    "shopping-basket": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 11-1 9"/><path d="m19 11-4-7"/><path d="M2 11h20"/><path d="m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4"/><path d="m4.5 15.5 14"/><path d="m6 11 4-7"/><path d="m9 11 1 9"/></svg>`,
   };
 
   function escapeHtml(value) {
@@ -80,11 +83,29 @@
     const key = normalizeKey(name);
     if (!key) return "shop";
     if (
+      key.includes("resort")
+      || key.includes("villa")
+      || key.includes("beach club")
+    ) {
+      return "resort";
+    }
+    if (
       key.includes("hotel")
       || key.includes("hote ")
+      || key.includes("lodging")
       || (/\bhotes?\b/.test(key) && key.includes("restaurant"))
     ) {
       return "hotels";
+    }
+    if (
+      key.includes("grocery")
+      || key.includes("groceries")
+      || key.includes("supermarket")
+      || key.includes("convenience")
+      || key.includes("minimart")
+      || key.includes("sari sari")
+    ) {
+      return "groceries";
     }
     if (
       key === "food"
@@ -1026,11 +1047,20 @@
         form: els.form,
         input: els.input,
         livePanel: true,
-        getContext: () => ({
-          platformId: "",
-          category: "",
-          storeType: "",
-        }),
+        getContext: () => {
+          const query =
+            els.input instanceof HTMLInputElement
+              ? String(els.input.value || "").trim()
+              : "";
+          const hits = query ? buildLiveHits(query) : [];
+          return {
+            platformId: "",
+            category: "",
+            storeType: "",
+            resultCount: hits.length,
+            hasResults: hits.length > 0,
+          };
+        },
         onQueryChange: (query) => {
           if (query) renderLiveResults(query);
           else {

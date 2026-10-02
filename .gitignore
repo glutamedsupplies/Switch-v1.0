@@ -60,6 +60,8 @@ web/maps_api_key.js
 backend/data/*.json
 backend/data/*.bin
 backend/data/*.pre-restore*
+# Switch Rider KYC documents and proof-of-delivery photos (never commit)
+backend/data/private_uploads/
 
 # Node
 /node_modules/

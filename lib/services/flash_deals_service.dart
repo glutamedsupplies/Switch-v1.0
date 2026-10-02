@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/utils/auth_session.dart';
 
@@ -23,6 +25,10 @@ class BuyerFlashDeal {
     this.perBuyerLimit = 1,
     this.dealStockLimit = 0,
     this.serverNow,
+    this.variantIds = const [],
+    this.campaignName = '',
+    this.campaignLabel = '',
+    this.freeShipping = false,
   });
 
   final String id;
@@ -39,6 +45,10 @@ class BuyerFlashDeal {
   final int perBuyerLimit;
   final int dealStockLimit;
   final DateTime? serverNow;
+  final List<String> variantIds;
+  final String campaignName;
+  final String campaignLabel;
+  final bool freeShipping;
 
   bool get isLive => status.trim().toLowerCase() == 'live';
 
@@ -52,9 +62,14 @@ class BuyerFlashDeal {
   }
 
   bool matchesVariant(String? selectedVariantId) {
+    final selected = (selectedVariantId ?? '').trim();
+    if (variantIds.isNotEmpty &&
+        selected.isNotEmpty &&
+        !variantIds.contains(selected)) {
+      return false;
+    }
     final dealVariant = variantId.trim();
     if (dealVariant.isEmpty) return true;
-    final selected = (selectedVariantId ?? '').trim();
     if (selected.isEmpty) return true;
     return dealVariant == selected;
   }
@@ -95,6 +110,15 @@ class BuyerFlashDeal {
       perBuyerLimit: (json['perBuyerLimit'] as num?)?.toInt() ?? 1,
       dealStockLimit: (json['dealStockLimit'] as num?)?.toInt() ?? 0,
       serverNow: DateTime.tryParse('${json['serverNow'] ?? ''}'.trim()),
+      variantIds: (json['variantIds'] is List)
+          ? (json['variantIds'] as List)
+                .map((id) => '${id ?? ''}'.trim())
+                .where((id) => id.isNotEmpty)
+                .toList(growable: false)
+          : const [],
+      campaignName: '${json['campaignName'] ?? ''}'.trim(),
+      campaignLabel: '${json['campaignLabel'] ?? ''}'.trim(),
+      freeShipping: json['freeShipping'] == true,
     );
   }
 }
@@ -122,8 +146,7 @@ class FlashDealReservation {
 
   bool get isHeld => status.trim().toLowerCase() == 'held';
 
-  bool get isExpired =>
-      !isHeld || !expiresAt.isAfter(DateTime.now().toUtc());
+  bool get isExpired => !isHeld || !expiresAt.isAfter(DateTime.now().toUtc());
 
   factory FlashDealReservation.fromJson(Map<String, dynamic> json) {
     return FlashDealReservation(
@@ -133,7 +156,8 @@ class FlashDealReservation {
       variantId: '${json['variantId'] ?? ''}'.trim(),
       lockedUnitPrice: (json['lockedUnitPrice'] as num?)?.toDouble() ?? 0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
-      expiresAt: DateTime.tryParse('${json['expiresAt'] ?? ''}'.trim()) ??
+      expiresAt:
+          DateTime.tryParse('${json['expiresAt'] ?? ''}'.trim()) ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       status: '${json['status'] ?? 'held'}'.trim().toLowerCase(),
     );
@@ -167,6 +191,10 @@ Future<void> _setAccountHeaders(HttpHeaders headers) async {
   final accountId = (await AuthSession.getAccountId())?.trim() ?? '';
   final accountEmail = (await AuthSession.getAccountEmail())?.trim() ?? '';
   final requestAccountId = accountId.isNotEmpty ? accountId : accountEmail;
+  final sessionToken = (await AuthSession.getSessionToken())?.trim() ?? '';
+  if (sessionToken.isNotEmpty) {
+    headers.set('X-Switch-Session', sessionToken);
+  }
   if (requestAccountId.isNotEmpty) {
     headers.set('X-GMS-Account-ID', requestAccountId);
   }
@@ -198,8 +226,9 @@ Future<Map<String, dynamic>?> _postJson(
       decoded = null;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final message = '${decoded?['message'] ?? 'Request failed (${response.statusCode}).'}'
-          .trim();
+      final message =
+          '${decoded?['message'] ?? 'Request failed (${response.statusCode}).'}'
+              .trim();
       throw FlashDealReserveException(
         message.isEmpty ? 'Flash Deal request failed.' : message,
       );
@@ -210,18 +239,48 @@ Future<Map<String, dynamic>?> _postJson(
 
 Future<Map<String, BuyerFlashDeal>>? _liveFlashDealsSourceCache;
 String _liveFlashDealsSourcePlatform = '';
+bool _liveFlashDealsEverLoaded = false;
+
+/// Latest live deals by product id. Product cards listen to this so campaign
+/// prices show in every list, not only the ones that fetch deals themselves.
+final ValueNotifier<Map<String, BuyerFlashDeal>>
+liveFlashDealsByProductIdNotifier = ValueNotifier<Map<String, BuyerFlashDeal>>(
+  const <String, BuyerFlashDeal>{},
+);
+
+String _liveDealsSignature(Map<String, BuyerFlashDeal> deals) {
+  final productIds = deals.keys.toList()..sort();
+  return productIds
+      .map((productId) {
+        final deal = deals[productId]!;
+        return '$productId:${deal.id}:${deal.flashPrice}:${deal.status}:'
+            '${deal.endsAt.millisecondsSinceEpoch}';
+      })
+      .join('|');
+}
+
+void ensureLiveFlashDealsLoaded() {
+  if (_liveFlashDealsEverLoaded || _liveFlashDealsSourceCache != null) {
+    return;
+  }
+  unawaited(loadLiveFlashDealsByProductId());
+}
 
 void clearBuyerFlashDealsCache() {
   _liveFlashDealsSourceCache = null;
   _liveFlashDealsSourcePlatform = '';
 }
 
-Future<List<BuyerFlashDeal>> fetchLiveBuyerFlashDeals({
+Future<List<BuyerFlashDeal>> fetchBuyerFlashDeals({
   String platformId = '',
+  String status = 'live',
 }) async {
   final scopedPlatform = platformId.trim().toLowerCase();
+  final scopedStatus = status.trim().toLowerCase();
   final result = await _tryEachBaseUrl((baseUrl) async {
-    final query = <String, String>{'status': 'live'};
+    final query = <String, String>{
+      'status': scopedStatus.isEmpty ? 'live' : scopedStatus,
+    };
     if (scopedPlatform.isNotEmpty) {
       query['platformId'] = scopedPlatform;
     }
@@ -242,13 +301,68 @@ Future<List<BuyerFlashDeal>> fetchLiveBuyerFlashDeals({
     return raw
         .whereType<Map>()
         .map(
-          (entry) =>
-              BuyerFlashDeal.fromJson(Map<String, dynamic>.from(entry)),
+          (entry) => BuyerFlashDeal.fromJson(Map<String, dynamic>.from(entry)),
         )
-        .where((deal) => deal.isLive && deal.productId.isNotEmpty)
+        .where((deal) => deal.productId.isNotEmpty)
         .toList(growable: false);
   });
   return result ?? const <BuyerFlashDeal>[];
+}
+
+Future<List<BuyerFlashDeal>> fetchLiveBuyerFlashDeals({
+  String platformId = '',
+}) async {
+  final deals = await fetchBuyerFlashDeals(platformId: platformId);
+  return deals.where((deal) => deal.isLive).toList(growable: false);
+}
+
+Future<BuyerFlashDeal?> productFlashDealCountdown({
+  required String productId,
+  String platformId = '',
+  String? variantId,
+}) async {
+  final id = productId.trim();
+  if (id.isEmpty) return null;
+
+  // Only the "live" list includes campaign deals that have not had a
+  // reservation yet; "all" lists stored deals, which covers upcoming ones.
+  final results = await Future.wait([
+    fetchBuyerFlashDeals(platformId: platformId),
+    fetchBuyerFlashDeals(platformId: platformId, status: 'all'),
+  ]);
+  final now = DateTime.now();
+  for (final deal in results[0]) {
+    if (deal.productId == id &&
+        deal.isLive &&
+        deal.matchesVariant(variantId) &&
+        deal.endsAt.isAfter(now)) {
+      return deal;
+    }
+  }
+
+  final deals = results[1];
+  final candidates = deals
+      .where(
+        (deal) =>
+            deal.productId == id &&
+            deal.matchesVariant(variantId) &&
+            deal.endsAt.isAfter(now) &&
+            (deal.status == 'live' ||
+                deal.status == 'upcoming' ||
+                deal.status == 'scheduled'),
+      )
+      .toList(growable: false);
+  if (candidates.isEmpty) return null;
+
+  candidates.sort((first, second) {
+    final firstActive = !now.isBefore(first.startsAt);
+    final secondActive = !now.isBefore(second.startsAt);
+    if (firstActive != secondActive) return firstActive ? -1 : 1;
+    return firstActive
+        ? first.endsAt.compareTo(second.endsAt)
+        : first.startsAt.compareTo(second.startsAt);
+  });
+  return candidates.first;
 }
 
 Future<Map<String, BuyerFlashDeal>> loadLiveFlashDealsByProductId({
@@ -277,6 +391,11 @@ Future<Map<String, BuyerFlashDeal>> loadLiveFlashDealsByProductId({
         map[deal.productId] = deal;
       }
     }
+    _liveFlashDealsEverLoaded = true;
+    if (_liveDealsSignature(liveFlashDealsByProductIdNotifier.value) !=
+        _liveDealsSignature(map)) {
+      liveFlashDealsByProductIdNotifier.value = map;
+    }
     return map;
   }();
   return _liveFlashDealsSourceCache!;
@@ -289,6 +408,36 @@ Future<BuyerFlashDeal?> productLiveFlashDeal({
 }) async {
   final id = productId.trim();
   if (id.isEmpty) return null;
+  // Wrapped so a server answer of "no deal" stops the base-URL walk instead of
+  // timing out against every remaining candidate.
+  final resolved = await _tryEachBaseUrl<({BuyerFlashDeal? deal})>((
+    baseUrl,
+  ) async {
+    final query = <String, String>{'productId': id};
+    final selectedVariant = (variantId ?? '').trim();
+    if (selectedVariant.isNotEmpty) {
+      query['variantId'] = selectedVariant;
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/flash-deals/resolve',
+    ).replace(queryParameters: query);
+    final request = await _client.getUrl(uri);
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    final response = await request.close().timeout(_requestTimeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return null;
+    }
+    final body = await response.transform(utf8.decoder).join();
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) return null;
+    final dealRaw = decoded['deal'];
+    if (dealRaw is! Map) return (deal: null);
+    final deal = BuyerFlashDeal.fromJson(Map<String, dynamic>.from(dealRaw));
+    if (!deal.isLive || deal.productId.isEmpty) return (deal: null);
+    if (!deal.matchesVariant(variantId)) return (deal: null);
+    return (deal: deal);
+  });
+  if (resolved != null) return resolved.deal;
   final map = await loadLiveFlashDealsByProductId(platformId: platformId);
   final deal = map[id];
   if (deal == null) return null;

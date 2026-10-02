@@ -218,6 +218,7 @@
   let enrollSession = 0;
   let enrollStartGeneration = 0;
   let retinaSecurityActionLabel = "";
+  let retinaSecurityDetail = "";
   let enrollProgress = 0;
   let enrollStep = 0;
   let enrollStagesSeen = new Set();
@@ -3443,8 +3444,13 @@
     return `Place your finger to proceed · ${detail}`;
   }
 
-  async function authorizeBuiltInAdminFingerprint(actionLabel = "continue") {
-    const normalizedActionLabel = String(actionLabel || "continue").trim() || "continue";
+  async function authorizeBuiltInAdminFingerprint(actionLabelOrOptions = "continue") {
+    const options =
+      actionLabelOrOptions && typeof actionLabelOrOptions === "object" && !Array.isArray(actionLabelOrOptions)
+        ? actionLabelOrOptions
+        : { actionLabel: actionLabelOrOptions };
+    const normalizedActionLabel = String(options.actionLabel || "continue").trim() || "continue";
+    const detailText = String(options.detail || options.description || "").trim();
     if (!activePort || !deviceVerified) {
       setFeedback("Connect the retina scan controller before continuing. Retina Security is required.", "error");
       showDeviceSnackbar("Controller required", "Connect the retina scan controller to use Retina Security.", "error");
@@ -3469,7 +3475,7 @@
     oledPreviewTimer = 0;
     deviceBusy = true;
     syncConnectionUi();
-    openScanModal({ actionLabel: normalizedActionLabel });
+    openScanModal({ actionLabel: normalizedActionLabel, detail: detailText });
     setFeedback(`Retina Security · ${formatRetinaSecurityProceedHint(normalizedActionLabel)}`);
     const deadline = Date.now() + 90000;
     let lastMessage = "Retina Security did not authorize this action.";
@@ -3986,7 +3992,12 @@
 
   function ensureEnrollModal() {
     if (enrollModal?.root?.isConnected) {
-      return enrollModal;
+      if (!(enrollModal.detail instanceof HTMLElement)) {
+        enrollModal.root.remove();
+        enrollModal = null;
+      } else {
+        return enrollModal;
+      }
     }
 
     const overlay = document.createElement("div");
@@ -4012,6 +4023,7 @@
           <button type="button" class="admin-biometric-enroll-modal__cancel" data-biometric-enroll-close>Cancel</button>
         </header>
         <div class="admin-biometric-enroll-modal__body">
+          <p class="admin-biometric-enroll-modal__detail" data-biometric-enroll-detail hidden></p>
           <span class="admin-biometric-enroll-modal__badge" aria-hidden="true">${fingerprintIconMarkup}</span>
           <p class="admin-biometric-enroll-modal__lead" data-biometric-enroll-lead>Set up your fingerprint</p>
           <div class="admin-biometric-enroll-modal__glyph" data-biometric-enroll-glyph aria-hidden="true">
@@ -4030,6 +4042,7 @@
 
     const dialog = overlay.querySelector("[data-biometric-enroll-dialog]");
     const heading = overlay.querySelector("[data-biometric-enroll-title]");
+    const detail = overlay.querySelector("[data-biometric-enroll-detail]");
     const lead = overlay.querySelector("[data-biometric-enroll-lead]");
     const hint = overlay.querySelector("[data-biometric-enroll-hint]");
     const fill = overlay.querySelector("[data-biometric-enroll-fill]");
@@ -4054,7 +4067,7 @@
     }
 
     document.body.appendChild(overlay);
-    enrollModal = { root: overlay, dialog, heading, lead, hint, fill, steps, glyph };
+    enrollModal = { root: overlay, dialog, heading, detail, lead, hint, fill, steps, glyph };
     return enrollModal;
   }
 
@@ -4192,7 +4205,7 @@
     }
   }
 
-  function openFingerprintModal(mode, { heading, title, hint, progress = 12, step = 0 } = {}) {
+  function openFingerprintModal(mode, { heading, title, hint, detail, progress = 12, step = 0 } = {}) {
     const modal = ensureEnrollModal();
     enrollModalMode = mode === "scan" ? "scan" : "enroll";
     enrollModalOpen = true;
@@ -4205,6 +4218,16 @@
     if (modal.heading) {
       modal.heading.textContent = heading
         || (enrollModalMode === "scan" ? "Retina Security" : "Fingerprint settings");
+    }
+    const detailText = typeof detail === "string" ? detail.trim() : retinaSecurityDetail;
+    if (modal.detail instanceof HTMLElement) {
+      if (detailText) {
+        modal.detail.hidden = false;
+        modal.detail.textContent = detailText;
+      } else {
+        modal.detail.hidden = true;
+        modal.detail.textContent = "";
+      }
     }
     setEnrollModalState({
       progress,
@@ -4222,11 +4245,14 @@
 
   function openScanModal(options = {}) {
     const actionLabel = String(options.actionLabel || "").trim();
+    const detail = String(options.detail || options.description || "").trim();
     retinaSecurityActionLabel = actionLabel;
+    retinaSecurityDetail = detail;
     openFingerprintModal("scan", {
       heading: "Retina Security",
       title: "Place your finger to proceed",
       hint: formatRetinaSecurityProceedHint(actionLabel),
+      detail,
       progress: 18,
       step: 0,
     });
@@ -4236,10 +4262,12 @@
     enrollStagesSeen = new Set();
     lastAlreadyRegisteredStep = 0;
     retinaSecurityActionLabel = "";
+    retinaSecurityDetail = "";
     openFingerprintModal("enroll", {
       heading: "Fingerprint settings",
       title: "Scan 1 of 2",
       hint: "Place your finger flat on the scanner · Then lift your finger",
+      detail: "",
       progress: 28,
       step: 1,
     });
@@ -4264,6 +4292,7 @@
     }
     enrollModalOpen = false;
     retinaSecurityActionLabel = "";
+    retinaSecurityDetail = "";
     document.body.classList.remove("admin-biometric-enroll-open");
     void cancelActiveFingerprintOperation();
     if (!enrollModalOpen && !settingsPanelOpen) {

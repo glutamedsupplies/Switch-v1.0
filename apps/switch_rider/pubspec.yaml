@@ -1,0 +1,48 @@
+name: switch_rider
+description: "Switch Rider - delivery partner app for the Switch marketplace."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  switch_core:
+    path: ../../packages/switch_core
+  flutter_secure_storage: ^11.2.0
+  geolocator: ^14.1.1
+  image_picker: ^1.2.3
+  url_launcher: ^6.3.2
+  google_sign_in: ^7.2.0
+  google_maps_flutter: ^2.14.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  http: ^1.2.2
+
+# Regenerate with: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: assets/icon/switch_rider_icon.png
+  adaptive_icon_background: "#0A9297"
+  adaptive_icon_foreground: assets/icon/switch_rider_icon_fg.png
+  web:
+    generate: true
+    image_path: assets/icon/switch_rider_icon.png
+    background_color: "#0A9297"
+    theme_color: "#0A9297"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/google_logo.png
+    - assets/images/facebook_logo.png

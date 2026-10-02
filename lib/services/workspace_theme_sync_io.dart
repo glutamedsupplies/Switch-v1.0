@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/workspace_theme_sync.dart';
 
 Future<String?> fetchWorkspaceColorHex({
   required Duration timeout,
 }) async {
+  await resolveWorkingLocalApiBaseUrl();
   final baseUrls = buildLocalApiBaseUrls(isAndroid: Platform.isAndroid);
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
 

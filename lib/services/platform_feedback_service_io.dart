@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/platform_feedback_service_base.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 const _requestTimeout = Duration(seconds: 10);
 const _uploadTimeout = Duration(minutes: 2);
@@ -16,6 +17,24 @@ class _IoPlatformFeedbackService implements PlatformFeedbackService {
 
   final List<String> _baseUrls;
   final HttpClient _client = HttpClient();
+
+  Future<void> _applyAuthHeaders(
+    HttpHeaders headers, {
+    required String accountId,
+    required String email,
+  }) async {
+    headers.set(HttpHeaders.acceptHeader, 'application/json');
+    if (accountId.trim().isNotEmpty) {
+      headers.set('X-GMS-Account-ID', accountId.trim());
+    }
+    if (email.trim().isNotEmpty) {
+      headers.set('X-GMS-Account-Email', email.trim());
+    }
+    final sessionToken = (await AuthSession.getSessionToken())?.trim() ?? '';
+    if (sessionToken.isNotEmpty) {
+      headers.set('X-Switch-Session', sessionToken);
+    }
+  }
 
   @override
   Future<PlatformFeedbackResult> submitUserFeedback({
@@ -53,7 +72,11 @@ class _IoPlatformFeedbackService implements PlatformFeedbackService {
             .postUrl(Uri.parse('$baseUrl/api/platform-feedback'))
             .timeout(_requestTimeout);
         request.headers.contentType = ContentType.json;
-        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        await _applyAuthHeaders(
+          request.headers,
+          accountId: accountId,
+          email: email,
+        );
         request.write(payload);
 
         final response = await request.close().timeout(_requestTimeout);
@@ -113,14 +136,14 @@ class _IoPlatformFeedbackService implements PlatformFeedbackService {
     final request = await _client
         .postUrl(Uri.parse('$baseUrl/api/platform-feedback/uploads'))
         .timeout(_requestTimeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    await _applyAuthHeaders(
+      request.headers,
+      accountId: accountId,
+      email: email,
+    );
     request.headers.set(HttpHeaders.contentTypeHeader, attachment.contentType);
     request.headers.set('X-File-Name', Uri.encodeComponent(attachment.name));
     request.headers.set('X-Feedback-Type', 'user');
-    request.headers.set('X-GMS-Account-ID', accountId.trim());
-    if (email.trim().isNotEmpty) {
-      request.headers.set('X-GMS-Account-Email', email.trim());
-    }
     request.contentLength = actualSize;
     await request.addStream(file.openRead()).timeout(_uploadTimeout);
 

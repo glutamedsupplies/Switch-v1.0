@@ -2,24 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/verification_service_base.dart';
 
 VerificationService createVerificationService({String? baseUrl}) {
-  return _HttpVerificationService(
-    baseUrls: buildLocalApiBaseUrls(
-      baseUrl: baseUrl,
-      isAndroid: Platform.isAndroid,
-    ),
-  );
+  return _HttpVerificationService(baseUrl: baseUrl);
 }
 
 class _HttpVerificationService implements VerificationService {
-  _HttpVerificationService({required this.baseUrls});
+  _HttpVerificationService({this.baseUrl});
 
-  final List<String> baseUrls;
+  final String? baseUrl;
   final HttpClient _client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 10);
+    ..connectionTimeout = const Duration(seconds: 3);
 
   Future<Map<String, dynamic>> _postJson(
     String path,
@@ -27,6 +23,11 @@ class _HttpVerificationService implements VerificationService {
   ) async {
     Object? lastError;
 
+    await resolveWorkingLocalApiBaseUrl();
+    final baseUrls = buildLocalApiBaseUrls(
+      baseUrl: baseUrl,
+      isAndroid: Platform.isAndroid,
+    );
     for (final baseUrl in baseUrls) {
       try {
         final request = await _client.postUrl(Uri.parse('$baseUrl$path'));
@@ -34,10 +35,13 @@ class _HttpVerificationService implements VerificationService {
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
         request.write(jsonEncode(payload));
 
+        // Sending the code waits on the email/SMS provider, so only the
+        // connect step is kept short.
         final response = await request.close().timeout(
           const Duration(seconds: 30),
           onTimeout: () => throw TimeoutException('Request timed out'),
         );
+        rememberWorkingLocalApiBaseUrl(baseUrl);
         final body = await response.transform(utf8.decoder).join();
         final decoded = body.isEmpty
             ? <String, dynamic>{}

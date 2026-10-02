@@ -44,6 +44,12 @@
     dialogTitle: document.getElementById("ss-dialog-title"),
     dialogPrice: document.getElementById("ss-dialog-price"),
     dialogDesc: document.getElementById("ss-dialog-desc"),
+    dialogReport: document.getElementById("ss-dialog-report"),
+    dialogReportListing: document.getElementById("ss-dialog-report-listing"),
+    dialogReportHint: document.getElementById("ss-dialog-report-hint"),
+    dialogShareListing: document.getElementById("ss-dialog-share-listing"),
+    dialogShareStore: document.getElementById("ss-dialog-share-store"),
+    dialogShareStatus: document.getElementById("ss-dialog-share-status"),
     menuBtn: document.getElementById("ss-menu-btn"),
     sidebar: document.getElementById("ss-sidebar"),
     sidebarBackdrop: document.getElementById("ss-sidebar-backdrop"),
@@ -54,10 +60,11 @@
   };
 
   const DEFAULT_PLATFORMS = [
-    { id: "shop", name: "Shop", status: "active", iconName: "store", iconImageUrl: "/assets/platform-shop-art.png" },
-    { id: "food", name: "Food", status: "active", iconName: "utensils", iconImageUrl: "/assets/platform-food-art.png" },
-    { id: "hotels", name: "Hotels", status: "active", iconName: "hotel" },
-    { id: "resort", name: "Resort", status: "active", iconName: "tree-palm" },
+    { id: "shop", name: "Shop", status: "active", iconName: "store", iconImageUrl: "/assets/platform-shop-art.png", storefrontMode: "commerce" },
+    { id: "food", name: "Food", status: "active", iconName: "utensils", iconImageUrl: "/assets/platform-food-art.png", storefrontMode: "commerce" },
+    { id: "hotels", name: "Hotels", status: "active", iconName: "hotel", storefrontMode: "booking" },
+    { id: "resort", name: "Resort", status: "active", iconName: "tree-palm", storefrontMode: "booking" },
+    { id: "groceries", name: "Groceries", status: "active", iconName: "shopping-basket", storefrontMode: "commerce" },
   ];
   const DEFAULT_PLATFORM_ART_URLS = Object.freeze({
     shop: "/assets/platform-shop-art.png",
@@ -70,6 +77,7 @@
     hotel: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 22v-6.57"/><path d="M12 11h.01"/><path d="M12 7h.01"/><path d="M14 15.43V22"/><path d="M15 16a5 5 0 0 0-6 0"/><path d="M16 11h.01"/><path d="M16 7h.01"/><path d="M8 11h.01"/><path d="M8 7h.01"/><rect x="4" y="2" width="16" height="20" rx="2"/></svg>`,
     "tree-palm": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4"/><path d="M13 7.14A7.76 7.76 0 0 1 15.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-2 2-4 2-6"/></svg>`,
     shopping: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`,
+    "shopping-basket": `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 11-1 9"/><path d="m19 11-4-7"/><path d="M2 11h20"/><path d="m3.5 11 1.6 7.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6l1.7-7.4"/><path d="m4.5 15.5 14"/><path d="m6 11 4-7"/><path d="m9 11 1 9"/></svg>`,
   };
 
   function escapeHtml(value) {
@@ -113,6 +121,7 @@
     if (id === "food") return "Food";
     if (id === "hotels") return "Hotels";
     if (id === "resort") return "Resort";
+    if (id === "groceries") return "Groceries";
     return id.charAt(0).toUpperCase() + id.slice(1);
   }
 
@@ -159,11 +168,29 @@
     const key = normalizeKey(name);
     if (!key) return "shop";
     if (
+      key.includes("resort")
+      || key.includes("villa")
+      || key.includes("beach club")
+    ) {
+      return "resort";
+    }
+    if (
       key.includes("hotel")
       || key.includes("hote ")
+      || key.includes("lodging")
       || (/\bhotes?\b/.test(key) && key.includes("restaurant"))
     ) {
       return "hotels";
+    }
+    if (
+      key.includes("grocery")
+      || key.includes("groceries")
+      || key.includes("supermarket")
+      || key.includes("convenience")
+      || key.includes("minimart")
+      || key.includes("sari sari")
+    ) {
+      return "groceries";
     }
     if (
       key === "food"
@@ -530,7 +557,161 @@
     if (els.dialogDesc) {
       els.dialogDesc.textContent = String(product.description || "").trim() || "—";
     }
+    if (els.dialogReport || els.dialogReportListing) {
+      const adminId = String(product.adminId || "").trim();
+      const companyId = String(product.companyId || product.company_id || "").trim();
+      const productId = String(product.id || "").trim();
+      const session = window.SwitchBuyerAuth?.readBuyerSession?.() || null;
+      const ownKeys = new Set(
+        [
+          session?.accountId,
+          session?.id,
+          session?.email,
+          session?.activeCompanyId,
+          session?.companyId,
+          ...(Array.isArray(session?.companies)
+            ? session.companies.flatMap((membership) => [
+                membership?.companyId,
+                membership?.company?.id,
+                membership?.company?.email,
+              ])
+            : []),
+        ]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const isOwnCompany = [adminId, companyId]
+        .some((value) => ownKeys.has(String(value || "").trim().toLowerCase()));
+      if (els.dialogReport) {
+        els.dialogReport.hidden = isOwnCompany || !(adminId || companyId);
+        els.dialogReport.dataset.adminId = adminId;
+        els.dialogReport.dataset.companyId = companyId;
+        els.dialogReport.dataset.productId = productId;
+        els.dialogReport.dataset.productName = name;
+        els.dialogReport.dataset.companyName = sellerLabel(product);
+      }
+      if (els.dialogReportListing) {
+        els.dialogReportListing.hidden = isOwnCompany || !productId;
+        els.dialogReportListing.dataset.adminId = adminId;
+        els.dialogReportListing.dataset.companyId = companyId;
+        els.dialogReportListing.dataset.productId = productId;
+        els.dialogReportListing.dataset.productName = name;
+        els.dialogReportListing.dataset.companyName = sellerLabel(product);
+      }
+      window.SwitchCompanyReportGateway?.bindReportButtons(els.dialog);
+      window.SwitchListingReportGateway?.bindReportButtons(els.dialog);
+      refreshReportEligibility({ productId, adminId, companyId });
+    }
+    const shareAdminId = String(product.adminId || "").trim();
+    if (els.dialogShareListing) {
+      els.dialogShareListing.dataset.productId = String(product.id || "").trim();
+      els.dialogShareListing.dataset.productName = name;
+    }
+    if (els.dialogShareStore) {
+      els.dialogShareStore.hidden = !shareAdminId;
+      els.dialogShareStore.dataset.adminId = shareAdminId;
+      els.dialogShareStore.dataset.companyName = sellerLabel(product);
+    }
+    if (els.dialogShareStatus) {
+      els.dialogShareStatus.hidden = true;
+      els.dialogShareStatus.textContent = "";
+    }
     if (typeof els.dialog.showModal === "function") els.dialog.showModal();
+  }
+
+  function setReportButtonState(button, eligible) {
+    if (!(button instanceof HTMLButtonElement)) return;
+    button.disabled = !eligible;
+    button.setAttribute("aria-disabled", eligible ? "false" : "true");
+  }
+
+  async function refreshReportEligibility(target) {
+    const buttons = [
+      [els.dialogReportListing, window.SwitchListingReportGateway],
+      [els.dialogReport, window.SwitchCompanyReportGateway],
+    ];
+    const hints = [];
+    buttons.forEach(([button]) => setReportButtonState(button, false));
+    if (els.dialogReportHint) {
+      els.dialogReportHint.hidden = true;
+      els.dialogReportHint.textContent = "";
+    }
+    await Promise.all(buttons.map(async ([button, gateway]) => {
+      if (!(button instanceof HTMLButtonElement) || button.hidden) return;
+      if (typeof gateway?.checkReportEligibility !== "function") return;
+      const result = await gateway.checkReportEligibility(target);
+      if (String(button.dataset.productId || "") !== String(target.productId || "")) return;
+      setReportButtonState(button, result.eligible);
+      button.title = result.eligible ? "" : result.message;
+      if (!result.eligible && result.message && !hints.includes(result.message)) {
+        hints.push(result.message);
+      }
+    }));
+    if (els.dialogReportHint && hints.length) {
+      els.dialogReportHint.textContent = hints.join(" ");
+      els.dialogReportHint.hidden = false;
+    }
+  }
+
+  function buildShareUrl(kind, id) {
+    return `${window.location.origin}/${kind}/${encodeURIComponent(id)}`;
+  }
+
+  async function shareLink({ url, title }) {
+    const showStatus = (text) => {
+      if (!els.dialogShareStatus) return;
+      els.dialogShareStatus.textContent = text;
+      els.dialogShareStatus.hidden = !text;
+    };
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title, url });
+        showStatus("");
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      showStatus(`Link copied: ${url}`);
+    } catch (_) {
+      window.prompt("Copy this link", url);
+    }
+  }
+
+  function bindShareButtons() {
+    els.dialogShareListing?.addEventListener("click", () => {
+      const productId = String(els.dialogShareListing.dataset.productId || "").trim();
+      if (!productId) return;
+      shareLink({
+        url: buildShareUrl("l", productId),
+        title: els.dialogShareListing.dataset.productName || "Switch listing",
+      });
+    });
+    els.dialogShareStore?.addEventListener("click", () => {
+      const adminId = String(els.dialogShareStore.dataset.adminId || "").trim();
+      if (!adminId) return;
+      shareLink({
+        url: buildShareUrl("s", adminId),
+        title: els.dialogShareStore.dataset.companyName || "Switch store",
+      });
+    });
+  }
+
+  function sharedTargetPlatform() {
+    if (pageParams.get("platform")) return "";
+    const productId = state.openProductId;
+    const adminId = state.adminIdFilter;
+    if (!productId && !adminId) return "";
+    const product = state.products.find((item) => (productId
+      ? String(item?.id || "") === productId
+      : String(item?.adminId || "").trim().toLowerCase() === adminId));
+    if (!product) return "";
+    const typeKey = normalizeKey(productStoreType(product));
+    const storeType = state.storeTypes.find((item) => normalizeKey(item.name) === typeKey);
+    const platform = storeType ? platformForStoreType(storeType) : "";
+    return platform && platform !== PLATFORM ? platform : "";
   }
 
   async function loadCatalog() {
@@ -576,6 +757,14 @@
       state.query = String(pageParams.get("q") || "").trim();
       state.adminIdFilter = String(pageParams.get("adminId") || "").trim().toLowerCase();
       state.openProductId = String(pageParams.get("productId") || "").trim();
+
+      const sharedPlatform = sharedTargetPlatform();
+      if (sharedPlatform) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("platform", sharedPlatform);
+        window.location.replace(url.toString());
+        return;
+      }
 
       hideState();
       renderHero();
@@ -1498,6 +1687,7 @@
   }
 
   bindEvents();
+  bindShareButtons();
   bindHeaderScroll();
   bindHeaderSearchDock();
   bindSidebar();

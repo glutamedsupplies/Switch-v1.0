@@ -4,10 +4,9 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:switch_app/main.dart' show ShopListingGrid;
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:switch_app/add_to_cart.dart';
-import 'package:switch_app/cart.dart';
 import 'package:switch_app/error_validation.dart';
 import 'package:switch_app/favorite_products_store.dart';
 import 'package:switch_app/feedback_page.dart';
@@ -17,7 +16,6 @@ import 'package:switch_app/services/app_language_preference.dart';
 import 'package:switch_app/services/account_devices_service.dart';
 import 'package:switch_app/services/buyer_delivery_address_store.dart';
 import 'package:switch_app/services/chat_support_sync.dart';
-import 'package:switch_app/services/flash_deals_service.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/philippines_places_service.dart';
 import 'package:switch_app/services/unified_account_service.dart';
@@ -26,13 +24,11 @@ import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:switch_app/theme/app_theme.dart';
 import 'package:switch_app/utils/app_keyboard.dart';
 import 'package:switch_app/utils/auth_session.dart';
-import 'package:switch_app/utils/own_listing.dart';
-import 'package:switch_app/utils/currency_format.dart';
-import 'package:switch_app/widgets/app_price_text.dart';
 import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:switch_app/widgets/buyer_right_panel_host.dart';
 import 'package:switch_app/widgets/buyer_platform_activity_list.dart';
 import 'package:switch_app/widgets/google_maps_embed_preview.dart';
+import 'package:switch_app/widgets/lucide_share_icon.dart';
 import 'package:switch_app/widgets/password_visibility_icon.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
 import 'package:geolocator/geolocator.dart';
@@ -125,6 +121,11 @@ class _SellerCompanyOption {
     required this.detail,
     required this.logoUrl,
     required this.isActive,
+    this.statusKey = '',
+    this.statusLabel = '',
+    this.banReason = '',
+    this.banDescription = '',
+    this.requirements = const <_CompanyRequirementItem>[],
   });
 
   final String companyId;
@@ -132,6 +133,23 @@ class _SellerCompanyOption {
   final String detail;
   final String logoUrl;
   final bool isActive;
+  final String statusKey;
+  final String statusLabel;
+  final String banReason;
+  final String banDescription;
+  final List<_CompanyRequirementItem> requirements;
+}
+
+class _CompanyRequirementItem {
+  const _CompanyRequirementItem({
+    required this.label,
+    required this.done,
+    this.detail = '',
+  });
+
+  final String label;
+  final bool done;
+  final String detail;
 }
 
 const String _lucideUserPlusIconSvg =
@@ -217,6 +235,7 @@ class _BuyerVoucher {
     required this.note,
     required this.icon,
     this.platformId = 'all',
+    this.platformIds = const <String>[],
     this.platformLabel = 'All platforms',
   });
 
@@ -231,6 +250,7 @@ class _BuyerVoucher {
   final String note;
   final IconData icon;
   final String platformId;
+  final List<String> platformIds;
   final String platformLabel;
 }
 
@@ -505,7 +525,6 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
   int _addressSearchRequestId = 0;
   bool _companiesLoading = false;
   bool _companySelectBusy = false;
-  String? _favoriteCartBusyProductId;
   String? _activeCompanyId;
   List<_SellerCompanyOption> _sellerCompanies = const <_SellerCompanyOption>[];
 
@@ -923,13 +942,126 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
               ]
               .map((value) => value?.toString().trim() ?? '')
               .firstWhere((value) => value.isNotEmpty, orElse: () => 'Company');
+      final statusCandidates = <String>[
+        company['accountState']?.toString() ?? '',
+        company['enforcementStatus']?.toString() ?? '',
+        company['status']?.toString() ?? '',
+        if (company['profileData'] is Map)
+          (company['profileData'] as Map)['lastEnforcementStatus']?.toString() ??
+              '',
+        if (membership['metadata'] is Map)
+          (membership['metadata'] as Map)['lastEnforcementStatus']?.toString() ??
+              '',
+        company['subscriptionStatus']?.toString() ?? '',
+        membership['membershipStatus']?.toString() ?? '',
+      ]
+          .map(
+            (value) => value.trim().toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_'),
+          )
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false);
+      String statusKey = '';
+      String statusLabel = '';
+      bool matches(bool Function(String raw) test) =>
+          statusCandidates.any(test);
+      if (matches((raw) => raw.contains('ban') && !raw.contains('unban'))) {
+        statusKey = 'banned';
+        statusLabel = 'Banned';
+      } else if (matches((raw) => raw.contains('restrict'))) {
+        statusKey = 'restricted';
+        statusLabel = 'Restricted';
+      } else if (matches(
+        (raw) =>
+            raw.contains('pending_payment') ||
+            (raw.contains('payment') && !raw.contains('approved')),
+      )) {
+        statusKey = 'pending_payment';
+        statusLabel = 'Pending payment';
+      } else if (matches(
+        (raw) =>
+            raw.contains('pending') || raw.contains('review') || raw == 'draft',
+      )) {
+        statusKey = 'pending_review';
+        statusLabel = 'In review';
+      } else if (matches((raw) => raw.contains('suspend'))) {
+        statusKey = 'suspended';
+        statusLabel = 'Suspended';
+      } else if (matches(
+        (raw) =>
+            raw.contains('deactivat') ||
+            raw.contains('inactive') ||
+            raw.contains('deleted') ||
+            raw.contains('withdraw'),
+      )) {
+        statusKey = 'deactivated';
+        statusLabel = 'Deactivated';
+      }
       final detail = [
         role.replaceAll('_', ' '),
         company['businessType']?.toString().trim() ?? '',
-        company['status']?.toString().trim() ??
-            company['subscriptionStatus']?.toString().trim() ??
-            '',
       ].where((value) => value.isNotEmpty).join(' · ');
+      final profileData = company['profileData'] is Map
+          ? Map<String, dynamic>.from(company['profileData'] as Map)
+          : const <String, dynamic>{};
+      final metadata = membership['metadata'] is Map
+          ? Map<String, dynamic>.from(membership['metadata'] as Map)
+          : const <String, dynamic>{};
+      final banReason =
+          (
+            profileData['banReason'] ??
+                profileData['lastEnforcementReason'] ??
+                metadata['lastEnforcementReason'] ??
+                ''
+          ).toString().trim();
+      final banDescription =
+          (
+            profileData['banDescription'] ??
+                profileData['lastEnforcementDescription'] ??
+                metadata['lastEnforcementDescription'] ??
+                ''
+          ).toString().trim();
+      final docs = profileData['businessDocuments'] is List
+          ? List<dynamic>.from(profileData['businessDocuments'] as List)
+          : const <dynamic>[];
+      final logoSkipped = profileData['businessLogoSkipped'] == true;
+      final hasLogo =
+          (company['logoUrl']?.toString().trim().isNotEmpty ?? false) ||
+          logoSkipped;
+      final subscriptionStatus =
+          company['subscriptionStatus']?.toString().trim().toLowerCase() ?? '';
+      final hasPayment =
+          (profileData['paymentConfirmedAt']?.toString().trim().isNotEmpty ??
+              false) ||
+          (profileData['paymentReference']?.toString().trim().isNotEmpty ??
+              false) ||
+          subscriptionStatus == 'pending_review' ||
+          subscriptionStatus == 'active';
+      final hasContact =
+          (company['email']?.toString().trim().isNotEmpty ?? false) ||
+          (company['mobileNumber']?.toString().trim().isNotEmpty ?? false);
+      final requirements = <_CompanyRequirementItem>[
+        _CompanyRequirementItem(
+          label: 'Company name',
+          done:
+              (company['name']?.toString().trim().isNotEmpty ?? false) ||
+              (company['publicName']?.toString().trim().isNotEmpty ?? false),
+        ),
+        _CompanyRequirementItem(
+          label: 'Business type',
+          done:
+              (company['businessType']?.toString().trim().isNotEmpty ?? false) ||
+              (profileData['businessType']?.toString().trim().isNotEmpty ??
+                  false),
+        ),
+        _CompanyRequirementItem(label: 'Business logo', done: hasLogo),
+        _CompanyRequirementItem(label: 'Plan payment', done: hasPayment),
+        _CompanyRequirementItem(
+          label: 'Business documents',
+          done: docs.isNotEmpty,
+          detail: docs.isEmpty ? '' : '${docs.length}',
+        ),
+        _CompanyRequirementItem(label: 'Contact details', done: hasContact),
+      ];
       options.add(
         _SellerCompanyOption(
           companyId: companyId,
@@ -937,6 +1069,11 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
           detail: detail.isEmpty ? 'Seller admin' : detail,
           logoUrl: _companyLogoUrl(company),
           isActive: activeCompanyId.isNotEmpty && activeCompanyId == companyId,
+          statusKey: statusKey,
+          statusLabel: statusLabel,
+          banReason: banReason,
+          banDescription: banDescription,
+          requirements: requirements,
         ),
       );
     }
@@ -979,18 +1116,98 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
     if (accountId.isEmpty || accountId == '—') return;
     setState(() => _companySelectBusy = true);
     try {
-      final unlockToken = await _promptSellerSwitchPin(company);
+      // Refresh so SA ban/review is not stale from a cached session.
+      await _refreshSellerCompanies();
+      if (!mounted) return;
+      var latest = _sellerCompanies.firstWhere(
+        (item) => item.companyId == company.companyId,
+        orElse: () => company,
+      );
+
+      // Server gate is authoritative (seller-account ban may leave company.status active).
+      try {
+        final gate = await _profileAccountService.fetchSellerSwitchPinStatus(
+          accountId: accountId,
+          companyId: latest.companyId,
+          email: widget.email.trim(),
+        );
+        if (gate.workspaceBlocked) {
+          final gated = _SellerCompanyOption(
+            companyId: latest.companyId,
+            name: latest.name,
+            detail: latest.detail,
+            logoUrl: latest.logoUrl,
+            isActive: latest.isActive,
+            statusKey: gate.workspaceStatus.isNotEmpty
+                ? gate.workspaceStatus
+                : 'banned',
+            statusLabel: gate.workspaceStatus == 'banned'
+                ? 'Banned'
+                : gate.workspaceStatus == 'pending_payment'
+                    ? 'Pending payment'
+                    : 'In review',
+            banReason: gate.banReason.isNotEmpty
+                ? gate.banReason
+                : latest.banReason,
+            banDescription: gate.banDescription.isNotEmpty
+                ? gate.banDescription
+                : latest.banDescription,
+            requirements: latest.requirements,
+          );
+          if (gated.statusKey == 'banned') {
+            await _showBannedCompanyDialog(gated);
+            return;
+          }
+          if (gated.statusKey == 'pending_review' ||
+              gated.statusKey == 'pending_payment') {
+            await _showPendingReviewCompanyDialog(gated);
+            return;
+          }
+          if (gated.statusKey == 'deactivated' ||
+              gated.statusKey == 'suspended') {
+            AppSnackBar.showError(
+              context,
+              message:
+                  'This company is deactivated. Seller dashboard cannot be opened.',
+            );
+            return;
+          }
+        }
+      } catch (_) {
+        // Fall back to local status below.
+      }
+
+      final blockedStatus = latest.statusKey.trim().toLowerCase();
+      if (blockedStatus == 'banned') {
+        await _showBannedCompanyDialog(latest);
+        return;
+      }
+      if (blockedStatus == 'pending_review' ||
+          blockedStatus == 'pending_payment') {
+        await _showPendingReviewCompanyDialog(latest);
+        return;
+      }
+      if (blockedStatus == 'deactivated' || blockedStatus == 'suspended') {
+        AppSnackBar.showError(
+          context,
+          message:
+              'This company is deactivated. Seller dashboard cannot be opened.',
+        );
+        return;
+      }
+
+      final unlockToken = await _promptSellerSwitchPin(latest);
       if (!mounted || unlockToken == null || unlockToken.isEmpty) return;
 
       final result = await _profileAccountService.switchRole(
         accountId: accountId,
         activeMode: 'seller_admin',
-        companyId: company.companyId,
+        companyId: latest.companyId,
       );
       await AuthSession.setUnifiedSession(result.session);
       if (!mounted) return;
       setState(() {
-        _activeCompanyId = company.companyId;
+        _activeCompanyId = latest.companyId;
         _sellerCompanies = _parseSellerCompanies(result.session);
       });
       final bases = buildLocalApiBaseUrls(
@@ -1007,7 +1224,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
       if (!mounted) return;
       AppSnackBar.showSuccess(
         context,
-        message: 'Opened ${company.name} seller admin.',
+        message: 'Opened ${latest.name} seller admin.',
       );
       await Navigator.of(context).maybePop();
     } catch (error) {
@@ -1018,6 +1235,218 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
         setState(() => _companySelectBusy = false);
       }
     }
+  }
+
+  Future<void> _showBannedCompanyDialog(_SellerCompanyOption company) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Company banned'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Super Admin banned ${company.name}. Seller dashboard cannot be opened.',
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Reason for ban',
+                style: TextStyle(
+                  color: widget.secondaryColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                company.banReason.trim().isEmpty
+                    ? 'No ban reason was provided.'
+                    : company.banReason.trim(),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Ban details',
+                style: TextStyle(
+                  color: widget.secondaryColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                company.banDescription.trim().isEmpty
+                    ? 'No additional ban description was provided.'
+                    : company.banDescription.trim(),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showPendingReviewCompanyDialog(
+    _SellerCompanyOption company,
+  ) async {
+    if (!mounted) return;
+    var showRequirements = false;
+    var busy = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !busy,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> withdraw() async {
+              final confirmed = await showDialog<bool>(
+                context: dialogContext,
+                builder: (confirmContext) {
+                  return AlertDialog(
+                    title: const Text('Withdraw application'),
+                    content: Text(
+                      'Withdraw ${company.name}? You can start again later.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.of(confirmContext).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () =>
+                            Navigator.of(confirmContext).pop(true),
+                        child: const Text('Withdraw'),
+                      ),
+                    ],
+                  );
+                },
+              );
+              if (confirmed != true || !dialogContext.mounted) return;
+              setDialogState(() => busy = true);
+              try {
+                final result = await _profileAccountService
+                    .withdrawPendingCompany(
+                  accountId: widget.accountId.trim(),
+                  companyId: company.companyId,
+                  email: widget.email.trim() == '—'
+                      ? ''
+                      : widget.email.trim(),
+                  reason: 'Withdrawn by seller from Companies panel',
+                );
+                await AuthSession.setUnifiedSession(result.session);
+                if (!dialogContext.mounted) return;
+                Navigator.of(dialogContext).pop();
+                if (!mounted) return;
+                await _refreshSellerCompanies();
+                AppSnackBar.showSuccess(
+                  context,
+                  message: 'Company application withdrawn.',
+                );
+              } catch (error) {
+                if (!dialogContext.mounted) return;
+                setDialogState(() => busy = false);
+                AppSnackBar.showError(
+                  dialogContext,
+                  message: error.toString(),
+                );
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Thank you for submitting'),
+              content: SizedBox(
+                width: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Thank you for submitting ${company.name} for review. Super Admin is carefully checking your application. Please allow up to 24 hours for a decision. Your seller dashboard will open as soon as it is approved.',
+                    ),
+                    if (showRequirements) ...[
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Submitted requirements',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final item in company.requirements) ...[
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.detail.trim().isEmpty
+                                      ? item.label
+                                      : '${item.label} (${item.detail})',
+                                ),
+                              ),
+                              Text(
+                                item.done ? 'Submitted' : 'Missing',
+                                style: TextStyle(
+                                  color: item.done
+                                      ? const Color(0xFF166534)
+                                      : const Color(0xFFB91C1C),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () => setDialogState(
+                            () => showRequirements = !showRequirements,
+                          ),
+                  child: Text(
+                    showRequirements
+                        ? 'Hide requirements'
+                        : 'Check requirements',
+                  ),
+                ),
+                TextButton(
+                  onPressed: busy ? null : () => unawaited(withdraw()),
+                  child: Text(busy ? 'Withdrawing...' : 'Withdraw'),
+                ),
+                FilledButton(
+                  onPressed: busy
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<String?> _promptSellerSwitchPin(_SellerCompanyOption company) async {
@@ -1032,7 +1461,9 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
 
     final pinController = TextEditingController();
     final confirmController = TextEditingController();
-    var creating = !status.hasPin;
+    var creating = !status.hasPin || status.pinResetRequired;
+    final pinResetRequired = status.pinResetRequired;
+    final pinResetReason = status.pinResetReason.trim();
     var obscure = true;
     String? errorText;
     var busy = false;
@@ -1092,16 +1523,24 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                 }
               }
 
+              final leadText = pinResetRequired
+                  ? (pinResetReason.isNotEmpty
+                      ? 'Super Admin required a Switch PIN reset: $pinResetReason Create a new 6-digit Switch PIN to continue.'
+                      : 'Super Admin required a Switch PIN reset. Create a new 6-digit Switch PIN for ${company.name} to continue. This is not your login password.')
+                  : creating
+                      ? 'Create a Switch PIN for ${company.name}. This is not your login password. Subscribers must enter this PIN before seller admin opens.'
+                      : 'Enter the Switch PIN for ${company.name} before opening seller admin. This is not your login password.';
+
               return AlertDialog(
-                title: const Text('Switch PIN'),
+                title: Text(
+                  pinResetRequired ? 'Switch PIN reset required' : 'Switch PIN',
+                ),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      creating
-                          ? 'Create a Switch PIN for ${company.name}. This is not your login password. Subscribers must enter this PIN before seller admin opens.'
-                          : 'Enter the Switch PIN for ${company.name} before opening seller admin. This is not your login password.',
+                      leadText,
                       style: TextStyle(
                         color: widget.secondaryColor,
                         fontSize: 13,
@@ -1117,7 +1556,9 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                       maxLength: 6,
                       decoration: InputDecoration(
                         labelText: creating
-                            ? 'Create Switch PIN'
+                            ? (pinResetRequired
+                                ? 'New Switch PIN'
+                                : 'Create Switch PIN')
                             : 'Switch PIN',
                         counterText: '',
                         suffixIcon: IconButton(
@@ -1287,14 +1728,20 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
               side: BorderSide(
-                color: company.isActive
+                color: company.statusKey == 'banned'
+                    ? const Color(0xFFB91C1C).withValues(alpha: 0.28)
+                    : company.statusKey == 'restricted'
+                    ? const Color(0xFFB45309).withValues(alpha: 0.28)
+                    : company.isActive
                     ? widget.primaryColor.withValues(alpha: 0.42)
                     : const Color(0xFFE2E8F0),
               ),
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: _companySelectBusy
+              onTap: _companySelectBusy ||
+                      company.statusKey == 'deactivated' ||
+                      company.statusKey == 'suspended'
                   ? null
                   : () => unawaited(_openSellerCompany(company)),
               child: Padding(
@@ -1330,31 +1777,40 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                         ],
                       ),
                     ),
-                    if (company.isActive)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: widget.primaryColor.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'Current',
-                          style: TextStyle(
-                            color: widget.primaryColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (company.statusLabel.isNotEmpty)
+                          _buildCompanyStatusBadge(company),
+                        if (company.isActive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: widget.primaryColor.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Current',
+                              style: TextStyle(
+                                color: widget.primaryColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        else if (company.statusLabel.isEmpty)
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: widget.secondaryColor,
                           ),
-                        ),
-                      )
-                    else
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 18,
-                        color: widget.secondaryColor,
-                      ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -1370,26 +1826,60 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
           ),
         ],
         const SizedBox(height: 10),
-        OutlinedButton.icon(
+        FilledButton(
           onPressed: _companySelectBusy
               ? null
               : () {
                   unawaited(_startSellerUpgrade());
                 },
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('Add company'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: widget.primaryColor,
-            side: BorderSide(
-              color: widget.primaryColor.withValues(alpha: 0.35),
-            ),
+          style: FilledButton.styleFrom(
+            backgroundColor: widget.primaryColor,
+            foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(44),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
           ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_rounded, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Add company',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCompanyStatusBadge(_SellerCompanyOption company) {
+    final colors = switch (company.statusKey) {
+      'banned' => (const Color(0xFFFEE2E2), const Color(0xFFB91C1C)),
+      'restricted' => (const Color(0xFFFEF3C7), const Color(0xFFB45309)),
+      'pending_review' || 'pending_payment' => (
+        const Color(0xFFE0F2FE),
+        const Color(0xFF0369A1),
+      ),
+      _ => (const Color(0xFFE2E8F0), const Color(0xFF475569)),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.$1,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        company.statusLabel,
+        style: TextStyle(
+          color: colors.$2,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
@@ -1400,35 +1890,71 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
     final foreground = _companyLogoToneForegrounds[tone];
     final background = _companyLogoToneBackgrounds[tone];
     final logoUrl = company.logoUrl.trim();
-    return Container(
+    final statusColor = switch (company.statusKey) {
+      'banned' => const Color(0xFFDC2626),
+      'restricted' => const Color(0xFFF59E0B),
+      'pending_review' || 'pending_payment' => const Color(0xFF0EA5E9),
+      'suspended' || 'deactivated' => const Color(0xFF64748B),
+      _ => null,
+    };
+    return SizedBox(
       width: 48,
       height: 48,
-      decoration: BoxDecoration(
-        color: logoUrl.isEmpty ? background : const Color(0xFFE2E8F0),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: logoUrl.isEmpty
-          ? Center(
-              child: SvgPicture.string(
-                _lucideBuildingIconSvg,
-                width: 24,
-                height: 24,
-                colorFilter: ColorFilter.mode(foreground, BlendMode.srcIn),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: logoUrl.isEmpty ? background : const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(14),
               ),
-            )
-          : CachedNetworkImage(
-              imageUrl: logoUrl,
-              fit: BoxFit.cover,
-              errorWidget: (context, url, error) => Center(
-                child: SvgPicture.string(
-                  _lucideBuildingIconSvg,
-                  width: 24,
-                  height: 24,
-                  colorFilter: ColorFilter.mode(foreground, BlendMode.srcIn),
+              clipBehavior: Clip.antiAlias,
+              child: logoUrl.isEmpty
+                  ? Center(
+                      child: SvgPicture.string(
+                        _lucideBuildingIconSvg,
+                        width: 24,
+                        height: 24,
+                        colorFilter: ColorFilter.mode(
+                          foreground,
+                          BlendMode.srcIn,
+                        ),
+                      ),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: logoUrl,
+                      fit: BoxFit.cover,
+                      errorWidget: (context, url, error) => Center(
+                        child: SvgPicture.string(
+                          _lucideBuildingIconSvg,
+                          width: 24,
+                          height: 24,
+                          colorFilter: ColorFilter.mode(
+                            foreground,
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          if (statusColor != null)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
                 ),
               ),
             ),
+        ],
+      ),
     );
   }
 
@@ -2547,10 +3073,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
               return _buildFavoritesUnavailableView(snapshot.error);
             }
 
-            return _buildFavoriteProductsLayout(
-              favoriteProducts,
-              catalogProducts,
-            );
+            return _buildFavoriteProductsLayout(favoriteProducts);
           },
         );
       },
@@ -2752,28 +3275,6 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
     );
   }
 
-  double _favoriteDisplayPrice(Product product) {
-    final salePrice = product.salesPrice;
-    if (salePrice != null &&
-        salePrice >= 0 &&
-        salePrice < product.originalPrice) {
-      return salePrice;
-    }
-    return product.originalPrice;
-  }
-
-  int? _favoriteDiscountPercent(Product product) {
-    final salePrice = product.salesPrice;
-    if (salePrice == null ||
-        salePrice < 0 ||
-        salePrice >= product.originalPrice ||
-        product.originalPrice <= 0) {
-      return null;
-    }
-    return (((product.originalPrice - salePrice) / product.originalPrice) * 100)
-        .round();
-  }
-
   Future<void> _removeFavoriteProduct(Product product) async {
     final isNowFavorite = await FavoriteProductsStore.instance.toggleFavorite(
       product.id,
@@ -2785,55 +3286,6 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
           ? 'Product added to favorites.'
           : 'Product removed from favorites.',
     );
-  }
-
-  Future<void> _addFavoriteProductToCart(
-    Product product,
-    List<Product> catalogProducts,
-  ) async {
-    if (_favoriteCartBusyProductId != null) return;
-
-    final selection = await showAddToCartModal(
-      context,
-      product: product,
-      catalogProducts: catalogProducts,
-      discountPercent: _favoriteDiscountPercent(product),
-    );
-    if (!mounted || selection == null) return;
-    if (await isOwnCompanyListing(product)) {
-      if (!mounted) return;
-      AppSnackBar.showError(
-        context,
-        message: "You can't add your own company listing to cart.",
-      );
-      return;
-    }
-
-    setState(() => _favoriteCartBusyProductId = product.id);
-    try {
-      await CartStore.instance.addItem(
-        product,
-        quantity: selection.quantity,
-        selectedVariant: selection.selectedVariant,
-        catalogProducts: catalogProducts,
-        platformId: widget.platformId,
-      );
-      if (!mounted) return;
-      AppSnackBar.showSuccess(context, message: 'Product added to cart.');
-    } on FlashDealReserveException catch (error) {
-      if (!mounted) return;
-      AppSnackBar.showError(context, message: error.message);
-    } catch (_) {
-      if (!mounted) return;
-      AppSnackBar.showError(
-        context,
-        message: 'Unable to add this product to your cart.',
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _favoriteCartBusyProductId = null);
-      }
-    }
   }
 
   void _openFavoriteProduct(Product product) {
@@ -2904,202 +3356,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
     );
   }
 
-  Widget _buildFavoriteProductCard(
-    Product product,
-    List<Product> catalogProducts,
-  ) {
-    final displayPrice = _favoriteDisplayPrice(product);
-    final discountPercent = _favoriteDiscountPercent(product);
-    final isAdding = _favoriteCartBusyProductId == product.id;
-
-    return Material(
-      color: widget.surfaceColor,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: widget.onOpenProduct == null
-            ? null
-            : () => _openFavoriteProduct(product),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: widget.secondaryColor.withValues(alpha: 0.14),
-            ),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                height: 116,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _buildFavoriteImage(product),
-                    if (discountPercent != null)
-                      Positioned(
-                        left: 7,
-                        bottom: 7,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: widget.primaryColor,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            '-$discountPercent%',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: Material(
-                        color: widget.surfaceColor.withValues(alpha: 0.94),
-                        shape: const CircleBorder(),
-                        child: InkWell(
-                          onTap: () => _removeFavoriteProduct(product),
-                          customBorder: const CircleBorder(),
-                          child: Padding(
-                            padding: const EdgeInsets.all(6),
-                            child: Icon(
-                              Icons.favorite_rounded,
-                              size: 17,
-                              color: widget.primaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        product.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: widget.titleColor,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 13,
-                            color: Color(0xFFF59E0B),
-                          ),
-                          const SizedBox(width: 2),
-                          Expanded(
-                            child: Text(
-                              product.rating > 0
-                                  ? '${product.rating.toStringAsFixed(1)} (${product.ratingCount})'
-                                  : 'New arrival',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: widget.secondaryColor,
-                                fontSize: 9.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          AppPriceText(
-                            amount: displayPrice,
-                            color: widget.primaryColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                          if (discountPercent != null) ...[
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: AppPriceText(
-                                amount: product.originalPrice,
-                                color: widget.secondaryColor,
-                                fontSize: 8.5,
-                                decoration: TextDecoration.lineThrough,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 30,
-                        child: OutlinedButton.icon(
-                          onPressed: _favoriteCartBusyProductId == null
-                              ? () => _addFavoriteProductToCart(
-                                  product,
-                                  catalogProducts,
-                                )
-                              : null,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: widget.primaryColor,
-                            side: BorderSide(
-                              color: widget.primaryColor.withValues(alpha: 0.3),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                          ),
-                          icon: isAdding
-                              ? const SkeletonCircle(size: 12)
-                              : const Icon(
-                                  Icons.add_shopping_cart_rounded,
-                                  size: 13,
-                                ),
-                          label: Text(
-                            isAdding ? 'Adding...' : 'Add to Cart',
-                            maxLines: 1,
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFavoriteProductsLayout(
-    List<Product> favoriteProducts,
-    List<Product> catalogProducts,
-  ) {
+  Widget _buildFavoriteProductsLayout(List<Product> favoriteProducts) {
     final itemCount = favoriteProducts.length;
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
@@ -3149,20 +3406,16 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
           ],
         ),
         const SizedBox(height: 10),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: itemCount,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 9,
-            mainAxisSpacing: 10,
-            mainAxisExtent: 250,
-          ),
-          itemBuilder: (context, index) => _buildFavoriteProductCard(
-            favoriteProducts[index],
-            catalogProducts,
-          ),
+        ShopListingGrid(
+          products: favoriteProducts,
+          primaryColor: widget.primaryColor,
+          titleColor: widget.titleColor,
+          secondaryColor: widget.secondaryColor,
+          surfaceColor: widget.surfaceColor,
+          onFavoriteTap: _removeFavoriteProduct,
+          onOpenProduct: widget.onOpenProduct == null
+              ? null
+              : _openFavoriteProduct,
         ),
       ],
     );
@@ -3170,7 +3423,8 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
 
   Widget _buildInviteStep({
     required int number,
-    required IconData icon,
+    IconData? icon,
+    Widget? iconWidget,
     required String title,
     required String subtitle,
   }) {
@@ -3195,7 +3449,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                       color: accent.withValues(alpha: 0.09),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(icon, color: accent, size: 25),
+                    child: iconWidget ?? Icon(icon, color: accent, size: 25),
                   ),
                 ),
                 Positioned(
@@ -3545,7 +3799,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                             : const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.ios_share_rounded, size: 21),
+                                  LucideShareIcon(size: 21),
                                   SizedBox(width: 9),
                                   Text(
                                     'Send link',
@@ -3584,7 +3838,10 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                         children: [
                           _buildInviteStep(
                             number: 1,
-                            icon: Icons.share_rounded,
+                            iconWidget: LucideShareIcon(
+                              color: widget.primaryColor,
+                              size: 25,
+                            ),
                             title: 'Share your code',
                             subtitle: 'Invite friends via QR code or link',
                           ),
@@ -3687,6 +3944,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
                 note: item.note,
                 icon: item.icon,
                 platformId: item.platformId,
+                platformIds: item.platformIds,
                 platformLabel: item.platformLabel,
               ),
             )
@@ -3703,13 +3961,16 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
     if (voucher.status != _BuyerVoucherStatus.active) return;
     final currentPlatform = widget.platformId.trim().toLowerCase();
     final scoped = voucher.platformId.trim().toLowerCase();
-    final mismatch =
+    final checksPlatform =
         currentPlatform.isNotEmpty &&
         currentPlatform != 'none' &&
-        currentPlatform != 'all' &&
-        scoped.isNotEmpty &&
-        scoped != 'all' &&
-        scoped != currentPlatform;
+        currentPlatform != 'all';
+    final mismatch = checksPlatform &&
+        (voucher.platformIds.length > 1
+            ? !voucher.platformIds.contains(currentPlatform)
+            : scoped.isNotEmpty &&
+                scoped != 'all' &&
+                scoped != currentPlatform);
     await Clipboard.setData(ClipboardData(text: voucher.code));
     if (!mounted) return;
     if (mismatch) {
@@ -6213,11 +6474,11 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
 
   Widget _buildSellerView() {
     const steps = <String>[
-      'Choose Free or a paid plan (paid plans unlock the Legit badge)',
-      'Register Visa / Mastercard (paid plans only)',
+      'One free company per account — no plan and no payment',
       'Create a Switch PIN',
       'Verify email or phone if needed',
-      'Company name, business type & photo',
+      'Company name, seller type, documents & photo',
+      'Earn the legitimate badge from ratings, speed, and service',
       'Enter Switch PIN to open seller admin',
     ];
 
@@ -6234,7 +6495,7 @@ class _BuyerAccountPanelState extends State<BuyerAccountPanel>
         ),
         const SizedBox(height: 8),
         Text(
-          'Start on Free, or pick a paid plan for the Legit seller badge on original products. Create a Switch PIN, then set up your company.',
+          'Every account gets one free company. There is no subscription. The legitimate badge is earned from ratings, fast replies, and how well you resolve buyer problems.',
           style: TextStyle(
             color: widget.secondaryColor,
             fontSize: 12,

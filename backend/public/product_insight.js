@@ -5723,6 +5723,43 @@ function createProductInsightSellerReplyBlock(reply) {
   return block;
 }
 
+async function reportProductInsightReview(review) {
+  const details = window.prompt(
+    "Tell Super Admin why this review breaks policy. You cannot delete it yourself.",
+    "",
+  );
+  if (details == null) {
+    return;
+  }
+  const trimmed = String(details).trim();
+  if (trimmed.length < 12) {
+    window.alert("Explain the policy issue in at least 12 characters.");
+    return;
+  }
+  const category = window.prompt(
+    "Category: abusive_language, unrelated, defamation, or fake",
+    "abusive_language",
+  );
+  const response = await fetch("/api/seller/buyer-protection/review-reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      reviewId: String(review?.id || "").trim(),
+      productId: String(review?.productId || selectedSoldProductId || "").trim(),
+      productName: String(review?.productName || "").trim(),
+      buyerUsername: String(review?.author || "").trim(),
+      reviewExcerpt: String(review?.comment || review?.message || "").trim(),
+      category,
+      details: trimmed,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  window.alert(data.message || (response.ok
+    ? "Review reported to Super Admin."
+    : "Unable to report this review."));
+}
+
 async function saveProductInsightReviewReply(review, replyText, controls = {}) {
   const productId = String(review?.productId ?? selectedSoldProductId ?? "").trim();
   const reviewId = String(review?.id ?? "").trim();
@@ -5973,7 +6010,16 @@ function createProductInsightReviewCommentCard(review) {
   replyLabel.textContent = review.sellerReply ? "Edit Reply" : "Reply";
   replyButton.append(replyIcon, replyLabel);
 
-  actions.append(likeButton, commentButton, replyButton);
+  const reportButton = document.createElement("button");
+  reportButton.type = "button";
+  reportButton.className = "product-insight-review-comment__action";
+  reportButton.setAttribute("aria-label", `Report review from ${review.author} to Super Admin`);
+  reportButton.textContent = "Report review";
+  reportButton.addEventListener("click", () => {
+    void reportProductInsightReview(review);
+  });
+
+  actions.append(likeButton, commentButton, replyButton, reportButton);
 
   person.append(createProductInsightReviewAvatar(review.author), identity);
   card.append(person, ratingRow);

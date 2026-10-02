@@ -3,12 +3,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 const _requestTimeout = Duration(seconds: 8);
 final _client = HttpClient()..connectionTimeout = _requestTimeout;
 
 class BuyerVoucherItem {
   const BuyerVoucherItem({
+    this.id = '',
     required this.status,
     required this.title,
     required this.subtitle,
@@ -24,12 +26,34 @@ class BuyerVoucherItem {
     this.discountValue = '',
     this.freeShipping = false,
     this.platformId = 'all',
+    this.platformIds = const <String>[],
     this.sellerAdminId = '',
     this.passive = false,
     this.statusAt,
     this.rawDate = '',
+    this.usesPerAccount = 1,
+    this.remainingUses = 1,
+    this.repeatWeekly = false,
+    this.repeatOpen = true,
+    this.cardColor = '',
+    this.companyLogoUrl = '',
+    this.companyName = '',
+    this.sellerPlatformId = '',
+    this.scopeType = 'entire_platform',
+    this.includeSellerIds = const <String>[],
+    this.includeCategoryIds = const <String>[],
+    this.includeBusinessTypeIds = const <String>[],
+    this.includeBrandIds = const <String>[],
+    this.includeProductIds = const <String>[],
+    this.includeVariantIds = const <String>[],
+    this.excludeSellerIds = const <String>[],
+    this.excludeCategoryIds = const <String>[],
+    this.excludeBrandIds = const <String>[],
+    this.excludeProductIds = const <String>[],
+    this.excludeVariantIds = const <String>[],
   });
 
+  final String id;
   final String status;
   final String title;
   final String subtitle;
@@ -45,10 +69,33 @@ class BuyerVoucherItem {
   final String discountValue;
   final bool freeShipping;
   final String platformId;
+
+  /// Set when the voucher covers two or more specific platforms.
+  final List<String> platformIds;
   final String sellerAdminId;
   final bool passive;
   final DateTime? statusAt;
   final String rawDate;
+  final int usesPerAccount;
+  final int remainingUses;
+  final bool repeatWeekly;
+  final bool repeatOpen;
+  final String cardColor;
+  final String companyLogoUrl;
+  final String companyName;
+  final String sellerPlatformId;
+  final String scopeType;
+  final List<String> includeSellerIds;
+  final List<String> includeCategoryIds;
+  final List<String> includeBusinessTypeIds;
+  final List<String> includeBrandIds;
+  final List<String> includeProductIds;
+  final List<String> includeVariantIds;
+  final List<String> excludeSellerIds;
+  final List<String> excludeCategoryIds;
+  final List<String> excludeBrandIds;
+  final List<String> excludeProductIds;
+  final List<String> excludeVariantIds;
 
   static const retention = Duration(days: 30);
 
@@ -62,8 +109,7 @@ class BuyerVoucherItem {
     return int.tryParse(digits) ?? 0;
   }
 
-  bool get isPercentDiscount =>
-      discountType.trim().toLowerCase() != 'fixed';
+  bool get isPercentDiscount => discountType.trim().toLowerCase() != 'fixed';
 
   bool get isFixedDiscount => !isPercentDiscount;
 
@@ -79,9 +125,13 @@ class BuyerVoucherItem {
     return totalPurchase * (pct / 100);
   }
 
-  bool get isActive => status.trim().toLowerCase() == 'active';
+  bool get isActive =>
+      status.trim().toLowerCase() == 'active' &&
+      remainingUses > 0 &&
+      (!repeatWeekly || repeatOpen);
 
-  bool get isUsed => status.trim().toLowerCase() == 'used';
+  bool get isUsed =>
+      status.trim().toLowerCase() == 'used' || remainingUses <= 0;
 
   /// Parsed expiry instant for active vouchers (`date` / ISO). Date-only
   /// display strings ("Dec 31, 2026") resolve to end of that local day.
@@ -146,8 +196,71 @@ class BuyerVoucherItem {
     final wanted = platformId.trim().toLowerCase();
     final scoped = this.platformId.trim().toLowerCase();
     if (wanted.isEmpty || wanted == 'none' || wanted == 'all') return true;
+    if (platformIds.length > 1) return platformIds.contains(wanted);
     if (scoped.isEmpty || scoped == 'all') return true;
     return scoped == wanted;
+  }
+
+  bool appliesToListing({
+    required String productId,
+    required String sellerAdminId,
+    Iterable<String> categoryIds = const <String>[],
+    Iterable<String> businessTypeIds = const <String>[],
+    Iterable<String> brandIds = const <String>[],
+    Iterable<String> variantIds = const <String>[],
+  }) {
+    String normalized(String value) => value.trim().toLowerCase();
+    Set<String> normalizedSet(Iterable<String> values) => values
+        .map(normalized)
+        .where((value) => value.isNotEmpty)
+        .toSet();
+
+    final productKey = normalized(productId);
+    final sellerKey = normalized(sellerAdminId);
+    final categoryKeys = normalizedSet(categoryIds);
+    final businessTypeKeys = normalizedSet(businessTypeIds);
+    final brandKeys = normalizedSet(brandIds);
+    final variantKeys = normalizedSet(variantIds);
+    final excludedSellerKeys = normalizedSet(excludeSellerIds);
+    final excludedCategoryKeys = normalizedSet(excludeCategoryIds);
+    final excludedBrandKeys = normalizedSet(excludeBrandIds);
+    final excludedProductKeys = normalizedSet(excludeProductIds);
+    final excludedVariantKeys = normalizedSet(excludeVariantIds);
+
+    if (excludedProductKeys.contains(productKey) ||
+        excludedSellerKeys.contains(sellerKey) ||
+        categoryKeys.any(excludedCategoryKeys.contains) ||
+        brandKeys.any(excludedBrandKeys.contains)) {
+      return false;
+    }
+
+    final eligibleVariantKeys = variantKeys.difference(excludedVariantKeys);
+    if (variantKeys.isNotEmpty && eligibleVariantKeys.isEmpty) return false;
+
+    final scope = scopeType.trim().toLowerCase().replaceAll(
+      RegExp(r'[\s-]+'),
+      '_',
+    );
+    switch (scope) {
+      case 'selected_sellers':
+        return normalizedSet(includeSellerIds).contains(sellerKey);
+      case 'selected_categories':
+        return categoryKeys.any(normalizedSet(includeCategoryIds).contains);
+      case 'selected_business_types':
+        return businessTypeKeys.any(
+          normalizedSet(includeBusinessTypeIds).contains,
+        );
+      case 'selected_brands':
+        return brandKeys.any(normalizedSet(includeBrandIds).contains);
+      case 'selected_products':
+        return normalizedSet(includeProductIds).contains(productKey);
+      case 'selected_variants':
+        return eligibleVariantKeys.any(
+          normalizedSet(includeVariantIds).contains,
+        );
+      default:
+        return true;
+    }
   }
 
   /// Passive vouchers are promoted automatically. Vouchers scoped to all
@@ -158,6 +271,13 @@ class BuyerVoucherItem {
   }
 
   String get platformLabel {
+    if (platformIds.length > 1) {
+      return platformIds.map(_platformNameFor).join(', ');
+    }
+    return _platformNameFor(platformId);
+  }
+
+  static String _platformNameFor(String platformId) {
     final id = platformId.trim().toLowerCase();
     if (id.isEmpty || id == 'all') return 'All platforms';
     if (id == 'shop') return 'Shop';
@@ -208,6 +328,15 @@ class BuyerVoucherItem {
   }
 
   factory BuyerVoucherItem.fromJson(Map<String, dynamic> json) {
+    List<String> parseIdList(Object? raw) {
+      final values = raw is List ? raw : '${raw ?? ''}'.split(RegExp(r'[\n,]+'));
+      return values
+          .map((entry) => entry.toString().trim())
+          .where((entry) => entry.isNotEmpty)
+          .toSet()
+          .toList(growable: false);
+    }
+
     final status = (json['status'] ?? 'active').toString();
     final kind = (json['kind'] ?? 'ticket').toString();
     final action = (json['action'] ?? '').toString();
@@ -217,8 +346,9 @@ class BuyerVoucherItem {
     );
     final minSpend = minSpendRaw.isEmpty ? '0' : minSpendRaw;
     final date = (json['date'] ?? '').toString().trim();
+    final noExpiry = json['noExpiry'] == true || date.isEmpty;
     final dateLabel = status == 'active'
-        ? 'Expires ${date.isEmpty ? '—' : date}'
+        ? (noExpiry ? 'No expiry' : 'Expires ${date.isEmpty ? '—' : date}')
         : status == 'used'
         ? 'Used ${date.isEmpty ? '—' : date}'
         : 'Expired ${date.isEmpty ? '—' : date}';
@@ -227,6 +357,14 @@ class BuyerVoucherItem {
         .toString()
         .trim()
         .toLowerCase();
+    final platformIdsRaw = json['platformIds'];
+    final platformIds = platformIdsRaw is List
+        ? platformIdsRaw
+              .map((entry) => entry.toString().trim().toLowerCase())
+              .where((entry) => entry.isNotEmpty && entry != 'all')
+              .toSet()
+              .toList(growable: false)
+        : const <String>[];
     final sellerAdminId = (json['sellerAdminId'] ?? json['adminId'] ?? '')
         .toString()
         .trim()
@@ -236,20 +374,49 @@ class BuyerVoucherItem {
         passiveRaw == true ||
         passiveRaw.toString().trim().toLowerCase() == 'true' ||
         passiveRaw.toString().trim() == '1';
-    final discountTypeRaw =
-        (json['discountType'] ?? '').toString().trim().toLowerCase();
+    final discountTypeRaw = (json['discountType'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
     final discountType = discountTypeRaw == 'fixed'
         ? 'fixed'
         : (kind == 'gift' ? 'fixed' : 'percent');
-    final discountValue = (json['discountValue'] ?? '')
-        .toString()
-        .replaceAll(RegExp(r'[^\d]'), '');
+    final discountValue = (json['discountValue'] ?? '').toString().replaceAll(
+      RegExp(r'[^\d]'),
+      '',
+    );
     final freeShippingRaw =
         json['freeShipping'] ?? json['isFreeShipping'] ?? kind == 'shipping';
     final freeShipping =
         freeShippingRaw == true ||
         freeShippingRaw.toString().trim().toLowerCase() == 'true' ||
         freeShippingRaw.toString().trim() == '1';
+    final usesPerAccountRaw =
+        int.tryParse(
+          (json['usesPerAccount'] ?? json['maxUsesPerUser'] ?? '1').toString(),
+        ) ??
+        1;
+    final usesPerAccount = usesPerAccountRaw < 1
+        ? 1
+        : (usesPerAccountRaw > 99 ? 99 : usesPerAccountRaw);
+    final remainingRaw = int.tryParse((json['remainingUses'] ?? '').toString());
+    final usedByAccount =
+        int.tryParse((json['usedByAccount'] ?? '0').toString()) ?? 0;
+    final remainingUses = remainingRaw != null
+        ? (remainingRaw < 0 ? 0 : remainingRaw)
+        : (usesPerAccount - usedByAccount).clamp(0, usesPerAccount).toInt();
+    final repeatWeeklyRaw =
+        json['repeatWeekly'] ?? json['repeatDaysEnabled'] ?? false;
+    final repeatWeekly =
+        repeatWeeklyRaw == true ||
+        repeatWeeklyRaw.toString().trim().toLowerCase() == 'true' ||
+        repeatWeeklyRaw.toString().trim() == '1';
+    final repeatOpenRaw = json['repeatOpen'];
+    final repeatOpen = repeatOpenRaw == null
+        ? true
+        : repeatOpenRaw == true ||
+              repeatOpenRaw.toString().trim().toLowerCase() == 'true' ||
+              repeatOpenRaw.toString().trim() == '1';
     final storedTitle = (json['title'] ?? '').toString().trim();
     final derivedTitle = discountValue.isNotEmpty
         ? (discountType == 'fixed'
@@ -259,6 +426,7 @@ class BuyerVoucherItem {
     final title = storedTitle.isNotEmpty ? storedTitle : derivedTitle;
 
     return BuyerVoucherItem(
+      id: (json['id'] ?? '').toString().trim(),
       status: status,
       title: title,
       subtitle: (json['subtitle'] ?? '').toString(),
@@ -277,10 +445,37 @@ class BuyerVoucherItem {
       discountValue: discountValue,
       freeShipping: freeShipping,
       platformId: platformId.isEmpty ? 'all' : platformId,
+      platformIds: platformIds.length > 1 ? platformIds : const <String>[],
       sellerAdminId: sellerAdminId,
       passive: passive,
       statusAt: DateTime.tryParse(statusAtRaw),
       rawDate: date,
+      usesPerAccount: usesPerAccount,
+      remainingUses: remainingUses,
+      repeatWeekly: repeatWeekly,
+      repeatOpen: repeatOpen,
+      cardColor: (json['cardColor'] ?? '').toString().trim(),
+      companyLogoUrl: (json['companyLogoUrl'] ?? '').toString().trim(),
+      companyName: (json['companyName'] ?? '').toString().trim(),
+      sellerPlatformId: (json['sellerPlatformId'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      scopeType: (json['scopeType'] ?? 'entire_platform')
+          .toString()
+          .trim()
+          .toLowerCase(),
+      includeSellerIds: parseIdList(json['includeSellerIds']),
+      includeCategoryIds: parseIdList(json['includeCategoryIds']),
+      includeBusinessTypeIds: parseIdList(json['includeBusinessTypeIds']),
+      includeBrandIds: parseIdList(json['includeBrandIds']),
+      includeProductIds: parseIdList(json['includeProductIds']),
+      includeVariantIds: parseIdList(json['includeVariantIds']),
+      excludeSellerIds: parseIdList(json['excludeSellerIds']),
+      excludeCategoryIds: parseIdList(json['excludeCategoryIds']),
+      excludeBrandIds: parseIdList(json['excludeBrandIds']),
+      excludeProductIds: parseIdList(json['excludeProductIds']),
+      excludeVariantIds: parseIdList(json['excludeVariantIds']),
     );
   }
 }
@@ -306,13 +501,19 @@ Future<List<BuyerVoucherItem>> fetchBuyerVouchers({
   String platformId = '',
   String sellerAdminId = '',
 }) async {
+  final accountId = ((await AuthSession.getAccountId()) ?? '').trim();
   final result = await _tryEachBaseUrl((baseUrl) async {
     final query = <String, String>{};
     final sellerScope = sellerAdminId.trim();
     if (sellerScope.isNotEmpty) {
       query['sellerAdminId'] = sellerScope;
     }
-    final uri = Uri.parse('$baseUrl/api/vouchers').replace(queryParameters: query);
+    if (accountId.isNotEmpty) {
+      query['accountId'] = accountId;
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/vouchers',
+    ).replace(queryParameters: query);
     final request = await _client.getUrl(uri).timeout(_requestTimeout);
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
     final response = await request.close().timeout(_requestTimeout);

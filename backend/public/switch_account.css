@@ -270,6 +270,19 @@ body.md-account-settings-app > .login-site-header.is-scrolled {
   line-height: 1.5;
 }
 
+.ba-store-location {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: -4px 0 14px;
+}
+
+.ba-store-location .admin-signup-field-note {
+  flex: 1 1 220px;
+  margin: 0;
+}
+
 .ba-nav {
   display: grid;
   gap: 4px;
@@ -488,8 +501,21 @@ body.md-account-settings-app > .login-site-header.is-scrolled {
   color: #fff;
 }
 
-.ba-primary-btn:hover {
+.ba-primary-btn:hover:not(:disabled) {
   background: var(--ba-accent-strong);
+}
+
+.ba-primary-btn:disabled,
+.ba-secondary-btn:disabled,
+.ba-primary-btn.is-busy,
+.ba-secondary-btn.is-busy,
+.ba-text-btn:disabled,
+.ba-text-btn.is-busy,
+.ba-plan-card__cta:disabled,
+.ba-plan-card__cta.is-busy {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .ba-danger-btn {
@@ -1160,6 +1186,22 @@ body.md-account-settings-app > .login-site-header.is-scrolled {
   box-shadow: 0 16px 32px rgba(7, 153, 133, 0.12);
 }
 
+.ba-plan-card.is-coming-soon {
+  cursor: default;
+  opacity: 0.72;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f5 100%);
+}
+
+.ba-plan-card.is-coming-soon:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.ba-plan-card.is-coming-soon .ba-plan-card__cta {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
 .ba-plan-card__badge {
   position: absolute;
   top: 12px;
@@ -1410,4 +1452,114 @@ body.md-account-settings-app > .login-site-header.is-scrolled {
   overflow: auto;
   max-height: min(68vh, 640px);
   padding-right: 2px;
+}
+
+.ba-paymongo-step {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 18px;
+  padding: 16px;
+  border: 1px solid var(--ba-line, #dbe1ea);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.ba-paymongo-step strong {
+  font-size: 15px;
+}
+
+.ba-seller-kind {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.ba-seller-kind legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--ba-ink, #0f172a);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ba-seller-kind__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ba-seller-kind__card {
+  display: grid;
+  gap: 6px;
+  min-height: 118px;
+  padding: 14px 14px 16px;
+  border: 1px solid var(--ba-line, #dbe1ea);
+  border-radius: 14px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ba-seller-kind__card strong {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.ba-seller-kind__card span {
+  color: var(--ba-muted, #64748b);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ba-seller-kind__card.is-active {
+  border-color: var(--ba-accent, #2563eb);
+  background: var(--ba-accent-soft, rgba(37, 99, 235, 0.08));
+  box-shadow: inset 0 0 0 1px var(--ba-accent, #2563eb);
+}
+
+.ba-payout-bank,
+.ba-company-documents {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ba-payout-bank__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ba-kyc-slots {
+  display: grid;
+  gap: 12px;
+}
+
+.ba-kyc-slot {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--ba-line, #dbe1ea);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.ba-kyc-slot strong {
+  font-size: 13px;
+}
+
+.ba-kyc-slot__type {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--ba-line, #dbe1ea);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+@media (max-width: 720px) {
+  .ba-seller-kind__grid {
+    grid-template-columns: 1fr;
+  }
 }

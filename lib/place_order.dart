@@ -11,8 +11,11 @@ import 'package:switch_app/order_tab_navigation.dart';
 import 'package:switch_app/order_store.dart';
 import 'package:switch_app/services/delivery_partner_repository.dart';
 import 'package:switch_app/services/analytics_event_service.dart';
+import 'package:switch_app/services/buyer_delivery_address_store.dart';
 import 'package:switch_app/services/buyer_checkout_service.dart';
+import 'package:switch_app/services/flash_deals_service.dart';
 import 'package:switch_app/services/payment_partner_repository.dart';
+import 'package:switch_app/services/switch_rider_service.dart';
 import 'package:switch_app/services/vouchers_service.dart';
 import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
@@ -21,6 +24,7 @@ import 'package:switch_app/utils/auth_session.dart';
 import 'package:switch_app/utils/own_listing.dart';
 import 'package:switch_app/utils/currency_format.dart';
 import 'package:switch_app/widgets/app_price_text.dart';
+import 'package:switch_app/widgets/payment_method_picker.dart';
 import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -50,6 +54,7 @@ Future<BookingPageAction?> openBookingPage(
         (item) => !listingBelongsToOwnCompany(
           scope: scope,
           adminId: item.adminId,
+          companyId: item.companyId,
           companyName: item.companyName,
         ),
       )
@@ -87,6 +92,7 @@ class BookingLineItem {
   const BookingLineItem({
     required this.referenceKey,
     this.adminId = '',
+    this.companyId = '',
     required this.productId,
     required this.productName,
     required this.productImageUrl,
@@ -128,6 +134,7 @@ class BookingLineItem {
     return BookingLineItem(
       referenceKey: '${product.id.trim()}::${variant?.id.trim() ?? ''}',
       adminId: product.adminId.trim(),
+      companyId: product.companyId.trim(),
       productId: product.id.trim(),
       productName: product.name.trim().isEmpty
           ? 'Unnamed Product'
@@ -153,6 +160,7 @@ class BookingLineItem {
 
   final String referenceKey;
   final String adminId;
+  final String companyId;
   final String productId;
   final String productName;
   final String productImageUrl;
@@ -200,6 +208,7 @@ class BookingLineItem {
   BookingLineItem copyWith({
     String? referenceKey,
     String? adminId,
+    String? companyId,
     String? productId,
     String? productName,
     String? productImageUrl,
@@ -223,6 +232,7 @@ class BookingLineItem {
     return BookingLineItem(
       referenceKey: referenceKey ?? this.referenceKey,
       adminId: adminId ?? this.adminId,
+      companyId: companyId ?? this.companyId,
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,
       productImageUrl: productImageUrl ?? this.productImageUrl,
@@ -346,6 +356,7 @@ class _BookingPageState extends State<BookingPage> {
   late final TextEditingController _noteController;
   late final TextEditingController _enteredAmountController;
   List<DeliveryPartner> _deliveryPartners = const <DeliveryPartner>[];
+  List<PaymentPartner> _adminPaymentPartners = const <PaymentPartner>[];
   List<PaymentPartner> _paymentPartners = const <PaymentPartner>[];
   String _selectedDeliveryPartnerId = '';
   String _selectedPaymentPartnerId = '';
@@ -353,6 +364,15 @@ class _BookingPageState extends State<BookingPage> {
   BookingPaymentCollectionOption? _selectedPaymentOption;
   List<BuyerVoucherItem> _vouchers = const <BuyerVoucherItem>[];
   bool _vouchersLoading = false;
+  String _selectedVoucherCode = '';
+  bool _hasFlashDealFreeShipping = false;
+  late final SwitchRiderService _switchRiderService;
+  SwitchRiderQuote? _switchRiderQuote;
+  String _switchRiderQuoteKey = '';
+  String _switchRiderRequestedKey = '';
+  String _switchRiderQuoteError = '';
+  bool _switchRiderQuoteLoading = false;
+  bool _switchRiderSyncScheduled = false;
 
   String get _checkoutPlatformId {
     final explicit = widget.platformId.trim().toLowerCase();
@@ -367,6 +387,17 @@ class _BookingPageState extends State<BookingPage> {
     _recordCheckoutStarted();
     _deliveryPartnerRepository = createDeliveryPartnerRepository();
     _paymentPartnerRepository = createPaymentPartnerRepository();
+    _switchRiderService = createSwitchRiderService();
+    BuyerDeliveryAddressStore.instance.addListener(
+      _handleDeliveryAddressesChanged,
+    );
+    if (!BuyerDeliveryAddressStore.instance.isLoaded) {
+      unawaited(
+        BuyerDeliveryAddressStore.instance
+            .reload(syncRemote: false)
+            .catchError((Object _) {}),
+      );
+    }
     _deliveryPartnersFuture = _loadDeliveryPartners();
     _paymentPartnersFuture = _loadPaymentPartners();
     _nameController = TextEditingController();
@@ -378,6 +409,23 @@ class _BookingPageState extends State<BookingPage> {
       ..addListener(_handleEnteredAmountChanged);
     unawaited(_loadRecentBookingPreferences());
     unawaited(_loadCheckoutVouchers());
+    unawaited(_loadFlashDealFreeShipping());
+  }
+
+  Future<void> _loadFlashDealFreeShipping() async {
+    final lockedDealIds = _orderItems
+        .where((item) => item.hasFlashLock)
+        .map((item) => item.flashDealId.trim())
+        .toSet();
+    if (lockedDealIds.isEmpty) return;
+    try {
+      final deals = await fetchLiveBuyerFlashDeals();
+      final hasFreeShipping = deals.any(
+        (deal) => deal.freeShipping && lockedDealIds.contains(deal.id),
+      );
+      if (!mounted || hasFreeShipping == _hasFlashDealFreeShipping) return;
+      setState(() => _hasFlashDealFreeShipping = hasFreeShipping);
+    } catch (_) {}
   }
 
   void _recordCheckoutStarted() {
@@ -401,6 +449,9 @@ class _BookingPageState extends State<BookingPage> {
 
   @override
   void dispose() {
+    BuyerDeliveryAddressStore.instance.removeListener(
+      _handleDeliveryAddressesChanged,
+    );
     _nameController.dispose();
     _addressController.dispose();
     _addressDetailsController.dispose();
@@ -413,6 +464,162 @@ class _BookingPageState extends State<BookingPage> {
   }
 
   List<BookingLineItem> get _items => _orderItems;
+
+  void _handleDeliveryAddressesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _isSwitchRiderSelected =>
+      _isSamePartnerId(_selectedDeliveryPartnerId, switchRiderPartnerId);
+
+  /// Switch Rider jobs pick up from one shop, so mixed-seller carts can't use it.
+  String get _switchRiderSellerId {
+    final sellerIds = _items.map((item) => item.adminId.trim()).toSet();
+    if (sellerIds.length != 1 || sellerIds.first.isEmpty) return '';
+    return sellerIds.first;
+  }
+
+  ({double latitude, double longitude})? _resolveDropoffCoordinates() {
+    final store = BuyerDeliveryAddressStore.instance;
+    if (!store.isLoaded) return null;
+    final selectedDeliveryAddress = store.selectedAddress;
+    if (selectedDeliveryAddress == null) return null;
+    String normalize(String value) =>
+        value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    final typedAddressKey = normalize(_addressController.text);
+    if (typedAddressKey.isEmpty) return null;
+    final selectedAddressKeys = <String>[
+      selectedDeliveryAddress.fullAddressLine,
+      selectedDeliveryAddress.summaryLine,
+      selectedDeliveryAddress.search,
+    ].map(normalize).where((value) => value.isNotEmpty && value != 'saved address');
+    if (!selectedAddressKeys.contains(typedAddressKey)) return null;
+    final latitude = selectedDeliveryAddress.lat;
+    final longitude = selectedDeliveryAddress.lng;
+    if (latitude == null || longitude == null) return null;
+    return (latitude: latitude, longitude: longitude);
+  }
+
+  String get _currentSwitchRiderQuoteKey {
+    final sellerId = _switchRiderSellerId;
+    final coordinates = _resolveDropoffCoordinates();
+    if (sellerId.isEmpty || coordinates == null) return '';
+    return '$sellerId|${coordinates.latitude.toStringAsFixed(6)}|'
+        '${coordinates.longitude.toStringAsFixed(6)}';
+  }
+
+  SwitchRiderQuote? get _usableSwitchRiderQuote {
+    final quote = _switchRiderQuote;
+    if (quote == null || !quote.isUsable) return null;
+    if (_switchRiderQuoteKey != _currentSwitchRiderQuoteKey) return null;
+    return quote;
+  }
+
+  DeliveryPartner? get _switchRiderPartner {
+    final quote = _usableSwitchRiderQuote;
+    if (quote == null) return null;
+    final details = <String>[
+      formatPesoCurrency(quote.deliveryFee),
+      if (quote.estimateLabel.isNotEmpty) quote.estimateLabel,
+    ].join(' · ');
+    return DeliveryPartner(
+      id: switchRiderPartnerId,
+      branch: switchRiderPartnerName,
+      description: "Delivered by Switch's own riders. $details",
+      imageUrl: '',
+    );
+  }
+
+  String get _switchRiderUnavailableMessage {
+    if (_switchRiderSellerId.isEmpty) {
+      return 'Switch Rider delivers from one shop at a time. Check out items from different shops separately.';
+    }
+    if (_resolveDropoffCoordinates() == null) {
+      return 'Switch Rider needs a saved delivery address with a map pin.';
+    }
+    if (_switchRiderQuoteLoading) {
+      return 'Getting the Switch Rider delivery fee...';
+    }
+    if (_switchRiderQuoteError.isNotEmpty) {
+      return _switchRiderQuoteError;
+    }
+    final message = _switchRiderQuote?.message.trim() ?? '';
+    return message.isNotEmpty
+        ? message
+        : 'Switch Rider is not available for this address. Choose another courier.';
+  }
+
+  void _scheduleSwitchRiderQuoteSync() {
+    if (_switchRiderSyncScheduled ||
+        _currentSwitchRiderQuoteKey == _switchRiderRequestedKey) {
+      return;
+    }
+    _switchRiderSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _switchRiderSyncScheduled = false;
+      if (mounted) unawaited(_syncSwitchRiderQuote());
+    });
+  }
+
+  Future<void> _syncSwitchRiderQuote({bool force = false}) async {
+    final key = _currentSwitchRiderQuoteKey;
+    final coordinates = _resolveDropoffCoordinates();
+    if (key.isEmpty || coordinates == null) {
+      _switchRiderRequestedKey = '';
+      if (_switchRiderQuote != null ||
+          _switchRiderQuoteError.isNotEmpty ||
+          _switchRiderQuoteLoading) {
+        setState(() {
+          _switchRiderQuote = null;
+          _switchRiderQuoteKey = '';
+          _switchRiderQuoteError = '';
+          _switchRiderQuoteLoading = false;
+        });
+      }
+      return;
+    }
+    if (!force && key == _switchRiderRequestedKey) return;
+    _switchRiderRequestedKey = key;
+    setState(() {
+      _switchRiderQuoteLoading = true;
+      _switchRiderQuoteError = '';
+    });
+    SwitchRiderQuote? quote;
+    var errorMessage = '';
+    try {
+      quote = await _switchRiderService.fetchQuote(
+        sellerAdminId: _switchRiderSellerId,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+      );
+    } on SwitchRiderApiException catch (error) {
+      errorMessage = error.message;
+    } catch (_) {
+      errorMessage = 'Unable to get the Switch Rider delivery fee right now.';
+    }
+    if (!mounted || _switchRiderRequestedKey != key) return;
+    setState(() {
+      _switchRiderQuote = quote;
+      _switchRiderQuoteKey = key;
+      _switchRiderQuoteError = errorMessage;
+      _switchRiderQuoteLoading = false;
+    });
+  }
+
+  String? _switchRiderCheckoutErrorMessage(Object error) {
+    final text = error.toString();
+    if (!text.contains('SWITCH_RIDER_')) return null;
+    final match = RegExp(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"').firstMatch(text);
+    if (match != null) {
+      try {
+        final decoded = jsonDecode('"${match.group(1)}"');
+        if (decoded is String && decoded.trim().isNotEmpty) {
+          return decoded.trim();
+        }
+      } catch (_) {}
+    }
+    return 'Switch Rider could not confirm this delivery. Review the delivery fee and place the order again.';
+  }
 
   bool _isSamePartnerId(String first, String second) {
     return first.trim().toLowerCase() == second.trim().toLowerCase();
@@ -471,6 +678,7 @@ class _BookingPageState extends State<BookingPage> {
     setState(() {
       _deliveryPartners = partners;
       if (_selectedDeliveryPartnerId.isNotEmpty &&
+          !_isSwitchRiderSelected &&
           !partners.any(
             (partner) =>
                 _isSamePartnerId(partner.id, _selectedDeliveryPartnerId),
@@ -485,17 +693,29 @@ class _BookingPageState extends State<BookingPage> {
   Future<List<PaymentPartner>> _loadPaymentPartners({
     bool forceRefresh = false,
   }) async {
-    final partners = _filterActivePaymentPartners(
-      await _paymentPartnerRepository.fetchPaymentPartners(
-        forceRefresh: forceRefresh,
-      ),
-    );
+    var adminPartners = _adminPaymentPartners;
+    try {
+      adminPartners = _filterActivePaymentPartners(
+        await _paymentPartnerRepository.fetchPaymentPartners(
+          forceRefresh: forceRefresh,
+        ),
+      );
+    } catch (error) {
+      debugPrint('Unable to load payment partners: $error');
+      if (adminPartners.isEmpty) rethrow;
+    }
+    final partners = buildBuyerPaymentOptions(adminPartners);
     if (!mounted) {
       return partners;
     }
 
     setState(() {
+      _adminPaymentPartners = adminPartners;
       _paymentPartners = partners;
+      _selectedPaymentPartnerId = migrateSavedPaymentOptionId(
+        _selectedPaymentPartnerId,
+        partners,
+      );
       if (_selectedPaymentPartnerId.isNotEmpty &&
           !partners.any(
             (partner) =>
@@ -603,7 +823,10 @@ class _BookingPageState extends State<BookingPage> {
         _selectedDeliveryPartnerId = deliveryPartnerId;
       }
       if (_selectedPaymentPartnerId.trim().isEmpty) {
-        _selectedPaymentPartnerId = paymentPartnerId;
+        _selectedPaymentPartnerId = migrateSavedPaymentOptionId(
+          paymentPartnerId,
+          _paymentPartners,
+        );
       }
     });
   }
@@ -676,8 +899,7 @@ class _BookingPageState extends State<BookingPage> {
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor:
-          theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface,
+      backgroundColor: theme.colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -826,132 +1048,10 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
 
-    final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
-    final secondaryColor =
-        theme.textTheme.bodyMedium?.color?.withOpacity(0.68) ??
-        theme.colorScheme.onSurface.withOpacity(0.68);
-    final selectedPartnerId = _resolveSelectedPaymentPartnerId(partners);
-
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor:
-          theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: theme.dividerColor.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Select Payment Method',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Choose the payment partner for this order.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: secondaryColor,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.55,
-                  ),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: partners.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final partner = partners[index];
-                      final isSelected = _isSamePartnerId(
-                        partner.id,
-                        selectedPartnerId,
-                      );
-
-                      return Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            Navigator.of(context).pop(partner.id);
-                          },
-                          borderRadius: BorderRadius.circular(18),
-                          child: Ink(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                _BookingDeliveryPartnerAvatar(
-                                  imageUrl: partner.imageUrl,
-                                  primaryColor: primaryColor,
-                                  icon: Icons.account_balance_wallet_outlined,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    partner.branchLabel,
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                SizedBox(
-                                  height: 52,
-                                  child: Center(
-                                    child: Icon(
-                                      isSelected
-                                          ? Icons.radio_button_checked_rounded
-                                          : Icons.radio_button_off_rounded,
-                                      color: isSelected
-                                          ? primaryColor
-                                          : secondaryColor,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final result = await showBuyerPaymentMethodPicker(
+      context,
+      options: partners,
+      selectedId: _resolveSelectedPaymentPartnerId(partners),
     );
 
     if (!mounted || result == null) {
@@ -966,7 +1066,7 @@ class _BookingPageState extends State<BookingPage> {
   List<DeliveryPartner> _resolveDeliveryPartners(
     AsyncSnapshot<List<DeliveryPartner>> snapshot,
   ) {
-    return snapshot.data ?? _deliveryPartners;
+    return _availableDeliveryPartners;
   }
 
   String _resolveSelectedDeliveryPartnerId(List<DeliveryPartner> partners) {
@@ -1031,7 +1131,17 @@ class _BookingPageState extends State<BookingPage> {
     return null;
   }
 
-  List<DeliveryPartner> get _availableDeliveryPartners => _deliveryPartners;
+  List<DeliveryPartner> get _availableDeliveryPartners {
+    final switchRiderPartner = _switchRiderPartner;
+    return <DeliveryPartner>[
+      ?switchRiderPartner,
+      ..._deliveryPartners.where(
+        (partner) =>
+            !_isSamePartnerId(partner.id, switchRiderPartnerId) &&
+            !isSwitchRiderPartnerName(partner.branch),
+      ),
+    ];
+  }
 
   List<PaymentPartner> get _availablePaymentPartners => _paymentPartners;
 
@@ -1059,6 +1169,10 @@ class _BookingPageState extends State<BookingPage> {
 
     if (_selectedDeliveryPartnerId.trim().isEmpty) {
       return 'Please select a courier.';
+    }
+
+    if (_isSwitchRiderSelected && _usableSwitchRiderQuote == null) {
+      return _switchRiderUnavailableMessage;
     }
 
     if (_selectedPaymentPartnerId.trim().isEmpty) {
@@ -1125,6 +1239,15 @@ class _BookingPageState extends State<BookingPage> {
     required DeliveryPartner deliveryPartner,
   }) async {
     final accountId = await _resolveOrderAccountId() ?? '';
+    if (!BuyerDeliveryAddressStore.instance.isLoaded) {
+      await BuyerDeliveryAddressStore.instance.reload(syncRemote: false);
+    }
+    final dropoffCoordinates = _resolveDropoffCoordinates();
+    final clientLatitude = dropoffCoordinates?.latitude;
+    final clientLongitude = dropoffCoordinates?.longitude;
+    final switchRiderQuoteToken = isSwitchRiderPartnerName(deliveryPartner.branch)
+        ? _usableSwitchRiderQuote?.quoteToken ?? ''
+        : '';
     return <OrderEntryData>[
       for (var index = 0; index < _items.length; index++)
         OrderEntryData(
@@ -1159,6 +1282,21 @@ class _BookingPageState extends State<BookingPage> {
           amountToPayAmount: amountToPayAmount,
           remainingBalanceAmount: remainingBalanceAmount,
           shippingFeeAmount: _shippingFee,
+          voucherId: _appliedDiscountVoucher?.id ?? '',
+          voucherCode: _appliedDiscountVoucher?.code ?? '',
+          voucherDiscountAmount: _voucherDiscount,
+          shippingVoucherId:
+              _appliedShippingVoucher != null &&
+                  _appliedShippingVoucher?.code !=
+                      _appliedDiscountVoucher?.code
+              ? _appliedShippingVoucher!.id
+              : '',
+          shippingVoucherCode:
+              _appliedShippingVoucher != null &&
+                  _appliedShippingVoucher?.code !=
+                      _appliedDiscountVoucher?.code
+              ? _appliedShippingVoucher!.code
+              : '',
           paymentOptionLabel: _selectedPaymentOptionLabel,
           productRating: _items[index].productRating,
           paymentPartnerName: paymentPartner.branchLabel,
@@ -1168,6 +1306,9 @@ class _BookingPageState extends State<BookingPage> {
           clientName: _clientNameLabel,
           clientContactNumber: _clientContactLabel,
           clientAddress: _clientAddressLabel,
+          clientLatitude: clientLatitude,
+          clientLongitude: clientLongitude,
+          switchRiderQuoteToken: switchRiderQuoteToken,
         ),
     ];
   }
@@ -1408,13 +1549,86 @@ class _BookingPageState extends State<BookingPage> {
       .where((voucher) => voucher.isUnlockedForSpend(_subtotal))
       .length;
 
-  bool get _hasUnlockedFreeShippingVoucher => _platformVouchers.any(
-    (voucher) =>
-        voucher.isActive &&
-        !voucher.isUsed &&
-        voucher.freeShipping &&
-        voucher.isUnlockedForSpend(_subtotal),
-  );
+  BuyerVoucherItem? get _appliedDiscountVoucher {
+    BuyerVoucherItem? matchByCode(String code) {
+      final wanted = code.trim().toUpperCase();
+      if (wanted.isEmpty) return null;
+      for (final voucher in _platformVouchers) {
+        if (voucher.code != wanted) continue;
+        if (!voucher.isActive || voucher.isUsed) return null;
+        if (!voucher.isUnlockedForSpend(_subtotal)) return null;
+        return voucher;
+      }
+      return null;
+    }
+
+    final selected = matchByCode(_selectedVoucherCode);
+    if (selected != null) return selected;
+
+    BuyerVoucherItem? best;
+    var bestDiscount = 0.0;
+    for (final voucher in _passiveVouchers) {
+      if (!voucher.isUnlockedForSpend(_subtotal)) continue;
+      final discount = voucher.discountForTotal(_subtotal);
+      if (discount <= 0 && !voucher.freeShipping) continue;
+      if (best == null || discount > bestDiscount) {
+        best = voucher;
+        bestDiscount = discount;
+      }
+    }
+    return best;
+  }
+
+  BuyerVoucherItem? get _appliedShippingVoucher {
+    final applied = _appliedDiscountVoucher;
+    if (applied != null && applied.freeShipping) return applied;
+    for (final voucher in _platformVouchers) {
+      if (!voucher.isActive || voucher.isUsed || !voucher.freeShipping) {
+        continue;
+      }
+      if (!voucher.isUnlockedForSpend(_subtotal)) continue;
+      return voucher;
+    }
+    return null;
+  }
+
+  bool get _hasUnlockedFreeShippingVoucher => _appliedShippingVoucher != null;
+
+  double get _voucherDiscount {
+    final voucher = _appliedDiscountVoucher;
+    if (voucher == null) return 0;
+    return voucher.discountForTotal(_subtotal);
+  }
+
+  void _refreshEnteredAmountForAppliedVoucher() {
+    if (_selectedPaymentOption == BookingPaymentCollectionOption.codDeposit) {
+      _setEnteredAmount(_depositAmount);
+      return;
+    }
+    if (_selectedPaymentOption == BookingPaymentCollectionOption.fullPayment) {
+      _setEnteredAmount(_grandTotal);
+    }
+  }
+
+  void _selectCheckoutVoucher(BuyerVoucherItem voucher) {
+    if (!voucher.isUnlockedForSpend(_subtotal)) {
+      final remaining = math
+          .max(voucher.minimumSpendAmount - _subtotal, 0)
+          .ceil();
+      _showBookingMessage(
+        remaining > 0
+            ? 'Spend ₱$remaining more to use ${voucher.code}.'
+            : '${voucher.code} is not available yet.',
+      );
+      return;
+    }
+    setState(() {
+      _selectedVoucherCode = _selectedVoucherCode == voucher.code
+          ? ''
+          : voucher.code;
+    });
+    _refreshEnteredAmountForAppliedVoucher();
+  }
 
   Future<void> _loadCheckoutVouchers() async {
     if (!mounted) return;
@@ -1459,15 +1673,25 @@ class _BookingPageState extends State<BookingPage> {
           minChildSize: 0.45,
           maxChildSize: 0.94,
           builder: (context, scrollController) {
-            return _CheckoutVouchersSheet(
-              scrollController: scrollController,
-              subtotal: _subtotal,
-              passiveVouchers: _passiveVouchers,
-              availableVouchers: _availableUnusedVouchers,
-              isLoading: _vouchersLoading,
-              primaryColor: primaryColor,
-              secondaryColor: secondaryColor,
-              onRefresh: _loadCheckoutVouchers,
+            return StatefulBuilder(
+              builder: (context, setSheetState) {
+                return _CheckoutVouchersSheet(
+                  scrollController: scrollController,
+                  subtotal: _subtotal,
+                  passiveVouchers: _passiveVouchers,
+                  availableVouchers: _availableUnusedVouchers,
+                  isLoading: _vouchersLoading,
+                  primaryColor: primaryColor,
+                  secondaryColor: secondaryColor,
+                  appliedVoucherCode: _appliedDiscountVoucher?.code ?? '',
+                  appliedShippingCode: _appliedShippingVoucher?.code ?? '',
+                  onRefresh: _loadCheckoutVouchers,
+                  onSelectVoucher: (voucher) {
+                    _selectCheckoutVoucher(voucher);
+                    setSheetState(() {});
+                  },
+                );
+              },
             );
           },
         );
@@ -1475,8 +1699,14 @@ class _BookingPageState extends State<BookingPage> {
     );
   }
 
+  bool get _hasFreeShipping =>
+      _hasUnlockedFreeShippingVoucher || _hasFlashDealFreeShipping;
+
   double get _shippingFee {
-    if (_hasUnlockedFreeShippingVoucher) return 0;
+    if (_hasFreeShipping) return 0;
+    if (_isSwitchRiderSelected) {
+      return _usableSwitchRiderQuote?.deliveryFee ?? 0;
+    }
     return _itemCount >= 3 ? 0 : 59;
   }
 
@@ -1551,7 +1781,8 @@ class _BookingPageState extends State<BookingPage> {
     }
   }
 
-  double get _grandTotal => _subtotal + _shippingFee;
+  double get _grandTotal =>
+      math.max(0, _subtotal - _voucherDiscount + _shippingFee);
 
   String get _pageTitle {
     return 'Place Order';
@@ -1628,22 +1859,74 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
 
+    final quotedSwitchRiderFee = _usableSwitchRiderQuote?.deliveryFee;
+    if (_isSwitchRiderSelected &&
+        (_usableSwitchRiderQuote?.expiresWithin(const Duration(seconds: 45)) ??
+            true)) {
+      await _syncSwitchRiderQuote(force: true);
+      if (!mounted) return;
+      final refreshedQuote = _usableSwitchRiderQuote;
+      if (refreshedQuote == null) {
+        _showBookingMessage(_switchRiderUnavailableMessage);
+        return;
+      }
+      if (quotedSwitchRiderFee == null ||
+          (refreshedQuote.deliveryFee - quotedSwitchRiderFee).abs() > 0.009) {
+        _showBookingMessage(
+          'The Switch Rider delivery fee is now ${formatPesoCurrency(refreshedQuote.deliveryFee)}. Review your total and place the order again.',
+        );
+        return;
+      }
+    }
+
     setState(() {
       _isSubmittingOrder = true;
     });
 
+    try {
+      await _submitOrderAndStartCheckout(
+        isCodPlacement: isCodPlacement,
+        enteredAmount: enteredAmount,
+        deliveryPartner: deliveryPartner,
+        paymentPartner: paymentPartner,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmittingOrder = false;
+        });
+      }
+    }
+  }
+
+  String _readableOrderError(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '').trim();
+    if (message.isEmpty ||
+        message.contains('Tried:') ||
+        message.startsWith('Instance of') ||
+        message.length > 200) {
+      return '';
+    }
+    return message;
+  }
+
+  Future<void> _submitOrderAndStartCheckout({
+    required bool isCodPlacement,
+    required double enteredAmount,
+    required DeliveryPartner deliveryPartner,
+    required PaymentPartner paymentPartner,
+  }) async {
     final double remainingBalanceAmount = math.max(
       _grandTotal - enteredAmount,
       0.0,
     );
-    // Full payment waits in To Pay until PayMongo webhook (or manual fallback)
-    // marks the order paid. COD with deposit met still goes to To Prepare.
+    // Full payment waits in To Pay until the signed PayMongo webhook marks the
+    // order paid. COD with deposit met still goes to To Prepare.
     final bool useOnlineCheckout = !isCodPlacement;
     final OrderStageKey nextOrderStage = useOnlineCheckout
         ? OrderStageKey.toPay
         : OrderStageKey.toPrepare;
-    final double amountToPayAmount =
-        useOnlineCheckout ? _grandTotal : 0.0;
+    final double amountToPayAmount = useOnlineCheckout ? _grandTotal : 0.0;
     final createdAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     final orderEntries = await _buildOrderEntries(
       createdAtEpochMs: createdAtEpochMs,
@@ -1656,19 +1939,22 @@ class _BookingPageState extends State<BookingPage> {
     try {
       await OrderStore.instance.addOrders(orderEntries);
     } catch (error) {
+      final switchRiderMessage = _switchRiderCheckoutErrorMessage(error);
+      if (switchRiderMessage != null) {
+        if (mounted) {
+          _showBookingMessage(switchRiderMessage);
+          unawaited(_syncSwitchRiderQuote(force: true));
+        }
+        return;
+      }
+      debugPrint('Place order failed: $error');
       if (mounted) {
-        final message = error.toString().contains('Flash Deal')
-            ? error.toString().replaceFirst('Exception: ', '')
-            : 'Unable to save this order right now.';
-        _showBookingMessage(message);
+        final readable = _readableOrderError(error);
+        _showBookingMessage(
+          readable.isNotEmpty ? readable : 'Unable to save this order right now.',
+        );
       }
       return;
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmittingOrder = false;
-        });
-      }
     }
 
     var openStage = nextOrderStage;
@@ -1677,11 +1963,16 @@ class _BookingPageState extends State<BookingPage> {
         final checkout = await createBuyerOrderCheckoutSession(
           createdAtEpochMs: createdAtEpochMs,
           paymentGateway: paymentPartner.branchLabel,
+          paymentMethodType: paymentPartner.paymongoMethod,
         );
         if (checkout.hasHostedCheckout) {
           final uri = Uri.tryParse(checkout.checkoutUrl);
-          if (uri != null) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          final launched = uri != null &&
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!launched && mounted) {
+            _showBookingMessage(
+              'Order saved, but the PayMongo page could not be opened. Complete payment from To Pay.',
+            );
           }
           openStage = OrderStageKey.toPay;
         } else if (checkout.alreadyPaid || checkout.provider == 'manual') {
@@ -1690,8 +1981,11 @@ class _BookingPageState extends State<BookingPage> {
       } catch (error) {
         debugPrint('Buyer checkout session failed: $error');
         if (mounted) {
+          final readable = _readableOrderError(error);
           _showBookingMessage(
-            'Order saved. Complete payment from To Pay when checkout is available.',
+            readable.isNotEmpty
+                ? 'Order saved, but payment could not start: $readable Complete payment from To Pay.'
+                : 'Order saved. Complete payment from To Pay when checkout is available.',
           );
         }
         openStage = OrderStageKey.toPay;
@@ -1744,6 +2038,7 @@ class _BookingPageState extends State<BookingPage> {
 
   @override
   Widget build(BuildContext context) {
+    _scheduleSwitchRiderQuoteSync();
     final theme = Theme.of(context);
     final mediaPadding = MediaQuery.paddingOf(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -2097,6 +2392,20 @@ class _BookingPageState extends State<BookingPage> {
                         ),
                       ),
                     ),
+                    if (_isSwitchRiderSelected &&
+                        _usableSwitchRiderQuote == null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Text(
+                          _switchRiderUnavailableMessage,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: _switchRiderQuoteLoading
+                                ? secondaryColor
+                                : theme.colorScheme.error,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -2184,20 +2493,39 @@ class _BookingPageState extends State<BookingPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.center,
                                     children: [
-                                      _BookingDeliveryPartnerAvatar(
-                                        imageUrl: selectedPartner.imageUrl,
-                                        primaryColor: primaryColor,
-                                        icon: Icons
-                                            .account_balance_wallet_outlined,
+                                      PaymentOptionLogo(
+                                        option: selectedPartner,
                                       ),
                                       const SizedBox(width: 12),
                                       Expanded(
-                                        child: Text(
-                                          selectedPartner.branchLabel,
-                                          style: theme.textTheme.titleSmall
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.w800,
-                                              ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              selectedPartner.branchLabel,
+                                              style: theme.textTheme.titleSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              switch (paymentMethodCategoryOf(
+                                                selectedPartner,
+                                              )) {
+                                                PaymentMethodCategory.bank =>
+                                                  'Bank Transfer',
+                                                PaymentMethodCategory.card =>
+                                                  'Credit / Debit Card',
+                                                _ => 'E-Wallet',
+                                              },
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                    color: secondaryColor,
+                                                  ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                       const SizedBox(width: 12),
@@ -2327,7 +2655,10 @@ class _BookingPageState extends State<BookingPage> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'See vouchers',
+                                _appliedDiscountVoucher != null ||
+                                        _appliedShippingVoucher != null
+                                    ? 'Voucher applied'
+                                    : 'See vouchers',
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: primaryColor,
                                   fontWeight: FontWeight.w700,
@@ -2337,6 +2668,10 @@ class _BookingPageState extends State<BookingPage> {
                             Text(
                               _vouchersLoading
                                   ? 'Loading…'
+                                  : _appliedDiscountVoucher != null
+                                  ? _appliedDiscountVoucher!.code
+                                  : _appliedShippingVoucher != null
+                                  ? _appliedShippingVoucher!.code
                                   : _unlockedPassiveCount > 0
                                   ? '$_unlockedPassiveCount unlocked'
                                   : '${_availableUnusedVouchers.length} available',
@@ -2390,7 +2725,17 @@ class _BookingPageState extends State<BookingPage> {
                         ],
                       ),
                     ),
-                  _hasUnlockedFreeShippingVoucher
+                  if (_voucherDiscount > 0.009)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _BookingSummaryRow(
+                        label: _appliedDiscountVoucher == null
+                            ? 'Voucher'
+                            : 'Voucher (${_appliedDiscountVoucher!.code})',
+                        amount: -_voucherDiscount,
+                      ),
+                    ),
+                  _hasFreeShipping
                       ? const _BookingSummaryRow(
                           label: 'Shipping fee',
                           amount: 0,
@@ -3486,6 +3831,9 @@ class _CheckoutVouchersSheet extends StatelessWidget {
     required this.primaryColor,
     required this.secondaryColor,
     required this.onRefresh,
+    required this.onSelectVoucher,
+    this.appliedVoucherCode = '',
+    this.appliedShippingCode = '',
   });
 
   final ScrollController scrollController;
@@ -3496,6 +3844,9 @@ class _CheckoutVouchersSheet extends StatelessWidget {
   final Color primaryColor;
   final Color secondaryColor;
   final Future<void> Function() onRefresh;
+  final void Function(BuyerVoucherItem voucher) onSelectVoucher;
+  final String appliedVoucherCode;
+  final String appliedShippingCode;
 
   @override
   Widget build(BuildContext context) {
@@ -3529,7 +3880,7 @@ class _CheckoutVouchersSheet extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Passive vouchers unlock at min. spend. Available vouchers are ready to use.',
+                        'Passive vouchers apply automatically at min. spend. Tap an available voucher to use it on this order.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: secondaryColor,
                         ),
@@ -3570,10 +3921,16 @@ class _CheckoutVouchersSheet extends StatelessWidget {
                             _CheckoutVoucherCard(
                               voucher: voucher,
                               unlocked: voucher.isUnlockedForSpend(subtotal),
+                              applied:
+                                  voucher.code == appliedVoucherCode ||
+                                  voucher.code == appliedShippingCode,
                               showPassiveState: true,
                               subtotal: subtotal,
                               primaryColor: primaryColor,
                               secondaryColor: secondaryColor,
+                              onTap: voucher.isUnlockedForSpend(subtotal)
+                                  ? () => onSelectVoucher(voucher)
+                                  : null,
                             ),
                             const SizedBox(height: 10),
                           ],
@@ -3593,11 +3950,15 @@ class _CheckoutVouchersSheet extends StatelessWidget {
                           for (final voucher in availableVouchers) ...[
                             _CheckoutVoucherCard(
                               voucher: voucher,
-                              unlocked: true,
+                              unlocked: voucher.isUnlockedForSpend(subtotal),
+                              applied:
+                                  voucher.code == appliedVoucherCode ||
+                                  voucher.code == appliedShippingCode,
                               showPassiveState: voucher.passive,
                               subtotal: subtotal,
                               primaryColor: primaryColor,
                               secondaryColor: secondaryColor,
+                              onTap: () => onSelectVoucher(voucher),
                             ),
                             const SizedBox(height: 10),
                           ],
@@ -3684,33 +4045,52 @@ class _CheckoutVoucherCard extends StatelessWidget {
     required this.subtotal,
     required this.primaryColor,
     required this.secondaryColor,
+    this.applied = false,
+    this.onTap,
   });
 
   final BuyerVoucherItem voucher;
   final bool unlocked;
+  final bool applied;
   final bool showPassiveState;
   final double subtotal;
   final Color primaryColor;
   final Color secondaryColor;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final remaining = math.max(voucher.minimumSpendAmount - subtotal, 0).ceil();
-    final statusLabel = showPassiveState
+    final statusLabel = applied
+        ? 'Applied'
+        : showPassiveState
         ? (unlocked ? 'Unlocked' : 'Spend ₱$remaining more')
-        : 'Available';
+        : unlocked
+        ? 'Available'
+        : 'Spend ₱$remaining more';
 
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: unlocked
+          color: applied
+              ? primaryColor
+              : unlocked
               ? primaryColor.withOpacity(0.28)
               : secondaryColor.withOpacity(0.18),
         ),
-        color: unlocked ? primaryColor.withOpacity(0.05) : null,
+        color: applied
+            ? primaryColor.withOpacity(0.10)
+            : unlocked
+            ? primaryColor.withOpacity(0.05)
+            : null,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3747,7 +4127,7 @@ class _CheckoutVoucherCard extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: unlocked
+                        color: applied || unlocked
                             ? const Color(0xFFECFDF5)
                             : const Color(0xFFFFF7ED),
                         borderRadius: BorderRadius.circular(999),
@@ -3755,7 +4135,7 @@ class _CheckoutVoucherCard extends StatelessWidget {
                       child: Text(
                         statusLabel,
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: unlocked
+                          color: applied || unlocked
                               ? const Color(0xFF047857)
                               : const Color(0xFFC2410C),
                           fontWeight: FontWeight.w800,
@@ -3799,6 +4179,8 @@ class _CheckoutVoucherCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+        ),
       ),
     );
   }

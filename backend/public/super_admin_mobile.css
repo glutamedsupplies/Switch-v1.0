@@ -1,0 +1,1168 @@
+/* Super Admin mobile density
+ * Loaded last so every Super Admin view uses one compact, readable type scale.
+ * Touch targets keep their existing usable dimensions; only content typography
+ * and decorative icons scale down with the viewport.
+ */
+
+.super-admin-mobile-page-title {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  html body.super-admin-page {
+    --sa-mobile-type-micro: 9px;
+    --sa-mobile-type-label: 10px;
+    --sa-mobile-type-body: 11px;
+    --sa-mobile-type-control: 11px;
+    --sa-mobile-type-card-title: 13px;
+    --sa-mobile-type-section-title: 15px;
+    --sa-mobile-type-page-title: clamp(19px, 5vw, 22px);
+    --sa-mobile-type-hero-title: clamp(20px, 5.6vw, 24px);
+    --super-admin-cta-font-size: var(--sa-mobile-type-control);
+    --super-admin-table-data-size: var(--sa-mobile-type-body);
+    font-size: var(--sa-mobile-type-body);
+  }
+
+  html body.super-admin-page .super-admin-content,
+html body.super-admin-page .super-admin-panel-container {
+    font-size: var(--sa-mobile-type-body) !important;
+    line-height: 1.4;
+  }
+
+  /* Shared supporting copy across every section/card. */
+  html body.super-admin-page .super-admin-content :is(p, li, dt, dd, td, figcaption, [class*="__description"], [class*="__subtitle"], [class*="__lede"], [class*="__helper"], [class*="__message"]) {
+    font-size: var(--sa-mobile-type-body) !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Labels, metadata, chips and table headings use the compact mobile tier. */
+  html body.super-admin-page .super-admin-content :is(label, th, legend, [class*="__label"], [class*="__meta"], [class*="__eyebrow"], [class*="__badge"], [class*="__chip"], [class*="__pill"], [class*="__trend"], [class*="__status"]) {
+    font-size: var(--sa-mobile-type-label) !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0 !important;
+  }
+
+  html body.super-admin-page .super-admin-content :is(time, small, [class*="__hint"], [class*="__count"], [class*="__date"], [class*="__time"]) {
+    font-size: var(--sa-mobile-type-micro) !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Buttons and dropdown options stay touch-friendly while their labels shrink. */
+  html body.super-admin-page .super-admin-content :is(button, [role="button"], [role="menuitem"], [role="menuitemradio"], .super-admin-company-card__action-item) {
+    font-size: var(--sa-mobile-type-control) !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Keep form fields at 16px to prevent automatic iOS zoom on focus. */
+  html body.super-admin-page .super-admin-content :is(input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea
+  ) {
+    font-size: 16px !important;
+    line-height: 1.25 !important;
+  }
+
+  html body.super-admin-page .super-admin-company-search input[type="search"] {
+    font-size: 13px !important;
+  }
+
+  /* One title hierarchy for every Super Admin page. */
+  html body.super-admin-page .super-admin-content :is(.super-admin-companies-heading, .super-admin-review-heading, .super-admin-settings-heading, .super-admin-company-drawer__header, .buyer-data-modal__head) h2,
+html body.super-admin-page .super-admin-content .super-admin-companies-heading h2 > span {
+    font-size: var(--sa-mobile-type-page-title) !important;
+    line-height: 1.15 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  html body.super-admin-page .super-admin-content :is(.sa-dash-card, .sa-report-card, .super-admin-settings-grid, .business-type-showcase, .super-admin-company-card) :is(h3, h4, [class*="__title"]) {
+    font-size: var(--sa-mobile-type-card-title) !important;
+    line-height: 1.25 !important;
+  }
+
+  html body.super-admin-page .super-admin-content :is(.super-admin-settings-grid, .super-admin-company-drawer__body, .buyer-data-drawer__body, .sa-report-board__detail-body) > h3 {
+    font-size: var(--sa-mobile-type-section-title) !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Dashboard landing page. */
+  html body.super-admin-page .sa-dash-hero h2 {
+    font-size: var(--sa-mobile-type-hero-title) !important;
+    line-height: 1.16 !important;
+  }
+
+  html body.super-admin-page .sa-dash-hero__eyebrow {
+    font-size: var(--sa-mobile-type-micro) !important;
+    line-height: 1.2 !important;
+  }
+
+  html body.super-admin-page .sa-dash-hero__lede {
+    font-size: var(--sa-mobile-type-body) !important;
+    line-height: 1.4 !important;
+  }
+
+  html body.super-admin-page .sa-dash :is(.sa-dash-card, .sa-dash-greeting) h3 {
+    font-size: var(--sa-mobile-type-card-title) !important;
+    line-height: 1.25 !important;
+  }
+
+  html body.super-admin-page .sa-dash-metric__label {
+    font-size: var(--sa-mobile-type-label) !important;
+  }
+
+  html body.super-admin-page .sa-dash-metric strong,
+html body.super-admin-page .super-admin-stat strong {
+    font-size: clamp(19px, 5vw, 22px) !important;
+    line-height: 1 !important;
+  }
+
+  /* Breadcrumbs and heading descriptions stay visually secondary. */
+  html body.super-admin-page .super-admin-company-heading__breadcrumb,
+html body.super-admin-page .super-admin-company-heading__breadcrumb :is(span, strong) {
+    font-size: var(--sa-mobile-type-label) !important;
+    line-height: 1.25 !important;
+  }
+
+  html body.super-admin-page :is(.super-admin-company-heading__description, .super-admin-store-types-heading__description, .super-admin-platforms-heading__description, .super-admin-product-requests-heading__description) {
+    font-size: var(--sa-mobile-type-body) !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Company-style cards, directories, reports and lists. */
+  html body.super-admin-page .super-admin-content :is(.super-admin-company-card, .business-type-showcase, .integrated-partner-showcase, .sa-report-board, .buyer-data-directory, .super-admin-settings-grid) {
+    font-size: var(--sa-mobile-type-body) !important;
+  }
+
+  html body.super-admin-page .super-admin-content table th {
+    font-size: var(--sa-mobile-type-label) !important;
+    line-height: 1.25 !important;
+  }
+
+  html body.super-admin-page .super-admin-content table td {
+    font-size: var(--sa-mobile-type-body) !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Empty states use the same mobile hierarchy in every section. */
+  html body.super-admin-page .super-admin-content :is(.super-admin-company-empty__copy, .sa-universal-empty-state, .empty-state, [class*="-empty-cell"], [class*="-list-empty"]) h3 {
+    font-size: clamp(17px, 4.8vw, 20px) !important;
+    line-height: 1.2 !important;
+  }
+
+  html body.super-admin-page .super-admin-company-empty__description,
+html body.super-admin-page .sa-universal-empty-state p,
+html body.super-admin-page .empty-state p {
+    font-size: var(--sa-mobile-type-body) !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Scale decorative content icons without reducing their touch containers. */
+  html body.super-admin-page .super-admin-panel-container :is(.super-admin-stat__icon, .sa-dash-metric__icon, .business-type-showcase__icon-surface) svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+}
+
+@media (max-width: 430px) {
+  html body.super-admin-page {
+    --sa-mobile-type-micro: 8px;
+    --sa-mobile-type-label: 9px;
+    --sa-mobile-type-body: 10.5px;
+    --sa-mobile-type-control: 10px;
+    --sa-mobile-type-card-title: 12px;
+    --sa-mobile-type-section-title: 14px;
+    --sa-mobile-type-page-title: 19px;
+    --sa-mobile-type-hero-title: 20px;
+  }
+
+}
+
+/* Mobile Companies: hamburger leads the search row; sub-buttons become a left rail. */
+@media (max-width: 860px) {
+  html body.super-admin-page.sa-mobile-subnav-open {
+    overflow: hidden;
+  }
+
+  html body.super-admin-page.sa-mobile-subnav-open .super-admin-shell .super-admin-sidebar-shell,
+  html body.super-admin-page.sa-mobile-subnav-open.super-admin-nav-open .super-admin-shell .super-admin-sidebar-shell {
+    z-index: 1400 !important;
+    overflow: visible !important;
+  }
+
+  html body.super-admin-page.sa-mobile-subnav-open .super-admin-shell > .super-admin-layout > .super-admin-content,
+  html body.super-admin-page.sa-mobile-subnav-open.super-admin-nav-open .super-admin-shell > .super-admin-layout > .super-admin-content {
+    filter: none !important;
+    opacity: 1 !important;
+    pointer-events: none !important;
+  }
+
+  html body.super-admin-page .super-admin-main-header-container {
+    padding: 8px 10px 6px !important;
+  }
+
+  html body.super-admin-page .super-admin-mobile-page-title {
+    display: none;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-main-header-container {
+    padding: 6px 0 8px !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-companies-main-header {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 8px 4px !important;
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 4px 10px 0 !important;
+    border-radius: 0 !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-companies-main-header__controls {
+    display: contents !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-nav-toggle {
+    order: 1;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-mobile-page-title {
+    display: block !important;
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0 6px 0 2px;
+    color: var(--sa-on-surface, #111827);
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.03em;
+    line-height: 1.2 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page.super-admin-companies-active .super-admin-mobile-page-title {
+    color: #f3f4f6 !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-toolbar-actions {
+    order: 3;
+    margin-left: auto !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-main-header
+    .super-admin-companies-search.product-panel-toolbar__search,
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-main-header
+    .super-admin-companies-search.product-panel-toolbar__search:focus-within {
+    order: 4;
+    display: grid !important;
+    flex: 1 1 100% !important;
+    flex-basis: 100% !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 100% !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    padding: 6px 12px !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-search
+    .super-admin-filter-dropdown {
+    display: none !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-main-header:has(.super-admin-company-search:focus-within)
+    .super-admin-toolbar-actions {
+    display: flex !important;
+  }
+
+  html body.super-admin-page .super-admin-companies-main-header,
+  html body.super-admin-page .super-admin-companies-main-header__controls {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 4px !important;
+  }
+
+  html body.super-admin-page .super-admin-companies-main-header {
+    min-height: 48px !important;
+    height: 48px !important;
+    padding: 4px 6px !important;
+    border-radius: 12px !important;
+  }
+
+  html body.super-admin-page .super-admin-toolbar-actions {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-toolbar-btn,
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-scheme-toggle {
+    flex: 0 0 36px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+  }
+
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-toolbar-icon,
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-toolbar-icon svg,
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-scheme-toggle .super-admin-toolbar-icon,
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-activity-btn .super-admin-toolbar-icon,
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-scheme-toggle .sa-scheme-icon,
+  html body.super-admin-page .super-admin-toolbar-actions .super-admin-activity-btn .sa-scheme-icon {
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    min-height: 20px !important;
+  }
+
+  html body.super-admin-page .super-admin-notification-badge {
+    top: 2px !important;
+    right: 2px !important;
+    min-width: 14px !important;
+    height: 14px !important;
+    padding: 0 3px !important;
+    font-size: 8px !important;
+  }
+
+  html body.super-admin-page .super-admin-companies-main-header .super-admin-filter-dropdown__trigger {
+    height: 36px !important;
+    min-height: 36px !important;
+    padding-inline: 8px !important;
+  }
+
+  html body.super-admin-page .super-admin-companies-main-header .super-admin-filter-dropdown__trigger svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-main-header:has(.super-admin-company-search:focus-within)
+    .super-admin-toolbar-actions,
+  html body.super-admin-page
+    .super-admin-companies-main-header:has(.super-admin-company-search:focus-within)
+    .super-admin-filter-dropdown {
+    display: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-main-header:has(.super-admin-company-search:focus-within)
+    .super-admin-company-search.product-panel-toolbar__search,
+  html body.super-admin-page
+    .super-admin-companies-main-header:has(.super-admin-company-search:focus-within)
+    .super-admin-company-search.product-panel-toolbar__search:focus-within {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+  }
+
+  html body.super-admin-page .super-admin-nav-toggle {
+    display: inline-flex !important;
+    flex: 0 0 36px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    align-items: center;
+    justify-content: center;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: var(--sa-search-bg, #e5e5e5) !important;
+    color: var(--text-primary) !important;
+    box-shadow: none !important;
+    cursor: pointer;
+  }
+
+  html body.super-admin-page .super-admin-nav-toggle[hidden] {
+    display: none !important;
+  }
+
+  html body.super-admin-page .super-admin-nav-toggle svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  html body.super-admin-page.sa-mobile-subnav-open .super-admin-nav-toggle {
+    background: var(--sa-nav-active-bg, var(--accent-soft)) !important;
+    color: var(--sa-nav-active-fg, var(--accent-text)) !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-main-header
+    .super-admin-company-search.product-panel-toolbar__search,
+  html body.super-admin-page
+    .super-admin-companies-main-header
+    .super-admin-company-search.product-panel-toolbar__search:focus-within {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    padding: 6px 10px !important;
+  }
+
+  html body.super-admin-page .super-admin-nav-backdrop,
+  html body.super-admin-page .super-admin-nav-backdrop:not([hidden]) {
+    display: none !important;
+  }
+
+  html body.super-admin-page.sa-mobile-subnav-open .super-admin-nav-backdrop,
+  html body.super-admin-page.sa-mobile-subnav-open .super-admin-nav-backdrop:not([hidden]) {
+    display: block !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1300 !important;
+    border: 0 !important;
+    background: rgba(15, 23, 42, 0.42) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    pointer-events: auto !important;
+    cursor: pointer;
+  }
+
+  html body.super-admin-page > .super-admin-subnav-host,
+  html body.super-admin-page .super-admin-shell .super-admin-sidebar-shell > .super-admin-subnav-host {
+    position: fixed !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    width: min(272px, 84vw) !important;
+    min-width: min(272px, 84vw) !important;
+    max-width: min(272px, 84vw) !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding: 14px 0 calc(18px + env(safe-area-inset-bottom)) 10px !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-right: 1px solid rgba(var(--sa-line-rgb, 15, 23, 42), 0.08) !important;
+    border-radius: 0 !important;
+    background: var(--sa-surface, #ffffff) !important;
+    box-shadow: 18px 0 48px rgba(15, 23, 42, 0.16) !important;
+    box-sizing: border-box !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: none !important;
+    filter: none !important;
+    transform: translateX(-108%) !important;
+    transform-origin: left center !important;
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    z-index: 1500 !important;
+  }
+
+  html body.super-admin-page > .super-admin-subnav-host:has([data-super-admin-subnav]:not(.is-collapsed)),
+  html body.super-admin-page.sa-mobile-subnav-open > .super-admin-subnav-host,
+  html body.super-admin-page .super-admin-shell .super-admin-sidebar-shell:has([data-super-admin-subnav]:not(.is-collapsed)) > .super-admin-subnav-host,
+  html body.super-admin-page.sa-mobile-subnav-open .super-admin-shell .super-admin-sidebar-shell > .super-admin-subnav-host {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    filter: none !important;
+    transform: translateX(0) !important;
+  }
+
+  html body.super-admin-page .super-admin-subnav-host > .super-admin-subnav-close {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    z-index: 8 !important;
+    display: inline-flex !important;
+    flex: 0 0 48px !important;
+    align-self: flex-end !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 48px !important;
+    min-width: 48px !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    margin: 0 10px 4px 0 !important;
+    padding: 12px !important;
+    border: 0 !important;
+    border-radius: 9999px !important;
+    background: transparent !important;
+    color: var(--sa-on-variant, #444746) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  html body.super-admin-page .super-admin-subnav-host > .super-admin-company-status-nav:not(.is-collapsed) {
+    display: grid !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 14px 0 4px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  html body.super-admin-page .super-admin-subnav-host .super-admin-company-status-nav__item {
+    width: auto !important;
+    min-height: 46px !important;
+    height: auto !important;
+    margin: 0 0 4px !important;
+    padding: 10px 12px 10px 14px !important;
+    border-radius: 14px !important;
+    font-size: 13px !important;
+    line-height: 18px !important;
+    pointer-events: auto !important;
+    filter: none !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page .super-admin-nav-toggle {
+    background: var(--sa-surface-high, #2a2a2a) !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page.sa-mobile-subnav-open .super-admin-nav-toggle {
+    background: var(--sa-nav-active-bg, var(--accent-soft)) !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page > .super-admin-subnav-host,
+  html[data-sa-scheme="dark"] body.super-admin-page .super-admin-shell .super-admin-sidebar-shell > .super-admin-subnav-host {
+    background: var(--sa-surface, #1c1c1c) !important;
+    border-right-color: rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 18px 0 48px rgba(0, 0, 0, 0.36) !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page .super-admin-subnav-host > .super-admin-subnav-close {
+    background: transparent !important;
+    color: var(--sa-on-variant, #c4c7c5) !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active .super-admin-companies-heading h2,
+  html body.super-admin-page.super-admin-companies-active .super-admin-companies-heading h2 > span {
+    font-size: 16px !important;
+    line-height: 1.2 !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 4px !important;
+    margin: 0 !important;
+    padding: 4px 10px 8px !important;
+    min-height: 0;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading.is-stuck {
+    padding-top: 8px !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    :is(
+      .sa-section-heading__copy,
+      .sa-section-heading__actions,
+      .super-admin-companies-heading-actions,
+      .super-admin-companies-heading-toolbar,
+      .super-admin-companies-heading-buttons,
+      .super-admin-companies-gmail-pager,
+      .super-admin-companies-gmail-pager__nav
+    ) {
+    display: contents !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel
+    > .super-admin-companies-heading
+    .super-admin-company-heading__breadcrumb {
+    display: none !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    :is(
+      .super-admin-company-heading__description,
+      .super-admin-companies-gmail-pager__range,
+      .feedback-note,
+      [data-super-admin-companies-select-all],
+      .super-admin-companies-export-label,
+      [data-super-admin-total-label]
+    ) {
+    display: none !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    [data-company-pager-dir="newer"] {
+    order: 1;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading h2 {
+    display: none !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    [data-company-pager-dir="older"] {
+    order: 3;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    [data-super-admin-companies-export] {
+    order: 4;
+    display: inline-grid !important;
+    place-items: center;
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background: #111827 !important;
+    box-shadow: none !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    .super-admin-companies-gmail-pager__button {
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    color: #111827 !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    .super-admin-companies-gmail-pager__button:disabled {
+    color: #d1d5db !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    .super-admin-companies-gmail-pager__button svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    .super-admin-companies-export-icon {
+    width: 16px !important;
+    height: 16px !important;
+    filter: brightness(0) invert(1) !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading h2 {
+    color: #f3f4f6 !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    .super-admin-companies-gmail-pager__button {
+    color: #f3f4f6 !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    [data-super-admin-companies-export] {
+    background: #f3f4f6 !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    .super-admin-companies-export-icon {
+    filter: brightness(0) !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active:not(.super-admin-reports-active)
+    .super-admin-panel-container {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view) {
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding: 0 0 88px !important;
+    background: var(--sa-report-surface, #ffffff) !important;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading,
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading.is-stuck {
+    width: 100% !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    background: var(--sa-report-surface, #ffffff) !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-empty {
+    padding: 28px 16px !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view {
+    gap: 0 !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding: 0 0 16px !important;
+    border-radius: 0 !important;
+    background: var(--sa-report-surface, #ffffff) !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view
+    > .super-admin-company-card.super-admin-company-card--placeholder {
+    display: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view
+    > .super-admin-company-card.super-admin-company-showcase {
+    display: block !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 1px solid transparent !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    cursor: pointer;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view
+    > .super-admin-company-card.super-admin-company-showcase:not(:last-child)::after {
+    display: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view
+    > .super-admin-company-card.super-admin-company-showcase:is(:active, .is-selected, :focus-visible) {
+    background: var(--accent-muted, #eff6ff) !important;
+    border-bottom-color: rgba(var(--accent-rgb, 37, 99, 235), 0.35) !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__hero {
+    display: flex !important;
+    align-items: center !important;
+    min-height: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__content {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 11px 12px !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    :is(
+      .business-type-showcase__media,
+      .business-type-showcase__hero-image,
+      .super-admin-company-showcase__contact,
+      .super-admin-company-showcase__stats,
+      .business-type-showcase__stats,
+      .super-admin-company-showcase__settings,
+      .business-type-showcase__settings,
+      .super-admin-company-showcase__documents,
+      .super-admin-company-showcase__reason,
+      .super-admin-company-showcase__corner-badge,
+      .super-admin-company-showcase__title-actions,
+      .super-admin-company-showcase__select,
+      .super-admin-company-showcase__activity-menu,
+      .super-admin-company-showcase__activity-chevron
+    ) {
+    display: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__identity {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__icon-wrap,
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__icon {
+    position: relative !important;
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    flex-basis: 42px !important;
+    overflow: hidden !important;
+    border-radius: 50% !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__icon-wrap {
+    overflow: visible !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__icon-surface,
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__icon-surface img,
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__icon-surface svg {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 50% !important;
+    object-fit: cover !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-card__avatar-status-dot {
+    width: 10px !important;
+    height: 10px !important;
+    right: -1px !important;
+    bottom: -1px !important;
+    border: 2px solid var(--sa-report-surface, #ffffff) !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__heading {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    min-width: 0 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__title-row {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__title {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    color: var(--sa-report-ink, #0f172a) !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.25 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__verified-badge {
+    width: 14px !important;
+    height: 14px !important;
+    flex: 0 0 14px !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__verified-badge svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__activity {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__activity-pill,
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__chat-meta {
+    display: inline-flex !important;
+    align-items: center !important;
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    padding: 1px 6px !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    color: var(--sa-report-mute, #64748b) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em !important;
+    line-height: 1.3 !important;
+    white-space: nowrap !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__chat-meta {
+    padding: 0 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__activity-pill.is-verified {
+    color: #166534 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__activity-pill.is-in-review {
+    color: #8a5a00 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__activity-pill.is-inactive,
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__chat-meta.is-warn {
+    color: #d97706 !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__chat-meta.is-alert {
+    color: #b91c1c !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__business-type {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    color: var(--sa-report-mute, #64748b) !important;
+    font-size: 11.5px !important;
+    font-weight: 500 !important;
+    line-height: 1.3 !important;
+    overflow: hidden !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__business-type-icon {
+    display: none !important;
+  }
+
+  html body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-showcase__business-type-label {
+    min-width: 0 !important;
+    color: inherit !important;
+    font-size: 11.5px !important;
+    font-weight: 500 !important;
+    line-height: 1.3 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view),
+  html[data-sa-scheme="dark"] body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view,
+  html[data-sa-scheme="dark"] body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading {
+    background: var(--sa-report-surface, #1c1c1e) !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-list.is-list-view
+    > .super-admin-company-card.super-admin-company-showcase:is(:active, .is-selected, :focus-visible) {
+    background: rgba(var(--accent-rgb, 37, 99, 235), 0.16) !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .business-type-showcase__title {
+    color: #f3f4f6 !important;
+  }
+
+  html[data-sa-scheme="dark"] body.super-admin-page
+    .super-admin-companies-panel:not(.is-reports-view)
+    .super-admin-company-showcase
+    .super-admin-company-card__avatar-status-dot {
+    border-color: var(--sa-report-surface, #1c1c1e) !important;
+  }
+
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    [data-super-admin-companies-export] span,
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    [data-super-admin-companies-export] .super-admin-companies-export-label {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+  }
+
+  html body.super-admin-page .super-admin-company-drawer-backdrop {
+    z-index: 1580 !important;
+  }
+
+  html body.super-admin-page .super-admin-company-drawer {
+    z-index: 1600 !important;
+    width: min(100vw, 430px) !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+  }
+
+
+  html body.super-admin-page.sa-company-mobile-infinite
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading
+    :is(
+      .super-admin-companies-gmail-pager,
+      .super-admin-companies-gmail-pager__nav,
+      [data-company-pager-dir]
+    ) {
+    display: none !important;
+  }
+
+  html body.super-admin-page .super-admin-company-infinite-sentinel {
+    width: 100%;
+    height: 1px;
+    pointer-events: none;
+  }
+
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading,
+  html body.super-admin-page.super-admin-companies-active
+    .super-admin-companies-panel:not(.is-reports-view)
+    > .super-admin-companies-heading.sa-section-heading.is-stuck {
+    display: none !important;
+  }
+
+}

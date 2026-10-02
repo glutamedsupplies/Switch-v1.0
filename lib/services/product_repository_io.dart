@@ -9,7 +9,9 @@ import 'package:switch_app/services/admin_scope.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/product_repository_base.dart';
 
-const _requestTimeout = Duration(seconds: 3);
+const _connectTimeout = Duration(seconds: 3);
+/// The full catalog can be large on phone Wi-Fi; only connecting stays short.
+const _responseTimeout = Duration(seconds: 20);
 const _memoryCacheLifetime = Duration.zero;
 String? _preferredBaseUrl;
 
@@ -50,6 +52,10 @@ class _HttpProductRepository implements ProductRepository {
   Future<List<Product>>? _ongoingRequest;
   List<Product>? _cachedProducts;
   DateTime? _lastSuccessfulFetchAt;
+  /// Raw response each parsed list came from, so an unchanged poll can hand
+  /// back the same list instance and listeners can skip rebuilding.
+  final Expando<({String baseUrl, String body})> _responseSourceOf =
+      Expando<({String baseUrl, String body})>();
 
   String _resolveImageUrl(String imageUrl, String baseUrl) {
     final trimmedImageUrl = imageUrl.trim();
@@ -156,27 +162,38 @@ class _HttpProductRepository implements ProductRepository {
     try {
       final request = await _client
           .getUrl(Uri.parse('$baseUrl/api/products?approvalStatus=approved'))
-          .timeout(_requestTimeout);
+          .timeout(_connectTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
 
-      final response = await request.close().timeout(_requestTimeout);
+      final response = await request.close().timeout(_responseTimeout);
       final responseBody = await response
           .transform(utf8.decoder)
           .join()
-          .timeout(_requestTimeout);
+          .timeout(_responseTimeout);
 
       if (response.statusCode != HttpStatus.ok) {
         throw _BaseUrlAttemptFailure('${response.statusCode}');
       }
 
-      final parsedProducts = await _decodeProductsInBackground(responseBody);
-
       _preferredBaseUrl = baseUrl;
+      rememberWorkingLocalApiBaseUrl(baseUrl);
 
-      return parsedProducts
+      final cachedProducts = _cachedProducts;
+      final cachedSource =
+          cachedProducts == null ? null : _responseSourceOf[cachedProducts];
+      if (cachedSource != null &&
+          cachedSource.baseUrl == baseUrl &&
+          cachedSource.body == responseBody) {
+        return cachedProducts!;
+      }
+
+      final parsedProducts = await _decodeProductsInBackground(responseBody);
+      final products = parsedProducts
           .where(_isVisibleInApp)
           .map((product) => _resolveProductImageUrl(product, baseUrl))
           .toList(growable: false);
+      _responseSourceOf[products] = (baseUrl: baseUrl, body: responseBody);
+      return products;
     } on SocketException {
       throw const _BaseUrlAttemptFailure('socket error');
     } on TimeoutException {
@@ -232,7 +249,7 @@ class _HttpProductRepository implements ProductRepository {
     try {
       final request = await _client
           .postUrl(withAdminScopeUri(Uri.parse('$baseUrl/api/products/visual-search')))
-          .timeout(_requestTimeout);
+          .timeout(_connectTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(HttpHeaders.contentTypeHeader, 'image/jpeg');
       request.headers.set('X-File-Name', filename.trim().isEmpty ? 'camera.jpg' : filename);
@@ -243,11 +260,11 @@ class _HttpProductRepository implements ProductRepository {
       request.contentLength = imageBytes.length;
       request.add(imageBytes);
 
-      final response = await request.close().timeout(_requestTimeout);
+      final response = await request.close().timeout(_responseTimeout);
       final responseBody = await response
           .transform(utf8.decoder)
           .join()
-          .timeout(_requestTimeout);
+          .timeout(_responseTimeout);
 
       if (response.statusCode != HttpStatus.ok) {
         throw _BaseUrlAttemptFailure('${response.statusCode}');

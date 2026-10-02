@@ -107,6 +107,19 @@ class _FoodDeliveryLocationSheetState
   bool _pendingReady = false;
   bool _settingLocation = false;
 
+  /// Blocks stacking a second editor/dialog on rapid taps.
+  bool _childRouteOpen = false;
+
+  Future<void> _openChildRoute(Future<void> Function() open) async {
+    if (_childRouteOpen) return;
+    _childRouteOpen = true;
+    try {
+      await open();
+    } finally {
+      _childRouteOpen = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -198,7 +211,7 @@ class _FoodDeliveryLocationSheetState
     );
   }
 
-  Future<void> _openAddAddress() async {
+  Future<void> _openAddAddress() => _openChildRoute(() async {
     // Keep this sheet open — open the editor on top, then return here.
     await openSelectAddressPage(
       context,
@@ -210,23 +223,27 @@ class _FoodDeliveryLocationSheetState
       _pendingId = _store.selectedId;
       _pendingReady = true;
     });
-  }
+  });
 
-  Future<void> _openEditAddress(BuyerDeliveryAddress entry) async {
-    await openSelectAddressPage(
-      context,
-      primaryColor: widget.primaryColor,
-      initialEditAddressId: entry.id,
-      openEditor: true,
-    );
-    if (!mounted) return;
-    setState(() {
-      _pendingId = _store.selectedId;
-      _pendingReady = true;
-    });
-  }
+  Future<void> _openEditAddress(BuyerDeliveryAddress entry) =>
+      _openChildRoute(() async {
+        await openSelectAddressPage(
+          context,
+          primaryColor: widget.primaryColor,
+          initialEditAddressId: entry.id,
+          openEditor: true,
+        );
+        if (!mounted) return;
+        setState(() {
+          _pendingId = _store.selectedId;
+          _pendingReady = true;
+        });
+      });
 
-  Future<void> _deleteAddress(BuyerDeliveryAddress entry) async {
+  Future<void> _deleteAddress(BuyerDeliveryAddress entry) =>
+      _openChildRoute(() => _confirmDeleteAddress(entry));
+
+  Future<void> _confirmDeleteAddress(BuyerDeliveryAddress entry) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -258,7 +275,7 @@ class _FoodDeliveryLocationSheetState
   }
 
   Future<void> _showLocationAlreadySavedDialog() async {
-    if (!mounted) return;
+    if (!mounted || _childRouteOpen) return;
     await showDialog<void>(
       context: context,
       builder: (context) {
@@ -278,7 +295,19 @@ class _FoodDeliveryLocationSheetState
     );
   }
 
+  bool _savingCurrentLocation = false;
+
   Future<void> _saveCurrentLocation() async {
+    if (_savingCurrentLocation) return;
+    _savingCurrentLocation = true;
+    try {
+      await _saveCurrentLocationOnce();
+    } finally {
+      _savingCurrentLocation = false;
+    }
+  }
+
+  Future<void> _saveCurrentLocationOnce() async {
     BuyerDeliveryAddress? current;
     for (final entry in _store.entries) {
       if (entry.id == kBuyerCurrentLocationAddressId) {

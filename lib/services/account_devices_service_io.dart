@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:switch_app/services/account_devices_service_base.dart';
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -129,6 +130,7 @@ class _IoAccountDevicesService implements AccountDevicesService {
     Map<String, String>? query,
   }) async {
     Object? lastError;
+    await resolveWorkingLocalApiBaseUrl();
     for (final baseUrl in buildLocalApiBaseUrls(
       isAndroid: Platform.isAndroid,
     )) {

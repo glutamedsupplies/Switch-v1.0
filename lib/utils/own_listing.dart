@@ -303,10 +303,17 @@ Future<OwnListingScope> _loadOwnListingScope({
 bool listingBelongsToOwnCompany({
   required OwnListingScope scope,
   required String adminId,
+  String companyId = '',
   String companyName = '',
 }) {
   if (!scope.isLoggedIn) {
     return false;
+  }
+
+  final normalizedCompanyId = normalizeOwnListingKey(companyId);
+  if (normalizedCompanyId.isNotEmpty &&
+      scope.companyIds.contains(normalizedCompanyId)) {
+    return true;
   }
 
   final normalizedAdminId = normalizeOwnListingKey(adminId);
@@ -328,6 +335,7 @@ Future<bool> isOwnCompanyListing(Product product) async {
   return listingBelongsToOwnCompany(
     scope: scope,
     adminId: product.adminId,
+    companyId: product.companyId,
     companyName: product.companyName,
   );
 }
@@ -335,8 +343,18 @@ Future<bool> isOwnCompanyListing(Product product) async {
 OwnListingCompany? matchingOwnListingCompany(
   OwnListingScope scope, {
   required String adminId,
+  String companyId = '',
   String companyName = '',
 }) {
+  final normalizedCompanyId = normalizeOwnListingKey(companyId);
+  if (normalizedCompanyId.isNotEmpty) {
+    for (final company in scope.companies) {
+      if (normalizeOwnListingKey(company.id) == normalizedCompanyId) {
+        return company;
+      }
+    }
+  }
+
   final normalizedAdminId = normalizeOwnListingKey(adminId);
   final normalizedCompanyName = normalizeOwnListingKey(companyName);
 
@@ -383,6 +401,7 @@ Future<void> openOwnListingInsight(
   if (!listingBelongsToOwnCompany(
     scope: scope,
     adminId: product.adminId,
+    companyId: product.companyId,
     companyName: product.companyName,
   )) {
     AppSnackBar.showError(
@@ -395,6 +414,7 @@ Future<void> openOwnListingInsight(
   final company = matchingOwnListingCompany(
     scope,
     adminId: product.adminId,
+    companyId: product.companyId,
     companyName: product.companyName,
   );
   if (company == null || company.id.trim().isEmpty) {
@@ -492,7 +512,9 @@ Future<String?> _promptOwnListingSwitchPin(
 
   final pinController = TextEditingController();
   final confirmController = TextEditingController();
-  var creating = !status.hasPin;
+  var creating = !status.hasPin || status.pinResetRequired;
+  final pinResetRequired = status.pinResetRequired;
+  final pinResetReason = status.pinResetReason.trim();
   var obscure = true;
   String? errorText;
   var busy = false;
@@ -554,17 +576,23 @@ Future<String?> _promptOwnListingSwitchPin(
               }
             }
 
+            final leadText = pinResetRequired
+                ? (pinResetReason.isNotEmpty
+                    ? 'Super Admin required a Switch PIN reset: $pinResetReason Create a new 6-digit Switch PIN to continue.'
+                    : 'Super Admin required a Switch PIN reset. Create a new 6-digit Switch PIN for ${company.name} to open Listing Insight.')
+                : creating
+                    ? 'Create a Switch PIN for ${company.name} to open Listing Insight. This is not your login password.'
+                    : 'Enter the Switch PIN for ${company.name} to open Listing Insight. This is not your login password.';
+
             return AlertDialog(
-              title: const Text('Listing Insight'),
+              title: Text(
+                pinResetRequired ? 'Switch PIN reset required' : 'Listing Insight',
+              ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    creating
-                        ? 'Create a Switch PIN for ${company.name} to open Listing Insight. This is not your login password.'
-                        : 'Enter the Switch PIN for ${company.name} to open Listing Insight. This is not your login password.',
-                  ),
+                  Text(leadText),
                   const SizedBox(height: 14),
                   TextField(
                     controller: pinController,
@@ -573,7 +601,9 @@ Future<String?> _promptOwnListingSwitchPin(
                     keyboardType: TextInputType.number,
                     maxLength: 6,
                     decoration: InputDecoration(
-                      labelText: creating ? 'Create Switch PIN' : 'Switch PIN',
+                      labelText: creating
+                          ? (pinResetRequired ? 'New Switch PIN' : 'Create Switch PIN')
+                          : 'Switch PIN',
                       counterText: '',
                       suffixIcon: IconButton(
                         onPressed: () => setDialogState(() => obscure = !obscure),

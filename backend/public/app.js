@@ -16,7 +16,18 @@ const productListingFooter = document.querySelector("[data-product-listing-foote
 const productListingPageMeta = document.querySelector("[data-product-listing-page-meta]");
 const productListingPagination = document.querySelector("[data-product-listing-pagination]");
 const productListingSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
-const productListingFlashDealZapIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap" aria-hidden="true"><path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/></svg>';
+const productListingFlashDealZapIconMarkup =
+  window.SwitchDefaultIcons?.flashDeal?.svg ||
+  window.SwitchDefaultIcons?.zap?.svg ||
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-zap" aria-hidden="true"><path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/></svg>';
+const SELLER_DEFAULT_TRASH_ICON =
+  window.SwitchDefaultIcons?.trash?.svg ||
+  window.SwitchDefaultIcons?.svg?.("trash", { size: 24, className: "lucide lucide-trash" }) ||
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+const SELLER_DEFAULT_TRASH_ICON_LARGE =
+  window.SwitchDefaultIcons?.trash?.svgLarge ||
+  window.SwitchDefaultIcons?.svg?.("trash", { size: 256, className: "lucide lucide-trash" }) ||
+  `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
 const productListingSummaryValues = {
   total: document.querySelector("[data-product-listing-total]"),
   active: document.querySelector("[data-product-listing-active]"),
@@ -97,6 +108,8 @@ const productDescriptionCharacterCount = document.querySelector(
 );
 const addVariantButton = document.getElementById("add-variant-button");
 const productVariantList = document.getElementById("product-variant-list");
+const productSpecificationsEditor = document.getElementById("product-specifications");
+const productSpecificationsAddButton = document.getElementById("product-specifications-add");
 const barcodeInput = form?.querySelector("[name='barcode']") ?? null;
 const barcodePreviewContainer = document.getElementById("barcode-preview-container");
 const barcodeScanPrompt = document.getElementById("barcode-scan-prompt");
@@ -452,6 +465,34 @@ function getActiveProductPanelAdminSessionToken() {
     : "";
 }
 
+function getActiveProductPanelCompanyId() {
+  const employeeSession = readProductPanelSessionStorageJson("gms-employee-session");
+  const employeeCompanyId = String(
+    employeeSession?.companyId
+      || employeeSession?.activeCompanyId
+      || "",
+  ).trim();
+  if (employeeCompanyId) {
+    return employeeCompanyId;
+  }
+
+  const adminSession = readProductPanelSessionStorageJson("gms-admin-session");
+  const sessionCompanyId = String(
+    adminSession?.companyId
+      || adminSession?.activeCompanyId
+      || "",
+  ).trim();
+  if (sessionCompanyId) {
+    return sessionCompanyId;
+  }
+
+  try {
+    return String(window.localStorage?.getItem("gms-active-company-id") || "").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
 function requireActiveProductPanelAdminTenantId() {
   const adminId = getActiveProductPanelAdminTenantId();
   if (!adminId) {
@@ -463,12 +504,16 @@ function requireActiveProductPanelAdminTenantId() {
 function withProductPanelAdminScopeHeaders(headers = {}) {
   const adminId = requireActiveProductPanelAdminTenantId();
   const sessionToken = getActiveProductPanelAdminSessionToken();
+  const companyId = getActiveProductPanelCompanyId();
   const scopedHeaders = {
     ...headers,
     "X-GMS-Admin-ID": adminId,
   };
   if (sessionToken) {
     scopedHeaders["X-GMS-Admin-Session"] = sessionToken;
+  }
+  if (companyId) {
+    scopedHeaders["X-GMS-Company-ID"] = companyId;
   }
   return scopedHeaders;
 }
@@ -483,7 +528,7 @@ function flashDealStatusLabel(deal) {
   const display = String(deal?.displayStatus || deal?.status || "")
     .trim()
     .toLowerCase();
-  if (display === "pending") return "Pending";
+  if (display === "pending") return "Upcoming";
   if (display === "upcoming") return "Upcoming";
   if (display === "live") return "Live";
   if (display === "ended") return "Ended";
@@ -496,7 +541,7 @@ function flashDealStatusToneClass(deal) {
   const display = String(deal?.displayStatus || deal?.status || "")
     .trim()
     .toLowerCase();
-  if (display === "pending") return "is-pending";
+  if (display === "pending") return "is-upcoming";
   if (display === "upcoming") return "is-upcoming";
   if (display === "live") return "is-live";
   if (display === "ended" || display === "cancelled" || display === "rejected") {
@@ -844,6 +889,15 @@ let productVideoCropStates = [];
 let quickAddProductVideoInput = null;
 let editingVariants = [];
 let nextEditableVariantEditorKey = 0;
+/** Per-category lists come from backend/config/productSpecifications.js via /api/product-specifications. */
+let productSpecificationConfig = null;
+let productSpecificationCategoryName = "";
+let productSpecificationOptions = [];
+let productSpecificationMinRequired = 3;
+let productSpecificationVariantMinRequired = 1;
+let productSpecificationOptionsPromise = null;
+/** @type {{ key: string, label: string, value: string }[]} */
+let editingProductSpecifications = [];
 let previewDetailsActiveImageIndex = null;
 let previewDetailsImageStateKey = "";
 let availableCategories = [];
@@ -2710,14 +2764,7 @@ function openAdminEditSuccessFeedbackModal(copy = "Updated successfully.", optio
   });
 }
 
-const SELLER_CONFIRM_TRASH_ICON = `
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M10 11v6"></path><path d="M14 11v6"></path>
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-    <path d="M3 6h18"></path>
-    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-  </svg>
-`;
+const SELLER_CONFIRM_TRASH_ICON = SELLER_DEFAULT_TRASH_ICON;
 const SELLER_CONFIRM_NOTICE_ICON = `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path>
@@ -4390,6 +4437,518 @@ function getProductListingFieldLimitValidationIssues() {
   return issues;
 }
 
+function normalizeProductSpecificationKey(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getProductSpecificationOption(key) {
+  const normalizedKey = normalizeProductSpecificationKey(key);
+  return productSpecificationOptions.find((option) => option.key === normalizedKey) ?? null;
+}
+
+function normalizeEditableSpecificationRows(specifications, minRows) {
+  const rows = [];
+  const seenKeys = new Set();
+  for (const entry of Array.isArray(specifications) ? specifications : []) {
+    const key = normalizeProductSpecificationKey(entry?.key);
+    if (!key || seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    rows.push({
+      key,
+      label: String(entry?.label ?? "").trim(),
+      value: String(entry?.value ?? ""),
+    });
+  }
+  while (rows.length < minRows) {
+    rows.push({ key: "", label: "", value: "" });
+  }
+  return rows;
+}
+
+function normalizeEditableProductSpecifications(specifications) {
+  return normalizeEditableSpecificationRows(specifications, productSpecificationMinRequired);
+}
+
+function normalizeEditableVariantSpecifications(specifications) {
+  return normalizeEditableSpecificationRows(specifications, productSpecificationVariantMinRequired);
+}
+
+function getSpecificationRowsPayload(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const key = normalizeProductSpecificationKey(row?.key);
+      return {
+        key,
+        label: getProductSpecificationOption(key)?.label || String(row?.label ?? "").trim() || key,
+        value: String(row?.value ?? "").trim(),
+      };
+    })
+    .filter((row) => row.key && row.value);
+}
+
+function getProductSpecificationsPayload() {
+  return getSpecificationRowsPayload(editingProductSpecifications);
+}
+
+function isProductSpecificationCategoryActive() {
+  return Boolean(productSpecificationConfig && productSpecificationCategoryName);
+}
+
+function normalizeProductSpecificationOptionList(options) {
+  return (Array.isArray(options) ? options : [])
+    .map((option) => ({
+      key: normalizeProductSpecificationKey(option?.key),
+      label: String(option?.label ?? "").trim(),
+      placeholder: String(option?.placeholder ?? "").trim(),
+      maxLength: Number(option?.maxLength) || 120,
+    }))
+    .filter((option) => option.key && option.label);
+}
+
+function resolveProductSpecificationSettings(categoryName) {
+  if (!productSpecificationConfig) {
+    return null;
+  }
+  const categoryKey = normalizeCategoryName(categoryName).toLowerCase();
+  const categories = Array.isArray(productSpecificationConfig.categories)
+    ? productSpecificationConfig.categories
+    : [];
+  return categories.find((settings) => settings?.key === categoryKey)
+    || productSpecificationConfig.defaultSettings
+    || null;
+}
+
+// Switches the specification list to the primary category and drops rows that
+// do not belong to it (listing and every variant).
+function applyProductSpecificationCategory() {
+  if (!productSpecificationConfig) {
+    renderAllSpecificationEditors();
+    return;
+  }
+
+  const categoryName = normalizeCategoryName(selectedProductCategories[0] ?? "");
+  const settings = categoryName ? resolveProductSpecificationSettings(categoryName) : null;
+  if (!settings) {
+    productSpecificationCategoryName = "";
+    productSpecificationOptions = [];
+    renderAllSpecificationEditors();
+    return;
+  }
+
+  productSpecificationCategoryName = categoryName;
+  productSpecificationOptions = normalizeProductSpecificationOptionList(settings.options);
+  productSpecificationMinRequired = Math.max(0, Number(settings.minRequired) || 0);
+  productSpecificationVariantMinRequired = Math.max(0, Number(settings.variantMinRequired) || 0);
+
+  const allowedKeys = new Set(productSpecificationOptions.map((option) => option.key));
+  const keepAllowedRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) =>
+    allowedKeys.has(normalizeProductSpecificationKey(row?.key)));
+  editingProductSpecifications = normalizeEditableProductSpecifications(
+    keepAllowedRows(editingProductSpecifications),
+  );
+  for (const variant of editingVariants) {
+    variant.specifications = normalizeEditableVariantSpecifications(
+      keepAllowedRows(variant?.specifications),
+    );
+  }
+  renderAllSpecificationEditors();
+}
+
+function getSpecificationRowIssues(rows, { minRequired, labelPrefix, getFocusControl }) {
+  if (!productSpecificationConfig) {
+    return [{ label: `${labelPrefix}specifications are still loading.`, focusControl: null }];
+  }
+  if (!isProductSpecificationCategoryActive()) {
+    return [];
+  }
+
+  const issues = [];
+  (Array.isArray(rows) ? rows : []).forEach((row, rowIndex) => {
+    const key = normalizeProductSpecificationKey(row?.key);
+    if (key && !String(row?.value ?? "").trim()) {
+      const label = getProductSpecificationOption(key)?.label || row?.label || key;
+      issues.push({
+        label: `${labelPrefix}specification "${label}" needs a value.`,
+        focusControl: getFocusControl(rowIndex, "value"),
+        rowIndex,
+        part: "value",
+      });
+    }
+  });
+
+  const completeCount = getSpecificationRowsPayload(rows).length;
+  if (completeCount < minRequired) {
+    const emptyRowIndex = (Array.isArray(rows) ? rows : []).findIndex(
+      (row) => !normalizeProductSpecificationKey(row?.key),
+    );
+    issues.push({
+      label:
+        `${labelPrefix}add at least ${minRequired} specification${minRequired === 1 ? "" : "s"} `
+        + `for ${productSpecificationCategoryName} (${completeCount}/${minRequired} filled).`,
+      focusControl: emptyRowIndex >= 0 ? getFocusControl(emptyRowIndex, "key") : null,
+      rowIndex: emptyRowIndex,
+      part: "key",
+    });
+  }
+  return issues;
+}
+
+function getProductSpecificationRowElement(rowIndex, part) {
+  return productSpecificationsEditor?.querySelector(
+    `[data-specification-index="${rowIndex}"] [data-specification-${part}]`,
+  ) ?? null;
+}
+
+function getProductSpecificationValidationIssues() {
+  if (!productSpecificationsEditor) {
+    return [];
+  }
+
+  return getSpecificationRowIssues(editingProductSpecifications, {
+    minRequired: productSpecificationMinRequired,
+    labelPrefix: "",
+    getFocusControl: getProductSpecificationRowElement,
+  }).map((issue) => ({
+    label: issue.label.charAt(0).toUpperCase() + issue.label.slice(1),
+    sectionId: "product-editor-section-details",
+    focusControl: issue.focusControl || productSpecificationsAddButton,
+  }));
+}
+
+function getEditableVariantSpecificationIssues(variant, variantIndex) {
+  if (!productSpecificationsEditor || !hasEditableVariantContent(variant)) {
+    return [];
+  }
+
+  return getSpecificationRowIssues(variant?.specifications, {
+    minRequired: productSpecificationVariantMinRequired,
+    labelPrefix: "",
+    getFocusControl: () => null,
+  }).map((issue) => createEditableVariantValidationIssue(
+    variantIndex,
+    issue.rowIndex >= 0 ? `spec-${issue.part}-${issue.rowIndex}` : "spec-add",
+    issue.label,
+  ));
+}
+
+function getSpecificationEditorHintText(rows, minRequired) {
+  if (!productSpecificationConfig) {
+    return "Loading specifications…";
+  }
+  if (!isProductSpecificationCategoryActive()) {
+    return "Select a category first to see its specifications.";
+  }
+  if (!productSpecificationOptions.length) {
+    return `No specifications set up for ${productSpecificationCategoryName}.`;
+  }
+  const completeCount = getSpecificationRowsPayload(rows).length;
+  return `${productSpecificationCategoryName}: select at least ${minRequired} and fill in each value `
+    + `(${Math.min(completeCount, minRequired)}/${minRequired}).`;
+}
+
+function syncSpecificationEditorHint(editorElement, rows, minRequired) {
+  const hintElement = editorElement?.querySelector("[data-specification-hint]");
+  if (!hintElement) {
+    return;
+  }
+  hintElement.textContent = getSpecificationEditorHintText(rows, minRequired);
+  hintElement.classList.toggle(
+    "is-complete",
+    isProductSpecificationCategoryActive()
+      && getSpecificationRowsPayload(rows).length >= minRequired,
+  );
+}
+
+function renderSpecificationEditor(editorElement, rows, { minRequired, variantIndex = null }) {
+  const listElement = editorElement?.querySelector("[data-specification-list]");
+  const addButton = editorElement?.querySelector("[data-specification-add]");
+  if (!listElement) {
+    return;
+  }
+
+  const isActive = isProductSpecificationCategoryActive() && productSpecificationOptions.length > 0;
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const chosenKeys = new Set(
+    safeRows.map((row) => normalizeProductSpecificationKey(row?.key)).filter(Boolean),
+  );
+  const canRemoveRows = safeRows.length > minRequired;
+  const isVariant = Number.isInteger(variantIndex);
+  const fragment = document.createDocumentFragment();
+
+  if (isActive) {
+    safeRows.forEach((row, rowIndex) => {
+      const rowKey = normalizeProductSpecificationKey(row?.key);
+      const option = getProductSpecificationOption(rowKey);
+      const rowElement = document.createElement("div");
+      rowElement.className = "product-specifications__row";
+      rowElement.dataset.specificationIndex = String(rowIndex);
+
+      const select = document.createElement("select");
+      select.className = "product-specifications__select";
+      select.dataset.specificationKey = "";
+      select.setAttribute("aria-label", `Specification ${rowIndex + 1}`);
+      select.append(new Option("Select specification", ""));
+      for (const specificationOption of productSpecificationOptions) {
+        const optionElement = new Option(specificationOption.label, specificationOption.key);
+        optionElement.disabled =
+          specificationOption.key !== rowKey && chosenKeys.has(specificationOption.key);
+        select.append(optionElement);
+      }
+      select.value = option ? rowKey : "";
+
+      const valueInput = document.createElement("input");
+      valueInput.type = "text";
+      valueInput.className = "product-specifications__value";
+      valueInput.dataset.specificationValue = "";
+      valueInput.maxLength = option?.maxLength || 120;
+      valueInput.placeholder = option
+        ? option.placeholder || `Enter ${option.label.toLowerCase()}`
+        : "Select a specification first";
+      valueInput.disabled = !option;
+      valueInput.value = option ? String(row?.value ?? "") : "";
+      valueInput.setAttribute(
+        "aria-label",
+        option ? `${option.label} value` : `Specification ${rowIndex + 1} value`,
+      );
+
+      if (isVariant) {
+        select.dataset.variantIndex = String(variantIndex);
+        select.dataset.variantField = `spec-key-${rowIndex}`;
+        valueInput.dataset.variantIndex = String(variantIndex);
+        valueInput.dataset.variantField = `spec-value-${rowIndex}`;
+      }
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "product-specifications__remove";
+      removeButton.dataset.specificationRemove = "";
+      removeButton.disabled = !canRemoveRows;
+      removeButton.setAttribute("aria-label", `Remove specification ${rowIndex + 1}`);
+      removeButton.title = canRemoveRows
+        ? "Remove"
+        : `At least ${minRequired} specification${minRequired === 1 ? " is" : "s are"} required`;
+      removeButton.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+      rowElement.append(select, valueInput, removeButton);
+      fragment.append(rowElement);
+    });
+  }
+
+  listElement.replaceChildren(fragment);
+  listElement.hidden = !isActive;
+  if (addButton) {
+    addButton.hidden = !isActive || safeRows.length >= productSpecificationOptions.length;
+    if (isVariant) {
+      addButton.dataset.variantIndex = String(variantIndex);
+      addButton.dataset.variantField = "spec-add";
+    }
+  }
+  syncSpecificationEditorHint(editorElement, safeRows, minRequired);
+}
+
+function bindSpecificationEditor(editorElement, { getRows, getMinRequired, onChange }) {
+  if (!editorElement) {
+    return;
+  }
+
+  const rerender = () => {
+    const rows = getRows();
+    renderSpecificationEditor(editorElement, rows, {
+      minRequired: getMinRequired(),
+      variantIndex: editorElement.dataset.variantSpecificationEditor !== undefined
+        ? Number(editorElement.dataset.variantSpecificationEditor)
+        : null,
+    });
+  };
+  const getRowIndex = (target) => {
+    const rowElement = target instanceof Element
+      ? target.closest("[data-specification-index]")
+      : null;
+    const rowIndex = Number(rowElement?.dataset.specificationIndex);
+    return Number.isInteger(rowIndex) && getRows()?.[rowIndex] ? rowIndex : -1;
+  };
+  const focusRowPart = (rowIndex, part) => {
+    editorElement
+      .querySelector(`[data-specification-index="${rowIndex}"] [data-specification-${part}]`)
+      ?.focus();
+  };
+
+  editorElement.addEventListener("change", (event) => {
+    const select = event.target;
+    if (!(select instanceof HTMLSelectElement) || !select.hasAttribute("data-specification-key")) {
+      return;
+    }
+    const rowIndex = getRowIndex(select);
+    if (rowIndex < 0) {
+      return;
+    }
+    const row = getRows()[rowIndex];
+    row.key = normalizeProductSpecificationKey(select.value);
+    row.label = getProductSpecificationOption(row.key)?.label || "";
+    if (!row.key) {
+      row.value = "";
+    }
+    rerender();
+    onChange();
+    if (row.key) {
+      focusRowPart(rowIndex, "value");
+    }
+  });
+  editorElement.addEventListener("input", (event) => {
+    const valueInput = event.target;
+    if (!(valueInput instanceof HTMLInputElement) || !valueInput.hasAttribute("data-specification-value")) {
+      return;
+    }
+    const rowIndex = getRowIndex(valueInput);
+    if (rowIndex < 0) {
+      return;
+    }
+    getRows()[rowIndex].value = valueInput.value;
+    syncSpecificationEditorHint(editorElement, getRows(), getMinRequired());
+    onChange();
+  });
+  editorElement.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const removeButton = target?.closest("[data-specification-remove]");
+    if (removeButton && !removeButton.disabled) {
+      const rowIndex = getRowIndex(removeButton);
+      const rows = getRows();
+      if (rowIndex < 0 || rows.length <= getMinRequired()) {
+        return;
+      }
+      rows.splice(rowIndex, 1);
+      rerender();
+      onChange();
+      return;
+    }
+
+    const addButton = target?.closest("[data-specification-add]");
+    if (addButton) {
+      const rows = getRows();
+      if (rows.length >= productSpecificationOptions.length) {
+        return;
+      }
+      rows.push({ key: "", label: "", value: "" });
+      rerender();
+      onChange();
+      focusRowPart(rows.length - 1, "key");
+    }
+  });
+}
+
+function renderProductSpecifications() {
+  if (!productSpecificationsEditor) {
+    return;
+  }
+  renderSpecificationEditor(productSpecificationsEditor, editingProductSpecifications, {
+    minRequired: productSpecificationMinRequired,
+  });
+}
+
+function buildVariantSpecificationEditor(variantIndex) {
+  const editor = document.createElement("div");
+  editor.className = "product-specifications product-specifications--variant";
+  editor.dataset.variantSpecificationEditor = String(variantIndex);
+
+  const header = document.createElement("div");
+  header.className = "product-specifications__header";
+  const title = document.createElement("span");
+  title.className = "product-specifications__title";
+  title.textContent = "Specifications";
+  const hint = document.createElement("small");
+  hint.className = "product-specifications__hint";
+  hint.dataset.specificationHint = "";
+  header.append(title, hint);
+
+  const list = document.createElement("div");
+  list.className = "product-specifications__list";
+  list.dataset.specificationList = "";
+
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.className = "product-specifications__add";
+  addButton.dataset.specificationAdd = "";
+  addButton.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Add specification</span>';
+
+  editor.append(header, list, addButton);
+
+  const getRows = () => {
+    const variant = editingVariants[variantIndex];
+    if (!variant) {
+      return [];
+    }
+    if (!Array.isArray(variant.specifications)) {
+      variant.specifications = normalizeEditableVariantSpecifications([]);
+    }
+    return variant.specifications;
+  };
+  bindSpecificationEditor(editor, {
+    getRows,
+    getMinRequired: () => productSpecificationVariantMinRequired,
+    onChange: () => syncProductFormSubmitState(),
+  });
+  renderSpecificationEditor(editor, getRows(), {
+    minRequired: productSpecificationVariantMinRequired,
+    variantIndex,
+  });
+  return editor;
+}
+
+function renderAllSpecificationEditors() {
+  renderProductSpecifications();
+  productVariantList?.querySelectorAll("[data-variant-specification-editor]").forEach((editor) => {
+    const variantIndex = Number(editor.dataset.variantSpecificationEditor);
+    const variant = editingVariants[variantIndex];
+    if (!variant) {
+      return;
+    }
+    if (!Array.isArray(variant.specifications)) {
+      variant.specifications = normalizeEditableVariantSpecifications([]);
+    }
+    renderSpecificationEditor(editor, variant.specifications, {
+      minRequired: productSpecificationVariantMinRequired,
+      variantIndex,
+    });
+  });
+}
+
+function loadProductSpecificationOptions() {
+  if (productSpecificationOptionsPromise) {
+    return productSpecificationOptionsPromise;
+  }
+
+  productSpecificationOptionsPromise = fetch("/api/product-specifications", {
+    headers: { Accept: "application/json" },
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("Unable to load specifications.");
+      }
+      return response.json();
+    })
+    .then((data) => {
+      productSpecificationConfig = {
+        defaultSettings: data?.defaultSettings ?? null,
+        categories: Array.isArray(data?.categories) ? data.categories : [],
+      };
+      productSpecificationCategoryName = "";
+      applyProductSpecificationCategory();
+      syncProductFormSubmitState();
+    })
+    .catch(() => {
+      productSpecificationOptionsPromise = null;
+      const hintElement = productSpecificationsEditor?.querySelector("[data-specification-hint]");
+      if (hintElement) {
+        hintElement.textContent = "Unable to load specifications. Reopen the form to try again.";
+      }
+    });
+  return productSpecificationOptionsPromise;
+}
+
 function getProductValidationIssues() {
   if (!form) {
     return [];
@@ -4459,6 +5018,7 @@ function getProductValidationIssues() {
   }
 
   issues.push(...getProductListingFieldLimitValidationIssues());
+  issues.push(...getProductSpecificationValidationIssues());
   issues.push(...getProductPartnerValidationIssues());
   issues.push(...getAllEditableVariantValidationIssues());
 
@@ -4605,6 +5165,7 @@ function getAllEditableVariantValidationIssues(variants = editingVariants) {
   const normalizedVariants = Array.isArray(variants) ? variants : [];
   return normalizedVariants.reduce((collectedIssues, variant, variantIndex) => {
     collectedIssues.push(...getEditableVariantValidationIssues(variant, variantIndex));
+    collectedIssues.push(...getEditableVariantSpecificationIssues(variant, variantIndex));
     return collectedIssues;
   }, []);
 }
@@ -8450,7 +9011,12 @@ function initializeProductExpiryDatePicker() {
       setProductExpiryDateCalendarOpen(false, { restoreFocus: true });
     }
   });
-  document.addEventListener("scroll", requestProductExpiryDateCalendarPosition, true);
+  document.addEventListener("scroll", (event) => {
+    if (productExpiryDateCalendar?.hidden !== false) return;
+    const target = event.target;
+    if (target instanceof Node && productExpiryDateCalendar.contains(target)) return;
+    setProductExpiryDateCalendarOpen(false);
+  }, true);
   window.addEventListener("resize", requestProductExpiryDateCalendarPosition);
 }
 
@@ -9617,6 +10183,7 @@ function isProductFormReadyToSave() {
     && getSelectedActiveProductPartnerIds("delivery").length > 0
     && getSelectedActiveProductPartnerIds("payment").length > 0
     && getProductListingFieldLimitValidationIssues().length === 0
+    && getProductSpecificationValidationIssues().length === 0
     && getAllEditableVariantValidationIssues().length === 0
   );
 }
@@ -9739,6 +10306,7 @@ function getProductEditCurrentSnapshot() {
     categories: normalizeCategoryValues(selectedProductCategories),
     deliveryPartnerIds: getSelectedActiveProductPartnerIds("delivery"),
     paymentPartnerIds: getSelectedActiveProductPartnerIds("payment"),
+    specifications: getProductSpecificationsPayload(),
     imageUrls: editingImageUrls.map((imageUrl) => String(imageUrl ?? "").trim()),
     pendingImageFiles: pendingImageFiles.map(getProductEditFileSignature),
     descriptionImageUrls: editingDescriptionImageUrls.map((imageUrl) =>
@@ -10325,6 +10893,7 @@ function restoreEditableVariantsFromDraftSnapshot(variantSnapshots = []) {
         imagePositionX: entry?.imagePositionX,
         imagePositionY: entry?.imagePositionY,
         addOns: Array.isArray(payload.addOns) ? payload.addOns : [],
+        specifications: Array.isArray(payload.specifications) ? payload.specifications : [],
       };
     }),
   );
@@ -10380,6 +10949,8 @@ function applyListingDraftSnapshot(snapshot) {
     setSelectedProductPartnerIds("delivery", snapshot.deliveryPartnerIds);
     setSelectedProductPartnerIds("payment", snapshot.paymentPartnerIds);
     renderProductPartnerSelections();
+    editingProductSpecifications = normalizeEditableProductSpecifications(snapshot.specifications);
+    renderProductSpecifications();
     syncBarcodePreview();
 
     const pendingImageSignatures = Array.isArray(snapshot.pendingImageFiles)
@@ -17856,6 +18427,7 @@ function createEmptyEditableVariant() {
     isExpanded: true,
     originalPrice: "",
     salesPrice: "",
+    specifications: normalizeEditableVariantSpecifications([]),
   };
 }
 
@@ -17912,6 +18484,7 @@ function normalizeEditableVariants(variants = []) {
       variant?.salesPrice === null || variant?.salesPrice === undefined
         ? ""
         : String(variant.salesPrice),
+    specifications: normalizeEditableVariantSpecifications(variant?.specifications),
   }));
 }
 
@@ -19300,6 +19873,9 @@ function renderProductVariants() {
     footer.appendChild(removeButton);
 
     fields.append(nameLabel, imageField, addOnLabel, priceGrid);
+    if (productSpecificationsEditor) {
+      fields.append(buildVariantSpecificationEditor(variantIndex));
+    }
     row.append(header, fields, footer);
     productVariantList.appendChild(row);
   }
@@ -21419,6 +21995,7 @@ function buildVariantsPayload(variants = editingVariants) {
           : [],
         originalPrice: String(variant?.originalPrice ?? "").trim(),
         salesPrice: String(variant?.salesPrice ?? "").trim() || null,
+        specifications: getSpecificationRowsPayload(variant?.specifications),
         position: index,
       };
     });
@@ -21835,6 +22412,7 @@ function setSelectedProductCategories(nextCategories, { syncPreview = true } = {
   syncCategoryMultiSelectSummary();
   renderSelectedCategoryChips();
   renderCategoryMultiSelectOptions();
+  applyProductSpecificationCategory();
   syncProductFormSubmitState();
   if (syncPreview) {
     renderAndroidProductPreview();
@@ -21851,6 +22429,7 @@ function setCategoryOptions(categories, selectedValues = selectedProductCategori
   renderCategoryMultiSelectOptions();
   renderInventoryCategoryFilterOptions(availableCategories);
   renderInventoryStatusFilterOptions();
+  applyProductSpecificationCategory();
   syncProductFormSubmitState();
   if (form) {
     renderAndroidProductPreview();
@@ -22248,6 +22827,8 @@ function populateForm(product) {
   setSelectedProductPartnerIds("delivery", product.deliveryPartnerIds);
   setSelectedProductPartnerIds("payment", product.paymentPartnerIds);
   renderProductPartnerSelections();
+  editingProductSpecifications = normalizeEditableProductSpecifications(product?.specifications);
+  renderProductSpecifications();
   syncBarcodePreview();
   setCategoryOptions(availableCategories, getProductCategoryList(product));
   // Listing stock stays as inventory total; expiry follows current sell priority
@@ -22373,10 +22954,13 @@ function resetFormMode() {
   selectedPaymentPartnerIds = [];
   openProductPartnerDropdownType = "";
   collapsedProductPartnerTypes.clear();
+  editingProductSpecifications = normalizeEditableProductSpecifications([]);
   renderProductImageInputs();
   renderProductVideoInputs();
   renderProductDescriptionImageEditor();
   renderProductPartnerSelections();
+  renderProductSpecifications();
+  void loadProductSpecificationOptions();
   syncBarcodePreview();
   setProductSubmitButtonLabel(
     isStandaloneProductEditorPage ? "Save Listing" : "Publish Listing",
@@ -22837,7 +23421,7 @@ function createProductCard(product) {
           title="${canManageProduct ? "Delete product" : "Expired batch cannot be deleted here"}"
           ${canManageProduct ? "" : "disabled"}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          ${SELLER_DEFAULT_TRASH_ICON_LARGE}
         </button>
       </div>
     </div>
@@ -23972,6 +24556,7 @@ async function handleSubmit(event) {
     categories: [...selectedProductCategories],
     deliveryPartnerIds: getSelectedActiveProductPartnerIds("delivery"),
     paymentPartnerIds: getSelectedActiveProductPartnerIds("payment"),
+    specifications: getProductSpecificationsPayload(),
     stock: formData.get("stock")?.toString().trim(),
     barcode: formData.get("barcode")?.toString().trim(),
     moveBarcodeToPackingDashboard:
@@ -24595,6 +25180,16 @@ form?.addEventListener("change", () => {
   syncBarcodePreview();
   // LISTING_DRAFT: maybeScheduleListingDraftAutoSave();
 });
+bindSpecificationEditor(productSpecificationsEditor, {
+  getRows: () => editingProductSpecifications,
+  getMinRequired: () => productSpecificationMinRequired,
+  onChange: () => syncProductFormSubmitState(),
+});
+if (productSpecificationsEditor) {
+  editingProductSpecifications = normalizeEditableProductSpecifications(editingProductSpecifications);
+  renderProductSpecifications();
+  void loadProductSpecificationOptions();
+}
 productDescriptionModeButtons.forEach((button) => {
   button.addEventListener("click", () => {
     setProductDescriptionMode(button.dataset.productDescriptionMode, { focus: true });

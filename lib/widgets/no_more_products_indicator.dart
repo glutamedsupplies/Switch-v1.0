@@ -10,12 +10,14 @@ class NoMoreProductsIndicator extends StatefulWidget {
     required this.overscrollSignal,
     required this.primaryColor,
     required this.secondaryColor,
+    this.isRefreshing = false,
   });
 
   final ScrollController scrollController;
   final int overscrollSignal;
   final Color primaryColor;
   final Color secondaryColor;
+  final bool isRefreshing;
 
   @override
   State<NoMoreProductsIndicator> createState() => _NoMoreProductsIndicatorState();
@@ -34,16 +36,34 @@ class _NoMoreProductsIndicatorState extends State<NoMoreProductsIndicator> {
       setState(() {
         _showNoMoreProducts = false;
       });
-      _noMoreProductsTimer = Timer(const Duration(milliseconds: 650), () {
-        if (!mounted) {
-          return;
-        }
-
-        setState(() {
-          _showNoMoreProducts = true;
-        });
-      });
+      if (!widget.isRefreshing) {
+        _scheduleNoMoreProducts();
+      }
+      return;
     }
+
+    if (!oldWidget.isRefreshing && widget.isRefreshing) {
+      _noMoreProductsTimer?.cancel();
+      if (_showNoMoreProducts) {
+        setState(() => _showNoMoreProducts = false);
+      }
+    } else if (oldWidget.isRefreshing && !widget.isRefreshing) {
+      _scheduleNoMoreProducts();
+    }
+  }
+
+  void _scheduleNoMoreProducts() {
+    _noMoreProductsTimer?.cancel();
+    _noMoreProductsTimer = Timer(const Duration(milliseconds: 650), () {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _showNoMoreProducts = true;
+        _noMoreProductsTimer = null;
+      });
+    });
   }
 
   @override
@@ -112,7 +132,18 @@ class _NoMoreProductsIndicatorState extends State<NoMoreProductsIndicator> {
             duration: appMotionFrames(13),
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeOutCubic,
-            child: _showNoMoreProducts && isNearBottom
+            child: widget.isRefreshing && isNearBottom
+                ? SizedBox.square(
+                    key: const ValueKey('bottom-refreshing'),
+                    dimension: 32,
+                    child: RefreshProgressIndicator(
+                      color: widget.primaryColor,
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                      elevation: 1,
+                      semanticsLabel: 'Refreshing products',
+                    ),
+                  )
+                : _showNoMoreProducts && isNearBottom
                 ? ConstrainedBox(
                     key: const ValueKey('no-more-products'),
                     constraints: const BoxConstraints(maxWidth: 280),

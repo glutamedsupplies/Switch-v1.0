@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const storageKey = "gms-web-theme";
   const dashboardBackgroundStorageKey = "gms-dashboard-background";
   const workspaceColorStorageKey = "gms-workspace-color";
@@ -50,6 +50,11 @@
     notificationSounds: true,
     reducedMotion: false,
     compactDataView: false,
+    buyerAi: true,
+    sellerAi: true,
+    riderAi: true,
+    aiCheckout: true,
+    aiSellerActions: true,
   });
   let currentAppliedThemeConfig = null;
   let currentWorkspaceColor = "";
@@ -58,6 +63,84 @@
   let currentPlatformSettings = null;
   let platformSettingsSyncPromise = null;
   let platformSettingsRequestRevision = 0;
+  let testModeExplorerAllowed = true;
+
+  function isSuperAdminPage() {
+    const path = String(window.location?.pathname || "").toLowerCase();
+    return path.endsWith("/super_admin.html") || path.includes("/super_admin");
+  }
+
+  function ensureTestModeMaintenanceOverlay() {
+    let overlay = document.getElementById("gms-test-mode-maintenance");
+    if (overlay) {
+      return overlay;
+    }
+    if (!document.getElementById("gms-test-mode-maintenance-styles")) {
+      const style = document.createElement("style");
+      style.id = "gms-test-mode-maintenance-styles";
+      style.textContent = `
+        #gms-test-mode-maintenance {
+          position: fixed;
+          inset: 0;
+          z-index: 2147483000;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          background:
+            radial-gradient(circle at top, rgba(15, 23, 42, 0.35), transparent 42%),
+            linear-gradient(160deg, #0f172a 0%, #111827 48%, #1e293b 100%);
+          color: #f8fafc;
+          text-align: center;
+          font-family: Georgia, "Times New Roman", serif;
+        }
+        html.gms-test-mode-maintenance #gms-test-mode-maintenance { display: flex; }
+        html.gms-test-mode-maintenance body { overflow: hidden !important; }
+        #gms-test-mode-maintenance .gms-tm-card {
+          max-width: 420px;
+          width: 100%;
+          padding: 28px 24px;
+          border: 1px solid rgba(248, 250, 252, 0.14);
+          background: rgba(15, 23, 42, 0.72);
+          backdrop-filter: blur(10px);
+        }
+        #gms-test-mode-maintenance h1 {
+          margin: 0 0 10px;
+          font-size: clamp(1.6rem, 4vw, 2.1rem);
+          letter-spacing: 0.02em;
+        }
+        #gms-test-mode-maintenance p {
+          margin: 0;
+          font-family: system-ui, sans-serif;
+          font-size: 0.98rem;
+          line-height: 1.55;
+          color: rgba(248, 250, 252, 0.82);
+        }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    overlay = document.createElement("div");
+    overlay.id = "gms-test-mode-maintenance";
+    overlay.setAttribute("role", "alertdialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "gms-tm-title");
+    overlay.innerHTML = `
+      <div class="gms-tm-card">
+        <h1 id="gms-tm-title">Maintenance break</h1>
+        <p>Switch is in Test Mode. Only the Super Admin sandbox can explore right now. Please try again later.</p>
+      </div>
+    `;
+    (document.body || document.documentElement).appendChild(overlay);
+    return overlay;
+  }
+
+  function applyTestModeExplorerGate(_allowed) {
+    testModeExplorerAllowed = true;
+    document.documentElement.classList.remove("gms-test-mode-maintenance");
+    if (document.body) {
+      document.body.classList.remove("gms-test-mode-maintenance");
+    }
+  }
 
   function readSessionStorageJson(key) {
     try {
@@ -171,6 +254,24 @@
       const headers = new Headers(init.headers || requestHeaders || undefined);
       if (!headers.has("X-GMS-Admin-ID")) {
         headers.set("X-GMS-Admin-ID", adminId);
+      }
+      let companyId = "";
+      try {
+        const raw = window.sessionStorage?.getItem("gms-admin-session");
+        const session = raw ? JSON.parse(raw) : null;
+        companyId = String(
+          session?.companyId || session?.activeCompanyId || "",
+        ).trim();
+      } catch (_) {}
+      if (!companyId) {
+        try {
+          companyId = String(
+            window.localStorage?.getItem("gms-active-company-id") || "",
+          ).trim();
+        } catch (_) {}
+      }
+      if (companyId && !headers.has("X-GMS-Company-ID")) {
+        headers.set("X-GMS-Company-ID", companyId);
       }
 
       return nativeFetch(input, {
@@ -313,6 +414,15 @@
       document.body?.classList?.contains("super-admin-page") ||
         /\/(?:super_admin|user_data|root_login)\.html$/.test(pathname),
     );
+  }
+
+  function superAdminCanvasColor() {
+    const dark =
+      typeof document !== "undefined" &&
+      document.documentElement?.getAttribute("data-sa-scheme") === "dark";
+    return dark
+      ? { r: 19, g: 19, b: 20, css: "#131314" }
+      : { r: 242, g: 242, b: 242, css: "#f2f2f2" };
   }
 
   function getActiveThemeStorageScope() {
@@ -787,9 +897,11 @@
         detail: {
           settings: { ...normalized },
           source: String(options.source || "local"),
+          testModeExplorerAllowed,
         },
       }));
     }
+    applyTestModeExplorerGate(testModeExplorerAllowed);
     return { ...normalized };
   }
 
@@ -818,6 +930,11 @@
         }
         if (data?.configured === false) {
           return getPlatformSettings();
+        }
+        if (Object.prototype.hasOwnProperty.call(data || {}, "testModeExplorerAllowed")) {
+          testModeExplorerAllowed = data.testModeExplorerAllowed !== false;
+        } else {
+          testModeExplorerAllowed = true;
         }
         return applyPlatformSettings(data?.settings, { source: "server" });
       } catch (error) {
@@ -856,9 +973,16 @@
     }
     const savedSettings = normalizePlatformSettings(data?.settings || normalized);
     if (requestRevision === platformSettingsRequestRevision) {
-      return applyPlatformSettings(savedSettings, { source: "super-admin" });
+      applyPlatformSettings(savedSettings, { source: "super-admin" });
     }
-    return savedSettings;
+    return {
+      settings: savedSettings,
+      enforcement: data?.enforcement && typeof data.enforcement === "object" ? data.enforcement : null,
+      testModePurge: data?.testModePurge && typeof data.testModePurge === "object"
+        ? data.testModePurge
+        : null,
+      message: data?.message || "",
+    };
   }
 
   function hexToDashboardBackground(value) {
@@ -1214,52 +1338,72 @@
       "--accent-strong",
       toRgb(solidStrongTheme),
     );
-    root.style.setProperty("--accent-text", getAccentText(theme));
-    root.style.setProperty(
-      "--accent-soft",
-      toRgb({
-        r: mixWithWhite(theme.r, 0.84),
-        g: mixWithWhite(theme.g, 0.84),
-        b: mixWithWhite(theme.b, 0.84),
-      }),
-    );
-    root.style.setProperty(
-      "--accent-muted",
-      toRgb({
-        r: mixWithWhite(theme.r, 0.92),
-        g: mixWithWhite(theme.g, 0.92),
-        b: mixWithWhite(theme.b, 0.92),
-      }),
-    );
-    root.style.setProperty(
-      "--page-background",
-      toRgb({
-        r: mixWithWhite(theme.r, 0.94),
-        g: mixWithWhite(theme.g, 0.94),
-        b: mixWithWhite(theme.b, 0.94),
-      }),
-    );
-    root.style.setProperty(
-      "--surface-soft",
-      toRgb({
-        r: mixWithWhite(theme.r, 0.965),
-        g: mixWithWhite(theme.g, 0.965),
-        b: mixWithWhite(theme.b, 0.965),
-      }),
-    );
-    root.style.setProperty(
-      "--border",
-      toRgb({
-        r: mixWithWhite(theme.r, 0.78),
-        g: mixWithWhite(theme.g, 0.78),
-        b: mixWithWhite(theme.b, 0.78),
-      }),
-    );
-    root.style.setProperty("--panel-border", toRgba(theme, 0.16));
-    root.style.setProperty("--hero-glow", toRgba(theme, 0.2));
-    root.style.setProperty("--ring", toRgba(theme, 0.18));
-    root.style.setProperty("--button-shadow", `0 14px 30px ${toRgba(theme, 0.22)}`);
-    root.style.setProperty("--shadow", `0 20px 40px ${toRgba(theme, 0.14)}`);
+    const saDarkScheme =
+      isSuperAdminThemePage() &&
+      document.documentElement?.getAttribute("data-sa-scheme") === "dark";
+    if (saDarkScheme) {
+      // Keep the palette hue. Soft/muted become translucent accents on dark chrome.
+      root.style.setProperty("--accent-text", toRgb(theme));
+      root.style.setProperty("--accent-soft", toRgba(theme, 0.24));
+      root.style.setProperty("--accent-muted", toRgba(theme, 0.12));
+      root.style.setProperty("--page-background", superAdminCanvasColor().css);
+      root.style.setProperty("--surface-soft", "#282a2c");
+      root.style.setProperty("--border", "#444746");
+      root.style.setProperty("--panel-border", toRgba(theme, 0.28));
+      root.style.setProperty("--hero-glow", toRgba(theme, 0.2));
+      root.style.setProperty("--ring", toRgba(theme, 0.28));
+      root.style.setProperty("--button-shadow", `0 14px 30px ${toRgba(theme, 0.3)}`);
+      root.style.setProperty("--shadow", "0 20px 40px rgba(0, 0, 0, 0.45)");
+    } else {
+      root.style.setProperty("--accent-text", getAccentText(theme));
+      root.style.setProperty(
+        "--accent-soft",
+        toRgb({
+          r: mixWithWhite(theme.r, 0.84),
+          g: mixWithWhite(theme.g, 0.84),
+          b: mixWithWhite(theme.b, 0.84),
+        }),
+      );
+      root.style.setProperty(
+        "--accent-muted",
+        toRgb({
+          r: mixWithWhite(theme.r, 0.92),
+          g: mixWithWhite(theme.g, 0.92),
+          b: mixWithWhite(theme.b, 0.92),
+        }),
+      );
+      root.style.setProperty(
+        "--page-background",
+        isSuperAdminThemePage()
+          ? superAdminCanvasColor().css
+          : toRgb({
+              r: mixWithWhite(theme.r, 0.94),
+              g: mixWithWhite(theme.g, 0.94),
+              b: mixWithWhite(theme.b, 0.94),
+            }),
+      );
+      root.style.setProperty(
+        "--surface-soft",
+        toRgb({
+          r: mixWithWhite(theme.r, 0.965),
+          g: mixWithWhite(theme.g, 0.965),
+          b: mixWithWhite(theme.b, 0.965),
+        }),
+      );
+      root.style.setProperty(
+        "--border",
+        toRgb({
+          r: mixWithWhite(theme.r, 0.78),
+          g: mixWithWhite(theme.g, 0.78),
+          b: mixWithWhite(theme.b, 0.78),
+        }),
+      );
+      root.style.setProperty("--panel-border", toRgba(theme, 0.16));
+      root.style.setProperty("--hero-glow", toRgba(theme, 0.2));
+      root.style.setProperty("--ring", toRgba(theme, 0.18));
+      root.style.setProperty("--button-shadow", `0 14px 30px ${toRgba(theme, 0.22)}`);
+      root.style.setProperty("--shadow", `0 20px 40px ${toRgba(theme, 0.14)}`);
+    }
     const accentContrast = getContrastColor(theme);
     const selectedBackground = accentContrast === "#ffffff" ? "#ffffff" : "#000000";
     const selectedForeground = accentContrast === "#ffffff" ? "#000000" : "#ffffff";
@@ -1288,7 +1432,9 @@
   }
 
   function applyDashboardBackground(input) {
-    const config = normalizeDashboardBackgroundConfig(input);
+    const config = normalizeDashboardBackgroundConfig(
+      isSuperAdminThemePage() ? superAdminCanvasColor() : input,
+    );
     const background = config.theme;
     const root = document.documentElement;
     const previewTheme =
@@ -1465,6 +1611,8 @@
     const dashboardBackgroundConfig = loadDashboardBackgroundConfig();
 
     applyTheme(themeConfig);
+    // Workspace color is the Super Admin palette source of truth — always win last
+    // so scheme toggles / scoped theme defaults cannot snap back to blue.
     const workspaceColor = applyWorkspaceColor(readCachedWorkspaceColor(), {
       cache: false,
       dispatch: false,
@@ -1961,6 +2109,10 @@
   }
 
   const sellerAdminSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
+  const defaultDeleteIconSvg =
+    window.SwitchDefaultIcons?.trash?.svgLarge ||
+    window.SwitchDefaultIcons?.svg?.("trash", { size: 256, className: "lucide lucide-trash" }) ||
+    '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash" aria-hidden="true" focusable="false"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 
   const fontAwesomeRules = [
     {
@@ -2271,7 +2423,7 @@
     },
     {
       selector: ".validation-modal__icon--delete",
-      iconSVG: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+      iconSVG: defaultDeleteIconSvg,
     },
     {
       selector: ".description-button",
@@ -2286,7 +2438,7 @@
     {
       selector:
         ".delete-button, .category-chip__delete, .product-image-input-row__remove, .product-variant-row__remove",
-      iconSVG: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+      iconSVG: defaultDeleteIconSvg,
     },
     {
       selector: ".scroll-top-button",
@@ -2412,30 +2564,83 @@
     });
   }
 
+  /** Clock flips and photo-fan shuffles never add icons, overlays, or modals. */
+  function isDecorativeMotionMutation(mutation) {
+    const target = mutation.target;
+    return target instanceof Element && Boolean(target.closest("[data-sa-motion]"));
+  }
+
   function watchFontAwesomeIcons() {
     if (!document.body || typeof MutationObserver === "undefined") {
       return;
     }
 
+    // Past this many changed subtrees a single document pass is cheaper than per-root scans.
+    const maxScopedIconRoots = 60;
+
+    function resolveIconRefreshRoot(node) {
+      if (!(node instanceof Element)) {
+        return null;
+      }
+      return node.closest(".dashboard-nav__item") || node;
+    }
+
     const observer = new MutationObserver((mutations) => {
-      let shouldRefresh = false;
+      const roots = new Set();
+      let refreshDocument = false;
       for (const mutation of mutations) {
-        if (
-          mutation.type === "childList" ||
-          (mutation.type === "attributes"
-            && ["class", "title", "aria-label", "aria-expanded", "aria-pressed"].includes(
-              mutation.attributeName,
-            ))
-        ) {
-          shouldRefresh = true;
+        if (isDecorativeMotionMutation(mutation)) {
+          continue;
+        }
+        if (mutation.type === "attributes") {
+          const root = resolveIconRefreshRoot(mutation.target);
+          if (root) {
+            roots.add(root);
+          }
+        } else if (mutation.type === "childList") {
+          let addedElementCount = 0;
+          mutation.addedNodes.forEach((node) => {
+            if (node instanceof Element) {
+              addedElementCount += 1;
+            }
+          });
+          if (addedElementCount > 1 && mutation.target instanceof Element) {
+            // One scan of the container beats one scan per new child (e.g. innerHTML lists).
+            roots.add(resolveIconRefreshRoot(mutation.target));
+          } else if (addedElementCount === 1) {
+            mutation.addedNodes.forEach((node) => {
+              if (node instanceof Element) {
+                roots.add(resolveIconRefreshRoot(node));
+              }
+            });
+          } else if (mutation.addedNodes.length) {
+            const navItem = mutation.target instanceof Element
+              ? mutation.target.closest(".dashboard-nav__item")
+              : null;
+            if (navItem) {
+              roots.add(navItem);
+            }
+          }
+        }
+        if (roots.has(document.body) || roots.size > maxScopedIconRoots) {
+          refreshDocument = true;
           break;
         }
       }
 
-      if (shouldRefresh) {
+      if (refreshDocument) {
         prepareDashboardNavTooltips(document);
         applyFontAwesomeIcons(document);
+        return;
       }
+
+      const connectedRoots = [...roots].filter((root) => root?.isConnected);
+      connectedRoots
+        .filter((root) => !connectedRoots.some((other) => other !== root && other.contains(root)))
+        .forEach((root) => {
+          prepareDashboardNavTooltips(root);
+          applyFontAwesomeIcons(root);
+        });
     });
 
     observer.observe(document.body, {
@@ -2826,6 +3031,7 @@
         if (
           mutation.type === "attributes"
           && (mutation.attributeName === "hidden" || mutation.attributeName === "class")
+          && !isDecorativeMotionMutation(mutation)
         ) {
           scheduleNotificationDropdownModalSync();
           return;

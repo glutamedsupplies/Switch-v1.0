@@ -1789,6 +1789,7 @@ function getEmployeeWorkspacePermissionForPath(pathname = window.location.pathna
     "/packing_dashboard.html": "packing-dashboard",
     "/live_chat.html": "live-chat",
     "/concern.html": "concern",
+    "/seller_security_center.html": "concern",
     "/employee_order_insight.html": "employee-order",
     "/employee_stock.html": "employee-inventory",
     "/insight.html": "insight",
@@ -1989,11 +1990,43 @@ function getNotificationActivityBadgeConfig(activity) {
     };
   }
 
+  if (type === "product-unrejected" || action === "unrejected") {
+    return {
+      label: "Returned to review",
+      modifier: "updated",
+      icon: "fa-undo",
+    };
+  }
+
+  if (type === "product-submitted" || type === "product-resubmitted") {
+    return {
+      label: type === "product-resubmitted" ? "Resubmitted" : "Submitted",
+      modifier: "created",
+      icon: "fa-upload",
+    };
+  }
+
+  if (type === "product-deleted" || action === "deleted") {
+    return {
+      label: "Listing deleted",
+      modifier: "deleted",
+      icon: "fa-trash",
+    };
+  }
+
   if (type === "listing-restriction" || type === "seller-restriction" || type === "restriction") {
     return {
       label: "Restricted",
       modifier: "updated",
       icon: "fa-lock",
+    };
+  }
+
+  if (type === "listing-unrestriction" || action === "unrestricted") {
+    return {
+      label: "Unrestricted",
+      modifier: "created",
+      icon: "fa-unlock",
     };
   }
 
@@ -2348,7 +2381,7 @@ function getNotificationActivityTargetUrl(activity) {
       return `/product_panel.html?${params.toString()}`;
     }
     if (
-      ["product-approved", "product-rejected", "product-unrejected", "listing-restriction"].includes(type)
+      ["product-approved", "product-rejected", "product-unrejected", "product-submitted", "product-resubmitted", "product-deleted", "listing-restriction", "listing-unrestriction", "listing-report-threshold", "listing-report-dismiss", "listing-report-uphold"].includes(type)
       && productId
     ) {
       const params = new URLSearchParams({
@@ -3091,13 +3124,20 @@ function createEmployeeSetupIcon(name) {
   }
 
   if (name === "delete") {
+    if (window.SwitchDefaultIcons?.trash?.svg) {
+      return window.SwitchDefaultIcons.svg("trash", {
+        size: 24,
+        className: "lucide lucide-trash",
+      });
+    }
+
     return `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false">
-        <path d="M5.5 7.5h13" stroke-linecap="round" />
-        <path d="M9.5 4.5h5" stroke-linecap="round" />
-        <path d="m8.5 7.5.6 10a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-10" stroke-linejoin="round" />
-        <path d="M10 10.5v4.5" stroke-linecap="round" />
-        <path d="M14 10.5v4.5" stroke-linecap="round" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M10 11v6"></path>
+        <path d="M14 11v6"></path>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+        <path d="M3 6h18"></path>
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
       </svg>
     `;
   }

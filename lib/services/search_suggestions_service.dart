@@ -124,6 +124,8 @@ Future<void> recordBuyerSearchEvent(
   String platformId = '',
   String category = '',
   String storeType = '',
+  int? resultCount,
+  bool? hasResults,
 }) async {
   final trimmed = term.trim();
   if (trimmed.isEmpty) {
@@ -144,17 +146,22 @@ Future<void> recordBuyerSearchEvent(
         .timeout(_requestTimeout);
     request.headers.contentType = ContentType.json;
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    request.write(
-      jsonEncode(<String, dynamic>{
-        'term': trimmed,
-        'accountId': accountId,
-        'clientKey': clientKey,
-        'client': client,
-        'platformId': platformId.trim(),
-        'category': category.trim(),
-        'storeType': storeType.trim(),
-      }),
-    );
+    final payload = <String, dynamic>{
+      'term': trimmed,
+      'accountId': accountId,
+      'clientKey': clientKey,
+      'client': client,
+      'platformId': platformId.trim(),
+      'category': category.trim(),
+      'storeType': storeType.trim(),
+    };
+    if (resultCount != null) {
+      payload['resultCount'] = resultCount < 0 ? 0 : resultCount;
+      payload['hasResults'] = resultCount > 0;
+    } else if (hasResults != null) {
+      payload['hasResults'] = hasResults;
+    }
+    request.write(jsonEncode(payload));
     final response = await request.close().timeout(_requestTimeout);
     await response.drain<void>();
     if (response.statusCode < 200 || response.statusCode >= 300) {

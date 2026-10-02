@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Account Health</title>
+    <link rel="stylesheet" href="/styles.css?v=seller-logo-transparency-4" />
+    <link rel="stylesheet" href="/seller_security_center.css?v=seller-security-1" />
+    <script src="/employee_access_guard.js?v=seller-square-pen-1" data-employee-access-guard data-allowed-positions="admin"></script>
+    <script src="/lazy-loading.js?v=global-lazy-1"></script>
+  </head>
+  <body>
+    <main class="page-shell dashboard-shell dashboard-shell--panel-nav dashboard-shell--neutral concern-shell">
+      <div class="dashboard-layout">
+        <aside class="panel dashboard-sidebar">
+          <a
+            class="dashboard-sidebar__logo"
+            href="/main.html#dashboard"
+            aria-label="Admin dashboard home"
+            title="Admin dashboard"
+            data-login-logo
+          >
+            <span class="dashboard-sidebar__logo-mark" aria-hidden="true">
+              <img class="dashboard-sidebar__logo-image" alt="Admin logo" hidden data-logo-image />
+              <span class="dashboard-sidebar__logo-placeholder" data-logo-placeholder>logo</span>
+            </span>
+          </a>
+          <nav class="dashboard-nav" aria-label="Admin navigation"></nav>
+        </aside>
+
+        <div class="dashboard-content">
+          <section class="hero">
+            <div class="hero-actions">
+              <div>
+                <h1>Account Health</h1>
+                <p class="seller-security__lede">Protect this store with Super Admin tickets, a store block list, and review reports. This is not a public buyer-profile complaint.</p>
+              </div>
+              <div class="dashboard-hero-tools">
+                <div class="product-panel-toolbar__profile" aria-label="Admin workspace summary">
+                  <span class="product-panel-toolbar__avatar" aria-hidden="true" data-login-logo data-default-logo-src="/switch-logo.png">
+                    <img class="product-panel-toolbar__avatar-image" alt="Admin logo" hidden data-logo-image />
+                    <span class="product-panel-toolbar__avatar-placeholder" data-logo-placeholder>AD</span>
+                  </span>
+                  <span class="product-panel-toolbar__profile-copy">
+                    <strong>Seller Center</strong>
+                    <span>Security Center</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <nav class="seller-security__tabs" aria-label="Account Health">
+            <button type="button" class="is-active" data-security-tab="center">Security Center</button>
+            <button type="button" data-security-tab="tickets">Help / Contact Us</button>
+            <button type="button" data-security-tab="blocks">Store block list</button>
+            <button type="button" data-security-tab="reviews">Review reports</button>
+          </nav>
+
+          <section class="seller-security__panel is-active" data-security-panel="center">
+            <div class="seller-security__grid" data-security-flags>
+              <article class="panel dashboard-panel">
+                <strong>Loading Security Center…</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="seller-security__panel" data-security-panel="tickets" hidden>
+            <section class="panel dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Submit a Super Admin ticket</h2>
+                  <p>Use this for harassment, threats, malicious chat, fraud, or fake returns. Attach an Order ID and screenshots.</p>
+                </div>
+              </div>
+              <form class="seller-security__form" data-security-ticket-form>
+                <label>Buyer username or account ID
+                  <input name="buyerUsername" required maxlength="120" placeholder="Buyer username" />
+                </label>
+                <label>Order ID
+                  <input name="orderId" maxlength="80" placeholder="Optional but strongly recommended" />
+                </label>
+                <label>What happened
+                  <select name="category" required>
+                    <option value="">Select a reason</option>
+                    <option value="harassment">Harassment or abusive chat</option>
+                    <option value="threats">Threats or intimidation</option>
+                    <option value="malicious_messages">Malicious buyer messages</option>
+                    <option value="fraud">Fraud or scam attempt</option>
+                    <option value="fake_return">Fake or abusive return</option>
+                    <option value="other">Other buyer abuse</option>
+                  </select>
+                </label>
+                <label>Details for Super Admin
+                  <textarea name="details" required minlength="20" maxlength="2000" rows="5" placeholder="Describe the abuse. Include chat dates or return details. Do not share card numbers."></textarea>
+                </label>
+                <label>Evidence URLs
+                  <input name="evidenceUrls" maxlength="800" placeholder="Optional /uploads/... screenshot links, comma separated" />
+                </label>
+                <p class="seller-security__status" data-ticket-status hidden></p>
+                <button type="submit">Send ticket to Super Admin</button>
+              </form>
+            </section>
+            <section class="panel dashboard-panel">
+              <div class="panel-heading"><h2>Your tickets</h2></div>
+              <div class="seller-security__list" data-security-tickets></div>
+            </section>
+          </section>
+
+          <section class="seller-security__panel" data-security-panel="blocks" hidden>
+            <section class="panel dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Store block list</h2>
+                  <p>Blocked buyers cannot check out from this store only. This is not a platform ban.</p>
+                </div>
+              </div>
+              <form class="seller-security__form" data-security-block-form>
+                <label>Buyer username or account ID
+                  <input name="buyerUsername" required maxlength="120" />
+                </label>
+                <label>Why they are blocked
+                  <input name="reason" required maxlength="300" placeholder="Repeat fraud, abusive returns, or harassment" />
+                </label>
+                <p class="seller-security__status" data-block-status hidden></p>
+                <button type="submit">Add to this store only</button>
+              </form>
+            </section>
+            <section class="panel dashboard-panel">
+              <div class="panel-heading"><h2>Blocked from this store</h2></div>
+              <div class="seller-security__list" data-security-blocks></div>
+            </section>
+          </section>
+
+          <section class="seller-security__panel" data-security-panel="reviews" hidden>
+            <section class="panel dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Review reports</h2>
+                  <p>You cannot delete a review yourself. Report policy violations from listing insight, then Super Admin decides.</p>
+                </div>
+              </div>
+              <div class="seller-security__list" data-security-reviews></div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script src="/admin_navigation.js?v=seller-remembered-accounts-1"></script>
+    <script src="/default_icons.js?v=default-icons-zap-trash-1"></script>
+    <script src="/theme.js?v=platform-workspace-settings-1"></script>
+    <script src="/settings-menu.js?v=company-building2-default-logo-2"></script>
+    <script src="/seller_security_center.js?v=seller-security-1"></script>
+  </body>
+</html>

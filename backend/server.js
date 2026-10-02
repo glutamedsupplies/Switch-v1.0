@@ -4,6 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const fsPromises = require("fs/promises");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const { createSuperAdminAuth } = require("./security/superAdminAuth");
 const {
   createAppSessionAuth,
@@ -15,12 +16,48 @@ const { createTrendingSearchesApi } = require("./services/trendingSearchesApi");
 const { createMapsPlacesApi } = require("./services/mapsPlacesApi");
 const { createVouchersApi } = require("./services/vouchersApi");
 const { createFlashDealsApi } = require("./services/flashDealsApi");
+const { paginateLiveListings, parseLiveListingQuery } = require("./services/saLiveListingQuery");
+const { createObjectStorage, isSafeUploadFileName } = require("./services/objectStorage");
 const { createAccountDevicesApi } = require("./services/accountDevicesApi");
+const { createCompanyReportsApi } = require("./services/companyReportsApi");
+const { createListingReportsApi } = require("./services/listingReportsApi");
+const { createSellerBuyerProtectionApi } = require("./services/sellerBuyerProtectionApi");
+const { createSwitchRiderService } = require("./services/switchRider/service");
+const { createRouteProvider } = require("./services/switchRider/routing");
+const { createSwitchRiderApi } = require("./services/switchRider/api");
+const {
+  createSwitchRiderOrderBridge,
+  isSwitchRiderOrderEntry,
+  isSwitchRiderPartnerName,
+} = require("./services/switchRider/orderBridge");
+const { createPrivateFileStore } = require("./services/switchRider/privateFiles");
+const { resolveSwitchRiderSecret } = require("./services/switchRider/tokens");
 const {
   createBuyerDeliveryAddressesApi,
 } = require("./services/buyerDeliveryAddressesApi");
 let accountDevicesApi = null;
 const { createRestoreMissingSaApis } = require("./services/restoreMissingSaApis");
+const { createAiAssistantApi } = require("./services/aiAssistant");
+const flashDealPricing = require("./services/flashDealPricing");
+const voucherRules = require("./services/voucherRules");
+const {
+  getProductSpecificationConfig,
+  normalizeProductSpecifications,
+  assertProductSpecificationsComplete,
+  configureProductSpecificationStorage,
+  saveCategorySpecifications,
+  resetCategorySpecifications,
+} = require("./config/productSpecifications");
+const {
+  getPlatformSettings,
+  getPlatformSettingsSync,
+  invalidatePlatformSettingsCache,
+  normalizePlatformSettings,
+  isPlatformSettingBlocking,
+  isPlatformSettingEnabled,
+  buildPlatformBlockedPayload,
+  getSessionTtlSecondsFromSettings,
+} = require("./services/platformSettings");
 const {
   createOrdersWaybillApi,
   buildDeliveryPartnersByBranchMap,
@@ -64,8 +101,11 @@ const {
 const {
   isSellerOnboardingReady,
   startSellerOnboarding,
+  normalizeStoreLocation,
+  getSellerCompanyEntitlement,
   createSellerCheckoutIntent,
   updateSellerCheckoutIntentGatewayState,
+  markExtraCompanySlotPaid,
   findSellerCheckoutIntentByPaymentReference,
   claimPaymentWebhookEvent,
   finishPaymentWebhookEvent,
@@ -79,24 +119,82 @@ const {
   reviewCompanyBusinessDocument,
   getCompanyDocumentsForAdmin,
   findCompanyById,
+  accountOwnsSellerCompany,
+  listSellerCompaniesByAccount,
+  updateCompanyWorkspaceProfile,
+  withdrawPendingSellerCompany,
   getSellerSwitchPinStatus,
   setSellerSwitchPin,
   verifySellerSwitchPin,
   checkSellerSwitchPinUnlock,
+  requireSellerSwitchPinReset,
+  requestSellerSwitchPinForgotLink,
+  previewSellerSwitchPinForgotToken,
+  verifySellerSwitchPinForgotPassword,
+  completeSellerSwitchPinForgotReset,
 } = require("./services/postgresSellerOnboarding");
 const {
+  PAYMONGO_CHECKOUT_METHOD_TYPES,
+  fetchPaymongoAvailableMethods,
   getHostedGatewayConfig,
   createHostedCheckoutSession,
+  normalizePaymongoMethodType,
+  readPaymongoWebhookEvent,
   verifyPaymongoWebhook,
 } = require("./services/sellerCheckoutGateway");
 const {
+  getPaymongoMethodLabel,
+  getPaymongoMethodLogoUrl,
+  getPaymongoActivationBlocker,
+  reconcilePaymongoPartners,
+} = require("./services/paymongoPartnerSync");
+const {
+  isTestModeEnabled,
+  isTestModeEnabledSync,
+  buildTestModeApiBlockedPayload,
+  companyVisibleInSuperAdminWorkspace,
+  filterAccountsForSuperAdmin,
+  assertCanDeleteOrClearInTestMode,
+  loadCompanyTestModeByIds,
+  assertTestModeAccountCreationAllowed,
+  hardDeleteTestModeCompany,
+  hardDeleteTestModeAccount,
+  isTestModeExplorerAllowed,
+  buildTestModeExplorerBlockedPayload,
+  getRequestClientIp,
+} = require("./services/testModeService");
+const {
+  getSellerPlanCatalog,
+  resolveSellerPlanSelection,
+  resolveFirstCompanyFreePlan,
+  sellerPlanMatchesIntent,
+} = require("./services/sellerPlanCatalog");
+const {
+  evaluateSellerPerformanceBadge,
+  buildSellerPerformanceMetrics,
+  isCompletedOrder: isSellerOrderCompleted,
+} = require("./services/sellerPerformanceBadge");
+const {
+  scoreCompanyTopSeller,
+  scoreStoreTypeRankingItem,
+  compareCompanyTopSellerRows,
+} = require("./services/companyTopSellerRanking");
+const {
+  createBuyerDirectPayment,
   createBuyerOrderCheckoutSession,
+  isDirectPaymentMethod,
   newPaymentIdempotencyKey,
   newPaymentReference,
+  resolveBuyerOrderGroupAmount,
+  resolvePaymentPartnerMethod,
 } = require("./services/buyerCheckoutGateway");
+const { buildPaymentPartnerTransactions } = require("./services/paymentTransactionsHistory");
 const {
   createShipment: createCourierShipment,
+  getTracking: getCourierTracking,
   getCourierProviderConfig,
+  normalizeLalamoveStatus,
+  verifyLalamoveWebhook,
 } = require("./services/courierProviderAdapter");
 const { hashPassword, verifyPassword, looksLikeBcryptHash } = require("./db/password");
 const {
@@ -154,9 +252,10 @@ const {
   resolveOrderPaymentAndTracking,
   paymentFieldsForApi,
   lifecycleFieldsForApi,
+  stableStoreTypeId,
 } = require("./db/catalogHelpers");
 const { isChatJsonBackupEnabled } = require("./db/chatHelpers");
-const { isPostgresConfigured } = require("./db/pool");
+const { isPostgresConfigured, query: pgQuery, withTransaction: pgWithTransaction } = require("./db/pool");
 let biometricFirmwareCompile = null;
 try {
   biometricFirmwareCompile = require("./services/biometricFirmwareCompile");
@@ -239,6 +338,13 @@ const endpointRateLimiters = Object.freeze({
     max: Math.max(20, Number(process.env.ANALYTICS_RATE_LIMIT_MAX) || 120),
     windowMs: Math.max(30_000, Number(process.env.ANALYTICS_RATE_LIMIT_WINDOW_MS) || 60 * 1000),
   }),
+  "search-events": createRateLimiter({
+    max: Math.max(20, Number(process.env.SEARCH_EVENTS_RATE_LIMIT_MAX) || 90),
+    windowMs: Math.max(
+      30_000,
+      Number(process.env.SEARCH_EVENTS_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
+    ),
+  }),
 });
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -271,13 +377,17 @@ const ADMIN_SPA_DOCUMENT_PATHS = new Set([
 ]);
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads");
+const objectStorage = createObjectStorage({ uploadsDir: UPLOADS_DIR });
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
 const APPROVED_PRODUCT_TRAINING_FILE = path.join(DATA_DIR, "approved_product_training.json");
+const REJECTED_PRODUCT_TRAINING_FILE = path.join(DATA_DIR, "rejected_product_training.json");
 const ACTIVITY_FILE = path.join(DATA_DIR, "activity_log.json");
 const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
 const SUPER_ADMIN_NOTIFICATIONS_FILE = path.join(DATA_DIR, "super_admin_notifications.json");
+const SUPER_ADMIN_ACTIVITY_FILE = path.join(DATA_DIR, "super_admin_activity.json");
 const STORE_TYPES_FILE = path.join(DATA_DIR, "store_types.json");
 const PLATFORMS_FILE = path.join(DATA_DIR, "platforms.json");
+const REVIEW_MEDIA_LIKES_FILE = path.join(DATA_DIR, "review_media_likes.json");
 const CHAT_THREADS_FILE = path.join(DATA_DIR, "chat_threads.json");
 const DEFAULT_BUYER_PLATFORMS = [
   {
@@ -291,6 +401,7 @@ const DEFAULT_BUYER_PLATFORMS = [
     iconImageUrl: BUILT_IN_PLATFORM_ART.shop.url,
     primaryColor: "#2563eb",
     secondaryColor: "",
+    storefrontMode: "commerce",
   },
   {
     id: "food",
@@ -303,6 +414,7 @@ const DEFAULT_BUYER_PLATFORMS = [
     iconImageUrl: BUILT_IN_PLATFORM_ART.food.url,
     primaryColor: "#ea580c",
     secondaryColor: "",
+    storefrontMode: "commerce",
   },
   {
     id: "hotels",
@@ -315,6 +427,20 @@ const DEFAULT_BUYER_PLATFORMS = [
     iconImageUrl: "",
     primaryColor: "#7c3aed",
     secondaryColor: "",
+    storefrontMode: "booking",
+  },
+  {
+    id: "groceries",
+    name: "Groceries",
+    status: "active",
+    sortOrder: 4,
+    iconName: "shopping-basket",
+    comingSoon: true,
+    heroImageUrl: "",
+    iconImageUrl: "",
+    primaryColor: "#16a34a",
+    secondaryColor: "",
+    storefrontMode: "commerce",
   },
 ];
 const DELIVERY_PARTNERS_FILE = path.join(DATA_DIR, "delivery_partners.json");
@@ -323,6 +449,8 @@ const PARTNER_AUDIT_FILE = path.join(DATA_DIR, "partner_audit_log.json");
 const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 const FOLLOWERS_FILE = path.join(DATA_DIR, "followers.json");
 const WORKSPACE_SETTINGS_FILE = path.join(DATA_DIR, "workspace_settings.json");
+const PRODUCT_SPECIFICATIONS_FILE = path.join(DATA_DIR, "product_specifications.json");
+configureProductSpecificationStorage(PRODUCT_SPECIFICATIONS_FILE);
 const FACE_ATTENDANCE_EMPLOYEES_FILE = String(
   process.env.FACE_ATTENDANCE_EMPLOYEES_FILE || "",
 ).trim() || path.join(
@@ -345,6 +473,7 @@ const MAX_PRODUCT_DESCRIPTION_IMAGE_URL_LENGTH = 2048;
 const MAX_REVIEW_VIDEO_BYTES = 50 * 1024 * 1024;
 const MAX_REVIEW_VIDEO_SIZE_LABEL = `${Math.round(MAX_REVIEW_VIDEO_BYTES / (1024 * 1024))} MB`;
 const MAX_ACTIVITY_ENTRIES = 50;
+const MAX_SUPER_ADMIN_ACTIVITY_ENTRIES = 2_000;
 const MAX_SUPER_ADMIN_NOTIFICATIONS = 5_000;
 const SELLER_ACCOUNT_DELETION_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
 const SELLER_ACCOUNT_DELETION_SWEEP_MS = 60 * 60 * 1000;
@@ -400,6 +529,17 @@ const APPROVED_PRODUCT_FULLY_TRAINED_MATCH_MIN_SCORE = Math.max(
   Math.min(
     1,
     Math.max(0.95, Number(process.env.APPROVED_PRODUCT_FULLY_TRAINED_MATCH_MIN_SCORE) || 0.99),
+  ),
+);
+// Supporting gallery images must look like the main image; below this = mixed-media revision.
+const PRODUCT_MIXED_MEDIA_VISUAL_MIN_SCORE = Math.max(
+  0.35,
+  Math.min(
+    APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE,
+    Math.max(
+      0.45,
+      Number(process.env.PRODUCT_MIXED_MEDIA_VISUAL_MIN_SCORE) || 0.62,
+    ),
   ),
 );
 const SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE = normalizeConfidenceThreshold(
@@ -474,7 +614,9 @@ const YOLO_INSPECTION_TIMEOUT_MS = Math.max(
   Number(process.env.YOLO_INSPECTION_TIMEOUT_MS) || 20_000,
 );
 const superAdminAuth = createSuperAdminAuth(process.env);
-const appSessionAuth = createAppSessionAuth(process.env);
+const appSessionAuth = createAppSessionAuth(process.env, {
+  resolveSessionTtlSeconds: () => getSessionTtlSecondsFromSettings(getPlatformSettingsSync()),
+});
 const SUPER_ADMIN_USERNAME = superAdminAuth.username;
 
 const MIME_TYPES = {
@@ -550,6 +692,87 @@ function getExplicitRequestAdminId(request, requestUrl = null) {
   }
 
   return getRequestAdminId(request, requestUrl, "");
+}
+
+function getExplicitRequestCompanyId(request, requestUrl = null) {
+  const fromQuery = String(requestUrl?.searchParams?.get("companyId") ?? "").trim();
+  if (fromQuery) {
+    return fromQuery;
+  }
+  const headers = request?.headers || {};
+  return String(
+    headers["x-gms-company-id"]
+      ?? headers["X-GMS-Company-ID"]
+      ?? "",
+  ).trim();
+}
+
+function legacyCompanyIdForAdmin(adminId = "") {
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  return normalizedAdminId ? `comp_${normalizedAdminId}` : "";
+}
+
+function applyCompanyWorkspaceOverlay(seller, company) {
+  if (!seller || typeof seller !== "object" || !company || typeof company !== "object") {
+    return seller;
+  }
+
+  const profileData =
+    company.profileData && typeof company.profileData === "object"
+      ? company.profileData
+      : {};
+  const companyName = [
+    company.publicName,
+    company.name,
+    profileData.storeName,
+    profileData.companyName,
+    profileData.businessName,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .find(Boolean) || "";
+  const logoUrl = [
+    company.logoUrl,
+    profileData.companyPictureUrl,
+    profileData.businessLogoUrl,
+    profileData.logoUrl,
+    profileData.profileImageUrl,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .find(Boolean) || "";
+  const backgroundUrl = [
+    profileData.companyBackgroundUrl,
+    profileData.backgroundUrl,
+    profileData.coverImageUrl,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .find(Boolean) || "";
+  const businessType = [
+    company.businessType,
+    profileData.storeType,
+    profileData.storeTypeName,
+    profileData.businessType,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .find(Boolean) || "";
+
+  return {
+    ...seller,
+    companyId: String(company.id || "").trim(),
+    activeCompanyId: String(company.id || "").trim(),
+    companyCode: "",
+    companyName: companyName || seller.companyName || "",
+    storeName: companyName || seller.storeName || "",
+    businessName: companyName || seller.businessName || "",
+    companyPictureUrl: logoUrl || seller.companyPictureUrl || "",
+    businessLogoUrl: logoUrl || seller.businessLogoUrl || "",
+    logoUrl: logoUrl || seller.logoUrl || "",
+    profileImageUrl: logoUrl || seller.profileImageUrl || "",
+    companyBackgroundUrl: backgroundUrl || seller.companyBackgroundUrl || "",
+    backgroundUrl: backgroundUrl || seller.backgroundUrl || "",
+    storeType: businessType || seller.storeType || "",
+    storeTypeName: businessType || seller.storeTypeName || "",
+    businessType: businessType || seller.businessType || "",
+  };
 }
 
 function isUsableProductAdminScope(adminId) {
@@ -1115,7 +1338,12 @@ function getRawRequestAccountIdentityHints(request, requestUrl = null) {
 function attachAppSession(request) {
   const token = appSessionAuth.getRequestSessionToken(request);
   request.appSessionTokenProvided = Boolean(token);
-  request.authSession = token ? appSessionAuth.verifySession(token) : null;
+  const session = token ? appSessionAuth.verifySession(token) : null;
+  // Rider tokens are only valid on the rider API; everywhere else they are treated as signed out.
+  const pathname = String(request.url || "").split("?")[0];
+  const isRiderApi = pathname.startsWith("/api/rider/");
+  request.riderSession = session?.role === "rider" && isRiderApi ? session : null;
+  request.authSession = session?.role === "rider" || isRiderApi ? null : session;
   return request.authSession;
 }
 
@@ -1275,6 +1503,12 @@ async function ensureStoragePaths() {
   }
 
   try {
+    await fsPromises.access(REJECTED_PRODUCT_TRAINING_FILE);
+  } catch (error) {
+    await fsPromises.writeFile(REJECTED_PRODUCT_TRAINING_FILE, "[]\n", "utf8");
+  }
+
+  try {
     await fsPromises.access(ACTIVITY_FILE);
   } catch (error) {
     await fsPromises.writeFile(ACTIVITY_FILE, "[]\n", "utf8");
@@ -1367,9 +1601,46 @@ async function ensureStoragePaths() {
   }
 
   try {
+    await fsPromises.access(SUPER_ADMIN_ACTIVITY_FILE);
+  } catch (error) {
+    await fsPromises.writeFile(SUPER_ADMIN_ACTIVITY_FILE, "[]\n", "utf8");
+  }
+
+  try {
     await fsPromises.access(path.join(DATA_DIR, "flash_deals.json"));
   } catch (error) {
     await fsPromises.writeFile(path.join(DATA_DIR, "flash_deals.json"), "[]\n", "utf8");
+  }
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "flash_deal_campaigns.json"));
+  } catch {
+    await fsPromises.writeFile(
+      path.join(DATA_DIR, "flash_deal_campaigns.json"),
+      "[]\n",
+      "utf8",
+    );
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "company_reports.json"));
+  } catch (error) {
+    await fsPromises.writeFile(path.join(DATA_DIR, "company_reports.json"), "[]\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "listing_reports.json"));
+  } catch (error) {
+    await fsPromises.writeFile(path.join(DATA_DIR, "listing_reports.json"), "[]\n", "utf8");
+  }
+
+  try {
+    await fsPromises.access(path.join(DATA_DIR, "seller_buyer_protection.json"));
+  } catch (error) {
+    await fsPromises.writeFile(
+      path.join(DATA_DIR, "seller_buyer_protection.json"),
+      `${JSON.stringify({ tickets: [], blocks: [], reviewReports: [] }, null, 2)}\n`,
+      "utf8",
+    );
   }
 }
 
@@ -1413,10 +1684,12 @@ async function writeChatJsonBackup(threads) {
 
 async function readProducts(options = {}) {
   const adminId = String(options.adminId ?? "").trim();
+  const companyId = String(options.companyId ?? "").trim();
   const publicCatalog = options.publicCatalog === true;
   if (await isCatalogPostgresReady()) {
     return listProductsFromPostgres({
       adminId,
+      companyId,
       approvalStatus: options.approvalStatus || "",
       publicCatalog,
     });
@@ -1438,6 +1711,40 @@ async function readProducts(options = {}) {
       normalizeProductApprovalStatus(product?.approvalStatus) === PRODUCT_APPROVAL_APPROVED
       && product?.isActive !== false
     );
+    // JSON fallback: drop products belonging to Test Mode companies.
+    try {
+      const companyIds = [
+        ...new Set(
+          products
+            .map((product) => String(product?.companyId ?? "").trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (companyIds.length && isPostgresConfigured()) {
+        const flags = await loadCompanyTestModeByIds(companyIds, { query: pgQuery });
+        products = products.filter((product) => {
+          const companyId = String(product?.companyId ?? "").trim();
+          if (!companyId) {
+            return true;
+          }
+          const entry = flags.get(companyId);
+          return !entry?.testMode;
+        });
+      }
+    } catch (_error) {
+      // Keep catalog available if flag lookup fails.
+    }
+  }
+  if (companyId) {
+    const legacyCompanyId = legacyCompanyIdForAdmin(adminId);
+    products = products.filter((product) => {
+      const productCompanyId = String(product?.companyId ?? "").trim();
+      if (productCompanyId) {
+        return productCompanyId === companyId;
+      }
+      // Legacy rows without companyId belong only to comp_<adminId>.
+      return Boolean(legacyCompanyId) && companyId === legacyCompanyId;
+    });
   }
   if (options.approvalStatus && !(publicCatalog && !adminId)) {
     const requested = normalizeProductApprovalStatus(options.approvalStatus, "");
@@ -1451,13 +1758,25 @@ async function readProducts(options = {}) {
 async function writeProducts(products, options = {}) {
   const nextProducts = Array.isArray(products) ? products : [];
   const scopeAdminId = String(options.adminId ?? "").trim();
+  const scopeCompanyId = String(options.companyId ?? "").trim();
   if (await isCatalogPostgresReady()) {
-    const pgProducts = scopeAdminId
-      ? nextProducts.filter((product) => isRecordInAdminScope(product, scopeAdminId))
-      : nextProducts;
+    const pgProducts = nextProducts.filter((product) => {
+      if (scopeAdminId && !isRecordInAdminScope(product, scopeAdminId)) {
+        return false;
+      }
+      if (!scopeCompanyId) {
+        return true;
+      }
+      const productCompanyId = String(product?.companyId ?? "").trim();
+      if (productCompanyId) {
+        return productCompanyId === scopeCompanyId;
+      }
+      return scopeCompanyId === legacyCompanyIdForAdmin(scopeAdminId || product?.adminId);
+    });
     await syncProductsToPostgres(pgProducts, {
       deleteMissing: options.deleteMissing !== false,
       adminId: scopeAdminId,
+      companyId: scopeCompanyId,
     });
     await writeCatalogJsonBackup(PRODUCTS_FILE, nextProducts, "products");
     return;
@@ -1487,6 +1806,27 @@ async function writeApprovedProductTrainingRecords(records) {
   );
 }
 
+async function readRejectedProductTrainingRecords() {
+  await ensureStoragePaths();
+  const raw = await fsPromises.readFile(REJECTED_PRODUCT_TRAINING_FILE, "utf8");
+
+  try {
+    const decoded = JSON.parse(raw);
+    return Array.isArray(decoded) ? decoded : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+async function writeRejectedProductTrainingRecords(records) {
+  await ensureStoragePaths();
+  await fsPromises.writeFile(
+    REJECTED_PRODUCT_TRAINING_FILE,
+    `${JSON.stringify(Array.isArray(records) ? records : [], null, 2)}\n`,
+    "utf8",
+  );
+}
+
 async function readActivityLog() {
   await ensureStoragePaths();
   const raw = await fsPromises.readFile(ACTIVITY_FILE, "utf8");
@@ -1505,6 +1845,161 @@ async function writeActivityLog(entries) {
     `${JSON.stringify(entries, null, 2)}\n`,
     "utf8",
   );
+}
+
+async function readSuperAdminActivityLog() {
+  await ensureStoragePaths();
+  try {
+    const raw = await fsPromises.readFile(SUPER_ADMIN_ACTIVITY_FILE, "utf8");
+    const decoded = JSON.parse(raw);
+    return Array.isArray(decoded) ? decoded : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+async function writeSuperAdminActivityLog(entries) {
+  await writeJsonFileAtomically(
+    SUPER_ADMIN_ACTIVITY_FILE,
+    Array.isArray(entries) ? entries.slice(0, MAX_SUPER_ADMIN_ACTIVITY_ENTRIES) : [],
+  );
+}
+
+function resolveSuperAdminActivityCategory(entry = {}) {
+  const explicit = String(entry?.category || "").trim().toLowerCase();
+  if (
+    ["theme", "catalog", "settings", "companies", "listings", "promos", "integrations", "users", "feedback", "security"].includes(
+      explicit,
+    )
+  ) {
+    return explicit;
+  }
+  const type = String(entry?.type || "").trim().toLowerCase();
+  const action = String(entry?.action || "").trim().toLowerCase();
+  const haystack = `${type} ${action} ${entry?.title || ""}`.toLowerCase();
+  if (/theme|workspace.?color|color.?palette|scheme/.test(haystack)) {
+    return "theme";
+  }
+  if (/platform|store.?type|business.?type|categor/.test(haystack)) {
+    return "catalog";
+  }
+  if (/setting|test.?mode|feature.?flag|workspace.?setting/.test(haystack)) {
+    return "settings";
+  }
+  if (/flash.?deal|voucher|promo/.test(haystack)) {
+    return "promos";
+  }
+  if (/ai|biometric|partner.?api|wallpaper|integration/.test(haystack)) {
+    return "integrations";
+  }
+  if (/buyer|user-banned|user-restricted|password-reset/.test(haystack)) {
+    return "users";
+  }
+  if (/feedback/.test(haystack)) {
+    return "feedback";
+  }
+  if (/product|listing|revision|approved|rejected/.test(haystack)) {
+    return "listings";
+  }
+  if (/seller|company|onboarding|document|ban|restrict|pin/.test(haystack)) {
+    return "companies";
+  }
+  if (/security|pin.?reset/.test(haystack)) {
+    return "security";
+  }
+  return "settings";
+}
+
+function createSuperAdminSystemActivity(input = {}) {
+  const now = String(input.createdAt || new Date().toISOString());
+  const type = String(input.type || "super-admin-action").trim().toLowerCase() || "super-admin-action";
+  const action = String(input.action || "updated").trim().toLowerCase() || "updated";
+  const category = resolveSuperAdminActivityCategory({ ...input, type, action });
+  return {
+    id: String(input.id || createActivityLogId()).trim(),
+    type,
+    action,
+    category,
+    source: "super_admin",
+    audience: "super_admin",
+    title: String(input.title || "Super Admin activity").replace(/\s+/g, " ").trim().slice(0, 160),
+    description: String(input.description || input.message || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500),
+    actor: {
+      role: "super-admin",
+      accountId: "super-admin",
+      displayName: String(input.actor?.displayName || SUPER_ADMIN_USERNAME).trim() || SUPER_ADMIN_USERNAME,
+    },
+    adminId: String(input.adminId || "").trim(),
+    productId: String(input.productId || "").trim(),
+    companyId: String(input.companyId || "").trim(),
+    storeTypeName: String(input.storeTypeName || input.storeType || input.businessType || "").trim(),
+    platformId: String(input.platformId || "").trim(),
+    targetUrl: String(input.targetUrl || "").trim(),
+    ipAddress: String(input.ipAddress || "").trim(),
+    createdAt: now,
+  };
+}
+
+function isSuperAdminSystemActivityEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    return false;
+  }
+  const source = String(entry.source || "").trim().toLowerCase();
+  const audience = String(entry.audience || "").trim().toLowerCase();
+  const actorRole = String(entry.actor?.role || "").trim().toLowerCase();
+  if (audience && audience !== "super_admin") {
+    return false;
+  }
+  if (source === "super_admin" || source === "super-admin" || source === "super_admin_system") {
+    return true;
+  }
+  if (actorRole === "super-admin" || actorRole === "super_admin") {
+    return true;
+  }
+  if (
+    actorRole === "admin" &&
+    String(entry.actor?.accountId || "").trim() === "super-admin"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+async function persistSuperAdminActivity(entry) {
+  if (!entry || !isSuperAdminSystemActivityEntry(entry)) {
+    return null;
+  }
+  const shaped = createSuperAdminSystemActivity(entry);
+  const list = await readSuperAdminActivityLog();
+  const next = [shaped, ...list.filter((item) => String(item?.id || "").trim() !== shaped.id)].slice(
+    0,
+    MAX_SUPER_ADMIN_ACTIVITY_ENTRIES,
+  );
+  await writeSuperAdminActivityLog(next);
+  return shaped;
+}
+
+async function logSuperAdminSystemActivity(input = {}, request = null) {
+  try {
+    const settings = await getPlatformSettings();
+    if (isPlatformSettingBlocking(settings, "auditLogging")) {
+      return null;
+    }
+    const entry = createSuperAdminSystemActivity(input);
+    if (!entry.ipAddress) {
+      const requestIpAddress = getRequestIpAddress(request);
+      if (requestIpAddress) {
+        entry.ipAddress = requestIpAddress;
+      }
+    }
+    return persistSuperAdminActivity(entry);
+  } catch (error) {
+    console.error("Unable to record super admin activity:", error);
+    return null;
+  }
 }
 
 async function readAccounts() {
@@ -1563,7 +2058,9 @@ const DEFAULT_PLATFORM_PRIMARY_COLORS = Object.freeze({
   food: "#ea580c",
   hotels: "#7c3aed",
   resort: "#0891b2",
+  groceries: "#16a34a",
 });
+const DEFAULT_BOOKING_PLATFORM_IDS = new Set(["hotels", "resort"]);
 
 function defaultPlatformPrimaryColor(platformId) {
   const key = normalizePlatformId(platformId);
@@ -1576,6 +2073,31 @@ function normalizePlatformPrimaryColor(value, platformId = "") {
     return normalized;
   }
   return defaultPlatformPrimaryColor(platformId);
+}
+
+function findPlatformUsingPrimaryColor(platforms, color, excludePlatformId = "") {
+  const nextColor = String(normalizeWorkspaceColor(color) || "").trim().toLowerCase();
+  const exclude = normalizePlatformId(excludePlatformId);
+  if (!nextColor) {
+    return null;
+  }
+  for (const value of Array.isArray(platforms) ? platforms : []) {
+    const platform = value && typeof value === "object" ? value : null;
+    if (!platform) {
+      continue;
+    }
+    const id = normalizePlatformId(platform.id);
+    if (exclude && id === exclude) {
+      continue;
+    }
+    const other = String(
+      normalizeWorkspaceColor(platform.primaryColor ?? platform.color ?? platform.accentColor) || "",
+    ).trim().toLowerCase();
+    if (other && other === nextColor) {
+      return platform;
+    }
+  }
+  return null;
 }
 
 function normalizePaymentPartnerWorkspaceApiKey(value, existingValue = "") {
@@ -1594,7 +2116,7 @@ function normalizeWorkspaceSettings(value) {
     updatedAt: String(source.updatedAt ?? "").trim(),
   };
   if (source.platformSettings && typeof source.platformSettings === "object") {
-    normalized.platformSettings = source.platformSettings;
+    normalized.platformSettings = normalizePlatformSettings(source.platformSettings);
   }
   if (Array.isArray(source.aiIntegrations)) {
     normalized.aiIntegrations = source.aiIntegrations;
@@ -1602,7 +2124,29 @@ function normalizeWorkspaceSettings(value) {
   if (source.aiIntegration && typeof source.aiIntegration === "object") {
     normalized.aiIntegration = source.aiIntegration;
   }
+  // Preserve Test Mode sandbox IP lock (must survive every settings write).
+  if (source.testModeAccess && typeof source.testModeAccess === "object") {
+    normalized.testModeAccess = source.testModeAccess;
+  }
+  if (source.lastTestModePurge && typeof source.lastTestModePurge === "object") {
+    normalized.lastTestModePurge = source.lastTestModePurge;
+  }
+  if (Array.isArray(source.paymongoAvailableMethods)) {
+    normalized.paymongoAvailableMethods = [...new Set(
+      source.paymongoAvailableMethods.map(normalizePaymongoMethodType).filter(Boolean),
+    )];
+    normalized.paymongoMethodsSyncedAt = String(source.paymongoMethodsSyncedAt ?? "").trim();
+  }
   return normalized;
+}
+
+function getPaymongoSyncState(settings) {
+  return {
+    availableMethods: Array.isArray(settings?.paymongoAvailableMethods)
+      ? settings.paymongoAvailableMethods
+      : null,
+    syncedAt: String(settings?.paymongoMethodsSyncedAt ?? "").trim(),
+  };
 }
 
 async function readWorkspaceSettingsRaw() {
@@ -1629,7 +2173,200 @@ async function writeWorkspaceSettings(settings) {
   };
   const normalizedSettings = normalizeWorkspaceSettings(merged);
   await writeJsonFileAtomically(WORKSPACE_SETTINGS_FILE, normalizedSettings);
+  if (normalizedSettings.platformSettings) {
+    invalidatePlatformSettingsCache(normalizedSettings.platformSettings);
+  }
   return normalizedSettings;
+}
+
+async function requirePlatformSettingEnabled(response, flag, message, statusCode = 403) {
+  const settings = await getPlatformSettings();
+  if (isPlatformSettingBlocking(settings, flag)) {
+    sendJson(
+      response,
+      statusCode,
+      buildPlatformBlockedPayload(flag, message),
+    );
+    return false;
+  }
+  return true;
+}
+
+function isSellerAccountVerifiedForPlatform(account) {
+  if (!account || typeof account !== "object") {
+    return false;
+  }
+  if (account.isVerified === true || account.verified === true) {
+    return true;
+  }
+  const status = String(
+    account.verificationStatus
+      ?? account.kycStatus
+      ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  // Legacy sellers without a KYC field stay allowed.
+  if (!status) {
+    return true;
+  }
+  if (["pending", "unverified", "rejected", "revision", "submitted", "in_review"].includes(status)) {
+    return false;
+  }
+  return ["verified", "approved", "completed", "complete"].includes(status);
+}
+
+function isBuyerAccountVerifiedForPlatform(account) {
+  if (!account || typeof account !== "object") {
+    return false;
+  }
+  if (
+    account.emailVerified === true
+    || account.mobileVerified === true
+    || account.isVerified === true
+    || account.verified === true
+  ) {
+    return true;
+  }
+  const status = String(account.verificationStatus ?? account.status ?? "")
+    .trim()
+    .toLowerCase();
+  return ["verified", "approved", "active"].includes(status);
+}
+
+function orderPayloadLooksLikeBooking(entry) {
+  if (!entry || typeof entry !== "object") {
+    return false;
+  }
+  const mode = String(
+    entry.storefrontMode
+      ?? entry.fulfillmentMode
+      ?? entry.orderType
+      ?? entry.bookingType
+      ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  if (mode.includes("booking") || mode === "appointment" || mode === "reservation") {
+    return true;
+  }
+  return Boolean(
+    entry.bookingId
+      || entry.appointmentAt
+      || entry.scheduledAt
+      || entry.reservationId,
+  );
+}
+
+function orderPayloadHasBuyerReviewFields(entry) {
+  if (!entry || typeof entry !== "object") {
+    return false;
+  }
+  return [
+    "productReviewRating",
+    "productReviewComment",
+    "productReviewText",
+    "reviewRating",
+    "reviewComment",
+    "buyerReviewRating",
+    "buyerReviewComment",
+  ].some((key) => {
+    const value = entry[key];
+    if (value == null) {
+      return false;
+    }
+    if (typeof value === "string") {
+      return Boolean(value.trim());
+    }
+    return true;
+  });
+}
+
+function isPlatformSettingsBypassPath(pathname) {
+  const pathValue = String(pathname || "");
+  return (
+    pathValue === "/health"
+    || pathValue === "/api/platform-settings"
+    || pathValue === "/api/platform-settings/export"
+    || pathValue === "/api/platform-settings/import"
+    || pathValue === "/api/workspace-theme"
+    || pathValue === "/api/super-admin-login"
+    || pathValue.startsWith("/api/super-admin/")
+    || pathValue.includes("/webhook")
+    || pathValue.endsWith("/webhook")
+  );
+}
+
+async function enforcePlatformMaintenanceGate(request, response, requestUrl) {
+  const pathname = String(requestUrl?.pathname || "");
+  if (!pathname.startsWith("/api/") || isPlatformSettingsBypassPath(pathname)) {
+    return false;
+  }
+  if (isSuperAdminAuthorized(request)) {
+    return false;
+  }
+
+  const settings = await getPlatformSettings();
+  const method = String(request.method || "GET").toUpperCase();
+  const role = String(request?.authSession?.role || "").trim().toLowerCase();
+  const isSellerLoginPath =
+    pathname === "/api/admin-login"
+    || pathname === "/api/auth/google/seller-login"
+    || pathname === "/api/employee-login";
+  const isBuyerLoginPath =
+    pathname === "/api/accounts/login"
+    || pathname === "/api/auth/google/login";
+  const isSellerSignupPath = pathname.startsWith("/api/account/become-seller");
+  const isBuyerRegisterPath = pathname === "/api/accounts" && method === "POST";
+
+  if (settings.appMaintenance) {
+    sendJson(
+      response,
+      503,
+      buildPlatformBlockedPayload(
+        "appMaintenance",
+        "Switch is in maintenance mode. Please try again later.",
+      ),
+    );
+    return true;
+  }
+
+  if (
+    settings.sellerMaintenance
+    && (
+      role === "seller"
+      || role === "employee"
+      || isSellerLoginPath
+      || isSellerSignupPath
+    )
+  ) {
+    sendJson(
+      response,
+      503,
+      buildPlatformBlockedPayload(
+        "sellerMaintenance",
+        "Seller side is in maintenance mode. Please try again later.",
+      ),
+    );
+    return true;
+  }
+
+  if (
+    settings.buyerMaintenance
+    && (role === "buyer" || isBuyerLoginPath || isBuyerRegisterPath)
+  ) {
+    sendJson(
+      response,
+      503,
+      buildPlatformBlockedPayload(
+        "buyerMaintenance",
+        "Buyer side is in maintenance mode. Please try again later.",
+      ),
+    );
+    return true;
+  }
+
+  return false;
 }
 
 function normalizeFollowerAccountId(value) {
@@ -2001,14 +2738,57 @@ async function writeStoreTypes(storeTypes) {
   await writeJsonArrayFile(STORE_TYPES_FILE, nextStoreTypes);
 }
 
+function mergeMissingDefaultBuyerPlatforms(platforms) {
+  const normalized = [];
+  const seen = new Set();
+  for (const value of Array.isArray(platforms) ? platforms : []) {
+    const platform = normalizePlatformRecord(value, {
+      fallbackSortOrder: normalized.length + 1,
+    });
+    if (!platform || seen.has(platform.id)) {
+      continue;
+    }
+    seen.add(platform.id);
+    normalized.push(platform);
+  }
+
+  let maxSortOrder = normalized.reduce(
+    (max, platform) => Math.max(max, Number(platform.sortOrder) || 0),
+    0,
+  );
+  let changed = false;
+  for (const seed of DEFAULT_BUYER_PLATFORMS) {
+    if (seen.has(seed.id)) {
+      continue;
+    }
+    maxSortOrder += 1;
+    const next = normalizePlatformRecord(
+      { ...seed, sortOrder: maxSortOrder, comingSoon: true },
+      { fallbackSortOrder: maxSortOrder },
+    );
+    if (!next) {
+      continue;
+    }
+    normalized.push(next);
+    seen.add(next.id);
+    changed = true;
+  }
+  return { platforms: normalized, changed };
+}
+
 async function readPlatforms() {
   await ensureStoragePaths();
   try {
     const raw = await fsPromises.readFile(PLATFORMS_FILE, "utf8");
-    const decoded = JSON.parse(raw);
+    const decoded = JSON.parse(raw.replace(/^\uFEFF/, ""));
     const platforms = Array.isArray(decoded) ? decoded : [];
     if (!platforms.length) {
       return DEFAULT_BUYER_PLATFORMS.map((platform) => ({ ...platform }));
+    }
+    const merged = mergeMissingDefaultBuyerPlatforms(platforms);
+    if (merged.changed) {
+      await writePlatforms(merged.platforms);
+      return merged.platforms;
     }
     return platforms;
   } catch (error) {
@@ -2063,11 +2843,29 @@ function inferPlatformIdFromStoreTypeName(name) {
     return "shop";
   }
   if (
+    key.includes("resort")
+    || key.includes("villa")
+    || key.includes("beach club")
+  ) {
+    return "resort";
+  }
+  if (
     key.includes("hotel")
     || key.includes("hote ")
+    || key.includes("lodging")
     || (/\bhotes?\b/.test(key) && key.includes("restaurant"))
   ) {
     return "hotels";
+  }
+  if (
+    key.includes("grocery")
+    || key.includes("groceries")
+    || key.includes("supermarket")
+    || key.includes("convenience")
+    || key.includes("minimart")
+    || key.includes("sari sari")
+  ) {
+    return "groceries";
   }
   if (
     key === "food"
@@ -2079,6 +2877,20 @@ function inferPlatformIdFromStoreTypeName(name) {
     return "food";
   }
   return "shop";
+}
+
+function resolvePlatformStorefrontMode(source = {}, platformId = "") {
+  const raw = String(source.storefrontMode ?? source.mode ?? source.verticalMode ?? "")
+    .trim()
+    .toLowerCase();
+  if (raw === "booking" || raw === "commerce") {
+    return raw;
+  }
+  const id = normalizePlatformId(platformId || source.id || source.platformId);
+  if (DEFAULT_BOOKING_PLATFORM_IDS.has(id)) {
+    return "booking";
+  }
+  return "commerce";
 }
 
 function normalizePlatformRecord(value, options = {}) {
@@ -2114,6 +2926,7 @@ function normalizePlatformRecord(value, options = {}) {
     secondaryColor: normalizeWorkspaceColor(
       source.secondaryColor ?? source.secondaryAccent,
     ),
+    storefrontMode: resolvePlatformStorefrontMode(source, id),
   };
 }
 
@@ -2347,15 +3160,19 @@ async function writeOrders(orders, options = {}) {
   return normalizedOrders;
 }
 
-function catalogWriteScope({ adminId = "", accountId = "" } = {}) {
+function catalogWriteScope({ adminId = "", accountId = "", companyId = "" } = {}) {
   const options = {};
   const normalizedAdminId = String(adminId ?? "").trim();
   const normalizedAccountId = String(accountId ?? "").trim();
+  const normalizedCompanyId = String(companyId ?? "").trim();
   if (normalizedAdminId) {
     options.adminId = normalizedAdminId;
   }
   if (normalizedAccountId) {
     options.accountId = normalizedAccountId;
+  }
+  if (normalizedCompanyId) {
+    options.companyId = normalizedCompanyId;
   }
   return options;
 }
@@ -2549,6 +3366,7 @@ function normalizeStoreTypeRecord(value) {
   });
 
   return {
+    id: String(source.id ?? "").trim() || stableStoreTypeId(name),
     name,
     platformId: resolveStoreTypePlatformId({ ...source, name }),
     categories,
@@ -2589,9 +3407,175 @@ function getActiveGlobalStoreTypeList(storedStoreTypes) {
   );
 }
 
-function getStoreTypeUsageSummary(storeTypeName, accounts = [], products = []) {
+const STORE_TYPE_RANKING_LIMIT = 10;
+const STORE_TYPE_RANKING_PREVIEW_LIMIT = 7;
+
+function getStoreTypeRankingInitials(name = "") {
+  const initials = String(name || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+  return initials || "CO";
+}
+
+function getStoreTypeRankingCompanyLogoUrl(account = {}) {
+  return (
+    [
+      account?.companyPictureUrl,
+      account?.companyProfileImageUrl,
+      account?.profileImageUrl,
+      account?.logoUrl,
+      account?.avatarUrl,
+      account?.photoUrl,
+      account?.company?.logoUrl,
+      account?.store?.logoUrl,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || ""
+  );
+}
+
+function getStoreTypeRankingCompanyName(account = {}) {
+  return (
+    [
+      account?.companyName,
+      account?.storeName,
+      account?.businessName,
+      account?.displayName,
+      [account?.firstName, account?.lastName].filter(Boolean).join(" "),
+      account?.email,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "Company"
+  );
+}
+
+function isStoreTypeRankingCompanyExcluded(account = {}) {
+  if (!account || typeof account !== "object") {
+    return false;
+  }
+
+  try {
+    const scope = String(account?.enforcementScope || "").trim().toLowerCase();
+    const enforcedCompanyIds = Array.isArray(account?.enforcedCompanyIds)
+      ? account.enforcedCompanyIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const companyId = String(account?.companyId || account?.company_id || "").trim();
+
+    // Company-scoped bans: only the specifically banned company id(s) are out of ranking.
+    if (scope === "company" && enforcedCompanyIds.length > 0) {
+      if (!companyId) {
+        // Legacy seller rows without companyId still follow the banned company card.
+        return isSellerAccountRecordBanned(account);
+      }
+      return enforcedCompanyIds.includes(companyId);
+    }
+
+    // User-scoped / account-wide ban: banned seller user is fully excluded.
+    return (
+      isSellerAccountBannedForListings(account) ||
+      isSellerAccountRecordBanned(account)
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isStoreTypeRankingProductExcluded(product = {}, accounts = []) {
+  if (!product || typeof product !== "object") {
+    return true;
+  }
+
+  try {
+    // Restricted listings and company-ban-hidden products never rank.
+    return (
+      isProductListingRestrictedForCustomers(product) ||
+      isProductBannedByCompany(product, accounts)
+    );
+  } catch (_error) {
+    return false;
+  }
+}
+
+function getStoreTypeRankingCreatedAt(source = {}) {
+  return String(
+    source?.createdAt
+      ?? source?.created_at
+      ?? source?.registeredAt
+      ?? source?.dateCreated
+      ?? source?.approvedAt
+      ?? source?.listedAt
+      ?? "",
+  ).trim();
+}
+
+function indexStoreTypeRecordsByAdminId(records) {
+  const map = new Map();
+  for (const record of Array.isArray(records) ? records : []) {
+    const adminId = normalizeAdminTenantId(getRecordAdminId(record, record?.adminId), "");
+    if (!adminId) {
+      continue;
+    }
+    const list = map.get(adminId);
+    if (list) {
+      list.push(record);
+    } else {
+      map.set(adminId, [record]);
+    }
+  }
+  return map;
+}
+
+function getStoreTypeCompanyReviewSignals(adminProducts, reviewAggregates) {
+  const fromOrders = summarizeProductReviewAggregatesForProducts(
+    adminProducts,
+    reviewAggregates instanceof Map ? reviewAggregates : new Map(),
+  );
+  if (fromOrders.ratingCount > 0) {
+    return {
+      rating: fromOrders.rating,
+      reviews: Math.max(fromOrders.commentCount || 0, fromOrders.ratingCount || 0),
+    };
+  }
+
+  let points = 0;
+  let count = 0;
+  for (const product of Array.isArray(adminProducts) ? adminProducts : []) {
+    const rating = Math.max(0, parseFiniteNumber(product?.rating, 0));
+    const ratingCount = Math.max(
+      0,
+      Math.trunc(parseFiniteNumber(
+        product?.ratingCount ?? product?.ratingsCount ?? product?.reviewCount,
+        0,
+      )),
+    );
+    if (rating <= 0) {
+      continue;
+    }
+    const weight = ratingCount > 0 ? ratingCount : 1;
+    points += rating * weight;
+    count += weight;
+  }
+  return {
+    rating: count > 0 ? points / count : 0,
+    reviews: count,
+  };
+}
+
+function getStoreTypeUsageSummary(
+  storeTypeName,
+  accounts = [],
+  products = [],
+  orderMetrics = null,
+  rankingSources = {},
+) {
   const storeTypeKey = normalizeStoreTypeName(storeTypeName).toLowerCase();
+  const matchingAdmins = [];
   const matchingAdminIds = new Set();
+  const productCountByAdminId = new Map();
+  const productsByAdminId = new Map();
 
   for (const account of Array.isArray(accounts) ? accounts : []) {
     if (!isAdminAccount(account)) {
@@ -2605,25 +3589,259 @@ function getStoreTypeUsageSummary(storeTypeName, accounts = [], products = []) {
       continue;
     }
 
-    matchingAdminIds.add(normalizeAdminTenantId(getRecordAdminId(account, account?.adminId), ""));
+    const adminId = normalizeAdminTenantId(getRecordAdminId(account, account?.adminId), "");
+    if (!adminId || matchingAdminIds.has(adminId)) {
+      continue;
+    }
+
+    matchingAdminIds.add(adminId);
+    matchingAdmins.push({ account, adminId });
+    productCountByAdminId.set(adminId, 0);
+    productsByAdminId.set(adminId, []);
   }
+
+  const eligibleAdmins = matchingAdmins.filter(
+    ({ account }) => !isStoreTypeRankingCompanyExcluded(account),
+  );
+  const eligibleAdminIds = new Set(eligibleAdmins.map(({ adminId }) => adminId));
 
   let productCount = 0;
   for (const product of Array.isArray(products) ? products : []) {
     const adminId = normalizeAdminTenantId(getRecordAdminId(product, product?.adminId), "");
-    if (matchingAdminIds.has(adminId)) {
-      productCount += 1;
+    if (!matchingAdminIds.has(adminId)) {
+      continue;
+    }
+    // Skip restricted products and products hidden by company/user bans.
+    if (isStoreTypeRankingProductExcluded(product, accounts)) {
+      continue;
+    }
+    // Products owned by excluded (banned) companies do not contribute to ranking totals.
+    if (!eligibleAdminIds.has(adminId)) {
+      continue;
+    }
+
+    productCount += 1;
+    productCountByAdminId.set(adminId, (productCountByAdminId.get(adminId) || 0) + 1);
+    const adminProducts = productsByAdminId.get(adminId);
+    if (Array.isArray(adminProducts)) {
+      adminProducts.push(product);
     }
   }
 
+  const metricsMap =
+    orderMetrics instanceof Map
+      ? orderMetrics
+      : buildListingInsightOverallRankingMetrics(
+          Array.isArray(orderMetrics) ? orderMetrics : [],
+        );
+
+  const rankingContext = rankingSources && typeof rankingSources === "object"
+    ? rankingSources
+    : {};
+  const rankedCompanyRows = eligibleAdmins
+    .map(({ account, adminId }) => {
+      const companyName = getStoreTypeRankingCompanyName(account);
+      const items = Math.max(0, Math.trunc(productCountByAdminId.get(adminId) || 0));
+      const adminProducts = productsByAdminId.get(adminId) || [];
+      let unitsSold = 0;
+      for (const product of adminProducts) {
+        const productId = String(product?.id ?? product?.productId ?? "").trim();
+        const metrics = metricsMap.get(
+          getListingInsightOverallRankingKey(product, productId),
+        ) ?? { unitsSold: 0 };
+        const fromOrders = Math.max(0, Math.trunc(parseFiniteNumber(metrics.unitsSold, 0)));
+        const fromField = Math.max(
+          0,
+          Math.trunc(parseFiniteNumber(product?.sold ?? product?.unitsSold, 0)),
+        );
+        unitsSold += fromOrders > 0 ? fromOrders : fromField;
+      }
+      const adminOrders = rankingContext.ordersByAdminId instanceof Map
+        ? (rankingContext.ordersByAdminId.get(adminId) || [])
+        : filterRecordsByAdminId(rankingContext.orders, adminId);
+      const adminChats = rankingContext.chatsByAdminId instanceof Map
+        ? (rankingContext.chatsByAdminId.get(adminId) || [])
+        : filterRecordsByAdminId(rankingContext.chatThreads, adminId);
+      const performance = buildSellerPerformanceMetrics({
+        orders: adminOrders,
+        chatThreads: adminChats,
+        reportSummary: account?.reportSummary,
+        accountState:
+          account?.accountState
+          || account?.companyStatus
+          || account?.companyEnforcementStatus,
+      });
+      const reviewSignals = getStoreTypeCompanyReviewSignals(
+        adminProducts,
+        rankingContext.reviewAggregates,
+      );
+      const ranking = scoreCompanyTopSeller({
+        createdAt: getStoreTypeRankingCreatedAt(account),
+        approvedAt: account?.approvedAt ?? account?.approved_at,
+        registeredAt: account?.registeredAt ?? account?.registered_at,
+        accountState:
+          account?.accountState
+          || account?.companyStatus
+          || account?.companyEnforcementStatus,
+        rating: reviewSignals.rating,
+        reviews: reviewSignals.reviews,
+        completedOrders: performance.completedOrders,
+        unitsSold,
+        cancelRate: performance.cancelRate,
+        chats: performance.chats,
+        timedReplies: performance.timedReplies,
+        avgFirstResponseHours: performance.avgFirstResponseHours,
+        openStaleConcerns: performance.openStaleConcerns,
+        openReports: performance.openReports,
+        needsWarning: performance.needsWarning,
+      });
+      if (ranking.blocked) {
+        return null;
+      }
+      return {
+        adminId,
+        companyName,
+        logoUrl: getStoreTypeRankingCompanyLogoUrl(account),
+        initials: getStoreTypeRankingInitials(companyName),
+        productCount: items,
+        unitsSold,
+        score: ranking.score,
+        earlyScore: ranking.earlyScore,
+        eligible: ranking.eligible === true,
+        evaluating: ranking.evaluating === true,
+        rating: reviewSignals.rating,
+        reviewCount: reviewSignals.reviews,
+        completedOrders: performance.completedOrders,
+        avgFirstResponseHours: performance.avgFirstResponseHours,
+        timedReplies: performance.timedReplies,
+        chats: performance.chats,
+        cancelRate: performance.cancelRate,
+        breakdown: ranking.breakdown,
+        evaluation: ranking.evaluation,
+        createdAt: getStoreTypeRankingCreatedAt(account),
+      };
+    })
+    .filter(Boolean);
+  const rankedCompanies = rankedCompanyRows
+    .filter((row) => row.eligible)
+    .sort(compareCompanyTopSellerRows)
+    .map((row, index) => ({
+      ...row,
+      rank: index + 1,
+    }));
+  const topCompanies = rankedCompanies.slice(0, STORE_TYPE_RANKING_LIMIT);
+  const companyRanks = rankedCompanies.map((row) => ({
+    adminId: row.adminId,
+    rank: row.rank,
+  }));
+  const evaluatingCompanies = rankedCompanyRows
+    .filter((row) => row.evaluating)
+    .sort(compareCompanyTopSellerRows)
+    .slice(0, STORE_TYPE_RANKING_LIMIT)
+    .map((row, index) => ({
+      ...row,
+      rank: 0,
+      evaluationRank: index + 1,
+    }));
+
+  const rankedItems = [];
+  for (const { adminId, account } of eligibleAdmins) {
+    const companyName = getStoreTypeRankingCompanyName(account);
+    for (const product of productsByAdminId.get(adminId) || []) {
+      const productId = String(product?.id ?? product?.productId ?? "").trim();
+      if (!productId) {
+        continue;
+      }
+      const metrics = metricsMap.get(
+        getListingInsightOverallRankingKey(product, productId),
+      ) ?? { unitsSold: 0, income: 0 };
+      const unitsSold =
+        Math.max(0, Math.trunc(parseFiniteNumber(metrics.unitsSold, 0))) ||
+        Math.max(0, Math.trunc(parseFiniteNumber(product?.sold ?? product?.unitsSold, 0)));
+      const income = Math.max(0, parseFiniteNumber(metrics.income, 0));
+      const rating = Math.max(0, Math.min(5, parseFiniteNumber(product?.rating, 0)));
+      const ratingCount = Math.max(
+        0,
+        Math.trunc(
+          parseFiniteNumber(
+            product?.ratingCount ?? product?.ratingsCount ?? product?.reviewCount,
+            0,
+          ),
+        ),
+      );
+      const itemRanking = scoreStoreTypeRankingItem({
+        unitsSold,
+        income,
+        rating,
+        ratingCount,
+      });
+      rankedItems.push({
+        productId,
+        productName: String(product?.name ?? product?.productName ?? "Unnamed item").trim() ||
+          "Unnamed item",
+        imageUrl: getListingInsightOverallRankingImageUrl(product),
+        adminId,
+        companyName,
+        companyLogoUrl: getStoreTypeRankingCompanyLogoUrl(account),
+        unitsSold,
+        income,
+        rating,
+        ratingCount,
+        score: itemRanking.score,
+        breakdown: itemRanking.breakdown,
+        createdAt: getStoreTypeRankingCreatedAt(product),
+      });
+    }
+  }
+
+  const topItems = rankedItems
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        right.unitsSold - left.unitsSold ||
+        right.rating - left.rating ||
+        left.productName.localeCompare(right.productName, undefined, {
+          sensitivity: "base",
+        }),
+    )
+    .slice(0, STORE_TYPE_RANKING_LIMIT)
+    .map((row, index) => ({
+      ...row,
+      rank: index + 1,
+    }));
+
   return {
-    companiesUsing: matchingAdminIds.size,
+    companiesUsing: eligibleAdmins.length,
     productCount,
+    topCompanies,
+    companyRanks,
+    evaluatingCompanies,
+    topItems,
+    rankingLimit: STORE_TYPE_RANKING_LIMIT,
+    rankingPreviewLimit: STORE_TYPE_RANKING_PREVIEW_LIMIT,
   };
 }
 
-function getGlobalStoreTypeDetails(storedStoreTypes, accounts = [], products = []) {
+function getGlobalStoreTypeDetails(
+  storedStoreTypes,
+  accounts = [],
+  products = [],
+  orders = [],
+  chatThreads = [],
+) {
   const seen = new Map();
+  const orderList = Array.isArray(orders) ? orders : [];
+  const chatList = Array.isArray(chatThreads) ? chatThreads : [];
+  const orderMetrics = buildListingInsightOverallRankingMetrics(orderList);
+  const rankingSources = {
+    orders: orderList,
+    chatThreads: chatList,
+    reviewAggregates: orderList.length
+      ? buildProductReviewAggregates(orderList, null)
+      : new Map(),
+    ordersByAdminId: indexStoreTypeRecordsByAdminId(orderList),
+    chatsByAdminId: indexStoreTypeRecordsByAdminId(chatList),
+  };
 
   for (const value of Array.isArray(storedStoreTypes) ? storedStoreTypes : []) {
     const storeType = normalizeStoreTypeRecord(value);
@@ -2640,7 +3858,13 @@ function getGlobalStoreTypeDetails(storedStoreTypes, accounts = [], products = [
   return [...seen.values()]
     .map((storeType) => ({
       ...storeType,
-      ...getStoreTypeUsageSummary(storeType.name, accounts, products),
+      ...getStoreTypeUsageSummary(
+        storeType.name,
+        accounts,
+        products,
+        orderMetrics,
+        rankingSources,
+      ),
     }))
     .sort((left, right) =>
       left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
@@ -2883,6 +4107,640 @@ function hideInactiveStoreTypeCategoriesFromProducts(products = [], accounts = [
   return (Array.isArray(products) ? products : [])
     .map((product) => hideInactiveStoreTypeCategoriesFromProduct(product, indexes))
     .filter(Boolean);
+}
+
+function isSuperAdminSellerAccountMarketplaceBlocked(account = {}) {
+  const asTruthy = (value) =>
+    value === true || ["true", "1", "yes"].includes(String(value || "").trim().toLowerCase());
+  const enforcementScope = String(account?.enforcementScope || "").trim().toLowerCase();
+  // Company-scoped enforcement is checked per listing/company, not account-wide.
+  if (enforcementScope === "company") {
+    const deletionStatusOnly = String(
+      account?.accountDeletionStatus || account?.deletionStatus || "",
+    )
+      .trim()
+      .toLowerCase();
+    return (
+      deletionStatusOnly === "deleted" ||
+      deletionStatusOnly === "scheduled" ||
+      deletionStatusOnly === "pending" ||
+      Boolean(account?.accountDeletedAt || account?.deletedAt || account?.deletionScheduledAt)
+    );
+  }
+
+  const statusToken = [
+    account?.status,
+    account?.accountStatus,
+    account?.accountState,
+    account?.adminStatus,
+    account?.userStatus,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  const deletionStatus = String(
+    account?.accountDeletionStatus || account?.deletionStatus || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    deletionStatus === "deleted" ||
+    deletionStatus === "scheduled" ||
+    deletionStatus === "pending" ||
+    Boolean(account?.accountDeletedAt || account?.deletedAt || account?.deletionScheduledAt)
+  ) {
+    return true;
+  }
+
+  if (
+    asTruthy(account?.isBanned) ||
+    asTruthy(account?.banned) ||
+    Boolean(account?.bannedAt) ||
+    statusToken.includes("banned")
+  ) {
+    return true;
+  }
+
+  if (
+    asTruthy(account?.disabled) ||
+    account?.isActive === false ||
+    statusToken.includes("suspended") ||
+    statusToken.includes("deactivated") ||
+    statusToken.includes("inactive")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isSellerAccountBannedForListings(account = {}) {
+  if (!account || typeof account !== "object") {
+    return false;
+  }
+  const asTruthy = (value) =>
+    value === true || ["true", "1", "yes"].includes(String(value || "").trim().toLowerCase());
+  const companyStatus = String(
+    account?.companyStatus
+      ?? account?.companyEnforcementStatus
+      ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const scope = String(account?.enforcementScope || "").trim().toLowerCase();
+  const enforcedCompanyIds = Array.isArray(account?.enforcedCompanyIds)
+    ? account.enforcedCompanyIds.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  const statusToken = [
+    account?.status,
+    account?.accountStatus,
+    account?.accountState,
+    account?.adminStatus,
+    account?.userStatus,
+    companyStatus,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  const accountBanned =
+    asTruthy(account?.isBanned) ||
+    asTruthy(account?.banned) ||
+    Boolean(account?.bannedAt) ||
+    statusToken.includes("banned");
+
+  if (companyStatus === "banned" || companyStatus.includes("ban") || accountBanned) {
+    // Company-scoped bans with specific company IDs are evaluated per listing.
+    if (scope === "company" && enforcedCompanyIds.length > 0) {
+      return false;
+    }
+    return true;
+  }
+
+  if (scope === "company") {
+    return false;
+  }
+  return false;
+}
+
+function isSellerAccountRestrictedForListings(account = {}) {
+  if (!account || typeof account !== "object") {
+    return false;
+  }
+  const companyStatus = String(
+    account?.companyStatus
+      ?? account?.companyEnforcementStatus
+      ?? "",
+  )
+    .trim()
+    .toLowerCase();
+  const scope = String(account?.enforcementScope || "").trim().toLowerCase();
+  const enforcedCompanyIds = Array.isArray(account?.enforcedCompanyIds)
+    ? account.enforcedCompanyIds.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  const statusToken = [
+    account?.status,
+    account?.accountStatus,
+    account?.accountState,
+    companyStatus,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  if (
+    companyStatus === "restricted" ||
+    companyStatus.includes("restrict") ||
+    statusToken.includes("restricted")
+  ) {
+    if (scope === "company" && enforcedCompanyIds.length > 0) {
+      return false;
+    }
+    return true;
+  }
+  if (scope === "company") {
+    return false;
+  }
+  return isAdminAccountRestrictionActive(account);
+}
+
+function resolveProductSellerAccount(product = {}, accounts = []) {
+  const adminId = String(getRecordAdminId(product, product?.adminId || "") || "").trim();
+  if (!adminId) {
+    return null;
+  }
+  return findAdminAccountByScopeId(accounts, adminId);
+}
+
+function isSellerAccountRecordBanned(account = {}) {
+  if (!account || typeof account !== "object") {
+    return false;
+  }
+  const asTruthy = (value) =>
+    value === true || ["true", "1", "yes"].includes(String(value || "").trim().toLowerCase());
+  const statusToken = [
+    account?.status,
+    account?.accountStatus,
+    account?.accountState,
+    account?.adminStatus,
+    account?.userStatus,
+    account?.companyStatus,
+    account?.companyEnforcementStatus,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  return (
+    asTruthy(account?.isBanned) ||
+    asTruthy(account?.banned) ||
+    statusToken.includes("banned") ||
+    (
+      // Do not treat a leftover bannedAt as a live ban after Super Admin unban
+      // when company/account state is already restored to active.
+      Boolean(account?.bannedAt) &&
+      String(account?.accountState || "").trim().toLowerCase() !== "active" &&
+      String(account?.companyStatus || account?.companyEnforcementStatus || "")
+        .trim()
+        .toLowerCase() !== "active"
+    )
+  );
+}
+
+function isProductBannedByCompany(product = {}, accounts = []) {
+  const account = resolveProductSellerAccount(product, accounts);
+  if (account && isSellerAccountRecordBanned(account)) {
+    const productCompanyId = String(product?.companyId || product?.company_id || "").trim();
+    const enforcedCompanyIds = Array.isArray(account?.enforcedCompanyIds)
+      ? account.enforcedCompanyIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const scope = String(account?.enforcementScope || "").trim().toLowerCase();
+    // Company-scoped: only hide listings for the banned company id(s).
+    // Products without a companyId still hide (legacy rows belong to the seller card).
+    if (scope === "company" && enforcedCompanyIds.length > 0) {
+      if (!productCompanyId) {
+        return true;
+      }
+      return enforcedCompanyIds.includes(productCompanyId);
+    }
+    return true;
+  }
+
+  if (product?.companyIsBanned === true) {
+    return true;
+  }
+  const state = String(product?.companyAccountState || "").trim().toLowerCase();
+  if (state === "banned" || state.includes("ban")) {
+    return true;
+  }
+  return false;
+}
+
+function isProductInSaRestrictedListingBucket(product = {}) {
+  return isProductListingRestrictedForCustomers(product);
+}
+
+function isProductEligibleSaLiveListing(product = {}, accounts = []) {
+  return (
+    isProductLiveListingForApp(product) &&
+    !isProductListingRestrictedForCustomers(product) &&
+    !isProductBannedByCompany(product, accounts)
+  );
+}
+
+function sendCompanyBannedListingBlocked(response, message = "") {
+  sendJson(response, 403, {
+    code: "COMPANY_BANNED_LISTING_BLOCKED",
+    message:
+      String(message || "").trim() ||
+      "This company is banned. Its listings cannot go live until the company is unbanned.",
+  });
+}
+
+async function isSellerProductGoLiveBlockedByBan(product = {}, adminId = "") {
+  const accounts = await readAccounts();
+  const candidate = {
+    ...product,
+    adminId: getRecordAdminId(product, adminId || product?.adminId || ""),
+  };
+  return isProductBannedByCompany(candidate, accounts);
+}
+
+function buildCompanyScopedEnforcementPatch({
+  status,
+  reason = "",
+  description = "",
+  now = new Date().toISOString(),
+  companyId = "",
+  previousAccount = null,
+  restrictDurationValue = null,
+  restrictDurationUnit = "",
+  restrictExpiresAt = null,
+  restrictionLimits = [],
+  restrictionLimitLabels = [],
+} = {}) {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  const normalizedCompanyId = String(companyId || "").trim();
+  const previousEnforcedIds = Array.isArray(previousAccount?.enforcedCompanyIds)
+    ? previousAccount.enforcedCompanyIds.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  let enforcedCompanyIds = [...previousEnforcedIds];
+  if (normalizedCompanyId) {
+    if (normalizedStatus === "banned") {
+      if (!enforcedCompanyIds.includes(normalizedCompanyId)) {
+        enforcedCompanyIds.push(normalizedCompanyId);
+      }
+    } else if (normalizedStatus === "active" || normalizedStatus === "restricted") {
+      // Unban / switch away from ban removes this company from the banned set.
+      enforcedCompanyIds = enforcedCompanyIds.filter((id) => id !== normalizedCompanyId);
+    }
+  } else if (normalizedStatus === "active") {
+    enforcedCompanyIds = [];
+  }
+
+  const patch = {
+    enforcementScope: "company",
+    companyStatus: normalizedStatus,
+    companyEnforcementStatus: normalizedStatus,
+    companyEnforcementReason: String(reason || "").trim(),
+    companyEnforcementDescription: String(description || "").trim(),
+    companyEnforcementAt: now,
+    enforcedCompanyIds,
+    // Keep the user/login account itself active — company enforcement is scoped.
+    status: "active",
+    accountStatus: "active",
+    // accountState drives company-card badges without blocking login (login reads status).
+    accountState: normalizedStatus === "active" ? "active" : normalizedStatus,
+    adminStatus: "active",
+    userStatus: "active",
+    isActive: true,
+    disabled: false,
+    isBanned: false,
+    banned: false,
+    isRestricted: false,
+    restricted: false,
+    isSuspended: false,
+    suspended: false,
+  };
+  if (normalizedCompanyId) {
+    patch.companyId = normalizedCompanyId;
+  }
+  if (normalizedStatus === "banned") {
+    Object.assign(patch, {
+      bannedAt: now,
+      bannedBy: SUPER_ADMIN_USERNAME,
+      banReason: String(reason || "").trim(),
+      banDescription: String(description || "").trim(),
+      banDetails: String(description || "").trim(),
+      banType: "permanent",
+      banDurationValue: null,
+      banDurationUnit: "",
+      banExpiresAt: null,
+      restrictedAt: null,
+      restrictedBy: "",
+      restrictExpiresAt: null,
+      restrictionReason: "",
+      restrictReason: "",
+      restrictionDescription: "",
+      restrictDescription: "",
+      restrictionLimits: [],
+      restrictLimits: [],
+      restrictionLimitLabels: [],
+      restrictLimitLabels: [],
+    });
+  } else if (normalizedStatus === "restricted") {
+    Object.assign(patch, {
+      restrictedAt: now,
+      restrictedBy: SUPER_ADMIN_USERNAME,
+      restrictDurationValue,
+      restrictDurationUnit,
+      restrictExpiresAt,
+      restrictionReason: String(reason || "").trim(),
+      restrictReason: String(reason || "").trim(),
+      restrictionDescription: String(description || "").trim(),
+      restrictDescription: String(description || "").trim(),
+      restrictionLimits,
+      restrictLimits: restrictionLimits,
+      restrictionLimitLabels,
+      restrictLimitLabels: restrictionLimitLabels,
+      bannedAt: null,
+      bannedBy: "",
+      banReason: "",
+      banDescription: "",
+      banDetails: "",
+      banType: "",
+      banExpiresAt: null,
+    });
+  } else {
+    Object.assign(patch, {
+      bannedAt: null,
+      bannedBy: "",
+      banReason: "",
+      banDescription: "",
+      banDetails: "",
+      banType: "",
+      banExpiresAt: null,
+      restrictedAt: null,
+      restrictedBy: "",
+      restrictDurationValue: null,
+      restrictDurationUnit: "",
+      restrictExpiresAt: null,
+      restrictionReason: "",
+      restrictReason: "",
+      restrictionDescription: "",
+      restrictDescription: "",
+      restrictionLimits: [],
+      restrictLimits: [],
+      restrictionLimitLabels: [],
+      restrictLimitLabels: [],
+    });
+  }
+  return patch;
+}
+
+function collectLinkedSellerAccountIds(seedAccount, accounts = []) {
+  const ids = new Set();
+  const emails = new Set();
+  const pushId = (value) => {
+    const normalized = normalizeAdminTenantId(value, "");
+    if (normalized) {
+      ids.add(normalized);
+    }
+  };
+  const pushEmail = (value) => {
+    const email = String(value || "").trim().toLowerCase();
+    if (email) {
+      emails.add(email);
+    }
+  };
+
+  pushId(seedAccount?.id);
+  pushId(seedAccount?.accountId);
+  pushId(seedAccount?.adminId);
+  pushId(seedAccount?.userId);
+  pushEmail(seedAccount?.email);
+
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    if (!account || typeof account !== "object") {
+      continue;
+    }
+    const accountEmail = String(account?.email || "").trim().toLowerCase();
+    const accountIds = [
+      account?.id,
+      account?.accountId,
+      account?.adminId,
+      account?.userId,
+    ]
+      .map((value) => normalizeAdminTenantId(value, ""))
+      .filter(Boolean);
+    const linkedById = accountIds.some((id) => ids.has(id));
+    const linkedByEmail = accountEmail && emails.has(accountEmail);
+    if (!linkedById && !linkedByEmail) {
+      continue;
+    }
+    accountIds.forEach((id) => ids.add(id));
+    if (accountEmail) {
+      emails.add(accountEmail);
+    }
+  }
+
+  return Array.from(ids);
+}
+
+async function cascadeUserEnforcementToSellerCompanies(seedAccount, {
+  action,
+  reason = "",
+  description = "",
+  accounts = [],
+} = {}) {
+  const linkedIds = collectLinkedSellerAccountIds(seedAccount, accounts);
+  const synced = [];
+  for (const accountId of linkedIds) {
+    try {
+      const result = await syncSellerCompanyStatusForSuperAdminAction(
+        accountId,
+        action,
+        reason,
+        description,
+        "",
+      );
+      if (result) {
+        synced.push({
+          accountId,
+          companyIds: Array.isArray(result.syncedCompanyIds) ? result.syncedCompanyIds : [],
+        });
+      }
+    } catch (error) {
+      console.error("Unable to cascade user enforcement to seller companies:", accountId, error);
+    }
+  }
+  return { linkedAccountIds: linkedIds, synced };
+}
+
+function applyUserLevelSellerAccountEnforcement(account, {
+  action,
+  reason = "",
+  description = "",
+  now = new Date().toISOString(),
+  restrictDurationValue = null,
+  restrictDurationUnit = "",
+  restrictExpiresAt = null,
+} = {}) {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  const patch = {
+    enforcementScope: "user",
+    companyStatus: normalizedAction === "ban"
+      ? "banned"
+      : normalizedAction === "restrict"
+        ? "restricted"
+        : "active",
+    companyEnforcementStatus: normalizedAction === "ban"
+      ? "banned"
+      : normalizedAction === "restrict"
+        ? "restricted"
+        : "active",
+    companyEnforcementReason: String(reason || "").trim(),
+    companyEnforcementDescription: String(description || "").trim(),
+    companyEnforcementAt: now,
+  };
+
+  if (normalizedAction === "ban") {
+    Object.assign(patch, {
+      status: "banned",
+      accountStatus: "banned",
+      accountState: "banned",
+      adminStatus: "banned",
+      userStatus: "banned",
+      isActive: false,
+      disabled: true,
+      isBanned: true,
+      banned: true,
+      isRestricted: false,
+      restricted: false,
+      isOnline: false,
+      online: false,
+      loggedIn: false,
+      isLoggedIn: false,
+      sessionActive: false,
+      presenceStatus: "offline",
+      bannedAt: now,
+      bannedBy: SUPER_ADMIN_USERNAME,
+      banReason: String(reason || "").trim(),
+      banDescription: String(description || "").trim(),
+      banDetails: String(description || "").trim(),
+      banType: "permanent",
+    });
+  } else if (normalizedAction === "restrict") {
+    Object.assign(patch, {
+      status: "restricted",
+      accountStatus: "restricted",
+      accountState: "restricted",
+      adminStatus: "restricted",
+      userStatus: "restricted",
+      isActive: true,
+      disabled: false,
+      isBanned: false,
+      banned: false,
+      isRestricted: true,
+      restricted: true,
+      restrictedAt: now,
+      restrictedBy: SUPER_ADMIN_USERNAME,
+      restrictDurationValue,
+      restrictDurationUnit,
+      restrictExpiresAt,
+      restrictionReason: String(reason || "").trim(),
+      restrictReason: String(reason || "").trim(),
+      restrictionDescription: String(description || "").trim(),
+      restrictDescription: String(description || "").trim(),
+    });
+  } else if (normalizedAction === "unban" || normalizedAction === "unrestrict" || normalizedAction === "activate") {
+    Object.assign(patch, {
+      status: "active",
+      accountStatus: "active",
+      accountState: "active",
+      adminStatus: "active",
+      userStatus: "active",
+      isActive: true,
+      disabled: false,
+      isBanned: false,
+      banned: false,
+      isRestricted: false,
+      restricted: false,
+      bannedAt: null,
+      bannedBy: "",
+      banReason: "",
+      banDescription: "",
+      restrictedAt: null,
+      restrictedBy: "",
+      restrictExpiresAt: null,
+      restrictionReason: "",
+      restrictReason: "",
+    });
+  }
+
+  return {
+    ...account,
+    ...patch,
+    updatedAt: now,
+  };
+}
+
+function buildInactiveStoreTypeNameKeys(storedStoreTypes = []) {
+  const inactiveKeys = new Set();
+  for (const storeType of Array.isArray(storedStoreTypes) ? storedStoreTypes : []) {
+    const record = normalizeStoreTypeRecord(storeType);
+    if (!record?.name) continue;
+    if (String(record.status || "").trim().toLowerCase() !== "inactive") continue;
+    inactiveKeys.add(normalizeStoreTypeName(record.name).toLowerCase());
+  }
+  return inactiveKeys;
+}
+
+function getProductSellerStoreTypeName(product = {}, account = null) {
+  return (
+    normalizeStoreTypeName(
+      product?.storeType ||
+        product?.storeTypeName ||
+        product?.businessType ||
+        account?.storeType ||
+        account?.storeTypeName ||
+        account?.businessType ||
+        "",
+    ) || ""
+  );
+}
+
+// Hide listings when seller is banned/deactivated OR their Business Type is inactive.
+function filterProductsHiddenBySellerOrStoreTypeInactivity(
+  products = [],
+  accounts = [],
+  storedStoreTypes = [],
+) {
+  const accountById = new Map();
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    const adminId = String(getRecordAdminId(account, account?.id || "") || "").trim();
+    if (adminId) {
+      accountById.set(adminId, account);
+    }
+  }
+  const inactiveStoreTypeKeys = buildInactiveStoreTypeNameKeys(storedStoreTypes);
+
+  return (Array.isArray(products) ? products : []).filter((product) => {
+    const adminId = String(getRecordAdminId(product, product?.adminId || "") || "").trim();
+    const account = adminId ? accountById.get(adminId) : null;
+    if (account && isSuperAdminSellerAccountMarketplaceBlocked(account)) {
+      return false;
+    }
+    if (isProductBannedByCompany(product, Array.isArray(accounts) ? accounts : [])) {
+      return false;
+    }
+    if (!inactiveStoreTypeKeys.size) {
+      return true;
+    }
+    const storeTypeName = getProductSellerStoreTypeName(product, account);
+    if (!storeTypeName) {
+      return true;
+    }
+    return !inactiveStoreTypeKeys.has(storeTypeName.toLowerCase());
+  });
 }
 
 function hideInactiveStoreTypeCategoriesFromCategoryList(categories = [], inactiveCategoryKeys = new Set()) {
@@ -5117,6 +6975,9 @@ function isPartnerAvailableToAdmin(partner, adminId) {
   return !partnerScope || (normalizedAdminId && partnerScope === normalizedAdminId);
 }
 
+const SWITCH_RIDER_RESERVED_PARTNER_MESSAGE =
+  "\"Switch Rider\" is reserved for Switch's own delivery service. Buyers see it automatically when your pickup location is inside a Switch Rider zone.";
+
 function hasDuplicatePartnerInScope(partners, candidate, excludeId = "") {
   const candidateName = normalizePartnerDuplicateKey(candidate?.branch ?? candidate?.name);
   const candidateScope = getPartnerScopeKey(candidate);
@@ -5267,9 +7128,18 @@ function normalizeDeliveryPartnerRecord(input, existingPartner = null) {
 }
 
 function normalizePaymentPartnerRecord(input, existingPartner = null) {
-  return normalizePartnerRecord(input, existingPartner, {
+  const record = normalizePartnerRecord(input, existingPartner, {
     createId: createPaymentPartnerId,
   });
+  const hasMethodInput = Object.prototype.hasOwnProperty.call(input ?? {}, "paymongoMethod");
+  const rawMethod = String(
+    (hasMethodInput ? input.paymongoMethod : existingPartner?.paymongoMethod) ?? "",
+  ).trim();
+  const paymongoMethod = normalizePaymongoMethodType(rawMethod);
+  if (rawMethod && !paymongoMethod) {
+    throw new Error("Choose a supported PayMongo payment method.");
+  }
+  return paymongoMethod ? { ...record, paymongoMethod } : record;
 }
 
 const ORDER_STAGE_VALUES = new Set([
@@ -5729,6 +7599,21 @@ function normalizeStoredOrderEntry(input) {
   const clientAddress = String(
     input.clientAddress ?? input.address ?? input.deliveryAddress ?? "",
   ).trim();
+  const rawClientLatitude = Number(
+    input.clientLatitude ?? input.deliveryLatitude ?? input.deliveryLat,
+  );
+  const rawClientLongitude = Number(
+    input.clientLongitude
+      ?? input.deliveryLongitude
+      ?? input.deliveryLng
+      ?? input.deliveryLon,
+  );
+  const clientLatitude = Number.isFinite(rawClientLatitude)
+    ? rawClientLatitude
+    : null;
+  const clientLongitude = Number.isFinite(rawClientLongitude)
+    ? rawClientLongitude
+    : null;
   const normalizedStage = normalizeOrderStage(input.stage ?? input.status);
   const cancelRequestStatus = normalizeCancelRequestStatus(
     input.cancelRequestStatus,
@@ -5851,6 +7736,19 @@ function normalizeStoredOrderEntry(input) {
     flashReservationId: String(
       input.flashReservationId ?? input.reservationId ?? "",
     ).trim(),
+    originalPrice: parseFiniteNumber(input.originalPrice, 0),
+    sellerDealPrice: parseFiniteNumber(input.sellerDealPrice, 0),
+    platformDealPrice: parseFiniteNumber(input.platformDealPrice, 0),
+    finalCustomerPrice: parseFiniteNumber(
+      input.finalCustomerPrice,
+      parseFiniteNumber(input.unitPrice, 0),
+    ),
+    sellerReceivablePrice: parseFiniteNumber(input.sellerReceivablePrice, 0),
+    platformSubsidy: parseFiniteNumber(input.platformSubsidy, 0),
+    appliedFlashDealId: String(
+      input.appliedFlashDealId ?? input.flashDealId ?? "",
+    ).trim(),
+    appliedFlashDealType: String(input.appliedFlashDealType ?? "").trim(),
     stage: normalizedStage,
     createdAtEpochMs,
     orderGroupId: String(input.orderGroupId ?? input.groupId ?? "").trim(),
@@ -5861,6 +7759,52 @@ function normalizeStoredOrderEntry(input) {
     amountToPayAmount: parseFiniteNumber(input.amountToPayAmount, 0),
     remainingBalanceAmount: parseFiniteNumber(input.remainingBalanceAmount, 0),
     shippingFeeAmount: parseFiniteNumber(input.shippingFeeAmount, 0),
+    voucherId: String(input.voucherId ?? "").trim(),
+    voucherCode: String(input.voucherCode ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "")
+      .slice(0, 32),
+    voucherDiscountAmount: parseFiniteNumber(input.voucherDiscountAmount, 0),
+    shippingDiscountAmount: parseFiniteNumber(input.shippingDiscountAmount, 0),
+    platformFundedAmount: parseFiniteNumber(input.platformFundedAmount, 0),
+    sellerFundedAmount: parseFiniteNumber(input.sellerFundedAmount, 0),
+    voucherSnapshot:
+      input.voucherSnapshot && typeof input.voucherSnapshot === "object"
+        ? {
+            voucherId: String(input.voucherSnapshot.voucherId ?? "").trim(),
+            voucherTitle: String(input.voucherSnapshot.voucherTitle ?? "").trim(),
+            voucherCode: String(input.voucherSnapshot.voucherCode ?? "").trim(),
+            voucherType: String(input.voucherSnapshot.voucherType ?? "").trim(),
+            discountType: String(input.voucherSnapshot.discountType ?? "").trim(),
+            discountValue: String(input.voucherSnapshot.discountValue ?? "").trim(),
+            actualDiscountAmount: parseFiniteNumber(
+              input.voucherSnapshot.actualDiscountAmount,
+              0,
+            ),
+            shippingDiscountAmount: parseFiniteNumber(
+              input.voucherSnapshot.shippingDiscountAmount,
+              0,
+            ),
+            fundingSource: String(input.voucherSnapshot.fundingSource ?? "").trim(),
+            platformFundedAmount: parseFiniteNumber(
+              input.voucherSnapshot.platformFundedAmount,
+              0,
+            ),
+            sellerFundedAmount: parseFiniteNumber(
+              input.voucherSnapshot.sellerFundedAmount,
+              0,
+            ),
+            campaignId: String(input.voucherSnapshot.campaignId ?? "").trim(),
+            redemptionMethod: String(input.voucherSnapshot.redemptionMethod ?? "").trim(),
+          }
+        : undefined,
+    shippingVoucherId: String(input.shippingVoucherId ?? "").trim(),
+    shippingVoucherCode: String(input.shippingVoucherCode ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "")
+      .slice(0, 32),
     paymentOptionLabel,
     paymentPartnerName,
     paymentPartnerImageUrl: String(input.paymentPartnerImageUrl ?? "").trim(),
@@ -5869,6 +7813,20 @@ function normalizeStoredOrderEntry(input) {
     clientName,
     clientContactNumber,
     clientAddress,
+    clientLatitude,
+    clientLongitude,
+    deliveryLatitude: clientLatitude,
+    deliveryLongitude: clientLongitude,
+    courierProvider: String(input.courierProvider ?? "").trim(),
+    courierShipmentId: String(input.courierShipmentId ?? "").trim(),
+    courierQuotationId: String(input.courierQuotationId ?? "").trim(),
+    courierShipmentMode: String(input.courierShipmentMode ?? "").trim(),
+    courierShipmentStatus: String(input.courierShipmentStatus ?? "").trim(),
+    courierProviderStatus: String(input.courierProviderStatus ?? "").trim(),
+    courierShareLink: String(input.courierShareLink ?? "").trim(),
+    courierDriverId: String(input.courierDriverId ?? "").trim(),
+    courierLastEventId: String(input.courierLastEventId ?? "").trim(),
+    courierUpdatedAt: String(input.courierUpdatedAt ?? "").trim(),
     cancelRequestStatus,
     cancelRequestReason,
     cancelRequestSubmittedAtEpochMs,
@@ -6174,9 +8132,11 @@ function normalizeProductReviewMediaItems(...values) {
       mediaUrl: url,
       imageUrl: type === "image" ? url : "",
       videoUrl: type === "video" ? url : "",
+      thumbnailUrl: String(item.thumbnailUrl ?? item.posterUrl ?? "").trim(),
       fileName: String(item.fileName ?? item.name ?? "").trim(),
       contentType,
       sizeBytes: Math.max(0, Math.trunc(parseFiniteNumber(item.sizeBytes ?? item.size, 0))),
+      likeCount: Math.max(0, Math.trunc(parseFiniteNumber(item.likeCount, 0))),
       uploadedAtEpochMs,
       uploadedAt: uploadedAtEpochMs > 0 ? new Date(uploadedAtEpochMs).toISOString() : "",
     });
@@ -6637,6 +8597,8 @@ function normalizeStoredProductReviewComment(comment, index = 0) {
     likeCount: normalizeProductCommentCount(comment.likeCount ?? comment.likes),
     commentCount: replyCount,
     replyCount,
+    hiddenBySuperAdmin: Boolean(comment.hiddenBySuperAdmin) || String(comment.moderationStatus || "").toLowerCase() === "hidden",
+    moderationStatus: String(comment.moderationStatus || (comment.hiddenBySuperAdmin ? "hidden" : "")).trim(),
   };
 }
 
@@ -6647,28 +8609,55 @@ function normalizeProductReviewComments(value) {
 
   return value
     .map(normalizeStoredProductReviewComment)
-    .filter(Boolean)
+    .filter((comment) => comment && comment.hiddenBySuperAdmin !== true)
     .sort((left, right) =>
       normalizeProductReviewEpochMs(right?.createdAtEpochMs, right?.createdAt) -
       normalizeProductReviewEpochMs(left?.createdAtEpochMs, left?.createdAt),
     );
 }
 
-function getProductReviewAggregateForProduct(aggregates, product) {
-  if (!(aggregates instanceof Map)) {
-    return null;
+// Mock/seed reviews live on the product itself (`seedReviewComments`, written by
+// scripts/seed-product-listing-details.js) because real reviews are rebuilt
+// from rated orders and would overwrite anything stored in `reviewComments`.
+function mergeSeedProductReviews(aggregate, product, productId) {
+  const seeded = Array.isArray(product?.seedReviewComments)
+    ? product.seedReviewComments
+    : [];
+  if (!seeded.length) {
+    return aggregate;
   }
 
+  const merged = aggregate
+    ? cloneProductReviewAggregate(aggregate)
+    : createEmptyProductReviewAggregate(productId, getRecordAdminId(product));
+  for (const comment of seeded) {
+    const rating = normalizeProductReviewRating(comment?.rating);
+    if (rating <= 0) {
+      continue;
+    }
+    merged.ratingPoints += rating;
+    merged.ratingCount += 1;
+    merged.ratingBreakdown[Math.max(1, Math.min(5, Math.round(rating)))] += 1;
+    if (String(comment?.message ?? "").trim()) {
+      merged.commentCount += 1;
+      merged.comments.push({ ...comment, productId });
+    }
+  }
+  return merged;
+}
+
+function getProductReviewAggregateForProduct(aggregates, product) {
   const productId = String(product?.id ?? product?.productId ?? "").trim();
   if (!productId) {
     return null;
   }
 
-  return (
-    aggregates.get(getProductReviewAggregateKey(product, productId)) ||
-    aggregates.get(getProductReviewProductOnlyKey(productId)) ||
-    null
-  );
+  const aggregate = aggregates instanceof Map
+    ? aggregates.get(getProductReviewAggregateKey(product, productId)) ||
+      aggregates.get(getProductReviewProductOnlyKey(productId)) ||
+      null
+    : null;
+  return mergeSeedProductReviews(aggregate, product, productId);
 }
 
 function createProductReviewAggregatePayload(aggregate) {
@@ -6895,6 +8884,96 @@ async function handleProductReviewReplyApi(request, response) {
   }
 }
 
+// { "<productId>::<reviewId>::<mediaUrl>": ["<accountId>", ...] }
+async function readReviewMediaLikes() {
+  await ensureStoragePaths();
+  try {
+    const decoded = JSON.parse(await fsPromises.readFile(REVIEW_MEDIA_LIKES_FILE, "utf8"));
+    return decoded && typeof decoded === "object" && !Array.isArray(decoded) ? decoded : {};
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
+}
+
+function getReviewMediaLikeKey(productId, reviewId, mediaUrl) {
+  return `${productId}::${reviewId}::${mediaUrl}`;
+}
+
+async function handleReviewMediaLikesApi(request, response) {
+  const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+  const accountId = String(request.authSession?.accountId || "").trim();
+
+  try {
+    if (request.method === "GET") {
+      const productId = String(requestUrl.searchParams.get("productId") ?? "").trim();
+      if (!productId) {
+        sendJson(response, 400, { message: "Product id is required." });
+        return;
+      }
+      const prefix = `${productId}::`;
+      const likes = {};
+      for (const [key, accountIds] of Object.entries(await readReviewMediaLikes())) {
+        if (!key.startsWith(prefix) || !Array.isArray(accountIds)) continue;
+        likes[key.slice(prefix.length)] = {
+          count: accountIds.length,
+          liked: Boolean(accountId) && accountIds.includes(accountId),
+        };
+      }
+      sendJson(response, 200, { productId, likes });
+      return;
+    }
+
+    if (request.method !== "POST") {
+      sendJson(response, 405, { message: "Method not allowed." });
+      return;
+    }
+
+    if (!accountId) {
+      sendJson(response, 401, { message: "Sign in to like review photos and videos." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const productId = String(payload?.productId ?? "").trim();
+    const reviewId = String(payload?.reviewId ?? "").trim();
+    const mediaUrl = String(payload?.mediaUrl ?? payload?.url ?? "").trim();
+    if (!productId || !reviewId || !mediaUrl) {
+      sendJson(response, 400, { message: "Product, review, and media are required." });
+      return;
+    }
+
+    const key = getReviewMediaLikeKey(productId, reviewId, mediaUrl);
+    const result = await enqueueSerializedMutation(REVIEW_MEDIA_LIKES_FILE, async () => {
+      const likes = await readReviewMediaLikes();
+      const accountIds = new Set(Array.isArray(likes[key]) ? likes[key] : []);
+      const shouldLike = typeof payload?.liked === "boolean"
+        ? payload.liked
+        : !accountIds.has(accountId);
+      if (shouldLike) {
+        accountIds.add(accountId);
+      } else {
+        accountIds.delete(accountId);
+      }
+      if (accountIds.size) {
+        likes[key] = [...accountIds];
+      } else {
+        delete likes[key];
+      }
+      await writeJsonFileAtomically(REVIEW_MEDIA_LIKES_FILE, likes);
+      return { liked: shouldLike, count: accountIds.size };
+    });
+
+    sendJson(response, 200, { productId, reviewId, mediaUrl, ...result });
+  } catch (error) {
+    sendJson(response, 400, {
+      message: error instanceof Error ? error.message : "Unable to update like.",
+    });
+  }
+}
+
 function summarizeProductReviewAggregatesForProducts(products, aggregates) {
   const summary = createEmptyProductReviewAggregate();
   const seenProductIds = new Set();
@@ -7063,6 +9142,10 @@ async function logActivitySafely(entry, request = null) {
   }
 
   try {
+    const settings = await getPlatformSettings();
+    if (isPlatformSettingBlocking(settings, "auditLogging")) {
+      return;
+    }
     const normalizedEntry = { ...entry };
     if (!String(normalizedEntry.ipAddress ?? "").trim()) {
       const requestIpAddress = getRequestIpAddress(request);
@@ -7074,6 +9157,11 @@ async function logActivitySafely(entry, request = null) {
     const activityLog = await readActivityLog();
     activityLog.unshift(normalizedEntry);
     await writeActivityLog(activityLog.slice(0, MAX_ACTIVITY_ENTRIES));
+
+    // Mirror Super Admin ops into the SA-only activity feed (system management).
+    if (isSuperAdminSystemActivityEntry(normalizedEntry)) {
+      await persistSuperAdminActivity(normalizedEntry);
+    }
   } catch (error) {
     console.error("Unable to record activity log:", error);
   }
@@ -7095,12 +9183,234 @@ function appendPersistentNotifications(notifications, notification) {
   return next.slice(0, MAX_SUPER_ADMIN_NOTIFICATIONS);
 }
 
+/**
+ * Super Admin inbox policy (marketplace ops only).
+ * - KEEP: incoming seller/buyer work SA must act on (onboarding, listings, KYC upload, reports, feedback).
+ * - DROP: private chats, promo noise, and Super Admin/system echoes of actions SA already took
+ *   (approve, reject, ban, restrict, warn, test mode). Those belong in Activity only.
+ *   Seller inboxes still receive those SA actions.
+ */
+const SA_INBOX_PRIVACY_BLOCKED_TYPES = new Set([
+  "chat",
+  "chat-message",
+  "dm",
+  "direct-message",
+  "conversation",
+  "order-chat",
+  "buyer-seller-chat",
+  "buyer-seller-message",
+  "message",
+  "messages",
+  "thread-message",
+  "inbox-message",
+  "employee-password-changed",
+  "employee-chat",
+]);
+
+const SA_INBOX_ECHO_TYPES = new Set([
+  "product-approved",
+  "product-rejected",
+  "product-unrejected",
+  "listing-restriction",
+  "listing-unrestriction",
+  "product-revision",
+  "company-document-approved",
+  "company-document-rejected",
+  "seller-pin-reset-required",
+  "seller-onboarding-rejected",
+  "seller-activated",
+  "seller-deactivated",
+  "seller-restriction",
+  "seller-banned",
+  "seller-banned-listings",
+  "seller-unbanned",
+  "seller-unrestricted",
+  "seller-workspace-cleared",
+  "user-banned-cascade",
+  "user-restricted-cascade",
+  "platform-test-mode-on",
+  "platform-test-mode-off",
+  "test-mode-buyer-deleted",
+  "platform-catalog",
+  "store-type-catalog",
+  "company-report-reviewed",
+  "company-report-dismiss",
+  "company-report-uphold",
+  "company-report-warn",
+  "listing-report-reviewed",
+  "listing-report-dismiss",
+  "listing-report-uphold",
+  "listing-report-restrict",
+]);
+
+const SA_INBOX_NOISE_TYPES = new Set([
+  "seller-voucher-created",
+  "seller-voucher-deleted",
+  "seller-flash-deal-submitted",
+  "seller-flash-deal-cancelled",
+  "seller-flash-deal-ended",
+  "flash-deal-submitted",
+  "seller-profile-updated",
+]);
+
+const SA_INBOX_ALLOWED_TYPES = new Set([
+  "welcome",
+  "seller-onboarding-started",
+  "seller-onboarding-pending-review",
+  "seller-onboarding-activated",
+  "seller-onboarding-withdrawn",
+  "company-document-uploaded",
+  "product-submitted",
+  "product-created",
+  "product-resubmitted",
+  "product-revision-resubmitted",
+  "product-deleted",
+  "seller-account-deletion",
+  "seller-account-deletion-canceled",
+  "seller-account-deleted",
+  "seller-pin-reset-completed",
+  "seller-feedback",
+  "user-feedback",
+  "company-buyer-report",
+  "company-needs-warning",
+  "listing-buyer-report",
+  "listing-needs-restriction",
+  "seller-buyer-ticket",
+  "seller-review-report",
+  "seller-flash-campaign-registration",
+  "rider-registration",
+  "rider-documents-uploaded",
+  "switch-rider-dispatch-stuck",
+  "switch-rider-incident",
+  "switch-rider-delivery-failed",
+  "switch-rider-seller-cancelled",
+  "switch-rider-rating-flagged",
+  "switch-rider-remittance-submitted",
+]);
+
+const SA_INBOX_CATEGORY_BY_TYPE = Object.freeze({
+  "rider-registration": "riders",
+  "rider-documents-uploaded": "riders",
+  "switch-rider-dispatch-stuck": "riders",
+  "switch-rider-incident": "riders",
+  "switch-rider-delivery-failed": "riders",
+  "switch-rider-seller-cancelled": "riders",
+  "switch-rider-rating-flagged": "riders",
+  "switch-rider-remittance-submitted": "riders",
+  welcome: "system",
+  "seller-onboarding-started": "sellers",
+  "seller-onboarding-pending-review": "sellers",
+  "seller-onboarding-activated": "sellers",
+  "seller-onboarding-withdrawn": "sellers",
+  "company-document-uploaded": "sellers",
+  "product-submitted": "listings",
+  "product-created": "listings",
+  "product-resubmitted": "listings",
+  "product-revision-resubmitted": "listings",
+  "product-deleted": "listings",
+  "seller-account-deletion": "sellers",
+  "seller-account-deletion-canceled": "sellers",
+  "seller-account-deleted": "sellers",
+  "seller-pin-reset-completed": "security",
+  "seller-feedback": "feedback",
+  "user-feedback": "feedback",
+  "company-buyer-report": "sellers",
+  "company-needs-warning": "sellers",
+  "listing-buyer-report": "listings",
+  "listing-needs-restriction": "listings",
+  "seller-buyer-ticket": "security",
+  "seller-review-report": "security",
+  "seller-flash-campaign-registration": "listings",
+});
+
+function normalizeSuperAdminNotificationType(type) {
+  return String(type || "notice").trim().toLowerCase() || "notice";
+}
+
+function getSuperAdminNotificationCategory(type) {
+  const normalized = normalizeSuperAdminNotificationType(type);
+  return SA_INBOX_CATEGORY_BY_TYPE[normalized] || "system";
+}
+
+function isSuperAdminSelfActionNotification(notification) {
+  const type = normalizeSuperAdminNotificationType(notification?.type);
+  if (type === "welcome") {
+    return false;
+  }
+  const createdBy = String(notification?.createdBy || "").trim().toLowerCase();
+  if (!createdBy) {
+    return false;
+  }
+  const saName = String(SUPER_ADMIN_USERNAME || "super-admin").trim().toLowerCase();
+  return (
+    createdBy === saName
+    || createdBy === "super-admin"
+    || createdBy === "superadmin"
+    || createdBy === "super admin"
+    || createdBy === "root"
+  );
+}
+
+function isSuperAdminInboxEligible(notification) {
+  if (!notification || typeof notification !== "object") {
+    return false;
+  }
+  const audience = String(notification.audience || "super_admin").trim().toLowerCase();
+  if (audience && audience !== "super_admin") {
+    return false;
+  }
+  const type = normalizeSuperAdminNotificationType(notification.type);
+  if (SA_INBOX_PRIVACY_BLOCKED_TYPES.has(type)) {
+    return false;
+  }
+  if (SA_INBOX_ECHO_TYPES.has(type) || SA_INBOX_NOISE_TYPES.has(type)) {
+    return false;
+  }
+  if (isSuperAdminSelfActionNotification(notification)) {
+    return false;
+  }
+  if (!SA_INBOX_ALLOWED_TYPES.has(type)) {
+    return false;
+  }
+  // Seller-deleted listings stay; SA-deleted listings are suppressed at the fan-out call site.
+  return true;
+}
+
+function filterSuperAdminInboxNotifications(notifications) {
+  const list = Array.isArray(notifications) ? notifications : [];
+  return list
+    .filter(isSuperAdminInboxEligible)
+    .map((entry) => {
+      const type = normalizeSuperAdminNotificationType(entry?.type);
+      const category = String(entry?.category || getSuperAdminNotificationCategory(type)).trim() || "system";
+      return {
+        ...entry,
+        type,
+        category,
+        priority: String(entry?.priority || (category === "security" ? "high" : "normal")).trim() || "normal",
+      };
+    });
+}
+
 function createPersistentLinkedNotification(input = {}) {
   const now = String(input.createdAt || new Date().toISOString());
-  const type = String(input.type || "notice").trim().toLowerCase() || "notice";
+  const type = normalizeSuperAdminNotificationType(input.type);
+  const category = String(input.category || getSuperAdminNotificationCategory(type)).trim() || "system";
+  const priority = String(
+    input.priority || (category === "security" ? "high" : "normal"),
+  )
+    .trim()
+    .toLowerCase() || "normal";
+  const actorTypeRaw = String(input.actorType || "").trim().toLowerCase();
+  const actorType =
+    actorTypeRaw === "user" || actorTypeRaw === "company" || actorTypeRaw === "system"
+      ? actorTypeRaw
+      : "";
   return {
     id: String(input.id || `sa-notif-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`).trim(),
     type,
+    category,
+    priority,
     audience: String(input.audience || "super_admin").trim() || "super_admin",
     title: String(input.title || "Notification").replace(/\s+/g, " ").trim().slice(0, 160),
     reason: String(input.reason || "").replace(/\s+/g, " ").trim().slice(0, 500),
@@ -7111,12 +9421,104 @@ function createPersistentLinkedNotification(input = {}) {
     productName: String(input.productName || "").trim(),
     feedbackId: String(input.feedbackId || "").trim(),
     adminId: String(input.adminId || "").trim(),
+    companyId: String(input.companyId || "").trim(),
     companyName: String(input.companyName || "").trim(),
     storeName: String(input.storeName || "").trim(),
     businessName: String(input.businessName || "").trim(),
+    companyPictureUrl: String(input.companyPictureUrl || "").trim(),
+    actorType,
+    userId: String(input.userId || "").trim(),
+    username: String(input.username || "").trim(),
+    userDisplayName: String(input.userDisplayName || "").trim(),
+    profileImageUrl: String(input.profileImageUrl || "").trim(),
     createdBy: String(input.createdBy || "").trim(),
     targetUrl: String(input.targetUrl || "").trim(),
     createdAt: now,
+  };
+}
+
+function formatSaNotificationUserLabel(account = {}, fallback = "User") {
+  const fullName = [account?.firstName, account?.lastName].filter(Boolean).join(" ").trim();
+  return String(
+    account?.username
+    || account?.userDisplayName
+    || account?.displayName
+    || account?.fullName
+    || fullName
+    || (String(account?.email || "").includes("@")
+      ? String(account.email).split("@")[0]
+      : account?.email)
+    || fallback,
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160) || fallback;
+}
+
+async function resolveSaNotificationUserActor({
+  accountId = "",
+  account = null,
+  payload = {},
+  fallback = "User",
+} = {}) {
+  const id = String(
+    accountId
+    || account?.id
+    || account?.accountId
+    || payload?.accountId
+    || "",
+  ).trim();
+  let record = account && typeof account === "object" ? { ...account } : {};
+  if (id && typeof findCustomerById === "function") {
+    try {
+      const customer = await findCustomerById(id);
+      if (customer && typeof customer === "object") {
+        record = { ...record, ...customer };
+      }
+    } catch (_) {
+      // Keep session/hint fields when customer lookup is unavailable.
+    }
+  }
+  const username = formatSaNotificationUserLabel(record, fallback);
+  return {
+    actorType: "user",
+    userId: id || String(record?.id || record?.accountId || "").trim(),
+    username,
+    userDisplayName: username,
+    profileImageUrl: String(
+      record?.profileImageUrl
+      || record?.avatarUrl
+      || record?.photoUrl
+      || "",
+    ).trim(),
+    createdBy: username,
+  };
+}
+
+function resolveSaNotificationCompanyActor({
+  adminId = "",
+  companyId = "",
+  companyName = "",
+  storeName = "",
+  businessName = "",
+  companyPictureUrl = "",
+  createdBy = "",
+} = {}) {
+  const name = String(
+    companyName || storeName || businessName || createdBy || "Company",
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160) || "Company";
+  return {
+    actorType: "company",
+    adminId: String(adminId || "").trim(),
+    companyId: String(companyId || "").trim(),
+    companyName: name,
+    storeName: String(storeName || name).trim() || name,
+    businessName: String(businessName || name).trim() || name,
+    companyPictureUrl: String(companyPictureUrl || "").trim(),
+    createdBy: name,
   };
 }
 
@@ -7141,7 +9543,7 @@ function createSuperAdminWelcomeNotification(createdAt = new Date().toISOString(
     title: "Welcome to Switch Super Admin",
     reason: "Workspace ready",
     message:
-      "Your command center is ready. Seller onboarding, listing reviews, account actions, and platform alerts will land here.",
+      "Marketplace command center ready. Seller onboarding, listing reviews, KYC, bans, and platform feedback land here — private buyer↔seller chats stay out.",
     targetUrl: "/super_admin.html#dashboard",
     createdAt,
     createdBy: SUPER_ADMIN_USERNAME,
@@ -7175,9 +9577,22 @@ async function persistSuperAdminNotification(notification) {
   if (!notification) {
     return null;
   }
+  const shaped =
+    notification && typeof notification === "object" && notification.type
+      ? {
+          ...notification,
+          type: normalizeSuperAdminNotificationType(notification.type),
+          category:
+            String(notification.category || getSuperAdminNotificationCategory(notification.type)).trim() ||
+            "system",
+        }
+      : notification;
+  if (!isSuperAdminInboxEligible(shaped)) {
+    return null;
+  }
   const notifications = await readSuperAdminNotifications();
-  await writeSuperAdminNotifications(appendPersistentNotifications(notifications, notification));
-  return notification;
+  await writeSuperAdminNotifications(appendPersistentNotifications(notifications, shaped));
+  return shaped;
 }
 
 function assignSellerAdminNotification(account, notification) {
@@ -7457,6 +9872,103 @@ async function deactivateDeletedSellerWorkspace(adminId, now) {
   }
 }
 
+async function deactivateBannedSellerListings(adminId, {
+  companyId = "",
+  now = new Date().toISOString(),
+} = {}) {
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    return { changed: 0 };
+  }
+
+  try {
+    const products = await readProducts();
+    const normalizedCompanyId = String(companyId || "").trim();
+    let changed = 0;
+    const nextProducts = products.map((product) => {
+      if (!isRecordInAdminScope(product, normalizedAdminId)) {
+        return product;
+      }
+      const productCompanyId = String(product?.companyId || product?.company_id || "").trim();
+      if (normalizedCompanyId && productCompanyId && productCompanyId !== normalizedCompanyId) {
+        return product;
+      }
+      const alreadyHidden =
+        product?.isActive === false &&
+        (product?.hiddenWithCompanyBan === true || product?.companyIsBanned === true);
+      if (alreadyHidden) {
+        return product;
+      }
+      changed += 1;
+      return {
+        ...product,
+        isActive: false,
+        hiddenWithCompanyBan: true,
+        companyIsBanned: true,
+        companyAccountState: "banned",
+        companyBannedAt: now,
+        companyBannedCompanyId: normalizedCompanyId || productCompanyId || "",
+        updatedAt: now,
+      };
+    });
+    if (changed > 0) {
+      await writeProducts(nextProducts);
+    }
+    return { changed };
+  } catch (error) {
+    console.error("Unable to hide listings for banned seller company:", error);
+    return { changed: 0 };
+  }
+}
+
+async function reconcileBannedCompanyLiveListings(accounts = []) {
+  const bannedAdmins = (Array.isArray(accounts) ? accounts : []).filter(
+    (account) => isAdminAccount(account) && isSellerAccountRecordBanned(account),
+  );
+  if (!bannedAdmins.length) {
+    return { changed: 0 };
+  }
+
+  try {
+    const products = await readProducts();
+    const now = new Date().toISOString();
+    let changed = 0;
+    const nextProducts = products.map((product) => {
+      const adminId = getRecordAdminId(product, product?.adminId || "");
+      const account = findAdminAccountByScopeId(bannedAdmins, adminId);
+      if (!account || !isProductBannedByCompany(product, [account])) {
+        return product;
+      }
+      const alreadyHidden =
+        product?.isActive === false &&
+        (product?.hiddenWithCompanyBan === true || product?.companyIsBanned === true);
+      if (alreadyHidden) {
+        return product;
+      }
+      changed += 1;
+      return {
+        ...product,
+        isActive: false,
+        hiddenWithCompanyBan: true,
+        companyIsBanned: true,
+        companyAccountState: "banned",
+        companyBannedAt: now,
+        companyBannedCompanyId: String(
+          product?.companyId || product?.company_id || account?.companyId || "",
+        ).trim(),
+        updatedAt: now,
+      };
+    });
+    if (changed > 0) {
+      await writeProducts(nextProducts);
+    }
+    return { changed };
+  } catch (error) {
+    console.error("Unable to reconcile banned company live listings:", error);
+    return { changed: 0 };
+  }
+}
+
 let sellerDeletionSweepPromise = null;
 
 async function processDueSellerAccountDeletions() {
@@ -7519,10 +10031,11 @@ async function processDueSellerAccountDeletions() {
           reason: "30-day deletion period ended",
           message: `${companyName} completed the 30-day deletion period and the seller account is now deleted.`,
           adminId,
-          companyName,
-          storeName: companyName,
-          businessName: companyName,
-          createdBy: companyName,
+          ...resolveSaNotificationCompanyActor({
+            adminId,
+            companyName,
+            createdBy: companyName,
+          }),
           targetUrl: "/super_admin.html#companies",
           createdAt: now,
         }),
@@ -7546,12 +10059,31 @@ function setCorsHeaders(response, request = corsRequestByResponse.get(response))
   applyCorsHeaders(response, request, CORS_EXTRA_ORIGINS);
 }
 
+const JSON_GZIP_MIN_BYTES = 1024;
+
 function sendJson(response, statusCode, body) {
   setCorsHeaders(response);
+  const json = JSON.stringify(body);
+  const acceptEncoding = String(response.req?.headers?.["accept-encoding"] || "");
+  if (
+    typeof json === "string"
+    && json.length >= JSON_GZIP_MIN_BYTES
+    && /\bgzip\b/i.test(acceptEncoding)
+  ) {
+    const compressed = zlib.gzipSync(json, { level: 5 });
+    response.writeHead(statusCode, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Encoding": "gzip",
+      "Content-Length": compressed.length,
+      Vary: "Accept-Encoding",
+    });
+    response.end(compressed);
+    return;
+  }
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
   });
-  response.end(JSON.stringify(body));
+  response.end(json);
 }
 
 function sendText(response, statusCode, body) {
@@ -7572,7 +10104,15 @@ function sendRateLimited(response, result = {}) {
   });
 }
 
-function beginLoginAttempt(request, response, identifier) {
+async function beginLoginAttempt(request, response, identifier) {
+  const settings = await getPlatformSettings();
+  if (isPlatformSettingBlocking(settings, "loginRateLimit")) {
+    return {
+      ip: getRequestIpAddress(request) || "unknown",
+      identifier: String(identifier ?? "").trim().toLowerCase() || "unknown",
+      skippedRateLimit: true,
+    };
+  }
   const ctx = {
     ip: getRequestIpAddress(request) || "unknown",
     identifier: String(identifier ?? "").trim().toLowerCase() || "unknown",
@@ -7618,6 +10158,9 @@ function getEndpointRateLimitKind(pathname) {
   }
   if (pathValue === "/api/analytics/events") {
     return "analytics";
+  }
+  if (pathValue === "/api/search-events") {
+    return "search-events";
   }
   if (
     pathValue.endsWith("/ai-reply")
@@ -7758,9 +10301,12 @@ function parseRawRequestBody(request, maxBytes = MAX_JSON_BODY_BYTES) {
   });
 }
 
-function createHttpError(message, statusCode = 400) {
+function createHttpError(message, statusCode = 400, extras = {}) {
   const error = new Error(message);
   error.statusCode = statusCode;
+  if (extras && typeof extras === "object") {
+    Object.assign(error, extras);
+  }
   return error;
 }
 
@@ -7780,6 +10326,17 @@ function getRequestOrigin(request) {
 function sanitizeCompanyProfileData(profileData) {
   const data = profileData && typeof profileData === "object" ? { ...profileData } : {};
   delete data.sellerPinHash;
+  delete data.companyPasswordHash;
+  delete data.pinForgotTokenHash;
+  delete data.pinForgotUnlockHash;
+  if (data.payoutBank && typeof data.payoutBank === "object") {
+    const number = String(data.payoutBank.accountNumber || "").replace(/\D/g, "");
+    data.payoutBank = {
+      bankName: String(data.payoutBank.bankName || "").trim(),
+      accountName: String(data.payoutBank.accountName || "").trim(),
+      accountNumberMasked: number.length >= 4 ? `•••• ${number.slice(-4)}` : "",
+    };
+  }
   return data;
 }
 
@@ -7796,7 +10353,7 @@ function serializeUnifiedSessionEntry(entry) {
     activeCompany: entry.activeCompany
       ? {
           id: entry.activeCompany.id,
-          companyCode: entry.activeCompany.companyCode || "",
+          companyCode: "",
           type: entry.activeCompany.type || "",
           status: entry.activeCompany.status || "",
           name: entry.activeCompany.name || "",
@@ -7828,7 +10385,7 @@ function serializeUnifiedSessionEntry(entry) {
           company: membership.company
             ? {
                 id: membership.company.id,
-                companyCode: membership.company.companyCode || "",
+                companyCode: "",
                 type: membership.company.type || "",
                 status: membership.company.status || "",
                 name: membership.company.name || "",
@@ -7877,14 +10434,83 @@ async function requireUnifiedSessionEntry(request, requestUrl, payload = null) {
 
   const identity = getUnifiedSessionRequestIdentity(request, requestUrl, payload);
   if (!identity.accountId && !identity.email) {
-    throw createHttpError("A signed-in account session is required.", 401);
+    throw createHttpError("A signed-in account session is required.", 401, {
+      code: "APP_SESSION_INVALID",
+    });
   }
 
   const entry = await resolveUnifiedSession(identity);
   if (!entry) {
-    throw createHttpError("Unified account not found.", 404);
+    throw createHttpError("Unified account not found.", 401, {
+      code: "ACCOUNT_NOT_FOUND",
+    });
   }
+
+  assertUnifiedAccountMayRemainSignedIn(entry.account);
   return entry;
+}
+
+function assertUnifiedAccountMayRemainSignedIn(account) {
+  const status = getBuyerAccountStatus(account);
+  if (status === "deleted") {
+    throw createHttpError("This account no longer exists. Please sign in again.", 401, {
+      code: "ACCOUNT_NOT_FOUND",
+    });
+  }
+  if (status === "banned") {
+    const banReason = String(account?.banReason || account?.lastBanReason || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    throw createHttpError(
+      banReason
+        ? `This account has been banned by Super Admin. Reason: ${banReason}`
+        : "This account has been banned by Super Admin.",
+      403,
+      { code: "ACCOUNT_BANNED", accountStatus: "banned" },
+    );
+  }
+  if (status === "restricted") {
+    throw createHttpError(
+      "This account has been restricted by Super Admin. Please sign in again.",
+      403,
+      { code: "ACCOUNT_RESTRICTED", accountStatus: "restricted" },
+    );
+  }
+  if (status === "suspended" || status === "locked") {
+    throw createHttpError(
+      "This account is locked or suspended. Please sign in again.",
+      403,
+      {
+        code: status === "locked" ? "ACCOUNT_LOCKED" : "ACCOUNT_SUSPENDED",
+        accountStatus: status,
+      },
+    );
+  }
+}
+
+async function forceBuyerRemoteSignOut(account, now = new Date().toISOString()) {
+  if (!account || typeof account !== "object") {
+    return account;
+  }
+  Object.assign(account, {
+    isOnline: false,
+    online: false,
+    loggedIn: false,
+    isLoggedIn: false,
+    sessionActive: false,
+    presenceStatus: "offline",
+    forceLogoutAt: now,
+    sessionVersion: Math.max(0, Number(account.sessionVersion) || 0) + 1,
+  });
+  try {
+    const accountId = String(account.id ?? account.accountId ?? "").trim();
+    if (accountId && typeof accountDevicesApi?.revokeAllForAccount === "function") {
+      await accountDevicesApi.revokeAllForAccount(accountId);
+    }
+  } catch (deviceError) {
+    console.warn("Unable to revoke buyer device sessions for forced sign-out.", deviceError);
+  }
+  return account;
 }
 
 function parseBinaryRequestBody(
@@ -8522,6 +11148,16 @@ function isAdminTemporaryRestrictionExpired(account) {
 }
 
 function getAdminAccountRestrictionMessage(account) {
+  const enforcementScope = String(account?.enforcementScope || "").trim().toLowerCase();
+  // Company-scoped bans/restricts must not block the user login account.
+  if (enforcementScope === "company") {
+    const deletionStatusOnly = getSellerAccountDeletionStatus(account);
+    if (deletionStatusOnly === "deleted") {
+      return "This seller account has been deleted.";
+    }
+    return "";
+  }
+
   const status = String(account?.status ?? account?.accountStatus ?? account?.accountState ?? "")
     .trim()
     .toLowerCase();
@@ -8560,6 +11196,170 @@ function getAdminAccountRestrictionMessage(account) {
   }
 
   return "";
+}
+
+function getSellerCompanyWorkspaceBlockMessage(company, seller = null) {
+  const gate = resolveSellerWorkspaceGate(company, seller);
+  if (!gate.workspaceBlocked) {
+    return "";
+  }
+  if (gate.workspaceStatus === "banned") {
+    return gate.banReason
+      ? `This company is banned by Super Admin. Seller dashboard access is blocked. Reason: ${gate.banReason}`
+      : "This company is banned by Super Admin. Seller dashboard access is blocked.";
+  }
+  if (gate.workspaceStatus === "deactivated" || gate.workspaceStatus === "suspended") {
+    return "This company is deactivated. Seller dashboard access is blocked.";
+  }
+  if (gate.workspaceStatus === "pending_review" || gate.workspaceStatus === "pending_payment") {
+    return "This company is still under Super Admin review. Seller dashboard access is blocked.";
+  }
+  if (seller) {
+    const accountMessage = getAdminAccountRestrictionMessage(seller);
+    if (accountMessage) {
+      return accountMessage;
+    }
+  }
+  return "Seller dashboard access is blocked for this company.";
+}
+
+function resolveSellerWorkspaceGate(company, seller = null) {
+  const companyStatus = String(
+    company?.status
+      ?? company?.accountState
+      ?? company?.enforcementStatus
+      ?? company?.membershipStatus
+      ?? "",
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  const profile = company?.profileData && typeof company.profileData === "object"
+    ? company.profileData
+    : (company?.profile_data && typeof company.profile_data === "object"
+      ? company.profile_data
+      : {});
+  const profileEnforcement = String(
+    profile.lastEnforcementStatus || "",
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  const sellerStatus = String(
+    seller?.status
+      ?? seller?.accountStatus
+      ?? seller?.adminStatus
+      ?? "",
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  const sellerEnforcementScope = String(seller?.enforcementScope || "").trim().toLowerCase();
+  // User-level bans block every company workspace. Company-scoped bans only
+  // block via the company record itself (companyBanned below).
+  const sellerBanned =
+    sellerEnforcementScope !== "company"
+    && (
+      seller?.isBanned === true
+      || seller?.banned === true
+      || sellerStatus === "banned"
+      || sellerStatus.includes("ban")
+    );
+  // Live company ban is driven by status / lastEnforcementStatus — not by a
+  // leftover profile.banReason after Super Admin unban (jsonb merge used to keep it).
+  const companyStatusIsBanned =
+    companyStatus === "banned"
+    || (companyStatus.includes("ban") && !companyStatus.includes("unban"));
+  const profileEnforcementIsBanned =
+    profileEnforcement === "banned"
+    || (profileEnforcement.includes("ban") && !profileEnforcement.includes("unban"));
+  const companyBanned = companyStatusIsBanned || profileEnforcementIsBanned;
+
+  if (companyBanned || sellerBanned) {
+    const banReason = String(
+      profile.banReason
+        || profile.lastEnforcementReason
+        || seller?.banReason
+        || "",
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const banDescription = String(
+      profile.banDescription
+        || profile.lastEnforcementDescription
+        || seller?.banDescription
+        || seller?.banDetails
+        || "",
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    return {
+      workspaceBlocked: true,
+      workspaceStatus: "banned",
+      banReason,
+      banDescription,
+    };
+  }
+
+  if (
+    companyStatus === "pending_payment"
+    || companyStatus.includes("pending_payment")
+  ) {
+    return {
+      workspaceBlocked: true,
+      workspaceStatus: "pending_payment",
+      banReason: "",
+      banDescription: "",
+    };
+  }
+
+  if (
+    companyStatus === "pending_review"
+    || companyStatus.includes("pending")
+    || companyStatus.includes("review")
+    || companyStatus === "draft"
+    || String(company?.subscriptionStatus || "").trim().toLowerCase() === "pending_review"
+    || String(company?.subscriptionStatus || "").trim().toLowerCase() === "pending_payment"
+  ) {
+    const sub = String(company?.subscriptionStatus || "").trim().toLowerCase();
+    return {
+      workspaceBlocked: true,
+      workspaceStatus: sub === "pending_payment" ? "pending_payment" : "pending_review",
+      banReason: "",
+      banDescription: "",
+    };
+  }
+
+  if (
+    companyStatus === "deactivated"
+    || companyStatus === "inactive"
+    || companyStatus === "deleted"
+    || profileEnforcement === "deactivated"
+    || sellerStatus === "deactivated"
+  ) {
+    return {
+      workspaceBlocked: true,
+      workspaceStatus: "deactivated",
+      banReason: "",
+      banDescription: "",
+    };
+  }
+
+  if (sellerStatus === "suspended" || sellerStatus.includes("suspend")) {
+    return {
+      workspaceBlocked: true,
+      workspaceStatus: "suspended",
+      banReason: "",
+      banDescription: "",
+    };
+  }
+
+  return {
+    workspaceBlocked: false,
+    workspaceStatus: "active",
+    banReason: "",
+    banDescription: "",
+  };
 }
 
 function createAdminAccountId(input) {
@@ -8604,7 +11404,9 @@ function normalizeAdminPaymentCardMetadata(value) {
 
 function normalizeAdminAccountRecord(input, existingAccount = null) {
   const email = String(input.email ?? input.registerEmail ?? "").trim().toLowerCase();
-  const password = String(input.password ?? "").trim();
+  const passwordFromInput = String(input.password ?? "").trim();
+  const existingPassword = String(existingAccount?.password ?? "").trim();
+  const password = passwordFromInput || existingPassword;
   const storeName = String(
     input.companyName ??
       input.storeName ??
@@ -8633,6 +11435,19 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
   const paymentCard = hasPaymentCardInput
     ? normalizeAdminPaymentCardMetadata(input.paymentCard)
     : normalizeAdminPaymentCardMetadata(existingAccount?.paymentCard);
+  const googleProfile =
+    input.googleProfile && typeof input.googleProfile === "object"
+      ? input.googleProfile
+      : existingAccount?.googleProfile && typeof existingAccount.googleProfile === "object"
+        ? existingAccount.googleProfile
+        : null;
+  const isGoogleLinked = Boolean(
+    googleProfile ||
+      String(input.authProvider ?? existingAccount?.authProvider ?? "").trim().toLowerCase() === "google" ||
+      String(input.source ?? existingAccount?.source ?? "").trim().toLowerCase() === "google",
+  );
+  const isSettingNewPlainPassword =
+    Boolean(passwordFromInput) && !looksLikeBcryptHash(passwordFromInput);
 
   if (storeName.length < 2) {
     throw new Error("Company name must be at least 2 characters long.");
@@ -8642,7 +11457,18 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
     throw new Error("Please enter a valid admin email address.");
   }
 
-  if (password.length < 6) {
+  // Profile updates: never block Save Changes on password.
+  // Only enforce length when a new plaintext password is explicitly provided.
+  if (isSettingNewPlainPassword && passwordFromInput.length < 6) {
+    throw new Error("Admin password must be at least 6 characters long.");
+  }
+  if (existingAccount) {
+    // Keep existing hash/empty Google password as-is during profile/picture updates.
+  } else if (
+    !looksLikeBcryptHash(password) &&
+    password.length < 6 &&
+    !isGoogleLinked
+  ) {
     throw new Error("Admin password must be at least 6 characters long.");
   }
 
@@ -8694,12 +11520,7 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
       ? String(input.verificationChannel ?? existingAccount?.verificationChannel).trim().toLowerCase()
       : "",
     verificationToken: String(input.verificationToken ?? "").trim(),
-    googleProfile:
-      input.googleProfile && typeof input.googleProfile === "object"
-        ? input.googleProfile
-        : existingAccount?.googleProfile && typeof existingAccount.googleProfile === "object"
-          ? existingAccount.googleProfile
-          : null,
+    googleProfile,
     paymentCard,
     paymentCardSkipped: Object.prototype.hasOwnProperty.call(input, "paymentCardSkipped")
       ? input.paymentCardSkipped === true
@@ -8723,13 +11544,73 @@ function normalizeAdminAccountRecord(input, existingAccount = null) {
         existingAccount?.profileImageUrl ??
         "",
     ).trim(),
+    companyPictureUrl: String(
+      input.companyPictureUrl ??
+        input.businessLogoUrl ??
+        input.logoUrl ??
+        input.profileImageUrl ??
+        existingAccount?.companyPictureUrl ??
+        existingAccount?.businessLogoUrl ??
+        existingAccount?.logoUrl ??
+        existingAccount?.profileImageUrl ??
+        "",
+    ).trim(),
+    businessLogoUrl: String(
+      input.businessLogoUrl ??
+        input.companyPictureUrl ??
+        input.logoUrl ??
+        input.profileImageUrl ??
+        existingAccount?.businessLogoUrl ??
+        existingAccount?.companyPictureUrl ??
+        existingAccount?.logoUrl ??
+        existingAccount?.profileImageUrl ??
+        "",
+    ).trim(),
+    logoUrl: String(
+      input.logoUrl ??
+        input.companyPictureUrl ??
+        input.businessLogoUrl ??
+        input.profileImageUrl ??
+        existingAccount?.logoUrl ??
+        existingAccount?.companyPictureUrl ??
+        existingAccount?.businessLogoUrl ??
+        existingAccount?.profileImageUrl ??
+        "",
+    ).trim(),
+    companyBackgroundUrl: String(
+      input.companyBackgroundUrl ??
+        input.backgroundUrl ??
+        input.coverImageUrl ??
+        existingAccount?.companyBackgroundUrl ??
+        existingAccount?.backgroundUrl ??
+        existingAccount?.coverImageUrl ??
+        "",
+    ).trim(),
+    backgroundUrl: String(
+      input.backgroundUrl ??
+        input.companyBackgroundUrl ??
+        input.coverImageUrl ??
+        existingAccount?.backgroundUrl ??
+        existingAccount?.companyBackgroundUrl ??
+        existingAccount?.coverImageUrl ??
+        "",
+    ).trim(),
+    coverImageUrl: String(
+      input.coverImageUrl ??
+        input.companyBackgroundUrl ??
+        input.backgroundUrl ??
+        existingAccount?.coverImageUrl ??
+        existingAccount?.companyBackgroundUrl ??
+        existingAccount?.backgroundUrl ??
+        "",
+    ).trim(),
     accessPermissions: [],
     accessPermissionGrantedAt: {},
     accessPermissionsConfigured: false,
     createdAt,
     updatedAt: now,
     passwordUpdatedAt:
-      password !== String(existingAccount?.password ?? "")
+      passwordFromInput && passwordFromInput !== existingPassword
         ? now
         : existingAccount?.passwordUpdatedAt ?? createdAt,
   };
@@ -8780,6 +11661,36 @@ function serializeAdminAccount(account, counts = null) {
   ]
     .map((value) => String(value ?? "").trim())
     .find(Boolean) || "";
+  const performanceBadge = evaluateSellerPerformanceBadge({
+    ...safeAccount,
+    counts,
+    reportSummary: safeAccount.reportSummary,
+    accountState:
+      safeAccount.accountState
+      || safeAccount.companyStatus
+      || safeAccount.companyEnforcementStatus,
+  });
+  const topSellerRanking = scoreCompanyTopSeller({
+    ...safeAccount,
+    createdAt: safeAccount.createdAt ?? safeAccount.created_at,
+    approvedAt: safeAccount.approvedAt ?? safeAccount.approved_at,
+    registeredAt: safeAccount.registeredAt ?? safeAccount.registered_at,
+    rating: counts?.rating,
+    reviews: counts?.commentCount ?? counts?.reviewCount,
+    completedOrders: counts?.completedOrders,
+    unitsSold: counts?.completedOrders,
+    cancelRate: counts?.cancelRate,
+    chats: counts?.chatThreads ?? counts?.chats,
+    timedReplies: counts?.timedReplies,
+    avgFirstResponseHours: counts?.avgFirstResponseHours,
+    openStaleConcerns: counts?.openStaleConcerns,
+    openReports: counts?.openReports,
+    needsWarning: safeAccount.reportSummary?.needsWarning === true,
+    accountState:
+      safeAccount.accountState
+      || safeAccount.companyStatus
+      || safeAccount.companyEnforcementStatus,
+  });
   return {
     ...safeAccount,
     isOnline: isPresenceOnline,
@@ -8796,12 +11707,110 @@ function serializeAdminAccount(account, counts = null) {
     storeTypeName: storeType,
     businessType: storeType,
     adminId: getRecordAdminId(safeAccount, safeAccount?.adminId || safeAccount?.id),
+    accountCode: String(safeAccount.accountCode ?? safeAccount.account_code ?? "").trim(),
+    companyId: String(safeAccount.companyId ?? safeAccount.company_id ?? "").trim(),
+    companyCode: "",
+    sellerKind: String(safeAccount.sellerKind ?? safeAccount.seller_kind ?? "").trim(),
+    planName: "Free",
+    performanceBadge,
+    legitimateBadge: performanceBadge.earned,
+    topSellerRanking,
+    countryCode: String(safeAccount.countryCode ?? safeAccount.country_code ?? "+63").trim() || "+63",
     displayName:
       [safeAccount.firstName, safeAccount.lastName].filter(Boolean).join(" ").trim() ||
       companyName ||
       String(safeAccount.email ?? "").trim() ||
       "Admin",
     ...(counts && typeof counts === "object" ? { counts } : {}),
+  };
+}
+
+function assignOfficialCompanyRanks(admins = []) {
+  const groups = new Map();
+  for (const admin of Array.isArray(admins) ? admins : []) {
+    if (admin?.topSellerRanking?.eligible !== true) {
+      continue;
+    }
+    const storeType = normalizeStoreTypeName(
+      admin?.storeType ?? admin?.storeTypeName ?? admin?.businessType,
+    ).toLowerCase();
+    if (!storeType) {
+      continue;
+    }
+    const rows = groups.get(storeType);
+    if (rows) {
+      rows.push(admin);
+    } else {
+      groups.set(storeType, [admin]);
+    }
+  }
+
+  const rankByAdminId = new Map();
+  for (const rows of groups.values()) {
+    rows
+      .slice()
+      .sort((left, right) => compareCompanyTopSellerRows(
+        {
+          score: left?.topSellerRanking?.score,
+          rating: left?.counts?.rating ?? left?.rating,
+          reviewCount: left?.counts?.commentCount ?? left?.counts?.reviewCount ?? left?.reviewCount,
+          avgFirstResponseHours: left?.counts?.avgFirstResponseHours
+            ?? left?.avgFirstResponseHours,
+          companyName: left?.companyName || left?.storeName || "",
+        },
+        {
+          score: right?.topSellerRanking?.score,
+          rating: right?.counts?.rating ?? right?.rating,
+          reviewCount: right?.counts?.commentCount ?? right?.counts?.reviewCount ?? right?.reviewCount,
+          avgFirstResponseHours: right?.counts?.avgFirstResponseHours
+            ?? right?.avgFirstResponseHours,
+          companyName: right?.companyName || right?.storeName || "",
+        },
+      ))
+      .forEach((admin, index) => {
+        const adminId = String(getRecordAdminId(admin, admin?.id) || "").trim().toLowerCase();
+        if (adminId) {
+          rankByAdminId.set(adminId, index + 1);
+        }
+      });
+  }
+
+  return (Array.isArray(admins) ? admins : []).map((admin) => {
+    const adminId = String(getRecordAdminId(admin, admin?.id) || "").trim().toLowerCase();
+    const rank = rankByAdminId.get(adminId) || 0;
+    if (rank < 1) {
+      return admin;
+    }
+    return {
+      ...admin,
+      officialRank: rank,
+      topSellerRanking: {
+        ...(admin.topSellerRanking && typeof admin.topSellerRanking === "object"
+          ? admin.topSellerRanking
+          : {}),
+        rank,
+      },
+    };
+  });
+}
+
+function applyEarnedPerformanceBadge(admin) {
+  if (!admin || typeof admin !== "object") {
+    return admin;
+  }
+  const performanceBadge = evaluateSellerPerformanceBadge({
+    ...admin,
+    counts: admin.counts,
+    reportSummary: admin.reportSummary,
+    accountState:
+      admin.accountState
+      || admin.companyStatus
+      || admin.companyEnforcementStatus,
+  });
+  return {
+    ...admin,
+    performanceBadge,
+    legitimateBadge: performanceBadge.earned,
   };
 }
 
@@ -8828,7 +11837,22 @@ function isPaidSellerPlan(planName, amount) {
   );
 }
 
-function getProductCompanyMetadataByAdminId(accounts = []) {
+function buildSellerPerformanceCountsByAdminId(sources = {}) {
+  const countsByAdminId = new Map();
+  for (const account of Array.isArray(sources.accounts) ? sources.accounts : []) {
+    if (!isAdminAccount(account)) {
+      continue;
+    }
+    const adminId = getRecordAdminId(account, account.id);
+    if (!adminId) {
+      continue;
+    }
+    countsByAdminId.set(adminId, getAdminWorkspaceCounts(adminId, sources));
+  }
+  return countsByAdminId;
+}
+
+function getProductCompanyMetadataByAdminId(accounts = [], countsByAdminId = null) {
   const metadataByAdminId = new Map();
 
   for (const account of Array.isArray(accounts) ? accounts : []) {
@@ -8836,8 +11860,9 @@ function getProductCompanyMetadataByAdminId(accounts = []) {
       continue;
     }
 
-    const serializedAccount = serializeAdminAccount(account);
-    const adminId = getRecordAdminId(serializedAccount, serializedAccount.adminId);
+    const adminId = getRecordAdminId(account, account.adminId || account.id);
+    const counts = countsByAdminId instanceof Map ? countsByAdminId.get(adminId) : null;
+    const serializedAccount = serializeAdminAccount(account, counts);
     if (!adminId) {
       continue;
     }
@@ -8868,11 +11893,35 @@ function getProductCompanyMetadataByAdminId(accounts = []) {
         ?? serializedAccount.businessType,
     );
 
-    const planName = String(serializedAccount.planName ?? "").trim() || "Free Plan";
-    const hasPaidPlan = isPaidSellerPlan(
-      planName,
-      serializedAccount.planAmount ?? serializedAccount.subscriptionAmount,
-    );
+    const planName = "Free";
+    const isLegitSeller = Boolean(serializedAccount.legitimateBadge);
+    const companyIsBanned =
+      isSellerAccountBannedForListings(serializedAccount) ||
+      isSellerAccountRecordBanned(serializedAccount);
+    const companyIsRestricted =
+      isSellerAccountRestrictedForListings(serializedAccount) ||
+      ["restricted"].includes(
+        String(
+          serializedAccount.companyStatus
+            ?? serializedAccount.companyEnforcementStatus
+            ?? serializedAccount.accountState
+            ?? "",
+        )
+          .trim()
+          .toLowerCase(),
+      );
+    const companyAccountState = companyIsBanned
+      ? "banned"
+      : companyIsRestricted
+        ? "restricted"
+        : String(
+            serializedAccount.accountState
+              ?? serializedAccount.accountStatus
+              ?? serializedAccount.status
+              ?? "active",
+          )
+            .trim()
+            .toLowerCase() || "active";
 
     metadataByAdminId.set(adminId, {
       companyName,
@@ -8881,8 +11930,13 @@ function getProductCompanyMetadataByAdminId(accounts = []) {
       storeTypeName,
       businessType: storeTypeName,
       planName,
-      hasPaidPlan,
-      isLegitSeller: hasPaidPlan,
+      hasPaidPlan: false,
+      isLegitSeller,
+      legitimateBadge: isLegitSeller,
+      performanceBadge: serializedAccount.performanceBadge || null,
+      companyAccountState,
+      companyIsBanned,
+      companyIsRestricted,
     });
   }
 
@@ -8920,15 +11974,25 @@ function attachProductCompanyMetadata(product, metadataByAdminId = new Map()) {
       ?? metadata.businessType,
   );
 
-  const hasPaidPlan = Boolean(
-    product.hasPaidPlan ??
-      product.isLegitSeller ??
-      metadata.hasPaidPlan ??
-      metadata.isLegitSeller,
+  const isLegitSeller = Boolean(
+    metadata.legitimateBadge ?? metadata.isLegitSeller,
   );
-  const planName =
-    String(product.planName ?? metadata.planName ?? "").trim() ||
-    (hasPaidPlan ? "" : "Free Plan");
+  const planName = "Free";
+  const companyIsBanned = Boolean(
+    metadata.companyIsBanned || product.companyIsBanned,
+  );
+  const companyIsRestricted = Boolean(
+    metadata.companyIsRestricted || product.companyIsRestricted,
+  );
+  const companyAccountState = String(
+    (companyIsBanned
+      ? "banned"
+      : companyIsRestricted
+        ? "restricted"
+        : (metadata.companyAccountState || product.companyAccountState || "active")),
+  )
+    .trim()
+    .toLowerCase() || "active";
 
   return {
     ...product,
@@ -8940,13 +12004,18 @@ function attachProductCompanyMetadata(product, metadataByAdminId = new Map()) {
     storeTypeName: storeTypeName || String(product.storeTypeName ?? product.storeType ?? "").trim(),
     businessType: storeTypeName || String(product.businessType ?? product.storeType ?? "").trim(),
     planName,
-    hasPaidPlan,
-    isLegitSeller: hasPaidPlan,
+    hasPaidPlan: false,
+    isLegitSeller,
+    legitimateBadge: isLegitSeller,
+    companyAccountState,
+    companyIsBanned,
+    companyIsRestricted,
+    isListingRestricted: isProductListingRestrictedForCustomers(product),
   };
 }
 
-function attachProductsCompanyMetadata(products, accounts = []) {
-  const metadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
+function attachProductsCompanyMetadata(products, accounts = [], countsByAdminId = null) {
+  const metadataByAdminId = getProductCompanyMetadataByAdminId(accounts, countsByAdminId);
   return (Array.isArray(products) ? products : []).map((product) =>
     attachProductCompanyMetadata(product, metadataByAdminId),
   );
@@ -9741,13 +12810,11 @@ async function createProductVisualSearchFingerprintMeta(product, imageUrl = null
     return null;
   }
 
-  const imagePath = resolvePublicFilePath(visualSearchImageUrl);
-  if (!imagePath) {
-    return null;
-  }
-
   try {
-    const imageBuffer = await fsPromises.readFile(imagePath);
+    const imageBuffer = await readPublicImageBuffer(visualSearchImageUrl);
+    if (!imageBuffer) {
+      return null;
+    }
     const fingerprint = await createVisualSearchFingerprint(imageBuffer);
     return createVisualSearchFingerprintMeta(fingerprint, visualSearchImageUrl);
   } catch (error) {
@@ -9879,6 +12946,21 @@ function resolvePublicFilePath(fileUrl) {
   return resolvedFilePath;
 }
 
+async function readPublicImageBuffer(fileUrl) {
+  const filePath = resolvePublicFilePath(fileUrl);
+  if (!filePath) {
+    return null;
+  }
+  try {
+    return await fsPromises.readFile(filePath);
+  } catch (error) {
+    if (path.dirname(filePath) !== path.resolve(UPLOADS_DIR)) {
+      return null;
+    }
+    return objectStorage.readUpload(path.basename(filePath));
+  }
+}
+
 function getProductVisualSearchImageUrls(product) {
   const urls = [];
   const seen = new Set();
@@ -9976,6 +13058,35 @@ function normalizeProductImageUrls(rawImageUrls, fallbackImageUrl = "") {
   }
 
   return normalizedImageUrls;
+}
+
+function normalizeUploadsRelativeProductImageUrls(rawImageUrls = []) {
+  const normalizedImageUrls = normalizeProductImageUrls(rawImageUrls);
+  const allowlistedImageUrls = [];
+  const seen = new Set();
+
+  for (const imageUrl of normalizedImageUrls) {
+    let relativePath = "";
+    try {
+      const parsedUrl = new URL(imageUrl, `http://127.0.0.1:${PORT}`);
+      relativePath = `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+    } catch (_) {
+      relativePath = imageUrl;
+    }
+
+    const trimmedPath = String(relativePath || "").trim();
+    if (!trimmedPath.startsWith("/uploads/")) {
+      continue;
+    }
+    const normalizedKey = trimmedPath.toLowerCase();
+    if (seen.has(normalizedKey)) {
+      continue;
+    }
+    seen.add(normalizedKey);
+    allowlistedImageUrls.push(trimmedPath);
+  }
+
+  return allowlistedImageUrls;
 }
 
 function normalizeProductDescriptionImageUrls(rawImageUrls, fallbackImageUrls = []) {
@@ -10689,8 +13800,8 @@ function getScanTextureBackgroundColor(data, info) {
   return createAverageColorFromSamples(samples);
 }
 
-async function createProductScanTextureBuffer(frameFilePath) {
-  const resizedImage = sharp(frameFilePath)
+async function createProductScanTextureBuffer(frameImageBuffer) {
+  const resizedImage = sharp(frameImageBuffer)
     .rotate()
     .resize({
       width: PRODUCT_MODEL_TEXTURE_MAX_SIZE,
@@ -10962,14 +14073,14 @@ async function createProductModelFromScanImages(input) {
 
   for (let index = 0; index < normalizedFrames.length; index += 1) {
     const frame = normalizedFrames[index];
-    const frameFilePath = resolvePublicFilePath(frame.imageUrl);
-    if (!frameFilePath) {
+    const frameBuffer = await readPublicImageBuffer(frame.imageUrl);
+    if (!frameBuffer) {
       throw new Error(`Invalid scan frame ${index + 1}.`);
     }
 
-    const texture = await createProductScanTextureBuffer(frameFilePath);
+    const texture = await createProductScanTextureBuffer(frameBuffer);
     const textureFileName = `${safeStem}-scan-${String(index + 1).padStart(2, "0")}-${timestamp}.png`;
-    await fsPromises.writeFile(path.join(UPLOADS_DIR, textureFileName), texture.buffer);
+    await objectStorage.saveUpload(textureFileName, texture.buffer, { contentType: "image/png" });
     textureFileNames.push(textureFileName);
     frameMetadata.push({
       width: texture.width,
@@ -10979,10 +14090,10 @@ async function createProductModelFromScanImages(input) {
 
   const gltf = createProductScanShellGltf(textureFileNames, frameMetadata);
   const modelFileName = `${safeStem}-any-shape-scan-${timestamp}.gltf`;
-  await fsPromises.writeFile(
-    path.join(UPLOADS_DIR, modelFileName),
-    `${JSON.stringify(gltf, null, 2)}\n`,
-    "utf8",
+  await objectStorage.saveUpload(
+    modelFileName,
+    Buffer.from(`${JSON.stringify(gltf, null, 2)}\n`, "utf8"),
+    { contentType: MIME_TYPES[".gltf"] || "model/gltf+json" },
   );
 
   return {
@@ -11015,14 +14126,13 @@ async function createProductModelFromFrameImages(input) {
   const frameMetadataByKey = {};
 
   for (const frame of normalizedFrames) {
-    const frameFilePath = resolvePublicFilePath(frame.imageUrl);
-    if (!frameFilePath) {
+    const frameBuffer = await readPublicImageBuffer(frame.imageUrl);
+    if (!frameBuffer) {
       throw new Error(`Invalid ${frame.key} frame image.`);
     }
 
     const textureFileName = `${safeStem}-3d-${frame.key}-${timestamp}.jpg`;
-    const textureFilePath = path.join(UPLOADS_DIR, textureFileName);
-    const frameImage = sharp(frameFilePath).rotate();
+    const frameImage = sharp(frameBuffer).rotate();
     frameMetadataByKey[frame.key] = await frameImage.metadata();
     const textureBuffer = await frameImage
       .clone()
@@ -11038,7 +14148,7 @@ async function createProductModelFromFrameImages(input) {
       })
       .toBuffer();
 
-    await fsPromises.writeFile(textureFilePath, textureBuffer);
+    await objectStorage.saveUpload(textureFileName, textureBuffer, { contentType: "image/jpeg" });
     textureFileNamesByKey[frame.key] = textureFileName;
   }
 
@@ -11051,10 +14161,10 @@ async function createProductModelFromFrameImages(input) {
       ? createTexturedProductCurvedGltf(textureFileNames, frameMetadataByKey)
       : createTexturedProductBoxGltf(textureFileNames, frameMetadataByKey);
   const modelFileName = `${safeStem}-${modelShape}-generated-3d-${timestamp}.gltf`;
-  await fsPromises.writeFile(
-    path.join(UPLOADS_DIR, modelFileName),
-    `${JSON.stringify(gltf, null, 2)}\n`,
-    "utf8",
+  await objectStorage.saveUpload(
+    modelFileName,
+    Buffer.from(`${JSON.stringify(gltf, null, 2)}\n`, "utf8"),
+    { contentType: MIME_TYPES[".gltf"] || "model/gltf+json" },
   );
 
   return {
@@ -11311,6 +14421,9 @@ function normalizeProductVariants(inputVariants, imageUrls, existingVariants = [
       addOns,
       originalPrice,
       salesPrice,
+      specifications: Array.isArray(variant?.specifications)
+        ? variant.specifications
+        : (Array.isArray(existingVariant?.specifications) ? existingVariant.specifications : []),
       quantity: "",
       stock: 0,
     };
@@ -11409,6 +14522,7 @@ function normalizeStoredProductVariants(product) {
             normalizedSalesPrice !== null && normalizedSalesPrice <= originalPrice
               ? normalizedSalesPrice
               : null,
+          specifications: Array.isArray(variant?.specifications) ? variant.specifications : [],
           quantity: "",
           stock: Math.trunc(stock),
         };
@@ -12323,6 +15437,13 @@ const PRODUCT_REVISION_BUCKET_KEYWORDS = Object.freeze({
     "laptop",
     "charger",
     "camera",
+    "aircon",
+    "air conditioner",
+    "airconditioning",
+    "refrigerator",
+    "fridge",
+    "television",
+    "tv",
   ],
   home: [
     "home",
@@ -12330,6 +15451,31 @@ const PRODUCT_REVISION_BUCKET_KEYWORDS = Object.freeze({
     "furniture",
     "decor",
     "appliance",
+    "appliances",
+    "aircon",
+    "air conditioner",
+    "washing machine",
+    "washer",
+  ],
+  appliance: [
+    "appliance",
+    "appliances",
+    "aircon",
+    "air con",
+    "air-con",
+    "air conditioner",
+    "airconditioning",
+    "refrigerator",
+    "fridge",
+    "freezer",
+    "washing machine",
+    "washer",
+    "dryer",
+    "microwave",
+    "oven",
+    "stove",
+    "electric fan",
+    "fan",
   ],
 });
 
@@ -12341,6 +15487,24 @@ const PRODUCT_REVISION_SPECIFIC_LABEL_KEYWORDS = Object.freeze({
   fries: ["fries", "french fries"],
   sandwich: ["sandwich", "hotdog", "hot dog"],
   chicken: ["chicken"],
+  aircon: [
+    "aircon",
+    "air con",
+    "air-con",
+    "air conditioner",
+    "airconditioner",
+    "airconditioning",
+  ],
+  appliance: [
+    "appliance",
+    "appliances",
+    "refrigerator",
+    "fridge",
+    "washing machine",
+    "washer",
+    "microwave",
+    "oven",
+  ],
   drink: [
     "drink",
     "drinks",
@@ -12400,6 +15564,8 @@ const PRODUCT_REVISION_VISUAL_CATEGORY_COMPATIBILITY = Object.freeze({
   fries: ["food", "snack", "fries"],
   sandwich: ["food", "meal", "sandwich"],
   chicken: ["food", "meal", "chicken"],
+  aircon: ["appliance", "electronics", "home", "aircon"],
+  appliance: ["appliance", "electronics", "home", "aircon"],
   drink: ["food", "drink"],
   milktea: ["food", "drink", "milktea"],
   snack: ["food", "snack"],
@@ -12974,10 +16140,6 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
   const detectionText = getProductRevisionDetectionText(product);
   const detectedSpecificLabels = getRevisionSpecificLabelsFromText(detectionText);
   const detectedBuckets = getRevisionBucketsFromText(detectionText);
-  if (!detectedSpecificLabels.size && !detectedBuckets.size) {
-    return null;
-  }
-
   const productName = String(product?.name || "Unnamed product").trim();
   const categoryLabel =
     getProductCategoryList(product).join(", ") ||
@@ -12992,6 +16154,68 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
   );
   const nameSpecificLabels = getRevisionSpecificLabelsFromText(productName);
   const nameBuckets = getRevisionBucketsFromText(productName, { category: true });
+  const hasYoloDetections = detectedSpecificLabels.size > 0 || detectedBuckets.size > 0;
+
+  if (!hasYoloDetections) {
+    const allowedCategoryLabelsForName = getAllowedCategoryLabelsForVisualLabels(
+      nameSpecificLabels,
+    );
+    const hasTextOnlySpecificMismatch =
+      nameSpecificLabels.size > 0 &&
+      categorySpecificLabels.size > 0 &&
+      [...categorySpecificLabels].some((label) => !allowedCategoryLabelsForName.has(label));
+    const hasTextOnlyBucketMismatch =
+      !hasTextOnlySpecificMismatch &&
+      nameBuckets.size > 0 &&
+      categoryBuckets.size > 0 &&
+      !hasAnySetOverlap(nameBuckets, categoryBuckets);
+
+    if (!hasTextOnlySpecificMismatch && !hasTextOnlyBucketMismatch) {
+      return null;
+    }
+
+    const evidenceImageUrl = getProductMainEvidenceImageUrl(product) || "";
+    const imageUrls = evidenceImageUrl
+      ? normalizeProductImageUrls([evidenceImageUrl])
+      : getProductYoloInspectionImageUrls(product);
+
+    return normalizeProductRevisionSignal({
+      engine: "yolo-revision",
+      status: "suggested",
+      flagged: true,
+      reason: "Product name does not match the selected category.",
+      message:
+        `Product name is "${productName}", but category is ${categoryLabel}. ` +
+        "Ask seller to revise the name or category before approval.",
+      fields: ["name", "category"],
+      imageBuckets: hasTextOnlySpecificMismatch
+        ? [...nameSpecificLabels]
+        : [...nameBuckets],
+      categoryBuckets: hasTextOnlySpecificMismatch
+        ? [...categorySpecificLabels]
+        : [...categoryBuckets],
+      categoryLabel,
+      matchType: "yolo-basic-category",
+      imageUrl: evidenceImageUrl,
+      imageUrls,
+      images: imageUrls.map((imageUrl) => ({
+        imageUrl,
+        label: productName,
+        imageBuckets: hasTextOnlySpecificMismatch
+          ? [...nameSpecificLabels]
+          : [...nameBuckets],
+        categoryBuckets: hasTextOnlySpecificMismatch
+          ? [...categorySpecificLabels]
+          : [...categoryBuckets],
+        matchType: "yolo-basic-category",
+        reason: "Product name does not match the selected category.",
+        message:
+          `Product name is "${productName}", but category is ${categoryLabel}.`,
+      })),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   const allowedNameLabels = getAllowedCategoryLabelsForVisualLabels(nameSpecificLabels);
   const mainImageUrl = getProductMainEvidenceImageUrl(product);
   const mainImageDetections = getProductRevisionYoloDetectionsForImage(product, mainImageUrl);
@@ -13031,12 +16255,16 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
     detectedBuckets.size > 0 &&
     nameBuckets.size > 0 &&
     !hasAnySetOverlap(detectedBuckets, nameBuckets);
+  const hasSupportingMediaMismatch =
+    mediaNameCompatibility.hasSupportingMediaNameMismatch === true ||
+    mediaNameCompatibility.hasMediaNameMismatch === true;
 
   if (
     !hasCategorySpecificMismatch &&
     !hasCategoryBucketMismatch &&
     !hasNameSpecificMismatch &&
-    !hasNameBucketMismatch
+    !hasNameBucketMismatch &&
+    !hasSupportingMediaMismatch
   ) {
     return null;
   }
@@ -13049,7 +16277,8 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
   const visualBuckets = hasCategoryBucketMismatch
     ? mainImageSets.buckets
     : detectedBuckets;
-  const visualLabel = [...evidenceLabels].join(", ") || [...visualBuckets].join(", ");
+  const visualLabel = [...evidenceLabels].join(", ") || [...visualBuckets].join(", ") ||
+    mediaNameCompatibility.mismatchedMediaLabels.join("; ");
   const imageEvidence = getProductBasicYoloRevisionImageEvidence(product, {
     productName,
     categoryLabel,
@@ -13065,7 +16294,10 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
     evidenceLabels,
     visualBuckets,
   );
-  const hasNameMismatch = hasNameSpecificMismatch || hasNameBucketMismatch;
+  const hasNameMismatch =
+    hasNameSpecificMismatch ||
+    hasNameBucketMismatch ||
+    hasSupportingMediaMismatch;
   const hasCategoryMismatch = hasCategorySpecificMismatch || hasCategoryBucketMismatch;
   const hasMixedMismatch = hasNameMismatch && hasCategoryMismatch;
   const matchType = hasMixedMismatch
@@ -13076,6 +16308,8 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
   const reason =
     matchType === "yolo-basic-mixed"
       ? "Product media and selected category need revision."
+      : hasSupportingMediaMismatch && !hasNameSpecificMismatch && !hasNameBucketMismatch
+        ? "A gallery image does not match the product name/main image."
       : matchType === "yolo-basic-name"
       ? "YOLO detected an item that does not match the product name."
       : "YOLO detected an item that does not match the selected category.";
@@ -13087,7 +16321,7 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
     matchType === "yolo-basic-mixed"
       ? `Product name/main image is "${productName}"${mainVisualLabel ? ` and looks like ${mainVisualLabel}` : ""}, but other media images look different${mediaMismatchText}. Also, category is ${categoryLabel} and does not match the main image.`
       : mediaNameCompatibility.hasSupportingMediaNameMismatch
-        ? `Product name/main image is "${productName}"${mainVisualLabel ? ` and looks like ${mainVisualLabel}` : ""}, but other media images look different${mediaMismatchText}.`
+        ? `Product name/main image is "${productName}"${mainVisualLabel ? ` and looks like ${mainVisualLabel}` : ""}, but other media images look different${mediaMismatchText}. Ask seller to remove or replace the mismatched gallery image(s) before approval.`
         : imageEvidence.length > 1
       ? `YOLO detected ${visualLabel} in ${imageEvidence.length} images, but product name is "${productName}". Ask seller to remove or replace the mismatched images before approval.`
       : matchType === "yolo-basic-name"
@@ -13103,6 +16337,7 @@ function buildProductBasicYoloRevisionSignal(product = {}) {
     flagged: true,
     reason,
     message,
+    fields: hasSupportingMediaMismatch ? ["images", "name"] : hasNameMismatch ? ["name"] : ["category"],
     imageBuckets,
     categoryBuckets: [...categoryBuckets],
     categoryLabel,
@@ -13345,6 +16580,7 @@ function resolveProductRevisionSignal(product = {}) {
     existingRevision?.matchType === "approved-visual-name" ||
     existingRevision?.matchType === "approved-visual-media" ||
     existingRevision?.matchType === "approved-visual-mixed" ||
+    existingRevision?.matchType === "yolo-mixed-media" ||
     existingRevision?.matchType === "yolo-basic-category" ||
     existingRevision?.matchType === "yolo-basic-name" ||
     existingRevision?.matchType === "yolo-basic-mixed" ||
@@ -13405,9 +16641,39 @@ function resolveProductRevisionSignal(product = {}) {
       existingRevision.matchType === "approved-visual-category" ||
       existingRevision.matchType === "approved-visual-name" ||
       existingRevision.matchType === "approved-visual-media" ||
-      existingRevision.matchType === "approved-visual-mixed"
+      existingRevision.matchType === "approved-visual-mixed" ||
+      existingRevision.matchType === "yolo-mixed-media"
     )
   ) {
+    if (nextYoloSignal && existingRevision.matchType === "yolo-mixed-media") {
+      return normalizeProductRevisionSignal({
+        ...existingRevision,
+        ...nextYoloSignal,
+        reason: nextYoloSignal.reason || existingRevision.reason,
+        message: [existingRevision.message, nextYoloSignal.message]
+          .map((entry) => String(entry || "").trim())
+          .filter(Boolean)
+          .join(" "),
+        matchType:
+          nextYoloSignal.matchType === "yolo-basic-category"
+            ? "yolo-basic-mixed"
+            : nextYoloSignal.matchType || existingRevision.matchType,
+        imageUrls: normalizeProductImageUrls([
+          ...(Array.isArray(existingRevision.imageUrls) ? existingRevision.imageUrls : []),
+          ...(Array.isArray(nextYoloSignal.imageUrls) ? nextYoloSignal.imageUrls : []),
+        ]),
+        images: [
+          ...(Array.isArray(existingRevision.images) ? existingRevision.images : []),
+          ...(Array.isArray(nextYoloSignal.images) ? nextYoloSignal.images : []),
+        ],
+        fields: [
+          ...(Array.isArray(existingRevision.fields) ? existingRevision.fields : []),
+          ...(Array.isArray(nextYoloSignal.fields) ? nextYoloSignal.fields : []),
+        ],
+        status: "suggested",
+        updatedAt: new Date().toISOString(),
+      });
+    }
     return existingRevision;
   }
 
@@ -14238,6 +17504,44 @@ function getApprovedProductTrainingArchiveKey(product = {}) {
   ).trim();
 }
 
+async function getApprovedProductYoloTrainingMatchSources(products = []) {
+  const liveProducts = Array.isArray(products) ? [...products] : [];
+  const approvedTrainingRecords = await readApprovedProductTrainingRecords();
+  const liveTrainingKeys = new Set();
+
+  for (const product of liveProducts) {
+    if (!isApprovedProductYoloTrainingRecord(product)) {
+      continue;
+    }
+    const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(product);
+    const key = normalizedRecord
+      ? getApprovedProductTrainingArchiveKey(normalizedRecord)
+      : String(product?.id ?? "").trim();
+    if (key) {
+      liveTrainingKeys.add(key);
+    }
+  }
+
+  const archiveOnlySources = [];
+  for (const record of approvedTrainingRecords) {
+    const normalizedRecord = normalizeApprovedProductTrainingArchiveRecord(record);
+    if (!normalizedRecord) {
+      continue;
+    }
+    const key = getApprovedProductTrainingArchiveKey(normalizedRecord);
+    if (!key || liveTrainingKeys.has(key)) {
+      continue;
+    }
+    archiveOnlySources.push(normalizedRecord);
+  }
+
+  return {
+    liveProducts,
+    liveCount: liveProducts.length,
+    matchSources: [...liveProducts, ...archiveOnlySources],
+  };
+}
+
 function mergeApprovedProductTrainingArchiveRecords(
   existingRecords = [],
   sourceProducts = [],
@@ -14400,29 +17704,120 @@ async function isApprovedProductFullyTrained(candidateProduct, sourceProducts = 
 
 async function syncApprovedProductTrainingArchive(sourceProducts = []) {
   const existingRecords = await readApprovedProductTrainingRecords();
-  const sourceRecordsToSave = [];
-  for (const sourceProduct of Array.isArray(sourceProducts) ? sourceProducts : []) {
-    const normalizedSourceRecord = normalizeApprovedProductTrainingArchiveRecord(sourceProduct);
-    if (!normalizedSourceRecord) {
-      continue;
-    }
-    if (
-      await isApprovedProductFullyTrained(
-        normalizedSourceRecord,
-        [...existingRecords, ...sourceRecordsToSave],
-      )
-    ) {
-      continue;
-    }
-    sourceRecordsToSave.push(normalizedSourceRecord);
-  }
+  // Every approve is training: always upsert approved evidence into the archive.
   const nextRecords = mergeApprovedProductTrainingArchiveRecords(
     existingRecords,
-    sourceRecordsToSave,
+    sourceProducts,
   );
 
   if (JSON.stringify(existingRecords) !== JSON.stringify(nextRecords)) {
     await writeApprovedProductTrainingRecords(nextRecords);
+  }
+
+  return nextRecords;
+}
+
+function normalizeRejectedProductTrainingArchiveRecord(product = null) {
+  if (!product || typeof product !== "object") {
+    return null;
+  }
+  const imageUrls = getProductRejectedEvidenceImageUrls(product);
+  if (!imageUrls.length && !getProductYoloInspectionImageUrls(product).length) {
+    return null;
+  }
+  const inspectionImageUrls = imageUrls.length
+    ? imageUrls
+    : getProductYoloInspectionImageUrls(product);
+  const inspection = normalizeYoloInspection(product?.yoloInspection, inspectionImageUrls);
+  if (
+    !isProductRejected(product) &&
+    String(inspection?.datasetBucket ?? "").trim().toLowerCase() !== "rejected"
+  ) {
+    return null;
+  }
+
+  const now =
+    product.rejectedAt ||
+    product.approvalUpdatedAt ||
+    product.updatedAt ||
+    new Date().toISOString();
+  return normalizeStoredProductRecord({
+    ...product,
+    approvalStatus: PRODUCT_APPROVAL_REJECTED,
+    rejectedAt: product.rejectedAt || now,
+    rejectedBy: product.rejectedBy || SUPER_ADMIN_USERNAME,
+    rejectionReason:
+      String(product.rejectionReason ?? "").trim() ||
+      "Rejected YOLO training evidence.",
+    yoloInspection: normalizeYoloInspection({
+      ...(inspection || {}),
+      status: inspection?.status || "queued",
+      datasetBucket: "rejected",
+      imageUrls: inspectionImageUrls,
+      rejectedEvidenceImageUrls: imageUrls.length ? imageUrls : inspectionImageUrls,
+      approvedEvidence: null,
+      revisionEvidence: null,
+      archivedAt: inspection?.archivedAt || now,
+      updatedAt: inspection?.updatedAt || now,
+      autoReject: Boolean(inspection?.autoReject),
+    }, inspectionImageUrls),
+  });
+}
+
+function getRejectedProductTrainingArchiveKey(record = null) {
+  return String(record?.id ?? "").trim();
+}
+
+function mergeRejectedProductTrainingArchiveRecords(
+  existingRecords = [],
+  sourceProducts = [],
+) {
+  const recordsByKey = new Map();
+
+  for (const record of Array.isArray(existingRecords) ? existingRecords : []) {
+    const normalizedRecord = normalizeRejectedProductTrainingArchiveRecord(record);
+    const key = normalizedRecord ? getRejectedProductTrainingArchiveKey(normalizedRecord) : "";
+    if (normalizedRecord && key) {
+      recordsByKey.set(key, normalizedRecord);
+    }
+  }
+
+  for (const product of Array.isArray(sourceProducts) ? sourceProducts : []) {
+    const normalizedRecord = normalizeRejectedProductTrainingArchiveRecord(product);
+    const key = normalizedRecord ? getRejectedProductTrainingArchiveKey(normalizedRecord) : "";
+    if (normalizedRecord && key) {
+      recordsByKey.set(key, normalizedRecord);
+    }
+  }
+
+  return [...recordsByKey.values()].sort((left, right) =>
+    String(
+      right.rejectedAt ??
+        right.yoloInspection?.archivedAt ??
+        right.approvalUpdatedAt ??
+        right.updatedAt ??
+        "",
+    ).localeCompare(
+      String(
+        left.rejectedAt ??
+          left.yoloInspection?.archivedAt ??
+          left.approvalUpdatedAt ??
+          left.updatedAt ??
+          "",
+      ),
+    ),
+  );
+}
+
+async function syncRejectedProductTrainingArchive(sourceProducts = []) {
+  const existingRecords = await readRejectedProductTrainingRecords();
+  const nextRecords = mergeRejectedProductTrainingArchiveRecords(
+    existingRecords,
+    sourceProducts,
+  );
+
+  if (JSON.stringify(existingRecords) !== JSON.stringify(nextRecords)) {
+    await writeRejectedProductTrainingRecords(nextRecords);
   }
 
   return nextRecords;
@@ -14761,7 +18156,10 @@ async function findApprovedProductEvidenceAutoApprovalMatch(candidateProduct, pr
   const candidateEntries = candidateState.fingerprintEntries;
   const candidateNameKey = getApprovedEvidenceAutoApprovalNameKey(candidateState.product);
   const candidateCategoryKeys = getApprovedEvidenceAutoApprovalCategoryKeys(candidateState.product);
-  let nextProducts = Array.isArray(products) ? [...products] : [];
+  const matchSourceState = await getApprovedProductYoloTrainingMatchSources(products);
+  let nextProducts = matchSourceState.liveProducts;
+  const matchSources = matchSourceState.matchSources;
+  const liveCount = matchSourceState.liveCount;
   let didUpdateProducts = false;
   let bestMatch = null;
   let bestScore = 0;
@@ -14778,8 +18176,8 @@ async function findApprovedProductEvidenceAutoApprovalMatch(candidateProduct, pr
     };
   }
 
-  for (let index = 0; index < nextProducts.length; index += 1) {
-    const sourceProduct = nextProducts[index];
+  for (let index = 0; index < matchSources.length; index += 1) {
+    const sourceProduct = matchSources[index];
     if (!isApprovedProductYoloTrainingRecord(sourceProduct)) {
       continue;
     }
@@ -14812,11 +18210,12 @@ async function findApprovedProductEvidenceAutoApprovalMatch(candidateProduct, pr
       continue;
     }
 
+    const isLiveSource = index < liveCount;
     const sourceState = await getProductRejectedEvidenceFingerprintState(
       sourceProduct,
-      { persistFingerprints: true },
+      { persistFingerprints: isLiveSource },
     );
-    if (sourceState.didChange) {
+    if (sourceState.didChange && isLiveSource) {
       nextProducts[index] = sourceState.product;
       didUpdateProducts = true;
     }
@@ -15165,6 +18564,96 @@ function createApprovedProductEvidenceCategorySignal(
   });
 }
 
+function buildProductMixedMediaFingerprintRevisionSignal(
+  product = {},
+  fingerprintEntries = [],
+) {
+  const entries = (Array.isArray(fingerprintEntries) ? fingerprintEntries : []).filter(
+    (entry) => entry?.fingerprint && String(entry?.imageUrl ?? "").trim(),
+  );
+  if (entries.length < 2) {
+    return null;
+  }
+
+  const productName = String(product?.name || "Unnamed product").trim();
+  const mainImageUrl = normalizeProductEvidenceImageUrl(getProductMainEvidenceImageUrl(product));
+  const mainEntry =
+    (mainImageUrl
+      ? entries.find(
+          (entry) =>
+            normalizeProductEvidenceImageUrl(entry?.imageUrl) === mainImageUrl,
+        )
+      : null) || entries[0];
+  if (!mainEntry?.fingerprint) {
+    return null;
+  }
+
+  const mismatchedEvidence = [];
+  for (const entry of entries) {
+    const imageUrl = normalizeProductEvidenceImageUrl(entry?.imageUrl);
+    if (!imageUrl || imageUrl === normalizeProductEvidenceImageUrl(mainEntry.imageUrl)) {
+      continue;
+    }
+    const score = compareVisualSearchFingerprints(
+      mainEntry.fingerprint,
+      entry.fingerprint,
+    );
+    if (score >= PRODUCT_MIXED_MEDIA_VISUAL_MIN_SCORE) {
+      continue;
+    }
+    mismatchedEvidence.push({
+      imageUrl: entry.imageUrl,
+      label: "different item",
+      imageBuckets: [],
+      categoryBuckets: [
+        ...getRevisionBucketsFromText(getProductRevisionCategoryText(product), {
+          category: true,
+        }),
+      ],
+      categoryLabel:
+        getProductCategoryList(product).join(", ") ||
+        String(product?.category ?? "").trim() ||
+        "selected category",
+      matchType: "yolo-mixed-media",
+      reason: "This gallery image does not match the main product image.",
+      message:
+        `Product name/main image is "${productName}", but this gallery image looks like a different item ` +
+        `(visual match ${Math.round(score * 100)}%). Ask seller to remove or replace it before approval.`,
+      score,
+      threshold: PRODUCT_MIXED_MEDIA_VISUAL_MIN_SCORE,
+    });
+  }
+
+  if (!mismatchedEvidence.length) {
+    return null;
+  }
+
+  const imageUrls = normalizeProductImageUrls(
+    mismatchedEvidence.map((entry) => entry.imageUrl),
+  );
+  return normalizeProductRevisionSignal({
+    engine: "yolo-revision",
+    status: "suggested",
+    flagged: true,
+    reason: "Product gallery contains an image that does not match the main product photo.",
+    message:
+      mismatchedEvidence.length === 1
+        ? mismatchedEvidence[0].message
+        : `Product name/main image is "${productName}", but ${mismatchedEvidence.length} other gallery images look like different items. Ask seller to remove or replace them before approval.`,
+    fields: ["images"],
+    imageBuckets: [],
+    categoryBuckets: mismatchedEvidence[0].categoryBuckets,
+    categoryLabel: mismatchedEvidence[0].categoryLabel,
+    matchType: "yolo-mixed-media",
+    score: Math.min(...mismatchedEvidence.map((entry) => entry.score || 0)),
+    threshold: PRODUCT_MIXED_MEDIA_VISUAL_MIN_SCORE,
+    imageUrl: imageUrls[0] || "",
+    imageUrls,
+    images: mismatchedEvidence,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 function createApprovedProductEvidenceSupportingMediaSignal(
   candidateProduct,
   candidateMatches,
@@ -15333,7 +18822,10 @@ function combineApprovedProductEvidenceRevisionMatches(mainMatch, mediaMatch) {
 async function findApprovedProductEvidenceCategoryMatch(candidateProduct, products = []) {
   const candidateState = await getProductRejectedEvidenceFingerprintState(candidateProduct);
   const candidateEntries = candidateState.fingerprintEntries;
-  let nextProducts = Array.isArray(products) ? [...products] : [];
+  const matchSourceState = await getApprovedProductYoloTrainingMatchSources(products);
+  let nextProducts = matchSourceState.liveProducts;
+  const matchSources = matchSourceState.matchSources;
+  const liveCount = matchSourceState.liveCount;
   let didUpdateProducts = false;
   let bestMatch = null;
   let bestMainScore = 0;
@@ -15367,8 +18859,8 @@ async function findApprovedProductEvidenceCategoryMatch(candidateProduct, produc
     !isCandidateMainEntry(entry)
   );
 
-  for (let index = 0; index < nextProducts.length; index += 1) {
-    const sourceProduct = nextProducts[index];
+  for (let index = 0; index < matchSources.length; index += 1) {
+    const sourceProduct = matchSources[index];
     const sourceProductId = String(sourceProduct?.id ?? "").trim();
     if (!isApprovedProductYoloTrainingRecord(sourceProduct) || (candidateProductId && sourceProductId === candidateProductId)) {
       continue;
@@ -15381,11 +18873,12 @@ async function findApprovedProductEvidenceCategoryMatch(candidateProduct, produc
     const sourceApprovedEvidence = normalizeYoloApprovedEvidence(
       sourceInspection?.approvedEvidence,
     );
+    const isLiveSource = index < liveCount;
     const sourceState = await getProductRejectedEvidenceFingerprintState(
       sourceProduct,
-      { persistFingerprints: true },
+      { persistFingerprints: isLiveSource },
     );
-    if (sourceState.didChange) {
+    if (sourceState.didChange && isLiveSource) {
       nextProducts[index] = sourceState.product;
       didUpdateProducts = true;
     }
@@ -15450,7 +18943,14 @@ async function findApprovedProductEvidenceCategoryMatch(candidateProduct, produc
         if (!match) {
           continue;
         }
-        if (String(match.matchType || "").trim() !== "approved-visual-name") {
+        // Flag supporting gallery images that visually match a *different* approved
+        // product than this listing name (e.g. burger listing + aircon gallery shot).
+        const matchType = String(match.matchType || "").trim();
+        if (
+          matchType !== "approved-visual-name" &&
+          matchType !== "approved-visual-category" &&
+          matchType !== "approved-visual-mixed"
+        ) {
           continue;
         }
         const imageKey = normalizeProductEvidenceImageUrl(candidateEntry?.imageUrl);
@@ -15477,7 +18977,7 @@ async function findApprovedProductEvidenceCategoryMatch(candidateProduct, produc
     (highest, entry) => Math.max(highest, entry.score || 0),
     0,
   );
-  const mediaMatch = bestMediaScore >= APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE
+  let mediaMatch = bestMediaScore >= APPROVED_PRODUCT_VISUAL_MATCH_MIN_SCORE
     ? createApprovedProductEvidenceSupportingMediaSignal(
         candidateState.product,
         supportingMatches,
@@ -15486,6 +18986,12 @@ async function findApprovedProductEvidenceCategoryMatch(candidateProduct, produc
         bestMediaScore,
       )
     : null;
+  if (!mediaMatch) {
+    mediaMatch = buildProductMixedMediaFingerprintRevisionSignal(
+      candidateState.product,
+      candidateEntries,
+    );
+  }
 
   return {
     candidateProduct: candidateState.product,
@@ -15503,7 +19009,8 @@ function setProductApprovedEvidenceCategoryMatch(product, match = null) {
         existingRevision?.matchType === "approved-visual-category" ||
         existingRevision?.matchType === "approved-visual-name" ||
         existingRevision?.matchType === "approved-visual-media" ||
-        existingRevision?.matchType === "approved-visual-mixed"
+        existingRevision?.matchType === "approved-visual-mixed" ||
+        existingRevision?.matchType === "yolo-mixed-media"
       ) &&
       JSON.stringify(getProductRevisionComparisonState(existingRevision)) ===
         JSON.stringify(getProductRevisionComparisonState(match))
@@ -15521,7 +19028,8 @@ function setProductApprovedEvidenceCategoryMatch(product, match = null) {
     existingRevision?.matchType !== "approved-visual-category" &&
     existingRevision?.matchType !== "approved-visual-name" &&
     existingRevision?.matchType !== "approved-visual-media" &&
-    existingRevision?.matchType !== "approved-visual-mixed"
+    existingRevision?.matchType !== "approved-visual-mixed" &&
+    existingRevision?.matchType !== "yolo-mixed-media"
   ) {
     return product;
   }
@@ -15635,9 +19143,23 @@ async function findRejectedProductEvidenceMatch(candidateProduct, products = [],
     };
   }
 
+  const rejectedTrainingRecords = await readRejectedProductTrainingRecords();
+  const liveRejectedIds = new Set(
+    nextProducts
+      .filter((product) => isProductRejected(product))
+      .map((product) => String(product?.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const archiveOnlySources = rejectedTrainingRecords.filter((record) => {
+    const recordId = String(record?.id ?? "").trim();
+    return recordId && !liveRejectedIds.has(recordId);
+  });
+  const matchSources = [...nextProducts, ...archiveOnlySources];
+  const liveCount = nextProducts.length;
+
   const candidateProductId = String(candidateState.product?.id ?? "").trim();
-  for (let index = 0; index < nextProducts.length; index += 1) {
-    const sourceProduct = nextProducts[index];
+  for (let index = 0; index < matchSources.length; index += 1) {
+    const sourceProduct = matchSources[index];
     const sourceProductId = String(sourceProduct?.id ?? "").trim();
     const sourceInspection = normalizeYoloInspection(
       sourceProduct?.yoloInspection,
@@ -15651,11 +19173,12 @@ async function findRejectedProductEvidenceMatch(candidateProduct, products = [],
       continue;
     }
 
+    const isLiveSource = index < liveCount;
     const sourceState = await getProductRejectedEvidenceFingerprintState(
       sourceProduct,
-      { persistFingerprints: true },
+      { persistFingerprints: isLiveSource },
     );
-    if (sourceState.didChange) {
+    if (sourceState.didChange && isLiveSource) {
       nextProducts[index] = sourceState.product;
       didUpdateProducts = true;
     }
@@ -15868,6 +19391,22 @@ function createSellerProductIllegalContentSafety({
 }
 
 async function inspectSellerProductIllegalContent(product, products = []) {
+  const platformSettings = await getPlatformSettings();
+  const yoloEnabled = !isPlatformSettingBlocking(platformSettings, "yoloAutoInspection");
+  const fraudEnabled = !isPlatformSettingBlocking(platformSettings, "fraudMonitoring");
+  if (!yoloEnabled && !fraudEnabled) {
+    return {
+      product,
+      products: Array.isArray(products) ? products : [],
+      safety: createSellerProductIllegalContentSafety({
+        action: "allow",
+        source: "platform-settings",
+        score: 0,
+        message: "Auto inspection skipped by platform settings.",
+      }),
+    };
+  }
+
   let nextProducts = Array.isArray(products) ? [...products] : [];
   let inspectedProduct = product;
   const imageUrls = getProductYoloInspectionImageUrls(inspectedProduct);
@@ -15875,7 +19414,9 @@ async function inspectSellerProductIllegalContent(product, products = []) {
     inspectedProduct?.yoloInspection,
     imageUrls,
   );
-  const yoloInspection = await runYoloProductInspection(inspectedProduct);
+  const yoloInspection = yoloEnabled
+    ? await runYoloProductInspection(inspectedProduct)
+    : null;
   let mergedInspection = normalizeYoloInspection({
     ...(existingInspection || {}),
     ...(yoloInspection || {}),
@@ -15889,18 +19430,24 @@ async function inspectSellerProductIllegalContent(product, products = []) {
     yoloInspection: mergedInspection,
   };
 
-  const evidenceResult = await findRejectedProductEvidenceMatch(
-    inspectedProduct,
-    nextProducts,
-    { minimumScore: SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE },
-  );
-  inspectedProduct = evidenceResult.candidateProduct || inspectedProduct;
-  nextProducts = evidenceResult.products;
-  const rejectedEvidenceMatch = evidenceResult.match || null;
-  const rejectedEvidenceScore = normalizeRejectedEvidenceMatchScore(
-    rejectedEvidenceMatch?.score ?? evidenceResult.bestScore,
-  );
-  const yoloScore = getYoloInspectionIllegalConfidence(mergedInspection);
+  let rejectedEvidenceMatch = null;
+  let rejectedEvidenceScore = 0;
+  if (fraudEnabled) {
+    const evidenceResult = await findRejectedProductEvidenceMatch(
+      inspectedProduct,
+      nextProducts,
+      { minimumScore: SELLER_PRODUCT_ILLEGAL_AUTO_REJECT_SCORE },
+    );
+    inspectedProduct = evidenceResult.candidateProduct || inspectedProduct;
+    nextProducts = evidenceResult.products;
+    rejectedEvidenceMatch = evidenceResult.match || null;
+    rejectedEvidenceScore = normalizeRejectedEvidenceMatchScore(
+      rejectedEvidenceMatch?.score ?? evidenceResult.bestScore,
+    );
+  }
+  const yoloScore = yoloEnabled
+    ? getYoloInspectionIllegalConfidence(mergedInspection)
+    : 0;
   const score = Math.max(yoloScore, rejectedEvidenceScore);
   const source = rejectedEvidenceScore >= yoloScore && rejectedEvidenceMatch
     ? "rejected-evidence"
@@ -16042,8 +19589,22 @@ async function inspectSellerImageBufferIllegalContent(fileBuffer, options = {}) 
     fingerprint,
   }));
 
-  for (let index = 0; index < nextProducts.length; index += 1) {
-    const sourceProduct = nextProducts[index];
+  const rejectedTrainingRecords = await readRejectedProductTrainingRecords();
+  const liveRejectedIds = new Set(
+    nextProducts
+      .filter((product) => isProductRejected(product))
+      .map((product) => String(product?.id ?? "").trim())
+      .filter(Boolean),
+  );
+  const archiveOnlySources = rejectedTrainingRecords.filter((record) => {
+    const recordId = String(record?.id ?? "").trim();
+    return recordId && !liveRejectedIds.has(recordId);
+  });
+  const matchSources = [...nextProducts, ...archiveOnlySources];
+  const liveCount = nextProducts.length;
+
+  for (let index = 0; index < matchSources.length; index += 1) {
+    const sourceProduct = matchSources[index];
     const sourceInspection = normalizeYoloInspection(
       sourceProduct?.yoloInspection,
       getProductYoloInspectionImageUrls(sourceProduct),
@@ -16055,11 +19616,12 @@ async function inspectSellerImageBufferIllegalContent(fileBuffer, options = {}) 
       continue;
     }
 
+    const isLiveSource = index < liveCount;
     const sourceState = await getProductRejectedEvidenceFingerprintState(
       sourceProduct,
-      { persistFingerprints: true },
+      { persistFingerprints: isLiveSource },
     );
-    if (sourceState.didChange) {
+    if (sourceState.didChange && isLiveSource) {
       nextProducts[index] = sourceState.product;
       didUpdateProducts = true;
     }
@@ -17450,7 +21012,10 @@ function normalizeProduct(input, existingProduct = null) {
     input.variants,
     imageUrls,
     existingProduct?.variants,
-  );
+  ).map((variant) => ({
+    ...variant,
+    specifications: normalizeProductSpecifications(variant.specifications, category),
+  }));
   const deliveryPartnerIds = normalizePartnerIdList(
     input.deliveryPartnerIds,
     existingProduct?.deliveryPartnerIds,
@@ -17459,28 +21024,25 @@ function normalizeProduct(input, existingProduct = null) {
     input.paymentPartnerIds,
     existingProduct?.paymentPartnerIds,
   );
+  const specifications = normalizeProductSpecifications(
+    Array.isArray(input.specifications)
+      ? input.specifications
+      : existingProduct?.specifications,
+    category,
+  );
   // When editing an existing product, require review by setting to pending
   // This ensures ALL edits go through super_admin.html review
-  const defaultApprovalStatus = PRODUCT_APPROVAL_PENDING;
-  const approvalStatus = existingProduct
-    ? PRODUCT_APPROVAL_PENDING  // Always set to pending when editing existing product
-    : normalizeProductApprovalStatus(input.approvalStatus, defaultApprovalStatus);
+  // Seller paths must never trust client-supplied approval / YOLO / SA upload fields.
+  const approvalStatus = PRODUCT_APPROVAL_PENDING;
   const submittedAt = normalizeOptionalProductDateTime(
     input.submittedAt ?? existingProduct?.submittedAt,
     existingProduct?.createdAt ?? updatedAt,
   ) || updatedAt;
-  const approvedAt = approvalStatus === PRODUCT_APPROVAL_APPROVED
-    ? (
-        normalizeOptionalProductDateTime(input.approvedAt ?? existingProduct?.approvedAt)
-        || (defaultApprovalStatus === PRODUCT_APPROVAL_PENDING ? updatedAt : "")
-      )
-    : "";
-  const approvedBy = approvalStatus === PRODUCT_APPROVAL_APPROVED
-    ? String(input.approvedBy ?? existingProduct?.approvedBy ?? "").trim()
-    : "";
+  const approvedAt = "";
+  const approvedBy = "";
   const approvalUpdatedAt = normalizeOptionalProductDateTime(
-    input.approvalUpdatedAt ?? existingProduct?.approvalUpdatedAt,
-    approvalStatus !== defaultApprovalStatus ? updatedAt : "",
+    existingProduct?.approvalUpdatedAt,
+    "",
   );
 
   if (!name) {
@@ -17551,35 +21113,32 @@ function normalizeProduct(input, existingProduct = null) {
   return {
     id: existingProduct?.id ?? `prd-${Date.now()}`,
     adminId: getRecordAdminId(input, getRecordAdminId(existingProduct)),
+    companyId: String(
+      input.companyId ?? existingProduct?.companyId ?? "",
+    ).trim(),
     approvalStatus,
     submittedAt,
     approvedAt,
     approvedBy,
-    rejectedAt: approvalStatus === PRODUCT_APPROVAL_REJECTED
-      ? normalizeOptionalProductDateTime(input.rejectedAt ?? existingProduct?.rejectedAt, updatedAt)
-      : "",
-    rejectedBy: approvalStatus === PRODUCT_APPROVAL_REJECTED
-      ? String(input.rejectedBy ?? existingProduct?.rejectedBy ?? "").trim()
-      : "",
-    rejectionReason: approvalStatus === PRODUCT_APPROVAL_REJECTED
-      ? String(input.rejectionReason ?? existingProduct?.rejectionReason ?? "").trim()
-      : "",
+    rejectedAt: "",
+    rejectedBy: "",
+    rejectionReason: "",
     approvalUpdatedAt,
     yoloInspection: normalizeYoloInspection(
-      input.yoloInspection ?? existingProduct?.yoloInspection,
+      existingProduct?.yoloInspection,
       imageUrls,
     ),
     yoloRevision: normalizeProductRevisionSignal(
-      input.yoloRevision ?? existingProduct?.yoloRevision,
+      existingProduct?.yoloRevision,
     ),
     superAdminUploadedImageUrls: normalizeProductImageUrls(
-      input.superAdminUploadedImageUrls ?? existingProduct?.superAdminUploadedImageUrls,
+      existingProduct?.superAdminUploadedImageUrls,
     ),
     superAdminImageUploadedAt: normalizeOptionalProductDateTime(
-      input.superAdminImageUploadedAt ?? existingProduct?.superAdminImageUploadedAt,
+      existingProduct?.superAdminImageUploadedAt,
     ),
     superAdminImageUploadedBy: String(
-      input.superAdminImageUploadedBy ?? existingProduct?.superAdminImageUploadedBy ?? "",
+      existingProduct?.superAdminImageUploadedBy ?? "",
     ).trim(),
     name,
     isActive,
@@ -17591,6 +21150,7 @@ function normalizeProduct(input, existingProduct = null) {
     categories,
     deliveryPartnerIds,
     paymentPartnerIds,
+    specifications,
     description,
     descriptionImageUrls,
     imageUrl,
@@ -19207,6 +22767,15 @@ async function handleChatSupportApi(request, response, requestUrl) {
   if (request.method === "POST") {
     try {
       const payload = await parseRequestBody(request);
+      if (
+        !(await requirePlatformSettingEnabled(
+          response,
+          "liveChat",
+          "Live chat is currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
       const threadInput =
         payload?.thread && typeof payload.thread === "object"
           ? payload.thread
@@ -19470,8 +23039,8 @@ async function handleChatSupportApi(request, response, requestUrl) {
     }
   }
 
-  function serializeSellerSummary(account, products = []) {
-    const safeAccount = serializeAdminAccount(account);
+  function serializeSellerSummary(account, products = [], counts = null) {
+    const safeAccount = serializeAdminAccount(account, counts);
     const adminId = getRecordAdminId(safeAccount, safeAccount.adminId);
     const sellerProducts = (Array.isArray(products) ? products : []).filter(
       (product) => getRecordAdminId(product, product?.adminId) === adminId,
@@ -19499,11 +23068,7 @@ async function handleChatSupportApi(request, response, requestUrl) {
       .map((value) => String(value ?? "").trim())
       .find(Boolean) || "";
 
-    const planName = String(safeAccount.planName ?? "").trim() || "Free Plan";
-    const hasPaidPlan = isPaidSellerPlan(
-      planName,
-      safeAccount.planAmount ?? safeAccount.subscriptionAmount,
-    );
+    const isLegitSeller = Boolean(safeAccount.legitimateBadge);
 
     return {
       adminId,
@@ -19512,15 +23077,17 @@ async function handleChatSupportApi(request, response, requestUrl) {
       storeName: safeAccount.storeName || companyName,
       businessName: safeAccount.businessName || companyName,
       storeType: safeAccount.storeType || safeAccount.storeTypeName || safeAccount.businessType || "",
-      storeTypeName: safeAccount.storeTypeName || safeAccount.storeType || safeAccount.businessType || "",
+      storeTypeName: safeAccount.storeTypeName || safeAccount.storeType || safeAccount.storeTypeName || "",
       businessType: safeAccount.businessType || safeAccount.storeType || safeAccount.storeTypeName || "",
       profileImageUrl: imageUrl,
       companyPictureUrl: imageUrl,
       createdAt: safeAccount.createdAt || "",
       productCount: sellerProducts.length,
-      planName,
-      hasPaidPlan,
-      isLegitSeller: hasPaidPlan,
+      planName: "Free",
+      hasPaidPlan: false,
+      isLegitSeller,
+      legitimateBadge: isLegitSeller,
+      performanceBadge: safeAccount.performanceBadge || null,
     };
   }
 
@@ -19531,22 +23098,40 @@ async function handleChatSupportApi(request, response, requestUrl) {
     }
 
     try {
-      const [accounts, products, storedStoreTypes] = await Promise.all([
+      const [accounts, products, storedStoreTypes, orders, chatThreads] = await Promise.all([
         readAccounts(),
         readProducts(),
         readStoreTypes(),
+        readOrders(),
+        readChatThreads(),
       ]);
+      const performanceCountsByAdminId = buildSellerPerformanceCountsByAdminId({
+        accounts,
+        products,
+        orders,
+        chatThreads,
+        storeTypes: storedStoreTypes,
+      });
       const normalizedProducts = attachProductsCompanyMetadata(
-        hideInactiveStoreTypeCategoriesFromProducts(
-          products.map(normalizeStoredProductRecord),
+        filterProductsHiddenBySellerOrStoreTypeInactivity(
+          hideInactiveStoreTypeCategoriesFromProducts(
+            products.map(normalizeStoredProductRecord),
+            accounts,
+            storedStoreTypes,
+          ),
           accounts,
           storedStoreTypes,
         ),
         accounts,
+        performanceCountsByAdminId,
       );
       const sellers = accounts
         .filter(isAdminAccount)
-        .map((account) => serializeSellerSummary(account, normalizedProducts))
+        .map((account) => serializeSellerSummary(
+          account,
+          normalizedProducts,
+          performanceCountsByAdminId.get(getRecordAdminId(account, account.id)),
+        ))
         .filter((seller) => seller.adminId)
         .sort((left, right) => {
           const leftName = String(left.companyName || left.name || "").toLowerCase();
@@ -19590,11 +23175,54 @@ async function handleChatSupportApi(request, response, requestUrl) {
         .map((product) => String(product?.companyPictureUrl ?? "").trim())
         .find(Boolean) || "";
 
+      const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
+      const companyId = [
+        requestUrl.searchParams.get("companyId"),
+        ...sellerProducts.map((product) => product?.companyId),
+        account?.activeCompanyId,
+        account?.companyId,
+      ]
+        .map((value) => String(value ?? "").trim())
+        .find(Boolean) || "";
+      let profileSource = account || {};
+      let verified = false;
+      if (companyId) {
+        try {
+          const company = await findCompanyById(companyId);
+          if (company) {
+            profileSource = applyCompanyWorkspaceOverlay({ ...profileSource }, company);
+            verified = String(company.verificationStatus || "").trim().toLowerCase() === "verified";
+          }
+        } catch (companyError) {
+          console.warn("Unable to load company branding for seller profile:", companyError);
+        }
+      }
+      const companyBackgroundUrl = [
+        profileSource.companyBackgroundUrl,
+        profileSource.company_background_url,
+        profileSource.backgroundUrl,
+        profileSource.background_url,
+        profileSource.coverImageUrl,
+        profileSource.cover_image_url,
+        profileSource.bannerUrl,
+        profileSource.banner_url,
+        profileSource.heroImageUrl,
+        profileSource.profileData?.companyBackgroundUrl,
+        profileSource.profileData?.backgroundUrl,
+        profileSource.profileData?.coverImageUrl,
+      ]
+        .map((value) => String(value ?? "").trim())
+        .find(Boolean) || "";
+
       sendJson(response, 200, {
         adminId: normalized,
-        name: account?.storeName || account?.companyName || account?.businessName || account?.firstName || normalized,
+        companyId,
+        name: profileSource.storeName || profileSource.companyName || profileSource.businessName || profileSource.firstName || normalized,
         profileImageUrl: account?.profileImageUrl || productCompanyPictureUrl || "",
-        companyPictureUrl: productCompanyPictureUrl || account?.profileImageUrl || "",
+        companyPictureUrl: productCompanyPictureUrl || profileSource.companyPictureUrl || account?.profileImageUrl || "",
+        companyBackgroundUrl,
+        verified,
+        storeType: String(profileSource.storeTypeName || profileSource.storeType || profileSource.businessType || "").trim(),
         rating: reviewSummary.rating,
         ratingCount: reviewSummary.ratingCount,
         ratingPoints: reviewSummary.ratingPoints,
@@ -19775,6 +23403,15 @@ async function handleSingleChatSupportApi(request, response, threadId, action = 
 
   if (request.method === "POST" && action === "reply") {
     try {
+      if (
+        !(await requirePlatformSettingEnabled(
+          response,
+          "liveChat",
+          "Live chat is currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
       const payload = await parseRequestBody(request);
       const replyText = String(payload?.text ?? "").replace(/\s+/g, " ").trim();
       const replyImageUrl = String(payload?.imageUrl ?? "").trim();
@@ -20241,6 +23878,16 @@ async function handleProductIllegalContentCheckApi(request, response) {
     return;
   }
 
+  if (
+    !(await requirePlatformSettingEnabled(
+      response,
+      "yoloAutoInspection",
+      "YOLO auto inspection is currently disabled by Super Admin.",
+    ))
+  ) {
+    return;
+  }
+
   if (!isUsableProductAdminScope(requestAdminId)) {
     sendProductAdminScopeRequired(response);
     return;
@@ -20287,6 +23934,7 @@ async function handleProductIllegalContentCheckApi(request, response) {
 async function handleProductsApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
+  const requestCompanyId = getExplicitRequestCompanyId(request, requestUrl);
   const requestIsAdminScoped = hasRequestAdminScope(request, requestUrl);
 
   if (request.method === "GET") {
@@ -20309,15 +23957,19 @@ async function handleProductsApi(request, response) {
       return;
     }
 
-    const [allProducts, accounts, allOrders, storedStoreTypes] = await Promise.all([
+    const [allProducts, accounts, allOrders, storedStoreTypes, chatThreads] = await Promise.all([
       requestIsAdminScoped
-        ? readProducts({ adminId: requestAdminId })
+        ? readProducts({
+            adminId: requestAdminId,
+            companyId: requestCompanyId,
+          })
         : readProducts({ publicCatalog: true }),
       readAccounts(),
       requestIsAdminScoped
         ? readOrders({ adminId: requestAdminId })
         : readOrders(),
       readStoreTypes(),
+      readChatThreads(),
     ]);
     const reviewAggregates = buildProductReviewAggregates(
       allOrders,
@@ -20334,6 +23986,13 @@ async function handleProductsApi(request, response) {
       accounts,
       storedStoreTypes,
     );
+    if (allowPublicApprovedCatalog) {
+      products = filterProductsHiddenBySellerOrStoreTypeInactivity(
+        products,
+        accounts,
+        storedStoreTypes,
+      );
+    }
     if (hasApprovalStatusFilter) {
       products = products.filter((product) =>
         normalizeProductApprovalStatus(product?.approvalStatus) === requestedApprovalStatus
@@ -20344,7 +24003,17 @@ async function handleProductsApi(request, response) {
         !isProductListingRestrictedForCustomers(product)
       );
     }
-    products = attachProductsCompanyMetadata(products, accounts);
+    products = attachProductsCompanyMetadata(
+      products,
+      accounts,
+      buildSellerPerformanceCountsByAdminId({
+        accounts,
+        products: allProducts,
+        orders: allOrders,
+        chatThreads,
+        storeTypes: storedStoreTypes,
+      }),
+    );
     const pagination = parsePagination(requestUrl.searchParams);
     const page = paginateArray(products, pagination);
     const payload = { products: page.items };
@@ -20359,6 +24028,16 @@ async function handleProductsApi(request, response) {
     try {
       if (!isUsableProductAdminScope(requestAdminId)) {
         sendProductAdminScopeRequired(response);
+        return;
+      }
+
+      if (
+        !(await requirePlatformSettingEnabled(
+          response,
+          "sellerProductSubmissions",
+          "Product submissions are currently disabled by Super Admin.",
+        ))
+      ) {
         return;
       }
 
@@ -20378,6 +24057,16 @@ async function handleProductsApi(request, response) {
       assertSessionPayloadIdentity(request, payload, { admin: true });
       if (
         doesProductPayloadChangePromotion(payload) &&
+        !(await requirePlatformSettingEnabled(
+          response,
+          "promosAndDiscounts",
+          "Promos and discounts are currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
+      if (
+        doesProductPayloadChangePromotion(payload) &&
         !(await requireAdminRestrictionAllowed(
           request,
           response,
@@ -20389,18 +24078,28 @@ async function handleProductsApi(request, response) {
         return;
       }
 
+      const stampedCompanyId =
+        requestCompanyId
+        || String(payload.companyId ?? "").trim()
+        || legacyCompanyIdForAdmin(requestAdminId);
       const submittedAt = new Date().toISOString();
       let product = applyAdminId(normalizeProduct({
         ...payload,
         adminId: requestAdminId,
+        companyId: stampedCompanyId,
         approvalStatus: PRODUCT_APPROVAL_PENDING,
         submittedAt,
         approvedAt: "",
         approvedBy: "",
         approvalUpdatedAt: submittedAt,
       }), requestAdminId);
+      product = {
+        ...product,
+        companyId: stampedCompanyId,
+      };
       product = await applyAdminBusinessTypeCategoryScope(product, requestAdminId);
       product = await validateProductPartnerSelections(product, requestAdminId);
+      assertProductSpecificationsComplete(product);
       let products = await readProducts();
       product = syncProductVariantAddOnsWithInventory(product, products, requestAdminId);
 
@@ -20426,7 +24125,11 @@ async function handleProductsApi(request, response) {
           illegalContentGate.safety,
         );
         products.unshift(product);
-        await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
+        await writeProducts(products, catalogWriteScope({
+          adminId: requestAdminId,
+          companyId: stampedCompanyId,
+        }));
+        await syncRejectedProductTrainingArchive([product]);
         await logActivitySafely(createProductActivityEntry("updated", product, payload?.__activityActor), request);
         const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(await readAccounts());
         sendJson(response, 422, {
@@ -20454,14 +24157,29 @@ async function handleProductsApi(request, response) {
       }
       product = {
         ...product,
+        companyId: stampedCompanyId,
         ...normalizeProductListingInsightHistory(product),
       };
       products.unshift(product);
-      await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
+      await writeProducts(products, catalogWriteScope({
+        adminId: requestAdminId,
+        companyId: stampedCompanyId,
+      }));
       if (isApprovedProductYoloTrainingRecord(product)) {
         await syncApprovedProductTrainingArchive([product]);
       }
       await logActivitySafely(createProductActivityEntry("created", product, payload?.__activityActor), request);
+      if (isProductPendingApproval(product)) {
+        const actorLabel = String(
+          payload?.__activityActor?.displayName ||
+            payload?.__activityActor?.name ||
+            "Seller",
+        ).trim() || "Seller";
+        await notifySuperAdminListingSubmission(product, {
+          action: "submitted",
+          actorLabel,
+        });
+      }
       const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(await readAccounts());
       sendJson(response, 201, {
         product: attachProductCompanyMetadata(
@@ -20542,6 +24260,20 @@ async function handleSuperAdminProductsApi(request, response, adminId) {
       }
       if (deletedProduct) {
         await logActivitySafely(createProductActivityEntry("deleted", deletedProduct, SUPER_ADMIN_USERNAME));
+        const productName = String(deletedProduct?.name ?? "Product").trim() || "Product";
+        await fanOutListingLifecycleNotifications({
+          product: deletedProduct,
+          type: "product-deleted",
+          title: "Listing deleted by Super Admin",
+          reason: "Super Admin deleted listing",
+          message: `Listing "${productName}" was deleted by Super Admin.`,
+          sellerTitle: "Listing Deleted",
+          sellerMessage: `Your listing "${productName}" was deleted by Super Admin.`,
+          sellerTargetUrl: "/product_panel.html",
+          saTargetUrl: "/super_admin.html#product-requests",
+          notifySuperAdmin: false,
+          persistAccounts: true,
+        });
       }
 
       sendJson(response, 200, {
@@ -21258,6 +24990,17 @@ async function handlePartnerCollectionApi(request, response, partnerType) {
 
   if (request.method === "POST") {
     try {
+      if (
+        partnerType === "payment"
+        && !(await requirePlatformSettingEnabled(
+          response,
+          "sellerPayoutRequests",
+          "Payout and payment partner changes are currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
+
       if (!(await requirePartnerResourcePermission({
         request,
         response,
@@ -21284,6 +25027,9 @@ async function handlePartnerCollectionApi(request, response, partnerType) {
             `${config.label} ID already exists.`,
             "PARTNER_ID_CONFLICT",
           );
+        }
+        if (config.type === "delivery" && isSwitchRiderPartnerName(nextPartner.branch ?? nextPartner.name)) {
+          throw createPartnerApiError(409, SWITCH_RIDER_RESERVED_PARTNER_MESSAGE, "PARTNER_NAME_RESERVED");
         }
         if (hasDuplicatePartnerInScope(partners, nextPartner)) {
           throw createPartnerApiError(
@@ -21474,6 +25220,16 @@ async function handleAdminLoginApi(request, response) {
   }
 
   try {
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "sellerLoginAccess",
+        "Seller login is currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+
     const payload = await parseRequestBody(request);
     const email = String(payload.email ?? "").trim().toLowerCase();
     const password = String(payload.password ?? "").trim();
@@ -21485,7 +25241,7 @@ async function handleAdminLoginApi(request, response) {
       return;
     }
 
-    const loginAttempt = beginLoginAttempt(request, response, email);
+    const loginAttempt = await beginLoginAttempt(request, response, email);
     if (!loginAttempt) {
       return;
     }
@@ -21528,6 +25284,21 @@ async function handleAdminLoginApi(request, response) {
             authStore: "postgres",
           });
           recordLoginSuccess(loginAttempt);
+          return;
+        }
+
+        const platformSettings = await getPlatformSettings();
+        if (
+          platformSettings.requireSellerVerification
+          && !isSellerAccountVerifiedForPlatform(account)
+        ) {
+          recordLoginSuccess(loginAttempt);
+          sendJson(response, 403, {
+            message: "Seller verification is required before login.",
+            code: "SELLER_VERIFICATION_REQUIRED",
+            setting: "requireSellerVerification",
+            authStore: "postgres",
+          });
           return;
         }
 
@@ -21603,6 +25374,21 @@ async function handleAdminLoginApi(request, response) {
         restrictionDescription: getAdminRestrictionDescription(account),
       });
       recordLoginSuccess(loginAttempt);
+      return;
+    }
+
+    const filePlatformSettings = await getPlatformSettings();
+    if (
+      filePlatformSettings.requireSellerVerification
+      && !isSellerAccountVerifiedForPlatform(account)
+    ) {
+      recordLoginSuccess(loginAttempt);
+      sendJson(response, 403, {
+        message: "Seller verification is required before login.",
+        code: "SELLER_VERIFICATION_REQUIRED",
+        setting: "requireSellerVerification",
+        authStore: "json",
+      });
       return;
     }
 
@@ -21821,6 +25607,9 @@ async function handleAuthVerificationSendApi(request, response) {
       ? String(payload.mobileNumber ?? payload.target ?? "").trim()
       : String(payload.email ?? payload.target ?? "").trim();
 
+    // OTP email/SMS must still work while Test Mode is on (sandbox testing).
+    // Account *creation* stays IP-locked separately.
+
     if (purpose === "password_reset") {
       const registered = await isSwitchRegisteredAccountForPasswordReset({
         channel,
@@ -21871,6 +25660,8 @@ async function handleUnifiedAuthSessionApi(request, response) {
   } catch (error) {
     sendJson(response, error?.statusCode || 500, {
       message: error instanceof Error ? error.message : "Unable to load unified session.",
+      ...(error?.code ? { code: error.code } : {}),
+      ...(error?.accountStatus ? { accountStatus: error.accountStatus } : {}),
     });
   }
 }
@@ -22180,6 +25971,34 @@ async function handleUnifiedAuthSwitchRoleApi(request, response) {
       return;
     }
 
+    if (requestedMode === "seller_admin") {
+      const requestedCompanyId = String(identity.companyId || "").trim();
+      const company =
+        (requestedCompanyId ? await findCompanyById(requestedCompanyId) : null)
+        || existing.activeCompany
+        || null;
+      let seller = null;
+      const accountId = String(
+        identity.accountId || existing.account?.id || "",
+      ).trim();
+      if (accountId) {
+        seller = await findSellerByAdminId(accountId);
+      }
+      if (!seller && (identity.email || existing.account?.email)) {
+        seller = await findSellerByEmail(identity.email || existing.account?.email);
+      }
+      const workspaceBlockMessage = getSellerCompanyWorkspaceBlockMessage(company, seller);
+      if (workspaceBlockMessage) {
+        sendJson(response, 403, {
+          message: workspaceBlockMessage,
+          code: "COMPANY_WORKSPACE_BLOCKED",
+          companyId: String(company?.id || requestedCompanyId || "").trim() || null,
+          companyStatus: String(company?.status || "").trim() || null,
+        });
+        return;
+      }
+    }
+
     const switched = await resolveUnifiedSession({
       accountId: identity.accountId || existing.account?.id,
       email: identity.email || existing.account?.email,
@@ -22267,6 +26086,27 @@ async function handleUnifiedAccountProfileImageApi(request, response) {
   }
 }
 
+async function requireTestModeAccountCreationAllowed(request, response) {
+  try {
+    await assertTestModeAccountCreationAllowed(request);
+    return true;
+  } catch (error) {
+    if (error?.code === "TEST_MODE_REGISTRATION_LOCKED" || error?.statusCode === 403) {
+      sendJson(
+        response,
+        error.statusCode || 403,
+        error.payload || {
+          message: error instanceof Error ? error.message : "Account creation is paused while Test Mode is on.",
+          code: "TEST_MODE_REGISTRATION_LOCKED",
+          maintenance: true,
+        },
+      );
+      return false;
+    }
+    throw error;
+  }
+}
+
 async function handleBecomeSellerStartApi(request, response) {
   if (request.method !== "POST") {
     sendJson(response, 405, { message: "Method not allowed." });
@@ -22274,6 +26114,16 @@ async function handleBecomeSellerStartApi(request, response) {
   }
 
   try {
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "sellerSignups",
+        "Seller signups are currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+
     if (!(await isSellerOnboardingReady())) {
       sendJson(response, 503, {
         message: "Seller onboarding is unavailable.",
@@ -22285,7 +26135,17 @@ async function handleBecomeSellerStartApi(request, response) {
     assertSessionPayloadIdentity(request, payload, { account: true });
     payload.accountId = request.authSession.accountId;
     payload.email = request.authSession.email;
+    const requestedStore = normalizeStoreLocation(payload);
+    if (requestedStore && requestedStore.lat === null) {
+      const geocoded = await mapsPlacesApi.geocodeAddress(requestedStore.address).catch(() => null);
+      if (geocoded) {
+        payload.storeLatitude = geocoded.lat;
+        payload.storeLongitude = geocoded.lng;
+        if (!payload.storeArea) payload.storeArea = geocoded.city || geocoded.province || "";
+      }
+    }
     const result = await startSellerOnboarding(payload);
+    const storeLocation = result?.company?.profileData?.storeLocation || null;
     const now = new Date().toISOString();
     const companyName = String(
       result?.company?.name ??
@@ -22295,7 +26155,12 @@ async function handleBecomeSellerStartApi(request, response) {
       "Seller company",
     ).trim();
     const sellerAdminId = resolveSellerOnboardingAdminId(result, payload);
-    const createdBy = String(result?.account?.email ?? payload.email ?? "").trim() || "Buyer";
+    const userActor = await resolveSaNotificationUserActor({
+      accountId: request.authSession.accountId,
+      account: result?.account,
+      payload,
+      fallback: "Buyer",
+    });
 
     await persistSuperAdminNotification(
       createPersistentLinkedNotification({
@@ -22303,13 +26168,14 @@ async function handleBecomeSellerStartApi(request, response) {
         audience: "super_admin",
         title: "Seller onboarding started",
         reason: "Buyer requested seller upgrade via Be Part of Switch",
-        message: `${companyName} started the Become a Seller flow and is awaiting payment or review.`,
+        message: `${userActor.username} started seller onboarding for ${companyName}.${storeLocation?.address ? ` Store address: ${storeLocation.address}.` : ""}`,
         adminId: sellerAdminId,
         companyName,
         storeName: companyName,
         businessName: companyName,
-        createdBy,
-        targetUrl: "/super_admin.html#companies",
+        ...userActor,
+        // Draft/incomplete upgrades must not look like Companies data yet.
+        targetUrl: "/super_admin.html#settings",
         createdAt: now,
       }),
     );
@@ -22318,14 +26184,14 @@ async function handleBecomeSellerStartApi(request, response) {
       id: createActivityLogId(),
       title: "Seller onboarding started",
       actor: {
-        role: "admin",
-        accountId: sellerAdminId || createdBy,
-        displayName: companyName,
+        role: "buyer",
+        accountId: userActor.userId || sellerAdminId,
+        displayName: userActor.username,
       },
       adminId: sellerAdminId,
       source: "seller_onboarding",
       notificationAudience: "super_admin",
-      description: `${companyName} started the Become a Seller workflow.`,
+      description: `${userActor.username} started the Become a Seller workflow for ${companyName}.`,
       createdAt: now,
       skipLinkedNotification: true,
     }, request);
@@ -22356,98 +26222,6 @@ async function handleBecomeSellerStartApi(request, response) {
   }
 }
 
-function getSellerPlanCatalog(paymentPartners = []) {
-  const activePartners = (Array.isArray(paymentPartners) ? paymentPartners : [])
-    .filter((partner) => partner && partner.enabled !== false && partner.isActive !== false)
-    .map((partner) => ({
-      id: String(partner.id || "").trim(),
-      name: String(partner.branch || partner.name || "Payment Partner").trim(),
-      imageUrl: String(partner.imageUrl || "").trim(),
-      status: String(partner.status || "active").trim().toLowerCase() || "active",
-    }))
-    .filter((partner) => partner.id && partner.name);
-
-  return {
-    plans: [
-      {
-        id: "seller-free",
-        name: "Free",
-        billingCycle: "monthly",
-        amount: 0,
-        yearlyAmount: 0,
-        currencyCode: "PHP",
-        popular: false,
-        free: true,
-        description: "Start selling on Switch at no cost. Upgrade anytime for Legit seller badge and more tools.",
-        features: [
-          "Seller admin dashboard",
-          "Up to 10 active listings",
-          "Order basics",
-          "Buyer + seller unified account",
-        ],
-      },
-      {
-        id: "seller-basic-monthly",
-        name: "Basic",
-        billingCycle: "monthly",
-        amount: 299,
-        yearlyAmount: 2870,
-        currencyCode: "PHP",
-        popular: false,
-        description: "Everything you need to list products and start selling on Switch.",
-        features: [
-          "Seller admin dashboard",
-          "Up to 50 active listings",
-          "Order and inventory basics",
-          "Email support",
-          "Buyer + seller unified account",
-          "Legit badge for original products",
-        ],
-      },
-      {
-        id: "seller-pro-monthly",
-        name: "Pro",
-        billingCycle: "monthly",
-        amount: 499,
-        yearlyAmount: 4790,
-        currencyCode: "PHP",
-        popular: true,
-        description: "The perfect balance of tools for growing seller teams.",
-        features: [
-          "Everything in Basic",
-          "Up to 500 active listings",
-          "Employee workspace access",
-          "Priority support",
-          "Live chat with buyers",
-          "Company branding on storefront",
-          "Legit badge for original products",
-        ],
-      },
-      {
-        id: "seller-premium-monthly",
-        name: "Premium",
-        billingCycle: "monthly",
-        amount: 999,
-        yearlyAmount: 9590,
-        currencyCode: "PHP",
-        popular: false,
-        description: "Maximum control for high-volume seller operations.",
-        features: [
-          "Everything in Pro",
-          "Unlimited listings",
-          "Advanced analytics",
-          "Dedicated onboarding help",
-          "Multi-warehouse inventory",
-          "API access (coming soon)",
-          "Priority dispute handling",
-          "Legit badge for original products",
-        ],
-      },
-    ],
-    paymentPartners: activePartners,
-  };
-}
-
 async function handleSellerPlansApi(request, response) {
   if (request.method !== "GET") {
     sendJson(response, 405, { message: "Method not allowed." });
@@ -22456,9 +26230,26 @@ async function handleSellerPlansApi(request, response) {
 
   try {
     const paymentPartners = await readPaymentPartners();
+    let entitlement = {
+      firstCompanyFree: true,
+      requiresPaidPlan: false,
+      existingCompanyCount: 0,
+      canSubmitFreeFirst: true,
+    };
+    const accountId = String(request.authSession?.accountId || "").trim();
+    if (accountId && (await isSellerOnboardingReady())) {
+      entitlement = await getSellerCompanyEntitlement(accountId);
+    }
     sendJson(response, 200, {
-      catalog: getSellerPlanCatalog(paymentPartners),
-      message: "Seller plans loaded.",
+      catalog: getSellerPlanCatalog(paymentPartners, entitlement),
+      firstCompanyFree: true,
+      requiresPaidPlan: false,
+      existingCompanyCount: entitlement.existingCompanyCount,
+      canSubmitFreeFirst: entitlement.canSubmitFreeFirst,
+      oneCompanyPerAccount: true,
+      subscriptionsRetired: true,
+      paidExtraSlot: null,
+      message: "One free company per account. Subscriptions are retired.",
     });
   } catch (error) {
     sendJson(response, 500, {
@@ -22485,19 +26276,41 @@ async function handleBecomeSellerCheckoutIntentApi(request, response) {
     assertSessionPayloadIdentity(request, payload, { account: true });
     payload.accountId = request.authSession.accountId;
     payload.email = request.authSession.email || payload.email;
+    const selectedPlan = resolveSellerPlanSelection(payload, { requirePaid: true });
+    const hostedGateway = getHostedGatewayConfig();
+    if (!hostedGateway.enabled) {
+      const error = new Error("Seller checkout is unavailable until PayMongo is configured.");
+      error.statusCode = 503;
+      error.code = "PAYMONGO_NOT_CONFIGURED";
+      throw error;
+    }
+    Object.assign(payload, {
+      planId: selectedPlan.planId,
+      planName: selectedPlan.planName,
+      billingCycle: selectedPlan.billingCycle,
+      amount: selectedPlan.amount,
+      currencyCode: selectedPlan.currencyCode,
+      paymentGateway: "paymongo",
+      slotPurchase: payload.slotPurchase === true || payload.extraCompanySlot === true || !payload.companyId,
+    });
     const result = await createSellerCheckoutIntent(payload);
     const checkoutIntent = result.checkoutIntent || null;
     const requestOrigin = getRequestOrigin(request);
-    const hostedGateway = getHostedGatewayConfig();
     let hostedCheckout = null;
 
-    if (checkoutIntent && hostedGateway.enabled) {
+    if (checkoutIntent) {
       hostedCheckout = await createHostedCheckoutSession({
-        checkoutIntent,
+        checkoutIntent: {
+          ...checkoutIntent,
+          planName: selectedPlan.free
+            ? `${selectedPlan.planName} (₱0 — no charge)`
+            : checkoutIntent.planName,
+          amount: selectedPlan.amount,
+        },
         customerEmail: String(payload.email || "").trim(),
         customerName: String(payload.customerName || "").trim(),
-        successUrl: `${requestOrigin}/unified_account.html?checkout=success&companyId=${encodeURIComponent(result.companyId)}&intentId=${encodeURIComponent(checkoutIntent.id)}`,
-        cancelUrl: `${requestOrigin}/unified_account.html?checkout=cancel&companyId=${encodeURIComponent(result.companyId)}&intentId=${encodeURIComponent(checkoutIntent.id)}`,
+        successUrl: `${requestOrigin}/switch_account.html?tab=seller&becomeSeller=1&slotPaid=1&intentId=${encodeURIComponent(checkoutIntent.id)}`,
+        cancelUrl: `${requestOrigin}/switch_account.html?tab=seller&becomeSeller=1&slotCancel=1&intentId=${encodeURIComponent(checkoutIntent.id)}`,
       });
 
       await updateSellerCheckoutIntentGatewayState(checkoutIntent.id, {
@@ -22522,6 +26335,8 @@ async function handleBecomeSellerCheckoutIntentApi(request, response) {
             providerCheckoutId: hostedCheckout.externalId,
             paymentMethodTypes: hostedCheckout.paymentMethodTypes,
             livemode: hostedCheckout.livemode,
+            testMode: Boolean(hostedCheckout.testMode),
+            message: hostedCheckout.message || undefined,
           }
         : checkoutIntent,
       message: "Seller checkout intent created.",
@@ -22529,6 +26344,7 @@ async function handleBecomeSellerCheckoutIntentApi(request, response) {
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
       message: error instanceof Error ? error.message : "Unable to prepare seller checkout.",
+      ...(error?.code ? { code: error.code } : {}),
     });
   }
 }
@@ -22537,7 +26353,12 @@ async function notifySellerOnboardingOutcome(result, payload = {}, request = nul
   const now = new Date().toISOString();
   const companyName = String(result?.company?.name ?? "Seller company").trim();
   const sellerAdminId = resolveSellerOnboardingAdminId(result, payload);
-  const createdBy = String(result?.account?.email ?? payload.email ?? "").trim() || "Buyer";
+  const userActor = await resolveSaNotificationUserActor({
+    accountId: request?.authSession?.accountId || result?.account?.id || payload.accountId,
+    account: result?.account,
+    payload,
+    fallback: "Buyer",
+  });
   const isActive = Boolean(result?.active);
 
   await persistSuperAdminNotification(
@@ -22549,13 +26370,13 @@ async function notifySellerOnboardingOutcome(result, payload = {}, request = nul
         ? "Payment and verification completed via Be Part of Switch"
         : "Payment completed but manual review is still required",
       message: isActive
-        ? `${companyName} can now access Seller Mode.`
-        : `${companyName} completed payment and is waiting for activation review.`,
+        ? `${userActor.username} activated seller access for ${companyName}.`
+        : `${userActor.username} completed payment for ${companyName} and is waiting for activation review.`,
       adminId: sellerAdminId,
       companyName,
       storeName: companyName,
       businessName: companyName,
-      createdBy,
+      ...userActor,
       targetUrl: "/super_admin.html#companies",
       createdAt: now,
     }),
@@ -22578,6 +26399,7 @@ async function notifySellerOnboardingOutcome(result, payload = {}, request = nul
         companyName,
         storeName: companyName,
         businessName: companyName,
+        actorType: "system",
         createdBy: SUPER_ADMIN_USERNAME,
         targetUrl: isActive ? "/main.html#dashboard" : "/switch_account.html",
         createdAt: now,
@@ -22589,21 +26411,21 @@ async function notifySellerOnboardingOutcome(result, payload = {}, request = nul
     id: createActivityLogId(),
     title: isActive ? "Seller onboarding activated" : "Seller onboarding pending review",
     actor: {
-      role: "admin",
-      accountId: sellerAdminId || createdBy,
-      displayName: companyName,
+      role: "buyer",
+      accountId: userActor.userId || sellerAdminId,
+      displayName: userActor.username,
     },
     adminId: sellerAdminId,
     source: "seller_onboarding",
     notificationAudience: "admin",
     description: isActive
-      ? `${companyName} completed seller activation.`
-      : `${companyName} completed seller payment and is awaiting review.`,
+      ? `${userActor.username} completed seller activation for ${companyName}.`
+      : `${userActor.username} completed seller payment for ${companyName} and is awaiting review.`,
     createdAt: now,
     skipLinkedNotification: true,
   }, request);
 
-  return { isActive, sellerAdminId, companyName, createdBy };
+  return { isActive, sellerAdminId, companyName, createdBy: userActor.username };
 }
 
 async function handlePaymongoSellerWebhookApi(request, response) {
@@ -22635,10 +26457,12 @@ async function handlePaymongoSellerWebhookApi(request, response) {
       return;
     }
 
-    const eventPayload = rawBody ? JSON.parse(rawBody) : {};
-    const eventData = eventPayload?.data || {};
-    const eventType = String(eventData?.type || "").trim();
-    const livemode = Boolean(eventData?.livemode);
+    const {
+      eventId: providerEventId,
+      eventType,
+      livemode,
+      resource: sessionData,
+    } = readPaymongoWebhookEvent(rawBody ? JSON.parse(rawBody) : {});
 
     if (eventType !== "checkout_session.payment.paid") {
       sendJson(response, 200, {
@@ -22649,9 +26473,7 @@ async function handlePaymongoSellerWebhookApi(request, response) {
       return;
     }
 
-    const sessionData = eventData?.data || {};
     const attributes = sessionData?.attributes || {};
-    const providerEventId = String(eventData?.id || "").trim();
     const payloadHash = crypto.createHash("sha256").update(rawBody).digest("hex");
     const webhookEventId = providerEventId || `payload_${payloadHash}`;
     const paymentReference = String(attributes?.reference_number || "").trim();
@@ -22663,6 +26485,15 @@ async function handlePaymongoSellerWebhookApi(request, response) {
     const intent = await findSellerCheckoutIntentByPaymentReference(paymentReference);
     if (!intent) {
       sendJson(response, 404, { message: "Checkout intent not found." });
+      return;
+    }
+
+    const selectedPlan = resolveSellerPlanSelection(intent);
+    if (!sellerPlanMatchesIntent(selectedPlan, intent)) {
+      sendJson(response, 409, {
+        message: "Seller checkout plan or amount does not match the server catalog.",
+        code: "SELLER_CHECKOUT_PLAN_MISMATCH",
+      });
       return;
     }
 
@@ -22717,17 +26548,7 @@ async function handlePaymongoSellerWebhookApi(request, response) {
       return;
     }
 
-    const confirmed = await confirmSellerOnboarding({
-      accountId: intent.accountId,
-      companyId: intent.companyId,
-      planName: intent.planName,
-      billingCycle: intent.billingCycle,
-      paymentGateway: "paymongo",
-      paymentReference: intent.paymentReference,
-      amount: intent.amount,
-      currencyCode: intent.currencyCode,
-    });
-
+    const slotPurchase = Boolean(intent?.metadata?.slotPurchase || intent?.metadata?.extraCompanySlot);
     await updateSellerCheckoutIntentGatewayState(intent.id, {
       paymentGateway: "paymongo",
       status: "active",
@@ -22738,7 +26559,35 @@ async function handlePaymongoSellerWebhookApi(request, response) {
         paymongoEventType: eventType,
         paymongoLivemode: livemode,
         paymongoPayloadHash: payloadHash,
+        slotPurchase,
       },
+    });
+
+    if (slotPurchase) {
+      await markExtraCompanySlotPaid(intent, { paymongoEventId: webhookEventId });
+      await finishPaymentWebhookEvent({
+        provider: "paymongo",
+        eventId: webhookEventId,
+      });
+      claimedWebhookEventId = "";
+      sendJson(response, 200, {
+        message: "Monthly extra-company slot paid. Create the company profile next.",
+        slotPaid: true,
+        eventId: webhookEventId,
+      });
+      return;
+    }
+
+    const confirmed = await confirmSellerOnboarding({
+      accountId: intent.accountId,
+      companyId: intent.companyId,
+      planName: selectedPlan.planName,
+      billingCycle: selectedPlan.billingCycle,
+      paymentGateway: "paymongo",
+      paymentReference: intent.paymentReference,
+      amount: selectedPlan.amount,
+      currencyCode: selectedPlan.currencyCode,
+      paymentVerified: true,
     });
     await notifySellerOnboardingOutcome(confirmed, {
       accountId: intent.accountId,
@@ -22780,11 +26629,18 @@ function markBuyerOrderEntryPaid(entry, paymentPatch = {}) {
       ? "toPrepare"
       : stage;
   const paidAtEpochMs = Date.now();
+  // The paid amount leaves the balance so COD riders collect only what is still owed.
+  const paidNowAmount = Math.max(parseFiniteNumber(entry?.amountToPayAmount, 0), 0);
+  const remainingBalanceAmount = Math.max(
+    Math.max(parseFiniteNumber(entry?.remainingBalanceAmount, 0), 0) - paidNowAmount,
+    0,
+  );
   return normalizeStoredOrderEntry({
     ...entry,
     ...paymentPatch,
     stage: nextStage,
     amountToPayAmount: 0,
+    remainingBalanceAmount,
     paymentStatus:
       String(paymentPatch.paymentStatus || entry?.paymentStatus || "paid").trim()
       || "paid",
@@ -22801,6 +26657,25 @@ async function handleBuyerOrderCheckoutSessionApi(request, response) {
   }
 
   try {
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "buyerCheckout",
+        "Checkout is currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "onlinePayments",
+        "Online payments are currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+
     const payload = await parseRequestBody(request);
     assertSessionPayloadIdentity(request, payload, { account: true });
     const accountId = String(
@@ -22851,13 +26726,7 @@ async function handleBuyerOrderCheckoutSessionApi(request, response) {
       return;
     }
 
-    const amount = groupEntries.reduce((sum, entry) => {
-      const due = Math.max(parseFiniteNumber(entry?.amountToPayAmount, 0), 0);
-      if (due > 0.009) {
-        return sum + due;
-      }
-      return sum + Math.max(parseFiniteNumber(entry?.grandTotalAmount, 0), 0);
-    }, 0);
+    const amount = resolveBuyerOrderGroupAmount(groupEntries);
     if (amount <= 0.009) {
       sendJson(response, 400, { message: "Order has no payable amount." });
       return;
@@ -22872,22 +26741,29 @@ async function handleBuyerOrderCheckoutSessionApi(request, response) {
       || String(groupEntries[0]?.paymentReference ?? "").trim()
       || newPaymentReference("ORD");
     const paymentGateway = String(
-      payload.paymentGateway
-        ?? groupEntries[0]?.paymentPartnerName
-        ?? groupEntries[0]?.paymentMethod
-        ?? "",
+      groupEntries[0]?.paymentPartnerName
+        || groupEntries[0]?.paymentMethod
+        || payload.paymentGateway
+        || "",
     ).trim();
+    const requestedMethodType = normalizePaymongoMethodType(payload.paymentMethodType);
+    const paymentMethodType = requestedMethodType || resolvePaymentPartnerMethod({
+      partnerName: paymentGateway,
+      partners: await readPaymentPartners(),
+      adminId: getRecordAdminId(groupEntries[0], ""),
+    }).method;
     const requestOrigin = getRequestOrigin(request);
     const successUrl = String(payload.successUrl ?? "").trim()
       || `${requestOrigin}/?checkout=success&orderGroupId=${encodeURIComponent(groupKey)}`;
     const cancelUrl = String(payload.cancelUrl ?? "").trim()
       || `${requestOrigin}/?checkout=cancel&orderGroupId=${encodeURIComponent(groupKey)}`;
 
-    const hosted = await createBuyerOrderCheckoutSession({
+    const checkoutRequest = {
       orderGroupId: String(groupEntries[0]?.orderGroupId || groupKey).trim(),
       amount,
       currencyCode: String(payload.currencyCode ?? "PHP").trim() || "PHP",
       paymentGateway,
+      paymentMethodType,
       paymentReference,
       description: `Order ${groupKey}`,
       customerEmail: String(
@@ -22904,48 +26780,58 @@ async function handleBuyerOrderCheckoutSessionApi(request, response) {
           parseFiniteNumber(groupEntries[0]?.createdAtEpochMs, 0),
         ),
       },
-    });
+    };
+
+    let hosted = null;
+    if (isDirectPaymentMethod(paymentMethodType)) {
+      try {
+        hosted = await createBuyerDirectPayment({
+          ...checkoutRequest,
+          returnUrl: successUrl,
+        });
+      } catch (directError) {
+        if (!directError?.fallbackToCheckout) {
+          throw directError;
+        }
+        console.warn(
+          `[paymongo] direct ${paymentMethodType} payment unavailable, using hosted checkout:`,
+          directError instanceof Error ? directError.message : directError,
+        );
+      }
+    }
+    if (!hosted) {
+      hosted = await createBuyerOrderCheckoutSession(checkoutRequest);
+    }
 
     const paymentPatch = {
       paymentProvider: hosted.provider,
-      paymentCheckoutSessionId: hosted.externalId || "",
+      paymentCheckoutSessionId: hosted.paymentIntentId ? "" : hosted.externalId || "",
       paymentReference: hosted.paymentReference || paymentReference,
       paymentIdempotencyKey,
-      paymentStatus: hosted.provider === "paymongo" ? "pending" : "paid",
+      paymentStatus: "pending",
       paymentClientKey: "",
-      paymentIntentId: String(groupEntries[0]?.paymentIntentId ?? "").trim(),
+      paymentIntentId: String(
+        hosted.paymentIntentId || groupEntries[0]?.paymentIntentId || "",
+      ).trim(),
     };
 
-    let nextOrders;
-    if (hosted.provider === "paymongo") {
-      nextOrders = orders.map((entry) => {
-        if (
-          !orderEntryMatchesGroupKey(entry, groupKey)
-          || String(entry?.accountId ?? "").trim() !== accountId
-        ) {
-          return entry;
-        }
-        return normalizeStoredOrderEntry({
-          ...entry,
-          ...paymentPatch,
-          stage: "toPay",
-          amountToPayAmount: Math.max(
-            parseFiniteNumber(entry?.amountToPayAmount, 0),
-            parseFiniteNumber(entry?.grandTotalAmount, 0),
-          ),
-        });
+    const nextOrders = orders.map((entry) => {
+      if (
+        !orderEntryMatchesGroupKey(entry, groupKey)
+        || String(entry?.accountId ?? "").trim() !== accountId
+      ) {
+        return entry;
+      }
+      return normalizeStoredOrderEntry({
+        ...entry,
+        ...paymentPatch,
+        stage: "toPay",
+        amountToPayAmount: Math.max(
+          parseFiniteNumber(entry?.amountToPayAmount, 0),
+          parseFiniteNumber(entry?.grandTotalAmount, 0),
+        ),
       });
-    } else {
-      nextOrders = orders.map((entry) => {
-        if (
-          !orderEntryMatchesGroupKey(entry, groupKey)
-          || String(entry?.accountId ?? "").trim() !== accountId
-        ) {
-          return entry;
-        }
-        return markBuyerOrderEntryPaid(entry, paymentPatch);
-      });
-    }
+    });
 
     await writeOrders(nextOrders, catalogWriteScope({ accountId }));
 
@@ -22961,10 +26847,7 @@ async function handleBuyerOrderCheckoutSessionApi(request, response) {
       createdAtEpochMs: Math.trunc(
         parseFiniteNumber(groupEntries[0]?.createdAtEpochMs, 0),
       ),
-      message:
-        hosted.provider === "paymongo"
-          ? "Buyer checkout session created."
-          : "PayMongo is not configured; order marked paid locally.",
+      message: "Buyer checkout session created.",
     });
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
@@ -23062,12 +26945,17 @@ async function handlePaymongoBuyerWebhookApi(request, response) {
       return;
     }
 
-    const eventPayload = rawBody ? JSON.parse(rawBody) : {};
-    const eventData = eventPayload?.data || {};
-    const eventType = String(eventData?.type || "").trim();
-    const livemode = Boolean(eventData?.livemode);
+    const {
+      eventId: providerEventId,
+      eventType,
+      livemode,
+      resource,
+    } = readPaymongoWebhookEvent(rawBody ? JSON.parse(rawBody) : {});
 
-    if (eventType !== "checkout_session.payment.paid") {
+    // Hosted checkout reports checkout_session.payment.paid; direct e-wallet and
+    // online-banking payments (Payment Intents) only report payment.paid.
+    const isDirectPaymentEvent = eventType === "payment.paid";
+    if (eventType !== "checkout_session.payment.paid" && !isDirectPaymentEvent) {
       sendJson(response, 200, {
         message: "Webhook received.",
         ignored: true,
@@ -23076,16 +26964,48 @@ async function handlePaymongoBuyerWebhookApi(request, response) {
       return;
     }
 
-    const sessionData = eventData?.data || {};
-    const attributes = sessionData?.attributes || {};
-    const providerEventId = String(eventData?.id || "").trim();
+    const attributes = resource?.attributes || {};
     const payloadHash = crypto.createHash("sha256").update(rawBody).digest("hex");
     const webhookEventId = providerEventId || `buyer_payload_${payloadHash}`;
-    const paymentReference = String(attributes?.reference_number || "").trim();
-    const receivedCheckoutId = String(sessionData?.id || "").trim();
-    if (!paymentReference && !receivedCheckoutId) {
+    const paymentReference = isDirectPaymentEvent
+      ? ""
+      : String(attributes?.reference_number || "").trim();
+    const receivedCheckoutId = isDirectPaymentEvent ? "" : String(resource?.id || "").trim();
+    const receivedPaymentIntentId = isDirectPaymentEvent
+      ? String(attributes?.payment_intent_id || "").trim()
+      : "";
+    if (!paymentReference && !receivedCheckoutId && !receivedPaymentIntentId) {
+      if (isDirectPaymentEvent) {
+        sendJson(response, 200, { message: "Webhook received.", ignored: true, eventType });
+        return;
+      }
       sendJson(response, 400, { message: "Missing checkout reference." });
       return;
+    }
+
+    const entryMatchesPayment = (entry) => {
+      if (receivedPaymentIntentId) {
+        return String(entry?.paymentIntentId || "").trim() === receivedPaymentIntentId;
+      }
+      const entryRef = String(entry?.paymentReference || "").trim();
+      const entrySession = String(entry?.paymentCheckoutSessionId || "").trim();
+      return Boolean(
+        (paymentReference && entryRef === paymentReference)
+        || (receivedCheckoutId && entrySession === receivedCheckoutId),
+      );
+    };
+
+    if (isDirectPaymentEvent) {
+      // payment.paid also fires for hosted checkouts and seller plans; only act
+      // when it belongs to an unpaid buyer order created by direct payment.
+      const pendingDirect = (await readOrders()).filter((entry) =>
+        entryMatchesPayment(entry)
+        && String(entry?.paymentStatus || "").trim().toLowerCase() !== "paid"
+      );
+      if (!pendingDirect.length) {
+        sendJson(response, 200, { message: "Webhook received.", ignored: true, eventType });
+        return;
+      }
     }
 
     const claim = await claimPaymentWebhookEvent({
@@ -23106,17 +27026,7 @@ async function handlePaymongoBuyerWebhookApi(request, response) {
     claimedWebhookEventId = webhookEventId;
 
     const orders = await readOrders();
-    const matching = orders.filter((entry) => {
-      const entryRef = String(entry?.paymentReference || "").trim();
-      const entrySession = String(entry?.paymentCheckoutSessionId || "").trim();
-      if (paymentReference && entryRef === paymentReference) {
-        return true;
-      }
-      if (receivedCheckoutId && entrySession === receivedCheckoutId) {
-        return true;
-      }
-      return false;
-    });
+    const matching = orders.filter(entryMatchesPayment);
 
     if (!matching.length) {
       await finishPaymentWebhookEvent({
@@ -23130,8 +27040,9 @@ async function handlePaymongoBuyerWebhookApi(request, response) {
     }
 
     const paymentIntentId = String(
-      attributes?.payments?.[0]?.id
+      receivedPaymentIntentId
         || attributes?.payment_intent?.id
+        || attributes?.payments?.[0]?.id
         || matching[0]?.paymentIntentId
         || "",
     ).trim();
@@ -23143,14 +27054,11 @@ async function handlePaymongoBuyerWebhookApi(request, response) {
     );
 
     const nextOrders = orders.map((entry) => {
-      const entryRef = String(entry?.paymentReference || "").trim();
-      const entrySession = String(entry?.paymentCheckoutSessionId || "").trim();
-      const matched =
-        (paymentReference && entryRef === paymentReference)
-        || (receivedCheckoutId && entrySession === receivedCheckoutId);
-      if (!matched) {
+      if (!entryMatchesPayment(entry)) {
         return entry;
       }
+      const entryRef = String(entry?.paymentReference || "").trim();
+      const entrySession = String(entry?.paymentCheckoutSessionId || "").trim();
       return markBuyerOrderEntryPaid(entry, {
         paymentProvider: "paymongo",
         paymentStatus: "paid",
@@ -23199,11 +27107,115 @@ async function handlePaymongoBuyerWebhookApi(request, response) {
   }
 }
 
+async function handleLalamoveCourierWebhookApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const rawBody = await parseRawRequestBody(request);
+    let payload;
+    try {
+      payload = rawBody ? JSON.parse(rawBody) : {};
+    } catch (_) {
+      sendJson(response, 400, { message: "Invalid Lalamove webhook JSON." });
+      return;
+    }
+
+    const config = getCourierProviderConfig();
+    if (!config.apiKey || !config.webhookSecret) {
+      sendJson(response, 503, {
+        message: "Lalamove webhook verification is not configured.",
+        code: "LALAMOVE_WEBHOOK_NOT_CONFIGURED",
+      });
+      return;
+    }
+    const requestPath = new URL(
+      request.url,
+      `http://127.0.0.1:${PORT}`,
+    ).pathname;
+    if (!verifyLalamoveWebhook({
+      payload,
+      path: requestPath,
+      apiKey: config.apiKey,
+      secret: config.webhookSecret,
+    })) {
+      sendJson(response, 401, {
+        message: "Invalid Lalamove webhook signature.",
+      });
+      return;
+    }
+
+    const eventType = String(payload?.eventType || "").trim();
+    const eventId = String(payload?.eventId || "").trim();
+    const order = payload?.data?.order && typeof payload.data.order === "object"
+      ? payload.data.order
+      : {};
+    const orderId = String(order?.orderId || order?.id || "").trim();
+    if (!orderId) {
+      sendJson(response, 200, {
+        message: "Lalamove webhook received.",
+        ignored: true,
+        eventType,
+      });
+      return;
+    }
+
+    const orders = await readOrders();
+    let updatedCount = 0;
+    const providerStatus = String(order?.status || "").trim();
+    const shipmentStatus = normalizeLalamoveStatus(providerStatus);
+    const courierUpdatedAt = String(
+      payload?.data?.updatedAt || order?.updatedAt || new Date().toISOString(),
+    ).trim();
+    const nextOrders = orders.map((entry) => {
+      const shipmentId = String(entry?.courierShipmentId || "").trim();
+      const trackingNumber = String(
+        entry?.trackingNumber || entry?.trackingNo || "",
+      ).trim();
+      if (shipmentId !== orderId && trackingNumber !== orderId) {
+        return entry;
+      }
+      updatedCount += 1;
+      return normalizeStoredOrderEntry({
+        ...entry,
+        trackingNumber: orderId,
+        courierProvider: "lalamove",
+        courierShipmentId: orderId,
+        courierShipmentStatus: shipmentStatus,
+        courierProviderStatus: providerStatus,
+        courierShareLink: String(order?.shareLink || entry?.courierShareLink || "").trim(),
+        courierDriverId: String(order?.driverId || entry?.courierDriverId || "").trim(),
+        courierLastEventId: eventId,
+        courierUpdatedAt,
+      });
+    });
+
+    if (updatedCount > 0) {
+      await writeOrders(nextOrders);
+    }
+    sendJson(response, 200, {
+      message: "Lalamove webhook processed.",
+      eventId,
+      eventType,
+      orderId,
+      updatedCount,
+      ignored: updatedCount === 0,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 500, {
+      message:
+        error instanceof Error ? error.message : "Unable to process Lalamove webhook.",
+    });
+  }
+}
+
 async function handleOrderShipmentApi(request, response, groupKey) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
 
-  if (request.method !== "POST") {
+  if (request.method !== "POST" && request.method !== "GET") {
     sendJson(response, 405, { message: "Method not allowed." });
     return;
   }
@@ -23226,7 +27238,7 @@ async function handleOrderShipmentApi(request, response, groupKey) {
   }
 
   try {
-    const payload = await parseRequestBody(request);
+    const payload = request.method === "POST" ? await parseRequestBody(request) : {};
     const trackingHint = String(
       payload?.trackingNumber ?? payload?.trackingNo ?? "",
     ).trim();
@@ -23240,14 +27252,94 @@ async function handleOrderShipmentApi(request, response, groupKey) {
     }
 
     const primary = groupEntries[0];
+    const existingTrackingNumber = String(
+      primary?.courierShipmentId
+        || primary?.trackingNumber
+        || primary?.trackingNo
+        || "",
+    ).trim();
+    if (request.method === "GET") {
+      const trackingNumber = existingTrackingNumber;
+      if (!trackingNumber) {
+        sendJson(response, 409, {
+          message: "This order does not have a courier tracking number yet.",
+        });
+        return;
+      }
+      const storedProvider = String(primary?.courierProvider || "").trim().toLowerCase();
+      const tracking = await getCourierTracking(trackingNumber, {
+        env: storedProvider
+          ? { ...process.env, COURIER_PROVIDER: storedProvider }
+          : process.env,
+      });
+      sendJson(response, 200, {
+        ...getOrderGroupResponseFields(groupEntries, groupKey),
+        tracking,
+        message: "Shipment tracking loaded.",
+      });
+      return;
+    }
+
+    if (groupEntries.every(isSwitchRiderOrderEntry)) {
+      sendSwitchRiderOrderConflict(
+        response,
+        "This order ships with Switch Rider. Use \"Ready for Rider\" instead of booking a courier.",
+        "SWITCH_RIDER_USE_READY_FOR_RIDER",
+      );
+      return;
+    }
+
+    if (existingTrackingNumber && !trackingHint) {
+      sendJson(response, 200, {
+        ...getOrderGroupResponseFields(groupEntries, groupKey),
+        shipment: {
+          provider: String(primary?.courierProvider || "manual").trim() || "manual",
+          mode: String(primary?.courierShipmentMode || "existing").trim() || "existing",
+          trackingNumber: existingTrackingNumber,
+          providerShipmentId: String(
+            primary?.courierShipmentId || existingTrackingNumber,
+          ).trim(),
+          quotationId: String(primary?.courierQuotationId || "").trim(),
+          labelUrl: String(primary?.courierShareLink || "").trim(),
+          status: String(primary?.courierShipmentStatus || "created").trim(),
+          providerStatus: String(primary?.courierProviderStatus || "").trim(),
+        },
+        alreadyExists: true,
+        message: "Shipment already exists.",
+      });
+      return;
+    }
+
     const shipment = await createCourierShipment({
       orderGroupId: String(primary?.orderGroupId || groupKey).trim(),
       trackingHint,
+      pickupName: String(payload?.pickupName || "").trim(),
+      pickupPhone: String(payload?.pickupPhone || "").trim(),
+      pickupAddress: String(payload?.pickupAddress || "").trim(),
+      pickupCoordinates: payload?.pickupCoordinates,
+      pickupLat: payload?.pickupLat ?? payload?.pickupLatitude,
+      pickupLng: payload?.pickupLng ?? payload?.pickupLongitude,
       recipientName: String(primary?.clientName || primary?.customerName || "").trim(),
       recipientPhone: String(
         primary?.clientContactNumber || primary?.contactNumber || "",
       ).trim(),
       recipientAddress: String(primary?.clientAddress || primary?.address || "").trim(),
+      recipientCoordinates: payload?.recipientCoordinates,
+      recipientLat:
+        payload?.recipientLat
+        ?? payload?.recipientLatitude
+        ?? primary?.clientLatitude
+        ?? primary?.deliveryLatitude,
+      recipientLng:
+        payload?.recipientLng
+        ?? payload?.recipientLongitude
+        ?? primary?.clientLongitude
+        ?? primary?.deliveryLongitude,
+      scheduleAt: String(payload?.scheduleAt || "").trim(),
+      metadata: {
+        adminId: requestAdminId,
+        accountId: String(primary?.accountId || "").trim(),
+      },
     });
 
     const nextOrders = (await readOrders()).map((entry) => {
@@ -23259,8 +27351,12 @@ async function handleOrderShipmentApi(request, response, groupKey) {
         trackingNumber: shipment.trackingNumber,
         courierProvider: shipment.provider,
         courierShipmentId: shipment.providerShipmentId,
+        courierQuotationId: shipment.quotationId || "",
         courierShipmentMode: shipment.mode,
         courierShipmentStatus: shipment.status,
+        courierProviderStatus: shipment.providerStatus || "",
+        courierShareLink: shipment.labelUrl || "",
+        courierUpdatedAt: new Date().toISOString(),
       });
     });
 
@@ -23298,20 +27394,114 @@ async function handleBecomeSellerConfirmApi(request, response) {
     payload.accountId = request.authSession.accountId;
     payload.email = request.authSession.email || payload.email;
 
-    const hostedGateway = getHostedGatewayConfig();
-    if (hostedGateway.enabled) {
-      const paymentReference = String(payload.paymentReference ?? "").trim();
-      const intent = paymentReference
-        ? await findSellerCheckoutIntentByPaymentReference(paymentReference)
-        : null;
-      if (!isPaymongoWebhookVerifiedIntent(intent, request.authSession.accountId)) {
-        sendJson(response, 409, {
-          message: "Seller activation requires a verified PayMongo webhook.",
-          code: "PAYMONGO_WEBHOOK_REQUIRED",
-        });
-        return;
-      }
+    const entitlement = await getSellerCompanyEntitlement(request.authSession.accountId);
+    if (entitlement.canSubmitFreeFirst) {
+      const freePlan = resolveFirstCompanyFreePlan();
+      Object.assign(payload, {
+        planId: freePlan.planId,
+        planName: freePlan.planName,
+        billingCycle: freePlan.billingCycle,
+        amount: freePlan.amount,
+        currencyCode: freePlan.currencyCode,
+        paymentGateway: "free",
+        paymentReference: String(payload.paymentReference || "").trim() || `FREE-FIRST-${Date.now()}`,
+        paymentVerified: true,
+      });
+      const result = await confirmSellerOnboarding(payload);
+      const { isActive } = await notifySellerOnboardingOutcome(result, payload, request);
+      sendJson(response, 200, {
+        onboarding: result,
+        session: serializeUnifiedSessionEntry(result.session),
+        message: isActive
+          ? "Seller role activated."
+          : "Your first company was submitted for Super Admin review. No payment is required.",
+        redirectPath: isActive ? "/main.html#dashboard" : "",
+        dashboardPath: isActive ? "/main.html#dashboard" : "",
+      });
+      return;
     }
+
+    if (entitlement.paidExtraSlot?.paidAt) {
+      const slot = entitlement.paidExtraSlot;
+      Object.assign(payload, {
+        companyId: payload.companyId || slot.companyId,
+        planName: slot.planName,
+        billingCycle: slot.billingCycle || "monthly",
+        amount: slot.amount,
+        currencyCode: slot.currencyCode || "PHP",
+        paymentGateway: "paymongo",
+        paymentReference: slot.paymentReference,
+        paymentVerified: true,
+      });
+      const result = await confirmSellerOnboarding(payload);
+      const { isActive } = await notifySellerOnboardingOutcome(result, payload, request);
+      sendJson(response, 200, {
+        onboarding: result,
+        session: serializeUnifiedSessionEntry(result.session),
+        message: isActive
+          ? "Seller role activated."
+          : "Extra company submitted for Super Admin review. The monthly slot is already paid.",
+        redirectPath: isActive ? "/main.html#dashboard" : "",
+        dashboardPath: isActive ? "/main.html#dashboard" : "",
+      });
+      return;
+    }
+
+    const selectedPlan = resolveSellerPlanSelection(payload, { requirePaid: true });
+    const hostedGateway = getHostedGatewayConfig();
+    if (!hostedGateway.enabled) {
+      sendJson(response, 503, {
+        message: "Seller activation is unavailable until PayMongo is configured.",
+        code: "PAYMONGO_NOT_CONFIGURED",
+      });
+      return;
+    }
+    const requestedGateway = String(payload.paymentGateway || "").trim().toLowerCase();
+    if (
+      requestedGateway.startsWith("prototype")
+      || requestedGateway === "manual"
+      || requestedGateway === "test_mode_text"
+      || requestedGateway === "free"
+      || String(payload.paymentReference || "").trim().toUpperCase().startsWith("PROTO-")
+      || String(payload.paymentReference || "").trim().toUpperCase().startsWith("MANUAL-")
+      || String(payload.paymentReference || "").trim().toUpperCase().startsWith("FREE-")
+    ) {
+      sendJson(response, 409, {
+        message: "Seller activation requires a completed PayMongo checkout.",
+        code: "PAYMONGO_REQUIRED",
+      });
+      return;
+    }
+    const paymentReference = String(payload.paymentReference ?? "").trim();
+    const intent = paymentReference
+      ? await findSellerCheckoutIntentByPaymentReference(paymentReference)
+      : null;
+    if (!isPaymongoWebhookVerifiedIntent(intent, request.authSession.accountId)) {
+      sendJson(response, 409, {
+        message: "Seller activation requires a verified PayMongo webhook.",
+        code: "PAYMONGO_WEBHOOK_REQUIRED",
+      });
+      return;
+    }
+    const intentPlan = resolveSellerPlanSelection(intent);
+    if (!sellerPlanMatchesIntent(intentPlan, intent)) {
+      sendJson(response, 409, {
+        message: "Seller checkout plan or amount does not match the server catalog.",
+        code: "SELLER_CHECKOUT_PLAN_MISMATCH",
+      });
+      return;
+    }
+    Object.assign(payload, {
+      companyId: intent.companyId,
+      planId: intentPlan.planId,
+      planName: intentPlan.planName,
+      billingCycle: intentPlan.billingCycle,
+      amount: intentPlan.amount,
+      currencyCode: intentPlan.currencyCode,
+      paymentGateway: "paymongo",
+      paymentReference: intent.paymentReference,
+      paymentVerified: true,
+    });
 
     const result = await confirmSellerOnboarding(payload);
     const { isActive } = await notifySellerOnboardingOutcome(result, payload, request);
@@ -23328,6 +27518,7 @@ async function handleBecomeSellerConfirmApi(request, response) {
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
       message: error instanceof Error ? error.message : "Unable to confirm seller onboarding.",
+      ...(error?.code ? { code: error.code } : {}),
     });
   }
 }
@@ -23401,26 +27592,191 @@ async function handleSellerSwitchPinApi(request, response, action) {
     }
 
     if (action === "status") {
+      const requestedCompanyId = String(companyId || "").trim();
+      let gateCompany = requestedCompanyId
+        ? await findCompanyById(requestedCompanyId).catch(() => null)
+        : null;
+      if (!gateCompany) {
+        try {
+          const pinCompany = await getSellerSwitchPinStatus({
+            accountId: resolvedAccountId,
+            companyId: requestedCompanyId,
+          });
+          const resolvedCompanyId = String(pinCompany.companyId || "").trim();
+          if (resolvedCompanyId) {
+            gateCompany = await findCompanyById(resolvedCompanyId).catch(() => null);
+          }
+        } catch (_) {
+          gateCompany = null;
+        }
+      }
+
+      let seller = await findSellerByAdminId(resolvedAccountId).catch(() => null);
+      if (!seller && email) {
+        seller = await findSellerByEmail(email).catch(() => null);
+      }
+      const sourceAccountId = String(
+        gateCompany?.sourceAccountId
+          || gateCompany?.source_account_id
+          || "",
+      ).trim();
+      if (!seller && sourceAccountId && sourceAccountId !== resolvedAccountId) {
+        seller = await findSellerByAdminId(sourceAccountId).catch(() => null);
+      }
+      // Unified buyer/seller accounts are role=user, not always role=admin.
+      if (!seller) {
+        const customer = await findCustomerById(resolvedAccountId).catch(() => null);
+        if (customer) {
+          seller = customer;
+        }
+      }
+
+      let workspaceGate = resolveSellerWorkspaceGate(gateCompany, seller);
+      // Heal older bans that only marked the seller account and left company.status
+      // active. Do NOT heal from leftover profile.banReason after an unban — that
+      // used to re-ban companies Super Admin had just restored.
+      const sellerAccountActivelyBanned =
+        String(seller?.enforcementScope || "").trim().toLowerCase() !== "company"
+        && (
+          seller?.isBanned === true
+          || seller?.banned === true
+          || ["banned"].includes(String(seller?.status || "").trim().toLowerCase())
+          || ["banned"].includes(String(seller?.accountStatus || "").trim().toLowerCase())
+          || ["banned"].includes(String(seller?.accountState || "").trim().toLowerCase())
+        );
+      if (
+        sellerAccountActivelyBanned
+        && gateCompany?.id
+        && String(gateCompany.status || "").trim().toLowerCase() !== "banned"
+      ) {
+        try {
+          await syncSellerCompanyEnforcementStatus(resolvedAccountId, {
+            companyStatus: "banned",
+            companyId: gateCompany.id,
+            reason: workspaceGate.banReason || seller?.banReason || "Banned by Super Admin",
+            description: workspaceGate.banDescription || seller?.banDescription || "",
+          });
+          gateCompany = await findCompanyById(gateCompany.id).catch(() => gateCompany);
+          workspaceGate = resolveSellerWorkspaceGate(gateCompany, seller);
+        } catch (error) {
+          console.error("Unable to heal banned company status:", error);
+        }
+      }
+
+      if (workspaceGate.workspaceBlocked) {
+        let message = "Seller dashboard access is blocked for this company.";
+        if (workspaceGate.workspaceStatus === "banned") {
+          message = workspaceGate.banReason
+            ? `This company is banned by Super Admin. Reason: ${workspaceGate.banReason}`
+            : "This company is banned by Super Admin. Seller dashboard cannot be opened.";
+        } else if (
+          workspaceGate.workspaceStatus === "pending_review"
+          || workspaceGate.workspaceStatus === "pending_payment"
+        ) {
+          message = "This company is still under Super Admin review.";
+        }
+        sendJson(response, 200, {
+          hasPin: false,
+          pinResetRequired: false,
+          companyId: String(gateCompany?.id || requestedCompanyId || "").trim(),
+          companyName: String(
+            gateCompany?.publicName || gateCompany?.name || "Seller admin",
+          ).trim(),
+          ...workspaceGate,
+          message,
+        });
+        return;
+      }
+
       const status = await getSellerSwitchPinStatus({
         accountId: resolvedAccountId,
-        companyId,
+        companyId: requestedCompanyId,
       });
+      let message = "Create a Switch PIN before opening seller admin.";
+      if (status.pinResetRequired) {
+        message = status.pinResetReason
+          ? `Switch PIN reset required: ${status.pinResetReason}`
+          : "Switch PIN reset is required. Create a new Switch PIN to continue.";
+      } else if (status.hasPin) {
+        message = "Enter your Switch PIN to open seller admin.";
+      }
       sendJson(response, 200, {
         ...status,
-        message: status.hasPin
-          ? "Enter your Switch PIN to open seller admin."
-          : "Create a Switch PIN before opening seller admin.",
+        ...workspaceGate,
+        message,
       });
       return;
     }
 
     if (action === "set") {
+      const previousStatus = await getSellerSwitchPinStatus({
+        accountId: resolvedAccountId,
+        companyId,
+      }).catch(() => null);
       const result = await setSellerSwitchPin({
         accountId: resolvedAccountId,
         companyId,
         pin: payload.pin,
         confirmPin: payload.confirmPin,
       });
+
+      if (previousStatus?.pinResetRequired) {
+        const now = new Date().toISOString();
+        const companyLabel = result.companyName || previousStatus.companyName || "Seller admin";
+        try {
+          const accounts = await readAccounts();
+          const accountIndex = accounts.findIndex(
+            (account) =>
+              String(account?.id || "").trim() === resolvedAccountId ||
+              String(account?.adminId || "").trim() === resolvedAccountId ||
+              String(account?.accountId || "").trim() === resolvedAccountId,
+          );
+          if (accountIndex >= 0) {
+            const previousAccount = accounts[accountIndex];
+            accounts[accountIndex] = {
+              ...previousAccount,
+              pinResetRequired: false,
+              pinResetCompletedAt: now,
+              pinResetReason: "",
+              updatedAt: now,
+            };
+            await writeAccounts(accounts);
+          }
+        } catch (_) {}
+
+        await persistSuperAdminNotification({
+          id: `sa-seller-pin-reset-done-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: "seller-pin-reset-completed",
+          audience: "super-admin",
+          title: "Seller Switch PIN Reset Completed",
+          message: `${companyLabel} created a new Switch PIN after the required reset.`,
+          reason: previousStatus.pinResetReason || "Required Switch PIN reset completed.",
+          status: "unread",
+          adminId: resolvedAccountId,
+          companyId: result.companyId || "",
+          createdAt: now,
+          createdBy: "seller-admin",
+        }).catch(() => null);
+
+        await logActivitySafely({
+          id: createActivityLogId(),
+          type: "seller-admin-action",
+          source: "seller_admin",
+          adminId: resolvedAccountId,
+          companyId: result.companyId || "",
+          action: "pin-reset-completed",
+          title: "Seller Switch PIN reset completed",
+          description: `${companyLabel} created a new Switch PIN after Super Admin required a reset.`,
+          actor: {
+            role: "seller-admin",
+            accountId: resolvedAccountId,
+            displayName: email || resolvedAccountId,
+          },
+          createdAt: now,
+          skipLinkedNotification: true,
+        }, request).catch(() => null);
+      }
+
       sendJson(response, 200, {
         ...result,
         message: "Switch PIN saved. You can open seller admin.",
@@ -23441,6 +27797,20 @@ async function handleSellerSwitchPinApi(request, response, action) {
       return;
     }
 
+    if (action === "forgot") {
+      const result = await requestSellerSwitchPinForgotLink({
+        accountId: resolvedAccountId,
+        companyId,
+        resetBaseUrl: getRequestOrigin(request),
+      });
+      sendJson(response, 200, {
+        ok: true,
+        ...result,
+        message: `We sent a Switch PIN reset link to ${result.emailMasked}. Open your Gmail and tap the link — it is not a code.`,
+      });
+      return;
+    }
+
     const result = await verifySellerSwitchPin({
       accountId: resolvedAccountId,
       companyId,
@@ -23453,6 +27823,83 @@ async function handleSellerSwitchPinApi(request, response, action) {
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
       message: error instanceof Error ? error.message : "Unable to check Switch PIN.",
+    });
+  }
+}
+
+async function handlePublicSellerSwitchPinResetApi(request, response, requestUrl, action) {
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, { message: "Seller workspace is unavailable." });
+      return;
+    }
+
+    if (action === "preview") {
+      const token = String(requestUrl.searchParams.get("token") || "").trim();
+      const preview = await previewSellerSwitchPinForgotToken(token);
+      sendJson(response, 200, preview);
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    const token = String(payload.token || "").trim();
+
+    if (action === "unlock") {
+      const result = await verifySellerSwitchPinForgotPassword({
+        token,
+        password: payload.password,
+      });
+      sendJson(response, 200, {
+        ok: true,
+        ...result,
+        message: "Password accepted. You can set a new Switch PIN.",
+      });
+      return;
+    }
+
+    const result = await completeSellerSwitchPinForgotReset({
+      token,
+      unlockToken: payload.unlockToken,
+      password: payload.password,
+      pin: payload.pin,
+      confirmPin: payload.confirmPin,
+    });
+    const now = new Date().toISOString();
+    await persistSuperAdminNotification({
+      id: `sa-seller-pin-forgot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "seller-pin-reset-completed",
+      audience: "super-admin",
+      title: "Seller Switch PIN Reset Completed",
+      message: `${result.companyName} reset their Switch PIN from a Gmail reset link.`,
+      reason: "Forgot Switch PIN",
+      status: "unread",
+      adminId: result.companyId || "",
+      companyId: result.companyId || "",
+      createdAt: now,
+      createdBy: "seller-admin",
+    }).catch(() => null);
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-admin-action",
+      source: "seller_admin",
+      adminId: result.companyId || "",
+      companyId: result.companyId || "",
+      action: "pin-reset-completed",
+      title: "Seller Switch PIN reset completed",
+      description: `${result.companyName} reset their Switch PIN after verifying the company password.`,
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request).catch(() => null);
+
+    sendJson(response, 200, {
+      ok: true,
+      companyId: result.companyId,
+      companyName: result.companyName,
+      message: "Switch PIN updated. You can open seller admin with the new PIN.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to reset Switch PIN.",
     });
   }
 }
@@ -23480,11 +27927,12 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
       return;
     }
 
+    const requestedCompanyId = String(payload.companyId || "").trim();
     const session = await resolveUnifiedSession({
       accountId,
       email,
       activeMode: "seller_admin",
-      companyId: String(payload.companyId || "").trim() || undefined,
+      companyId: requestedCompanyId || undefined,
     });
     const modes = Array.isArray(session?.availableModes) ? session.availableModes : [];
     if (!modes.includes("seller_admin")) {
@@ -23492,6 +27940,26 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
         message: "Seller admin access is not active on this account yet.",
       });
       return;
+    }
+
+    const activeCompanyId = String(
+      session?.activeCompanyId || requestedCompanyId || "",
+    ).trim();
+    const activeCompany =
+      session?.activeCompany
+      || (activeCompanyId ? await findCompanyById(activeCompanyId) : null);
+
+    if (activeCompanyId && session?.account?.id) {
+      const ownsCompany = await accountOwnsSellerCompany(
+        session.account.id,
+        activeCompanyId,
+      );
+      if (!ownsCompany) {
+        sendJson(response, 403, {
+          message: "You do not have seller access to that company.",
+        });
+        return;
+      }
     }
 
     let seller = null;
@@ -23508,6 +27976,54 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
       return;
     }
 
+    const workspaceBlockMessage = getSellerCompanyWorkspaceBlockMessage(
+      activeCompany,
+      seller,
+    );
+    if (workspaceBlockMessage) {
+      sendJson(response, 403, {
+        message: workspaceBlockMessage,
+        code: "COMPANY_WORKSPACE_BLOCKED",
+        companyId: activeCompanyId || null,
+        companyStatus: String(activeCompany?.status || "").trim() || null,
+        accountStatus: String(seller?.status || seller?.accountState || "").trim() || null,
+      });
+      return;
+    }
+
+    if (activeCompanyId && session?.account?.id) {
+      // Mark active company on shared profile_data only — do not overwrite
+      // store_name/logo with another company's branding (causes multi-company bleed).
+      try {
+        const { query: pgQuery } = require("./db/pool");
+        await pgQuery(
+          `
+            UPDATE seller_profiles
+            SET
+              profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+              updated_at = NOW()
+            WHERE account_id = $1
+          `,
+          [
+            session.account.id,
+            JSON.stringify({
+              companyId: activeCompanyId,
+              activeCompanyId,
+              companyName: String(
+                activeCompany?.publicName
+                  || activeCompany?.name
+                  || "",
+              ).trim(),
+            }),
+          ],
+        );
+      } catch (syncError) {
+        console.warn("Unable to sync active company onto seller profile:", syncError);
+      }
+    }
+
+    seller = applyCompanyWorkspaceOverlay(seller, activeCompany);
+
     const sessionFields = issueAppSessionForAccount(
       request,
       response,
@@ -23516,6 +28032,8 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
     );
     sendJson(response, 200, {
       admin: serializeAdminAccount(seller),
+      activeCompanyId: activeCompanyId || null,
+      activeCompany: activeCompany || session?.activeCompany || null,
       dashboardPath: "/main.html#dashboard",
       redirectPath: "/main.html#dashboard",
       message: "Seller workspace ready.",
@@ -23526,6 +28044,94 @@ async function handleBecomeSellerOpenWorkspaceApi(request, response) {
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
       message: error instanceof Error ? error.message : "Unable to open seller workspace.",
+    });
+  }
+}
+
+async function handleWithdrawPendingSellerCompanyApi(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, { message: "Seller onboarding is unavailable." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request);
+    assertSessionPayloadIdentity(request, payload, { account: true });
+    const accountId = String(request.authSession.accountId || payload.accountId || "").trim();
+    const companyId = String(payload.companyId || "").trim();
+    if (!accountId || !companyId) {
+      sendJson(response, 400, { message: "accountId and companyId are required." });
+      return;
+    }
+
+    const result = await withdrawPendingSellerCompany({
+      accountId,
+      companyId,
+      reason: payload.reason || "Withdrawn by seller",
+    });
+
+    const companyName = String(result.companyName || "Seller company").trim();
+    const now = new Date().toISOString();
+    const userActor = await resolveSaNotificationUserActor({
+      accountId,
+      account: { email: request.authSession.email, id: accountId },
+      fallback: "Buyer",
+    });
+    await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type: "seller-onboarding-withdrawn",
+        audience: "super_admin",
+        title: "Seller company application withdrawn",
+        reason: "Buyer withdrew a pending company application",
+        message: `${userActor.username} withdrew the pending application for ${companyName}.`,
+        adminId: accountId,
+        companyId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        ...userActor,
+        targetUrl: "/super_admin.html#companies",
+        createdAt: now,
+      }),
+    );
+    await logActivitySafely({
+      id: createActivityLogId(),
+      title: "Seller company application withdrawn",
+      actor: {
+        role: "buyer",
+        accountId,
+        displayName: userActor.username,
+      },
+      adminId: accountId,
+      source: "seller_onboarding",
+      notificationAudience: "admin",
+      description: `${userActor.username} withdrew the pending application for ${companyName}.`,
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    const session = await resolveUnifiedSession({
+      accountId,
+      email: request.authSession.email,
+      activeMode: "buyer",
+    });
+
+    sendJson(response, 200, {
+      withdrawn: true,
+      companyId: result.companyId,
+      companyName,
+      session: serializeUnifiedSessionEntry(session),
+      message: "Company application withdrawn.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to withdraw company application.",
     });
   }
 }
@@ -23710,6 +28316,8 @@ async function handleAuthVerificationVerifyApi(request, response) {
       : String(payload.email ?? payload.target ?? "").trim();
     const code = String(payload.code ?? "").trim();
 
+    // Verifying OTP is allowed in Test Mode; final account create stays IP-locked.
+
     const result = await verifyVerificationCode({
       purpose,
       channel,
@@ -23775,6 +28383,16 @@ async function handleAuthGoogleLoginApi(request, response) {
   }
 
   try {
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "buyerLoginAccess",
+        "Buyer login is currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+
     if (!(await isCustomerPostgresReady())) {
       sendJson(response, 503, { message: "Google sign-in is unavailable." });
       return;
@@ -23785,13 +28403,65 @@ async function handleAuthGoogleLoginApi(request, response) {
       payload.createIfMissing === undefined
         ? true
         : Boolean(payload.createIfMissing);
+    const platformSettings = await getPlatformSettings();
+    const registrationAllowed = !isPlatformSettingBlocking(
+      platformSettings,
+      "buyerRegistration",
+    );
+
+    // Test Mode: only the Super Admin IP may create accounts. Existing logins stay open.
+    let allowCreate = Boolean(createIfMissing && registrationAllowed);
+    let testModeCreateBlock = null;
+    if (allowCreate) {
+      try {
+        await assertTestModeAccountCreationAllowed(request);
+      } catch (error) {
+        if (error?.code === "TEST_MODE_REGISTRATION_LOCKED") {
+          allowCreate = false;
+          testModeCreateBlock = error.payload || {
+            message: error.message,
+            code: "TEST_MODE_REGISTRATION_LOCKED",
+            maintenance: true,
+          };
+        } else {
+          throw error;
+        }
+      }
+    }
+
     const loginResult = await loginCustomerWithGoogle({
       idToken: payload.idToken,
       accessToken: payload.accessToken,
-      createIfMissing,
-      verificationToken: payload.verificationToken,
+      createIfMissing: allowCreate,
+      verificationToken: allowCreate ? payload.verificationToken : undefined,
       preferredLanguage: payload.preferredLanguage,
     });
+
+    if (
+      !loginResult.ok
+      && (loginResult.code === "not_found" || loginResult.code === "verification_required")
+      && testModeCreateBlock
+    ) {
+      sendJson(response, 403, testModeCreateBlock);
+      return;
+    }
+
+    if (
+      !loginResult.ok
+      && loginResult.code === "not_found"
+      && createIfMissing
+      && !registrationAllowed
+    ) {
+      sendJson(
+        response,
+        403,
+        buildPlatformBlockedPayload(
+          "buyerRegistration",
+          "Buyer registration is currently disabled by Super Admin.",
+        ),
+      );
+      return;
+    }
 
     if (!loginResult.ok) {
       const statusCode =
@@ -23866,6 +28536,16 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
   }
 
   try {
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "sellerLoginAccess",
+        "Seller login is currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+
     if (!(await isSellerPostgresReady())) {
       sendJson(response, 503, { message: "Google seller sign-in is unavailable." });
       return;
@@ -23877,11 +28557,36 @@ async function handleAuthGoogleSellerLoginApi(request, response) {
       payload.createIfMissing === undefined
         ? true
         : Boolean(payload.createIfMissing);
+
+    let allowCreate = Boolean(createIfMissing);
+    let testModeCreateBlock = null;
+    if (allowCreate) {
+      try {
+        await assertTestModeAccountCreationAllowed(request);
+      } catch (error) {
+        if (error?.code === "TEST_MODE_REGISTRATION_LOCKED") {
+          allowCreate = false;
+          testModeCreateBlock = error.payload || {
+            message: error.message,
+            code: "TEST_MODE_REGISTRATION_LOCKED",
+            maintenance: true,
+          };
+        } else {
+          throw error;
+        }
+      }
+    }
+
     const loginResult = await loginSellerWithGoogle({
       idToken: payload.idToken,
       accessToken: payload.accessToken,
-      createIfMissing,
+      createIfMissing: allowCreate,
     });
+
+    if (!loginResult.ok && loginResult.code === "not_found" && testModeCreateBlock) {
+      sendJson(response, 403, testModeCreateBlock);
+      return;
+    }
 
     if (!loginResult.ok) {
       const statusCode = loginResult.code === "not_found" ? 404 : 400;
@@ -23946,6 +28651,16 @@ async function handleAppUserLoginApi(request, response) {
   }
 
   try {
+    if (
+      !(await requirePlatformSettingEnabled(
+        response,
+        "buyerLoginAccess",
+        "Buyer login is currently disabled by Super Admin.",
+      ))
+    ) {
+      return;
+    }
+
     const payload = await parseRequestBody(request);
     const email = String(payload.email ?? "").trim().toLowerCase();
     const password = String(payload.password ?? "").trim();
@@ -23957,7 +28672,7 @@ async function handleAppUserLoginApi(request, response) {
       return;
     }
 
-    const loginAttempt = beginLoginAttempt(request, response, email);
+    const loginAttempt = await beginLoginAttempt(request, response, email);
     if (!loginAttempt) {
       return;
     }
@@ -23979,6 +28694,21 @@ async function handleAppUserLoginApi(request, response) {
             )
               .replace(/\s+/g, " ")
               .trim(),
+            authStore: "postgres",
+          });
+          return;
+        }
+
+        const buyerPlatformSettings = await getPlatformSettings();
+        if (
+          buyerPlatformSettings.requireBuyerVerification
+          && !isBuyerAccountVerifiedForPlatform(pgLogin.account)
+        ) {
+          recordLoginSuccess(loginAttempt);
+          sendJson(response, 403, {
+            message: "Buyer verification is required before login.",
+            code: "BUYER_VERIFICATION_REQUIRED",
+            setting: "requireBuyerVerification",
             authStore: "postgres",
           });
           return;
@@ -24109,6 +28839,7 @@ function findAdminAccountIndexForRequest(accounts, adminId) {
 async function handleAdminAccountApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getExplicitRequestAdminId(request, requestUrl);
+  const requestCompanyId = getExplicitRequestCompanyId(request, requestUrl);
 
   if (!requestAdminId) {
     sendJson(response, 401, { message: "Admin session was not found." });
@@ -24125,13 +28856,26 @@ async function handleAdminAccountApi(request, response) {
         return;
       }
 
-      const account = accounts[accountIndex];
+      let account = accounts[accountIndex];
       if (getSellerAccountDeletionStatus(account) === "deleted") {
         sendJson(response, 403, {
           message: "This seller account has been deleted.",
           accountStatus: "deleted",
         });
         return;
+      }
+
+      if (requestCompanyId) {
+        const company = await findCompanyById(requestCompanyId);
+        if (company) {
+          const ownsCompany = await accountOwnsSellerCompany(
+            String(account?.id || account?.accountId || requestAdminId).trim(),
+            requestCompanyId,
+          );
+          if (ownsCompany) {
+            account = applyCompanyWorkspaceOverlay(account, company);
+          }
+        }
       }
 
       sendJson(response, 200, {
@@ -24161,6 +28905,9 @@ async function handleAdminAccountApi(request, response) {
 
       const payload = await parseRequestBody(request);
       assertSessionPayloadIdentity(request, payload, { admin: true });
+      const scopedCompanyId =
+        requestCompanyId
+        || String(payload.companyId ?? "").trim();
       const accounts = await readAccounts();
       const accountIndex = findAdminAccountIndexForRequest(accounts, requestAdminId);
       if (accountIndex < 0) {
@@ -24174,6 +28921,18 @@ async function handleAdminAccountApi(request, response) {
           accountStatus: "deleted",
         });
         return;
+      }
+      if (scopedCompanyId) {
+        const ownsCompany = await accountOwnsSellerCompany(
+          String(existingAccount?.id || existingAccount?.accountId || requestAdminId).trim(),
+          scopedCompanyId,
+        );
+        if (!ownsCompany) {
+          sendJson(response, 403, {
+            message: "You do not have seller access to that company.",
+          });
+          return;
+        }
       }
       const storeName = String(
         payload.companyName ??
@@ -24193,6 +28952,28 @@ async function handleAdminAccountApi(request, response) {
       const profileImageUrl = Object.prototype.hasOwnProperty.call(payload, "profileImageUrl")
         ? String(payload.profileImageUrl ?? "").trim()
         : String(existingAccount.profileImageUrl ?? "").trim();
+      const companyPictureUrl = Object.prototype.hasOwnProperty.call(payload, "companyPictureUrl")
+        ? String(payload.companyPictureUrl ?? "").trim()
+        : Object.prototype.hasOwnProperty.call(payload, "profileImageUrl")
+          ? profileImageUrl
+          : String(
+              existingAccount.companyPictureUrl
+                ?? existingAccount.businessLogoUrl
+                ?? existingAccount.logoUrl
+                ?? existingAccount.profileImageUrl
+                ?? "",
+            ).trim();
+      const companyBackgroundUrl = Object.prototype.hasOwnProperty.call(payload, "companyBackgroundUrl")
+        ? String(payload.companyBackgroundUrl ?? payload.backgroundUrl ?? "").trim()
+        : String(
+            existingAccount.companyBackgroundUrl
+              ?? existingAccount.backgroundUrl
+              ?? existingAccount.coverImageUrl
+              ?? "",
+          ).trim();
+      if (companyBackgroundUrl.length > 2_500_000) {
+        throw new Error("Company background image is too large.");
+      }
       const hasStoreTypeInput =
         Object.prototype.hasOwnProperty.call(payload, "storeType") ||
         Object.prototype.hasOwnProperty.call(payload, "storeTypeName") ||
@@ -24233,9 +29014,13 @@ async function handleAdminAccountApi(request, response) {
       }
 
       const passwordWasChanged = Boolean(submittedPassword);
+      const existingPassword = String(existingAccount.password ?? "").trim();
+      const existingPasswordHash = String(existingAccount._passwordHash ?? "").trim();
+      // Postgres-backed sellers expose password="" and keep the hash on _passwordHash.
+      // Never re-validate password length when the seller is only updating profile/picture.
       const storedPassword = submittedPassword
         ? await hashPassword(submittedPassword)
-        : existingAccount.password;
+        : existingPassword || existingPasswordHash || "";
       const businessTypeWasChanged = requestedStoreType !== previousStoreType;
       const previousProfileSnapshot = JSON.stringify({
         companyName: String(existingAccount.companyName ?? existingAccount.storeName ?? "").trim(),
@@ -24245,6 +29030,19 @@ async function handleAdminAccountApi(request, response) {
         countryCode: String(existingAccount.countryCode ?? "+63").trim() || "+63",
         mobileNumber: String(existingAccount.mobileNumber ?? "").replace(/\D/g, "").trim(),
         profileImageUrl: String(existingAccount.profileImageUrl ?? "").trim(),
+        companyPictureUrl: String(
+          existingAccount.companyPictureUrl
+            ?? existingAccount.businessLogoUrl
+            ?? existingAccount.logoUrl
+            ?? existingAccount.profileImageUrl
+            ?? "",
+        ).trim(),
+        companyBackgroundUrl: String(
+          existingAccount.companyBackgroundUrl
+            ?? existingAccount.backgroundUrl
+            ?? existingAccount.coverImageUrl
+            ?? "",
+        ).trim(),
       });
       const nextProfileSnapshot = JSON.stringify({
         companyName: storeName,
@@ -24254,6 +29052,8 @@ async function handleAdminAccountApi(request, response) {
         countryCode,
         mobileNumber,
         profileImageUrl,
+        companyPictureUrl,
+        companyBackgroundUrl,
       });
       const profileWasChanged = previousProfileSnapshot !== nextProfileSnapshot;
 
@@ -24276,14 +29076,40 @@ async function handleAdminAccountApi(request, response) {
         throw new Error("Contact number is already registered.");
       }
 
+      // When company-scoped, keep shared seller_profiles branding intact and
+      // write store branding to companies.profile_data instead.
+      const sharedStoreName = scopedCompanyId
+        ? String(existingAccount.storeName ?? existingAccount.companyName ?? storeName).trim()
+        : storeName;
+      const sharedPictureUrl = scopedCompanyId
+        ? String(
+            existingAccount.companyPictureUrl
+              ?? existingAccount.businessLogoUrl
+              ?? existingAccount.logoUrl
+              ?? existingAccount.profileImageUrl
+              ?? "",
+          ).trim()
+        : companyPictureUrl;
+      const sharedBackgroundUrl = scopedCompanyId
+        ? String(
+            existingAccount.companyBackgroundUrl
+              ?? existingAccount.backgroundUrl
+              ?? existingAccount.coverImageUrl
+              ?? "",
+          ).trim()
+        : companyBackgroundUrl;
+      const sharedStoreType = scopedCompanyId
+        ? previousStoreType
+        : requestedStoreType;
+
       const normalizedAdmin = normalizeAdminAccountRecord({
         ...existingAccount,
-        storeName,
-        companyName: storeName,
-        businessName: storeName,
-        storeType: requestedStoreType,
-        storeTypeName: requestedStoreType,
-        businessType: requestedStoreType,
+        storeName: sharedStoreName,
+        companyName: sharedStoreName,
+        businessName: sharedStoreName,
+        storeType: sharedStoreType,
+        storeTypeName: sharedStoreType,
+        businessType: sharedStoreType,
         firstName,
         lastName,
         email,
@@ -24293,17 +29119,52 @@ async function handleAdminAccountApi(request, response) {
         passwordUpdatedAt: passwordWasChanged
           ? accountUpdatedAt
           : existingAccount.passwordUpdatedAt ?? existingAccount.createdAt ?? accountUpdatedAt,
-        storeTypeUpdatedAt: businessTypeWasChanged
+        storeTypeUpdatedAt: (!scopedCompanyId && businessTypeWasChanged)
           ? accountUpdatedAt
           : existingAccount.storeTypeUpdatedAt ?? null,
         adminId: getRecordAdminId(existingAccount, requestAdminId),
-        profileImageUrl,
+        profileImageUrl: scopedCompanyId
+          ? String(existingAccount.profileImageUrl ?? "").trim()
+          : profileImageUrl,
+        companyPictureUrl: sharedPictureUrl,
+        businessLogoUrl: sharedPictureUrl,
+        logoUrl: sharedPictureUrl,
+        companyBackgroundUrl: sharedBackgroundUrl,
+        backgroundUrl: sharedBackgroundUrl,
+        coverImageUrl: sharedBackgroundUrl,
+        companyId: scopedCompanyId || existingAccount.companyId || "",
+        activeCompanyId: scopedCompanyId || existingAccount.activeCompanyId || "",
         createdAt: existingAccount.createdAt,
         updatedAt: accountUpdatedAt,
       }, existingAccount);
 
       accounts[accountIndex] = normalizedAdmin;
       await writeAccounts(accounts);
+
+      let responseAdmin = normalizedAdmin;
+      if (scopedCompanyId) {
+        const updatedCompany = await updateCompanyWorkspaceProfile(scopedCompanyId, {
+          companyName: storeName,
+          storeName,
+          companyPictureUrl,
+          logoUrl: companyPictureUrl,
+          profileImageUrl,
+          companyBackgroundUrl,
+          storeType: requestedStoreType,
+          businessType: requestedStoreType,
+        });
+        responseAdmin = applyCompanyWorkspaceOverlay(
+          {
+            ...normalizedAdmin,
+            firstName,
+            lastName,
+            email,
+            countryCode,
+            mobileNumber,
+          },
+          updatedCompany || (await findCompanyById(scopedCompanyId)),
+        );
+      }
       const adminActivityActor = createAdminAccountActivityActor(normalizedAdmin);
       const activityEntries = [];
       if (profileWasChanged) {
@@ -24349,7 +29210,7 @@ async function handleAdminAccountApi(request, response) {
       }
       await Promise.all(activityEntries.map((entry) => logActivitySafely(entry, request)));
       sendJson(response, 200, {
-        admin: serializeAdminAccount(normalizedAdmin),
+        admin: serializeAdminAccount(responseAdmin),
         message: "Admin account updated.",
       });
     } catch (error) {
@@ -24432,11 +29293,11 @@ async function handleAdminAccountDeletionApi(request, response) {
           title: "Seller canceled account deletion",
           reason: "Seller kept the account",
           message: `${companyName} canceled the scheduled seller account deletion.`,
-          adminId: requestAdminId,
-          companyName,
-          storeName: companyName,
-          businessName: companyName,
-          createdBy: companyName,
+          ...resolveSaNotificationCompanyActor({
+            adminId: requestAdminId,
+            companyName,
+            createdBy: companyName,
+          }),
           targetUrl: "/super_admin.html#companies",
           createdAt: now,
         }),
@@ -24509,11 +29370,11 @@ async function handleAdminAccountDeletionApi(request, response) {
         title: "Seller requested account deletion",
         reason: "30-day deletion period started",
         message: `${companyName} scheduled seller account deletion on ${scheduledAt ? scheduledAt.toLocaleString() : "the scheduled date"}.`,
-        adminId: requestAdminId,
-        companyName,
-        storeName: companyName,
-        businessName: companyName,
-        createdBy: companyName,
+        ...resolveSaNotificationCompanyActor({
+          adminId: requestAdminId,
+          companyName,
+          createdBy: companyName,
+        }),
         targetUrl: "/super_admin.html#companies",
         createdAt: now,
       }),
@@ -24564,7 +29425,7 @@ async function handleSuperAdminLoginApi(request, response) {
     const payload = await parseRequestBody(request);
     const username = String(payload.username ?? payload.email ?? "").trim();
     const password = String(payload.password ?? "");
-    const loginAttempt = beginLoginAttempt(request, response, username);
+    const loginAttempt = await beginLoginAttempt(request, response, username);
     if (!loginAttempt) {
       return;
     }
@@ -24646,6 +29507,17 @@ async function handleWorkspaceThemeApi(request, response) {
       workspaceColor,
       updatedAt: new Date().toISOString(),
     });
+    await logSuperAdminSystemActivity(
+      {
+        type: "workspace-theme",
+        action: "color-updated",
+        category: "theme",
+        title: "Workspace color updated",
+        description: `Super Admin changed the workspace color palette to ${workspaceColor}.`,
+        targetUrl: "/super_admin.html#dashboard",
+      },
+      request,
+    );
     sendJson(response, 200, {
       workspaceColor: settings.workspaceColor,
       configured: true,
@@ -24658,6 +29530,133 @@ async function handleWorkspaceThemeApi(request, response) {
         error instanceof Error
           ? error.message
           : "Unable to update workspace theme.",
+    });
+  }
+}
+
+function buildPaymongoMethodsPayload(syncState) {
+  const availableMethods = Array.isArray(syncState?.availableMethods)
+    ? syncState.availableMethods
+    : [];
+  const gatewayConfig = getHostedGatewayConfig();
+  return {
+    configured: gatewayConfig.enabled,
+    testMode: gatewayConfig.testMode,
+    synced: Boolean(syncState?.syncedAt),
+    syncedAt: syncState?.syncedAt || "",
+    availableMethods,
+    methods: PAYMONGO_CHECKOUT_METHOD_TYPES.map((method) => ({
+      method,
+      label: getPaymongoMethodLabel(method),
+      available: availableMethods.includes(method),
+    })),
+  };
+}
+
+function createPaymongoSyncedPaymentPartner({ method, label }, partners) {
+  const takenNames = new Set(
+    partners
+      .filter((partner) => !isPartnerArchived(partner) && !getPartnerScopeKey(partner))
+      .map((partner) => normalizePartnerDuplicateKey(partner?.branch ?? partner?.name)),
+  );
+  const branch = takenNames.has(normalizePartnerDuplicateKey(label))
+    ? `${label} (PayMongo)`
+    : label;
+  return {
+    ...normalizePaymentPartnerRecord({
+      branch,
+      imageUrl: getPaymongoMethodLogoUrl(method),
+      paymongoMethod: method,
+      isActive: false,
+    }),
+    id: `payment-partner-paymongo-${method.replace(/_/g, "-")}-${Date.now()}`,
+    createdBy: SUPER_ADMIN_USERNAME,
+    updatedBy: SUPER_ADMIN_USERNAME,
+  };
+}
+
+async function handlePaymongoPaymentMethodsApi(request, response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method === "GET") {
+    try {
+      const syncState = getPaymongoSyncState(await readWorkspaceSettings());
+      sendJson(response, 200, buildPaymongoMethodsPayload(syncState));
+    } catch (error) {
+      sendJson(response, 500, { message: "Unable to load PayMongo payment methods." });
+    }
+    return;
+  }
+
+  if (request.method !== "POST") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const availableMethods = await fetchPaymongoAvailableMethods();
+    const syncedAt = new Date().toISOString();
+    const result = await runPartnerMutation("payment", async () => {
+      const partners = await readPaymentPartners();
+      const reconciled = reconcilePaymongoPartners({
+        partners,
+        availableMethods,
+        createPartner: (method) => createPaymongoSyncedPaymentPartner(method, partners),
+        updatePartner: (next, previous) =>
+          finalizePartnerUpdate(next, previous, SUPER_ADMIN_USERNAME),
+      });
+      if (
+        reconciled.created.length
+        || reconciled.linked.length
+        || reconciled.deactivated.length
+        || reconciled.logosAdded.length
+      ) {
+        await writePaymentPartners(reconciled.partners);
+      }
+      return reconciled;
+    });
+    await writeWorkspaceSettings({
+      paymongoAvailableMethods: availableMethods,
+      paymongoMethodsSyncedAt: syncedAt,
+    });
+
+    const changedIds = [...new Set([
+      ...result.created,
+      ...result.linked,
+      ...result.deactivated,
+      ...result.logosAdded,
+    ].map((entry) => entry.id))];
+    if (changedIds.length) {
+      await logPartnerAuditSafely({
+        partnerType: "payment",
+        action: "paymongo-synced",
+        partnerIds: changedIds,
+        request,
+        requestIsSuperAdmin: true,
+        metadata: {
+          availableMethods,
+          created: result.created,
+          linked: result.linked,
+          deactivated: result.deactivated,
+        },
+      });
+    }
+
+    sendJson(response, 200, {
+      ...buildPaymongoMethodsPayload({ availableMethods, syncedAt }),
+      created: result.created,
+      linked: result.linked,
+      deactivated: result.deactivated,
+      partners: result.partners.map((partner) => serializePartnerRecord(partner)),
+      message: "PayMongo payment methods synced.",
+    });
+  } catch (error) {
+    sendJson(response, Number.isInteger(error?.statusCode) ? error.statusCode : 502, {
+      message: error instanceof Error ? error.message : "Unable to sync PayMongo payment methods.",
+      ...(error?.code ? { code: error.code } : {}),
     });
   }
 }
@@ -24833,6 +29832,12 @@ function getAdminWorkspaceCounts(adminId, sources) {
     sources.storeTypes,
     normalizedAdminId,
   );
+  const adminOrders = filterRecordsByAdminId(sources.orders, normalizedAdminId);
+  const adminChats = filterRecordsByAdminId(sources.chatThreads, normalizedAdminId);
+  const performanceMetrics = buildSellerPerformanceMetrics({
+    orders: adminOrders,
+    chatThreads: adminChats,
+  });
   const reviewSummary = summarizeProductReviewAggregatesForProducts(
     adminProducts,
     buildProductReviewAggregates(sources.orders, normalizedAdminId),
@@ -24845,8 +29850,16 @@ function getAdminWorkspaceCounts(adminId, sources) {
     appUsers: filterRecordsByAdminId(sources.accounts, normalizedAdminId).filter(
       (account) => String(account.role ?? "").trim().toLowerCase() === "user",
     ).length,
-    orders: filterRecordsByAdminId(sources.orders, normalizedAdminId).length,
-    chatThreads: filterRecordsByAdminId(sources.chatThreads, normalizedAdminId).length,
+    orders: adminOrders.length,
+    completedOrders: performanceMetrics.completedOrders,
+    cancelledOrders: performanceMetrics.cancelledOrders,
+    cancelRate: performanceMetrics.cancelRate,
+    timedReplies: performanceMetrics.timedReplies,
+    avgFirstResponseHours: performanceMetrics.avgFirstResponseHours,
+    resolvedConcerns: performanceMetrics.resolvedConcerns,
+    avgResolutionHours: performanceMetrics.avgResolutionHours,
+    openStaleConcerns: performanceMetrics.openStaleConcerns,
+    chatThreads: adminChats.length,
     deliveryPartners: filterRecordsByAdminId(sources.deliveryPartners, normalizedAdminId).length,
     paymentPartners: filterRecordsByAdminId(sources.paymentPartners, normalizedAdminId).length,
     categories: businessTypeCategoryScope.categories.length,
@@ -24889,7 +29902,155 @@ async function readAdminWorkspaceSources() {
   };
 }
 
-async function handleSuperAdminAdminsApi(request, response) {
+function getSuperAdminRequestSearchParams(request, requestUrl) {
+  if (requestUrl instanceof URL) {
+    return requestUrl.searchParams;
+  }
+  const raw = String(request?.url || "");
+  const query = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : "";
+  try {
+    return new URL(raw, "http://127.0.0.1").searchParams;
+  } catch {
+    return new URLSearchParams(query);
+  }
+}
+
+function getSuperAdminCompanySearchText(admin) {
+  return [
+    admin?.companyName,
+    admin?.storeName,
+    admin?.sellerName,
+    admin?.name,
+    admin?.email,
+    admin?.companyId,
+    admin?.company_id,
+    admin?.id,
+    admin?.mobileNumber,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function classifySuperAdminCompanyAccountState(admin) {
+  const statusToken = [
+    admin?.status,
+    admin?.accountStatus,
+    admin?.accountState,
+    admin?.adminStatus,
+    admin?.userStatus,
+    admin?.companyStatus,
+    admin?.companyEnforcementStatus,
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  const deletionStatus = String(admin?.accountDeletionStatus || admin?.deletionStatus || "")
+    .trim()
+    .toLowerCase();
+  if (
+    deletionStatus === "deleted" ||
+    statusToken.includes("deleted") ||
+    admin?.accountDeletedAt ||
+    admin?.deletedAt
+  ) {
+    return "deleted";
+  }
+  if (
+    deletionStatus === "scheduled" ||
+    deletionStatus === "pending" ||
+    admin?.deletionScheduledAt ||
+    admin?.accountDeletionScheduledAt
+  ) {
+    return "pending-deletion";
+  }
+  if (
+    admin?.isPendingReviewCompany === true ||
+    statusToken.includes("pending_review") ||
+    statusToken.includes("pending-review") ||
+    String(admin?.planStatus || "").trim().toLowerCase() === "pending_review"
+  ) {
+    return "pending-review";
+  }
+  if (statusToken.includes("banned") || admin?.isBanned === true || admin?.banned === true) {
+    return "banned";
+  }
+  if (statusToken.includes("restrict") || admin?.isRestricted === true) {
+    return "restricted";
+  }
+  if (statusToken.includes("suspend") || statusToken.includes("deactivat")) {
+    return "suspended";
+  }
+  return "active";
+}
+
+function summarizeSuperAdminCompanyCounts(admins) {
+  const now = Date.now();
+  const newWindowMs = 24 * 60 * 60 * 1000;
+  const counts = {
+    total: 0,
+    all: 0,
+    active: 0,
+    online: 0,
+    new: 0,
+    suspended: 0,
+    banned: 0,
+    restricted: 0,
+    "low-risk": 0,
+    "pending-review": 0,
+    "pending-deletion": 0,
+    deleted: 0,
+  };
+  for (const admin of Array.isArray(admins) ? admins : []) {
+    const accountState = classifySuperAdminCompanyAccountState(admin);
+    counts.total += 1;
+    counts.all += 1;
+    counts[accountState] = (counts[accountState] || 0) + 1;
+    if (accountState === "active") {
+      counts["low-risk"] += 1;
+    }
+    const createdAt = Date.parse(String(admin?.createdAt || admin?.created_at || ""));
+    if (
+      accountState !== "pending-review" &&
+      accountState !== "pending-deletion" &&
+      accountState !== "deleted" &&
+      Number.isFinite(createdAt) &&
+      now - createdAt <= newWindowMs
+    ) {
+      counts.new += 1;
+    }
+    if (admin?.isOnline === true || admin?.online === true || admin?.loggedIn === true) {
+      counts.online += 1;
+    }
+  }
+  return counts;
+}
+
+function sortSuperAdminCompanyDirectory(admins, sortValue) {
+  const rows = [...admins];
+  if (sortValue === "company-asc") {
+    rows.sort((left, right) =>
+      String(left?.companyName || left?.storeName || left?.name || "").localeCompare(
+        String(right?.companyName || right?.storeName || right?.name || ""),
+        undefined,
+        { sensitivity: "base" },
+      ),
+    );
+    return rows;
+  }
+  if (sortValue === "created-asc") {
+    rows.sort((left, right) =>
+      String(left?.createdAt ?? "").localeCompare(String(right?.createdAt ?? "")),
+    );
+    return rows;
+  }
+  rows.sort((left, right) =>
+    String(right?.createdAt ?? "").localeCompare(String(left?.createdAt ?? "")),
+  );
+  return rows;
+}
+
+async function handleSuperAdminAdminsApi(request, response, requestUrl) {
   if (!requireSuperAdmin(request, response)) {
     return;
   }
@@ -24897,22 +30058,113 @@ async function handleSuperAdminAdminsApi(request, response) {
   if (request.method === "GET") {
     try {
       await processDueSellerAccountDeletions();
+      const testModeOn = await isTestModeEnabled();
+      const searchParams = getSuperAdminRequestSearchParams(request, requestUrl);
+      const page = Math.max(1, Number.parseInt(String(searchParams.get("page") || "1"), 10) || 1);
+      const limit = Math.min(20, Math.max(1, Number.parseInt(String(searchParams.get("limit") || "10"), 10) || 10));
+      const query = String(searchParams.get("q") || "").trim().toLowerCase();
+      const accountStateFilter = String(searchParams.get("accountState") || "all").trim().toLowerCase();
+      const sortValue = String(searchParams.get("sort") || "created-desc").trim().toLowerCase();
       const sources = await readAdminWorkspaceSources();
-      const admins = sources.accounts
+      let admins = sources.accounts
         .filter(isAdminAccount)
         .map((admin) =>
           serializeAdminAccount(
             admin,
             getAdminWorkspaceCounts(getRecordAdminId(admin, admin.id), sources),
           ),
-        )
-        .sort((left, right) =>
-          String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")),
         );
+
+      // Dual-world SA view: Test Mode ON → test companies only; OFF → live only.
+      const companyIds = admins
+        .map((admin) => String(admin?.companyId || admin?.company_id || "").trim())
+        .filter(Boolean);
+      const companyFlags = await loadCompanyTestModeByIds(companyIds, { query: pgQuery });
+      admins = admins
+        .filter((admin) => {
+          const companyId = String(admin?.companyId || admin?.company_id || "").trim();
+          const flags = companyId ? companyFlags.get(companyId) : null;
+          const companyStatus = String(admin?.companyStatus || "").trim().toLowerCase();
+          // Drafts are not live SA companies. Pending review is merged from
+          // /companies/pending-review so it does not look "activated".
+          if (
+            companyStatus === "draft"
+            || companyStatus === "pending_payment"
+            || (admin?.isPendingReviewCompany === true && accountStateFilter !== "pending-review")
+          ) {
+            return false;
+          }
+          const descriptor = {
+            testMode: Boolean(admin?.testMode) || Boolean(flags?.testMode),
+            profileData: flags?.profileData || {
+              testMode: Boolean(admin?.testMode),
+              purgedByTestModeOff: Boolean(flags?.purged),
+            },
+          };
+          return companyVisibleInSuperAdminWorkspace(descriptor, { testModeOn });
+        })
+        .map((admin) => {
+          const companyId = String(admin?.companyId || admin?.company_id || "").trim();
+          const flags = companyId ? companyFlags.get(companyId) : null;
+          return {
+            ...admin,
+            testMode: Boolean(admin?.testMode) || Boolean(flags?.testMode),
+          };
+        });
+      admins = assignOfficialCompanyRanks(admins);
+
+      const counts = summarizeSuperAdminCompanyCounts(admins);
+      if (query) {
+        admins = admins.filter((admin) => getSuperAdminCompanySearchText(admin).includes(query));
+      }
+      if (accountStateFilter && accountStateFilter !== "all" && accountStateFilter !== "reports") {
+        admins = admins.filter((admin) => {
+          const accountState = classifySuperAdminCompanyAccountState(admin);
+          if (accountStateFilter === "new") {
+            const createdAt = Date.parse(String(admin?.createdAt || admin?.created_at || ""));
+            return (
+              accountState !== "pending-review" &&
+              accountState !== "pending-deletion" &&
+              accountState !== "deleted" &&
+              Number.isFinite(createdAt) &&
+              Date.now() - createdAt <= 24 * 60 * 60 * 1000
+            );
+          }
+          if (accountStateFilter === "low-risk") {
+            return accountState === "active";
+          }
+          if (accountStateFilter === "online") {
+            return admin?.isOnline === true || admin?.online === true || admin?.loggedIn === true;
+          }
+          return accountState === accountStateFilter;
+        });
+      }
+      admins = sortSuperAdminCompanyDirectory(admins, sortValue);
+
+      const total = admins.length;
+      const pageStart = (page - 1) * limit;
+      admins = admins.slice(pageStart, pageStart + limit);
+
+      if (companyReportsApi && typeof companyReportsApi.attachSummaries === "function") {
+        admins = await companyReportsApi.attachSummaries(admins);
+      }
+      const followers = await readFollowers();
+      admins = admins.map((admin) => {
+        const followerKey = normalizeAdminTenantId(admin?.adminId ?? admin?.id, "");
+        return applyEarnedPerformanceBadge({
+          ...admin,
+          followersCount: followerKey ? getFollowersListForAdmin(followers, followerKey).length : 0,
+        });
+      });
 
       sendJson(response, 200, {
         admins,
-        total: admins.length,
+        total,
+        page,
+        pageSize: limit,
+        counts,
+        workspace: testModeOn ? "test" : "live",
+        testMode: testModeOn,
       });
     } catch (error) {
       sendJson(response, 500, {
@@ -24938,6 +30190,365 @@ async function handleSuperAdminAdminsApi(request, response) {
   sendJson(response, 405, { message: "Method not allowed." });
 }
 
+function escapeSuperAdminCsvCell(value) {
+  const text = String(value ?? "");
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function resolveSuperAdminCompanyExportStatus(account) {
+  const statusToken = [
+    account?.status,
+    account?.accountStatus,
+    account?.accountState,
+    account?.adminStatus,
+    account?.userStatus,
+  ]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  const deletionStatus = getSellerAccountDeletionStatus(account);
+  const temporaryBanExpired = isAdminTemporaryBanExpired(account);
+  const temporaryRestrictionExpired = isAdminTemporaryRestrictionExpired(account);
+
+  if (
+    deletionStatus === "deleted" ||
+    statusToken.includes("deleted") ||
+    Boolean(account?.accountDeletedAt || account?.deletedAt)
+  ) {
+    return "deleted";
+  }
+
+  if (
+    deletionStatus === "scheduled" ||
+    deletionStatus === "pending" ||
+    Boolean(account?.deletionScheduledAt || account?.accountDeletionScheduledAt)
+  ) {
+    return "pending-deletion";
+  }
+
+  if (
+    account?.isPendingReviewCompany === true ||
+    statusToken.includes("pending_review") ||
+    statusToken.includes("pending-review") ||
+    String(account?.planStatus || "").trim().toLowerCase() === "pending_review"
+  ) {
+    return "pending-review";
+  }
+
+  if (
+    !temporaryBanExpired &&
+    (
+      account?.isBanned === true ||
+      account?.banned === true ||
+      Boolean(account?.bannedAt) ||
+      statusToken.includes("banned")
+    )
+  ) {
+    return "banned";
+  }
+
+  if (
+    !temporaryRestrictionExpired &&
+    (
+      isAdminAccountMarkedRestricted(account) ||
+      Boolean(account?.restrictedAt) ||
+      statusToken.includes("restricted") ||
+      statusToken.includes("restrict")
+    )
+  ) {
+    return "restricted";
+  }
+
+  if (
+    !temporaryBanExpired &&
+    !temporaryRestrictionExpired &&
+    (
+      account?.isSuspended === true ||
+      account?.suspended === true ||
+      account?.disabled === true ||
+      Boolean(account?.suspendedAt) ||
+      Boolean(account?.deactivatedAt) ||
+      Boolean(account?.disabledAt) ||
+      statusToken.includes("suspended") ||
+      statusToken.includes("suspend") ||
+      statusToken.includes("deactivated") ||
+      statusToken.includes("inactive") ||
+      statusToken.includes("disabled")
+    )
+  ) {
+    return "suspended";
+  }
+
+  return "active";
+}
+
+function resolveSuperAdminCompanyExportVerification(account) {
+  const isVerified = [
+    account?.isVerified,
+    account?.verified,
+    account?.faceVerified,
+    account?.emailVerified,
+    account?.businessVerified,
+  ].some((value) => value === true || value === 1 || String(value ?? "").trim().toLowerCase() === "true")
+    || Boolean(
+      account?.verifiedAt ||
+        account?.verificationDate ||
+        account?.emailVerifiedAt ||
+        account?.businessVerifiedAt,
+    );
+  return isVerified ? "Verified" : "Unverified";
+}
+
+function resolveSuperAdminCompanyExportRestrictionLevel(account, status) {
+  const warningCount = getSuperAdminSellerWarningCount(account);
+  if (status === "banned" || status === "suspended" || status === "restricted") {
+    return "High";
+  }
+  if (warningCount >= 3) {
+    return "High";
+  }
+  if (warningCount === 2) {
+    return "Medium";
+  }
+  if (warningCount === 1) {
+    return "Low";
+  }
+  return "None";
+}
+
+function formatSuperAdminCompanyExportPhone(account) {
+  const countryCode = String(account?.countryCode ?? account?.country_code ?? "+63").trim() || "+63";
+  const rawPhone = String(
+    account?.mobileNumber ??
+      account?.mobile_number ??
+      account?.phone ??
+      account?.contactNumber ??
+      "",
+  ).trim();
+  if (!rawPhone) {
+    return "";
+  }
+  const countryDigits = countryCode.replace(/\D/g, "");
+  const phoneDigits = rawPhone.replace(/\D/g, "");
+  if (!phoneDigits) {
+    return rawPhone;
+  }
+  if (phoneDigits.startsWith(countryDigits)) {
+    const subscriber = phoneDigits.slice(countryDigits.length);
+    return subscriber ? `${countryCode} ${subscriber}` : countryCode;
+  }
+  const subscriber = phoneDigits.startsWith("0") ? phoneDigits.slice(1) : phoneDigits;
+  return subscriber ? `${countryCode} ${subscriber}` : countryCode;
+}
+
+function formatSuperAdminCompanyExportDate(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  return date.toISOString();
+}
+
+function buildSuperAdminCompaniesCsv(rows) {
+  const headers = [
+    "company_name",
+    "company_id",
+    "account_code",
+    "admin_id",
+    "email",
+    "phone",
+    "contact_name",
+    "business_type",
+    "plan",
+    "verification",
+    "status",
+    "restriction",
+    "restriction_reason",
+    "restriction_limits",
+    "registered_at",
+    "followers",
+    "orders",
+    "employees",
+    "listings",
+    "rating",
+    "reviews",
+    "warning_count",
+    "online",
+  ];
+  const lines = [headers.join(",")];
+  for (const row of rows) {
+    lines.push(headers.map((key) => escapeSuperAdminCsvCell(row[key])).join(","));
+  }
+  // UTF-8 BOM helps Excel detect encoding correctly.
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+async function buildSuperAdminCompaniesExportRows() {
+  await processDueSellerAccountDeletions();
+  const testModeOn = await isTestModeEnabled();
+  const [sources, followers, pendingCompanies] = await Promise.all([
+    readAdminWorkspaceSources(),
+    readFollowers().catch(() => ({})),
+    listPendingReviewCompanies().catch(() => []),
+  ]);
+
+  let admins = sources.accounts
+    .filter(isAdminAccount)
+    .map((admin) =>
+      serializeAdminAccount(
+        admin,
+        getAdminWorkspaceCounts(getRecordAdminId(admin, admin.id), sources),
+      ),
+    );
+  const exportCompanyIds = admins
+    .map((admin) => String(admin?.companyId ?? admin?.company_id ?? "").trim())
+    .filter(Boolean);
+  const exportCompanyFlags = await loadCompanyTestModeByIds(exportCompanyIds, {
+    query: pgQuery,
+  });
+  admins = admins.filter((admin) => {
+    const companyId = String(admin?.companyId ?? admin?.company_id ?? "").trim();
+    const flags = companyId ? exportCompanyFlags.get(companyId) : null;
+    return companyVisibleInSuperAdminWorkspace(
+      {
+        testMode: Boolean(admin?.testMode) || Boolean(flags?.testMode),
+        profileData: flags?.profileData || { testMode: Boolean(admin?.testMode) },
+      },
+      { testModeOn },
+    );
+  });
+
+  const liveCompanyIds = new Set(
+    admins
+      .map((admin) => String(admin?.companyId ?? admin?.company_id ?? "").trim())
+      .filter(Boolean),
+  );
+  const liveAdminIds = new Set(
+    admins.map((admin) => String(admin?.adminId || admin?.id || "").trim()).filter(Boolean),
+  );
+  const pendingOnly = (Array.isArray(pendingCompanies) ? pendingCompanies : [])
+    .filter((entry) => {
+      const companyId = String(entry?.companyId || entry?.company_id || "").trim();
+      if (companyId) {
+        return !liveCompanyIds.has(companyId);
+      }
+      const accountId = String(entry?.adminId || entry?.id || "").trim();
+      return accountId && !liveAdminIds.has(accountId);
+    })
+    .map((entry) => ({
+      ...entry,
+      isPendingReviewCompany: true,
+      counts: {
+        products: 0,
+        employees: 0,
+        orders: 0,
+        rating: 0,
+        commentCount: 0,
+        reviewCount: 0,
+      },
+    }));
+
+  const merged = [...pendingOnly, ...admins].sort((left, right) =>
+    String(right.createdAt ?? right.created_at ?? "").localeCompare(
+      String(left.createdAt ?? left.created_at ?? ""),
+    ),
+  );
+
+  return merged.map((admin) => {
+    const adminId = String(admin?.adminId || admin?.id || "").trim();
+    const accountCode = String(admin?.accountCode ?? admin?.account_code ?? "").trim();
+    const companyId = String(admin?.companyId ?? admin?.company_id ?? "").trim();
+    const displayCompanyId = companyId || accountCode || adminId;
+    const counts = admin?.counts && typeof admin.counts === "object" ? admin.counts : {};
+    const status = resolveSuperAdminCompanyExportStatus(admin);
+    const planName = [
+      admin?.planName,
+      admin?.plan_name,
+      admin?.plan,
+      admin?.subscriptionPlan,
+      admin?.sellerPlan,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "Free Plan";
+    const businessType = [
+      admin?.storeType,
+      admin?.storeTypeName,
+      admin?.businessType,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "";
+    const contactName = [admin?.firstName, admin?.lastName]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+    const rating = Number(counts.rating ?? admin?.rating ?? 0);
+    const reviews = Number(
+      counts.commentCount ?? counts.reviewCount ?? admin?.commentCount ?? admin?.reviewCount ?? 0,
+    );
+    const restrictionLimits = getAdminRestrictionLimitLabels(admin);
+    const followersCount = getFollowersListForAdmin(followers, adminId).length;
+
+    return {
+      company_name: String(admin?.companyName || admin?.storeName || admin?.businessName || "").trim(),
+      company_id: displayCompanyId,
+      account_code: accountCode,
+      admin_id: adminId,
+      email: String(admin?.email ?? "").trim(),
+      phone: formatSuperAdminCompanyExportPhone(admin),
+      contact_name: contactName,
+      business_type: businessType,
+      plan: planName,
+      verification: resolveSuperAdminCompanyExportVerification(admin),
+      status,
+      restriction: resolveSuperAdminCompanyExportRestrictionLevel(admin, status),
+      restriction_reason: getAdminRestrictionReason(admin) || String(admin?.banReason ?? "").trim(),
+      restriction_limits: restrictionLimits.join("; "),
+      registered_at: formatSuperAdminCompanyExportDate(
+        admin?.createdAt || admin?.created_at || admin?.registeredAt || admin?.dateCreated || "",
+      ),
+      followers: followersCount,
+      orders: Number(counts.orders || 0),
+      employees: Number(counts.employees || 0),
+      listings: Number(counts.products || 0),
+      rating: Number.isFinite(rating) && rating > 0 ? Number(rating.toFixed(2)) : 0,
+      reviews: Number.isFinite(reviews) && reviews > 0 ? Math.trunc(reviews) : 0,
+      warning_count: getSuperAdminSellerWarningCount(admin),
+      online: isAdminAccountPresenceOnline(admin) ? "online" : "offline",
+    };
+  });
+}
+
+async function handleSuperAdminCompaniesExportApi(request, response) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const rows = await buildSuperAdminCompaniesExportRows();
+    const csv = buildSuperAdminCompaniesCsv(rows);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const filename = `companies-${stamp}.csv`;
+    response.writeHead(200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-store",
+    });
+    response.end(csv);
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error ? error.message : "Unable to export companies.",
+    });
+  }
+}
+
 function getSuperAdminSellerWarningCount(account) {
   const countSources = [
     account?.restrictionWarningCount,
@@ -24960,11 +30571,11 @@ function getSuperAdminSellerWarningCount(account) {
 }
 
 function applySuperAdminSellerNotifyAction(updatedAccount, previousAccount, payload, now) {
-  const notificationType = String(payload?.notificationType ?? payload?.notifyType ?? "warning")
+  const notificationType = String(payload?.notificationType ?? payload?.notifyType ?? "notice")
     .trim()
-    .toLowerCase() === "notice"
-      ? "notice"
-      : "warning";
+    .toLowerCase() === "warning"
+      ? "warning"
+      : "notice";
   const isWarning = notificationType === "warning";
   const previousWarningCount = getSuperAdminSellerWarningCount(previousAccount);
   const nextWarningCount = isWarning
@@ -25074,6 +30685,7 @@ function applySuperAdminSellerRestrictionAction(updatedAccount, previousAccount,
     `Reason: ${restrictionReason}.`,
     limitsLabel,
     restrictionDescription ? `Details: ${restrictionDescription}` : "",
+    "Active store vouchers are set to inactive until the restriction ends.",
   ]
     .filter(Boolean)
     .join(" ")
@@ -25171,6 +30783,295 @@ function applySuperAdminProductListingRestrictionNotification(
   return notification;
 }
 
+const LISTING_REVIEW_AGING_HOURS = 48;
+
+function getProductReviewAgeHours(product = {}) {
+  const submittedAt = String(
+    product?.submittedAt || product?.createdAt || product?.approvalUpdatedAt || "",
+  ).trim();
+  const submittedMs = submittedAt ? new Date(submittedAt).getTime() : NaN;
+  if (!Number.isFinite(submittedMs)) {
+    return 0;
+  }
+  return Math.max(0, (Date.now() - submittedMs) / (60 * 60 * 1000));
+}
+
+function enrichProductReviewQueueMeta(product = {}) {
+  const reviewAgeHours = getProductReviewAgeHours(product);
+  return {
+    ...product,
+    reviewAgeHours: Math.round(reviewAgeHours * 10) / 10,
+    isAgingReview:
+      isProductPendingApproval(product) && reviewAgeHours >= LISTING_REVIEW_AGING_HOURS,
+  };
+}
+
+function clearExpiredProductListingRestriction(product = {}, now = new Date().toISOString()) {
+  const restriction = normalizeProductListingRestriction(product);
+  const hadStoredActive =
+    product?.listingRestriction?.active === true || product?.isListingRestricted === true;
+  if (restriction.active || !hadStoredActive) {
+    return { product, didChange: false };
+  }
+  return {
+    product: {
+      ...product,
+      listingRestriction: {
+        ...restriction,
+        active: false,
+        clearedAt: now,
+        clearedBy: "system-expiry",
+        clearReason: "expired",
+      },
+      isListingRestricted: false,
+    },
+    didChange: true,
+  };
+}
+
+function clearProductListingRestrictionFields(
+  product = {},
+  now = new Date().toISOString(),
+  clearedBy = SUPER_ADMIN_USERNAME,
+) {
+  const previous = normalizeProductListingRestriction(product);
+  return {
+    ...product,
+    listingRestriction: {
+      active: false,
+      reason: previous.reason,
+      durationDays: previous.durationDays,
+      sellerNote: previous.sellerNote,
+      notifySeller: previous.notifySeller,
+      restrictedAt: previous.restrictedAt,
+      restrictedBy: previous.restrictedBy,
+      expiresAt: previous.expiresAt,
+      clearedAt: now,
+      clearedBy,
+      clearReason: "manual-unrestrict",
+    },
+    isListingRestricted: false,
+    listingRestrictionReason: "",
+    listingRestrictionDurationDays: 0,
+    listingRestrictionSellerNote: "",
+    listingRestrictedAt: "",
+    listingRestrictedBy: "",
+    listingRestrictionExpiresAt: "",
+    updatedAt: now,
+  };
+}
+
+function applyListingLifecycleSellerNotification(
+  updatedAccount,
+  previousAccount,
+  {
+    type,
+    title,
+    reason,
+    message,
+    productId,
+    productName,
+    targetUrl,
+  },
+  now,
+) {
+  const notificationReason = String(reason || title || "Listing update")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+  const notificationMessage = String(message || notificationReason)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 900);
+  const notification = {
+    id: `listing-${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: String(type || "notice").trim() || "notice",
+    audience: "seller",
+    adminId: getRecordAdminId(updatedAccount, updatedAccount?.adminId || updatedAccount?.id || ""),
+    title: String(title || "Listing Update").replace(/\s+/g, " ").trim().slice(0, 120),
+    reason: notificationReason,
+    message: notificationMessage,
+    status: "unread",
+    productId: String(productId || "").trim(),
+    productName: String(productName || "").trim(),
+    createdAt: now,
+    createdBy: SUPER_ADMIN_USERNAME,
+    targetUrl: String(targetUrl || "").trim() ||
+      (productId
+        ? `/product_panel.html?productId=${encodeURIComponent(productId)}`
+        : "/product_panel.html"),
+  };
+
+  Object.assign(updatedAccount, {
+    lastSuperAdminNotifiedAt: now,
+    superAdminNotificationCount:
+      Math.max(0, Number(previousAccount?.superAdminNotificationCount) || 0) + 1,
+    superAdminNotificationType: notification.type,
+    superAdminNotificationReason: notificationReason,
+    lastSuperAdminNotificationReason: notificationReason,
+    lastSuperAdminNotificationMessage: notificationMessage,
+  });
+  assignSellerAdminNotification(updatedAccount, notification);
+  return notification;
+}
+
+async function fanOutListingLifecycleNotifications({
+  product,
+  accounts = null,
+  type,
+  title,
+  reason,
+  message,
+  sellerTitle,
+  sellerMessage,
+  sellerTargetUrl,
+  saTargetUrl,
+  now = new Date().toISOString(),
+  notifySeller = true,
+  notifySuperAdmin = true,
+  activityAction = "",
+  persistAccounts = true,
+  createdBy = SUPER_ADMIN_USERNAME,
+}) {
+  const productId = String(product?.id ?? "").trim();
+  const productName = String(product?.name ?? "Product").trim() || "Product";
+  const adminId = getRecordAdminId(product, "");
+  const companyName = String(
+    product?.companyName || product?.storeName || product?.businessName || "",
+  ).trim();
+  let sellerNotification = null;
+  let workingAccounts = accounts;
+  let didMutateAccounts = false;
+
+  if (notifySeller && adminId) {
+    if (!workingAccounts) {
+      workingAccounts = await readAccounts();
+    }
+    const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+    const accountIndex = workingAccounts.findIndex((account) =>
+      normalizeAdminTenantId(account?.id, "") === normalizedAdminId ||
+      normalizeAdminTenantId(getRecordAdminId(account, ""), "") === normalizedAdminId
+    );
+    if (accountIndex !== -1) {
+      const previousAccount = workingAccounts[accountIndex];
+      const updatedAccount = { ...previousAccount };
+      sellerNotification = applyListingLifecycleSellerNotification(
+        updatedAccount,
+        previousAccount,
+        {
+          type,
+          title: sellerTitle || title,
+          reason,
+          message: sellerMessage || message,
+          productId,
+          productName,
+          targetUrl: sellerTargetUrl,
+        },
+        now,
+      );
+      workingAccounts[accountIndex] = updatedAccount;
+      didMutateAccounts = true;
+    }
+  }
+
+  if (didMutateAccounts && persistAccounts && workingAccounts) {
+    await writeAccounts(workingAccounts);
+  }
+
+  let saNotification = null;
+  if (notifySuperAdmin) {
+    saNotification = await persistSuperAdminNotification(
+      createPersistentLinkedNotification({
+        type,
+        audience: "super_admin",
+        title,
+        reason,
+        message,
+        productId,
+        productName,
+        adminId,
+        companyName,
+        storeName: companyName,
+        businessName: companyName,
+        createdBy,
+        targetUrl: saTargetUrl || "/super_admin.html#product-requests",
+        createdAt: now,
+      }),
+    );
+  }
+
+  if (activityAction) {
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type,
+      source: "super_admin",
+      targetPermission: "products",
+      adminId,
+      action: activityAction,
+      productId,
+      productName,
+      title,
+      description: message,
+      notificationAudience: "admin",
+      targetUrl: sellerTargetUrl || createProductActivityTargetUrl(product),
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    });
+  }
+
+  return {
+    sellerNotification,
+    saNotification,
+    accounts: workingAccounts,
+    sellerNotified: Boolean(sellerNotification),
+  };
+}
+
+async function notifySuperAdminListingSubmission(product, {
+  action = "submitted",
+  actorLabel = "Seller",
+} = {}) {
+  if (!product || !isProductPendingApproval(product)) {
+    return null;
+  }
+  const productName = String(product?.name ?? "Product").trim() || "Product";
+  const adminId = getRecordAdminId(product, "");
+  const companyActor = resolveSaNotificationCompanyActor({
+    adminId,
+    companyName: String(
+      product?.companyName || product?.storeName || product?.businessName || actorLabel || "",
+    ).trim(),
+    storeName: product?.storeName,
+    businessName: product?.businessName,
+    companyPictureUrl:
+      product?.companyPictureUrl
+      || product?.companyLogoUrl
+      || product?.logoUrl
+      || product?.profileImageUrl
+      || "",
+    createdBy: actorLabel,
+  });
+  const isResubmit = action === "resubmitted" || action === "updated";
+  return persistSuperAdminNotification(
+    createPersistentLinkedNotification({
+      type: isResubmit ? "product-resubmitted" : "product-submitted",
+      audience: "super_admin",
+      title: isResubmit ? "Listing resubmitted for review" : "New listing submitted for review",
+      reason: isResubmit ? "Seller updated listing" : "Seller created listing",
+      message: `${companyActor.companyName} ${isResubmit ? "resubmitted" : "submitted"} "${productName}" for Super Admin review.`,
+      productId: String(product?.id ?? "").trim(),
+      productName,
+      ...companyActor,
+      targetUrl: "/super_admin.html#product-requests",
+    }),
+  );
+}
+
 function applySuperAdminSellerEnforcementNotification(
   updatedAccount,
   previousAccount,
@@ -25220,7 +31121,7 @@ function applySuperAdminSellerEnforcementNotification(
   return notification;
 }
 
-async function syncSellerCompanyStatusForSuperAdminAction(accountId, action, reason = "") {
+async function syncSellerCompanyStatusForSuperAdminAction(accountId, action, reason = "", description = "", companyId = "") {
   const companyStatusByAction = {
     ban: "banned",
     unban: "active",
@@ -25238,6 +31139,8 @@ async function syncSellerCompanyStatusForSuperAdminAction(accountId, action, rea
     const syncOptions = {
       companyStatus,
       reason,
+      description,
+      companyId: String(companyId || "").trim() || undefined,
     };
     if (action === "activate" || action === "unban" || action === "unrestrict") {
       syncOptions.subscriptionStatus = "active";
@@ -25306,6 +31209,12 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
     const banDescription = String(payload?.banDescription ?? payload?.description ?? payload?.banDetails ?? "")
       .replace(/\s+/g, " ")
       .trim();
+    const targetCompanyId = String(
+      payload?.companyId
+        ?? payload?.company_id
+        ?? payload?.pendingCompanyId
+        ?? "",
+    ).trim();
     let restrictDurationValue = null;
     let restrictDurationUnit = "";
     let restrictExpiresAt = null;
@@ -25405,9 +31314,12 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         return;
       }
 
-      restrictExpiresAt = new Date(
-        Date.now() + restrictDurationValue * (restrictDurationUnit === "days" ? 86400000 : 3600000),
-      ).toISOString();
+      const requestedRestrictExpiresAt = Date.parse(String(payload?.restrictExpiresAt ?? "").trim());
+      restrictExpiresAt = Number.isFinite(requestedRestrictExpiresAt) && requestedRestrictExpiresAt > Date.now()
+        ? new Date(requestedRestrictExpiresAt).toISOString()
+        : new Date(
+          Date.now() + restrictDurationValue * (restrictDurationUnit === "days" ? 86400000 : 3600000),
+        ).toISOString();
     }
 
     const sources = await readAdminWorkspaceSources();
@@ -25422,6 +31334,34 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
 
     const now = new Date().toISOString();
     const previousAccount = sources.accounts[accountIndex];
+    const previousUserScope = String(previousAccount?.enforcementScope || "").trim().toLowerCase() === "user";
+    const previousUserBanned =
+      previousUserScope &&
+      (
+        previousAccount?.isBanned === true ||
+        previousAccount?.banned === true ||
+        ["banned"].includes(String(previousAccount?.status || "").trim().toLowerCase()) ||
+        ["banned"].includes(String(previousAccount?.accountStatus || "").trim().toLowerCase())
+      );
+    const previousUserRestricted =
+      previousUserScope &&
+      (
+        previousAccount?.isRestricted === true ||
+        previousAccount?.restricted === true ||
+        ["restricted"].includes(String(previousAccount?.status || "").trim().toLowerCase()) ||
+        ["restricted"].includes(String(previousAccount?.accountStatus || "").trim().toLowerCase())
+      );
+    if (
+      (normalizedAction === "unban" || normalizedAction === "unrestrict" || normalizedAction === "activate") &&
+      (previousUserBanned || previousUserRestricted)
+    ) {
+      sendJson(response, 409, {
+        message:
+          "This seller is banned/restricted from User Data. Clear the user-level enforcement first before restoring a single company.",
+        code: "USER_LEVEL_ENFORCEMENT_ACTIVE",
+      });
+      return;
+    }
     const updatedAccount = {
       ...previousAccount,
       updatedAt: now,
@@ -25432,6 +31372,8 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
 
     if (normalizedAction === "notify") {
       const notifyResult = applySuperAdminSellerNotifyAction(updatedAccount, previousAccount, payload, now);
+      const notifyActivityAction =
+        notifyResult.notification?.type === "warning" ? "warning" : "notice";
       message = notifyResult.message;
       await logActivitySafely({
         id: createActivityLogId(),
@@ -25439,11 +31381,15 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         source: "super_admin",
         targetPermission: "",
         adminId: normalizedAdminId,
-        action: "warning",
-        title: notifyResult.notification?.title || "Super Admin Warning",
+        action: notifyActivityAction,
+        title:
+          notifyResult.notification?.title ||
+          (notifyActivityAction === "warning" ? "Super Admin Warning" : "Super Admin Notice"),
         description:
           notifyResult.notification?.message ||
-          "Super Admin sent a warning notice. Please review seller account compliance.",
+          (notifyActivityAction === "warning"
+            ? "Super Admin sent a warning notice. Please review seller account compliance."
+            : "Super Admin sent a seller account notice."),
         notificationAudience: "admin",
         actor: {
           role: "admin",
@@ -25505,6 +31451,8 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         normalizedAdminId,
         "deactivate",
         deactivateNotification.reason,
+        "",
+        targetCompanyId,
       );
     } else if (normalizedAction === "activate") {
       Object.assign(updatedAccount, {
@@ -25562,30 +31510,26 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         normalizedAdminId,
         "activate",
         activateNotification.reason,
+        "",
+        targetCompanyId,
       );
     } else if (normalizedAction === "restrict") {
-      Object.assign(updatedAccount, {
-        status: "restricted",
-        accountStatus: "restricted",
-        accountState: "restricted",
-        isActive: true,
-        disabled: false,
-        isRestricted: true,
-        restricted: true,
-        restrictedAt: now,
-        restrictedBy: SUPER_ADMIN_USERNAME,
-        restrictDurationValue,
-        restrictDurationUnit,
-        restrictExpiresAt,
-        restrictionReason,
-        restrictReason: restrictionReason,
-        restrictionDescription,
-        restrictDescription: restrictionDescription,
-        restrictionLimits,
-        restrictLimits: restrictionLimits,
-        restrictionLimitLabels,
-        restrictLimitLabels: restrictionLimitLabels,
-      });
+      Object.assign(
+        updatedAccount,
+        buildCompanyScopedEnforcementPatch({
+          status: "restricted",
+          reason: restrictionReason,
+          description: restrictionDescription,
+          now,
+          companyId: targetCompanyId,
+          previousAccount,
+          restrictDurationValue,
+          restrictDurationUnit,
+          restrictExpiresAt,
+          restrictionLimits,
+          restrictionLimitLabels,
+        }),
+      );
       const restrictionNotification = applySuperAdminSellerRestrictionAction(
         updatedAccount,
         previousAccount,
@@ -25600,13 +31544,14 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         },
         now,
       );
-      message = `Company restricted until ${new Date(restrictExpiresAt).toLocaleString()}.`;
+      message = `Company restricted until ${new Date(restrictExpiresAt).toLocaleString()}. User account remains active.`;
       await logActivitySafely({
         id: createActivityLogId(),
         type: "seller-restriction",
         source: "super_admin",
         targetPermission: "",
         adminId: normalizedAdminId,
+        companyId: targetCompanyId || undefined,
         action: "restricted",
         title: restrictionNotification.title,
         description: restrictionNotification.message,
@@ -25629,56 +31574,90 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         normalizedAdminId,
         "restrict",
         restrictionReason,
+        restrictionDescription,
+        targetCompanyId,
       );
+      if (typeof vouchersApi?.setSellerVouchersEnforcement === "function") {
+        await vouchersApi.setSellerVouchersEnforcement(normalizedAdminId, {
+          mode: "restrict",
+          reason: restrictionReason,
+          now,
+        });
+      }
     } else if (normalizedAction === "ban") {
-      Object.assign(updatedAccount, {
-        status: "banned",
-        accountStatus: "banned",
-        accountState: "banned",
-        isActive: false,
-        disabled: true,
-        isBanned: true,
-        isOnline: false,
-        online: false,
-        loggedIn: false,
-        isLoggedIn: false,
-        sessionActive: false,
-        presenceStatus: "offline",
-        bannedAt: now,
-        bannedBy: SUPER_ADMIN_USERNAME,
-        banReason,
-        banDescription,
-        banDetails: banDescription,
-        banType: "permanent",
-        banDurationValue: null,
-        banDurationUnit: "",
-        banExpiresAt: null,
-      });
+      Object.assign(
+        updatedAccount,
+        buildCompanyScopedEnforcementPatch({
+          status: "banned",
+          reason: banReason,
+          description: banDescription,
+          now,
+          companyId: targetCompanyId,
+          previousAccount,
+        }),
+      );
       const companyName = getSellerCompanyDisplayName(updatedAccount);
       const banNotification = applySuperAdminSellerEnforcementNotification(
         updatedAccount,
         previousAccount,
         {
           type: "seller-banned",
-          title: "Seller Account Banned",
+          title: "Seller Company Banned",
           reason: banReason,
           message: [
             `Your seller company "${companyName}" has been permanently banned by Super Admin.`,
             `Reason: ${banReason}.`,
             banDescription ? `Details: ${banDescription}` : "",
-            "Login and Seller Mode access are blocked.",
+            "This company workspace, its listings, and its store vouchers are blocked.",
+            "Your user login account stays active for other companies.",
           ]
             .filter(Boolean)
             .join(" "),
         },
         now,
       );
-      message = "Company permanently banned.";
+      message = "Company permanently banned. Listings for this company cannot go live. User account remains active.";
+      const bannedListingCount = (await readProducts()).filter((product) => {
+        const normalizedProduct = normalizeStoredProductRecord(product);
+        const productAdminId = normalizeAdminTenantId(
+          getRecordAdminId(normalizedProduct, normalizedProduct?.adminId || ""),
+          "",
+        );
+        if (!productAdminId || productAdminId !== normalizedAdminId) {
+          return false;
+        }
+        if (targetCompanyId) {
+          const productCompanyId = String(
+            normalizedProduct?.companyId || normalizedProduct?.company_id || "",
+          ).trim();
+          if (productCompanyId && productCompanyId !== targetCompanyId) {
+            return false;
+          }
+        }
+        return isProductLiveListingForApp(normalizedProduct);
+      }).length;
+      await persistSuperAdminNotification(
+        createPersistentLinkedNotification({
+          type: "seller-banned-listings",
+          audience: "super_admin",
+          title: "Banned company listings delisted",
+          reason: banReason,
+          message: bannedListingCount > 0
+            ? `Company "${companyName}" was banned. ${bannedListingCount} live-eligible listing(s) are hidden from marketplace and moved under Banned products. Store vouchers are set to inactive.`
+            : `Company "${companyName}" was banned. New and existing listings cannot go live while banned. Store vouchers are set to inactive.`,
+          adminId: normalizedAdminId,
+          companyName,
+          createdBy: SUPER_ADMIN_USERNAME,
+          targetUrl: "/super_admin.html#product-requests",
+          createdAt: now,
+        }),
+      );
       await logActivitySafely({
         id: createActivityLogId(),
         type: "seller-admin-action",
         source: "super_admin",
         adminId: normalizedAdminId,
+        companyId: targetCompanyId || undefined,
         action: "banned",
         title: banNotification.title,
         description: banNotification.message,
@@ -25694,48 +31673,37 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         createdAt: now,
         skipLinkedNotification: true,
       }, request);
-      await syncSellerCompanyStatusForSuperAdminAction(normalizedAdminId, "ban", banReason);
+      await syncSellerCompanyStatusForSuperAdminAction(
+        normalizedAdminId,
+        "ban",
+        banReason,
+        banDescription,
+        targetCompanyId,
+      );
+      await deactivateBannedSellerListings(normalizedAdminId, {
+        companyId: targetCompanyId,
+        now,
+      });
+      if (typeof vouchersApi?.setSellerVouchersEnforcement === "function") {
+        await vouchersApi.setSellerVouchersEnforcement(normalizedAdminId, {
+          mode: "ban",
+          reason: banReason,
+          now,
+        });
+      }
     } else if (normalizedAction === "unban") {
+      Object.assign(
+        updatedAccount,
+        buildCompanyScopedEnforcementPatch({
+          status: "active",
+          reason: "Ban removed by Super Admin",
+          description: "",
+          now,
+          companyId: targetCompanyId,
+          previousAccount,
+        }),
+      );
       Object.assign(updatedAccount, {
-        status: "active",
-        accountStatus: "active",
-        accountState: "active",
-        adminStatus: "active",
-        userStatus: "active",
-        isActive: true,
-        disabled: false,
-        isBanned: false,
-        banned: false,
-        isRestricted: false,
-        restricted: false,
-        isSuspended: false,
-        suspended: false,
-        bannedAt: null,
-        bannedBy: "",
-        banReason: "",
-        banDescription: "",
-        banDetails: "",
-        banType: "",
-        banDurationValue: null,
-        banDurationUnit: "",
-        banExpiresAt: null,
-        bannedUntil: null,
-        restrictedAt: null,
-        restrictedBy: "",
-        restrictDurationValue: null,
-        restrictDurationUnit: "",
-        restrictExpiresAt: null,
-        restrictionReason: "",
-        restrictReason: "",
-        restrictionDescription: "",
-        restrictDescription: "",
-        restrictionLimits: [],
-        restrictLimits: [],
-        restrictionLimitLabels: [],
-        restrictLimitLabels: [],
-        suspendedAt: null,
-        deactivatedAt: null,
-        disabledAt: null,
         lastBannedAt: previousAccount?.bannedAt || null,
         lastBannedBy: String(previousAccount?.bannedBy || "").trim(),
         lastBanReason: String(previousAccount?.banReason || "").trim(),
@@ -25754,20 +31722,21 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         previousAccount,
         {
           type: "seller-unbanned",
-          title: "Seller Account Unbanned",
+          title: "Seller Company Unbanned",
           reason: "Ban removed by Super Admin",
           message:
             `Your seller company "${companyName}" has been unbanned by Super Admin. ` +
-            "Login and Seller Mode access are restored.",
+            "Company workspace access is restored. Eligible listings can return to Live when stock and visibility allow. Unexpired store vouchers become active again.",
         },
         now,
       );
-      message = "Company unbanned and login access restored.";
+      message = "Company unbanned. Eligible listings can return to Live.";
       await logActivitySafely({
         id: createActivityLogId(),
         type: "seller-admin-action",
         source: "super_admin",
         adminId: normalizedAdminId,
+        companyId: targetCompanyId || undefined,
         action: "unbanned",
         title: unbanNotification.title,
         description: unbanNotification.message,
@@ -25785,40 +31754,28 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         normalizedAdminId,
         "unban",
         unbanNotification.reason,
+        "",
+        targetCompanyId,
       );
+      if (typeof vouchersApi?.setSellerVouchersEnforcement === "function") {
+        await vouchersApi.setSellerVouchersEnforcement(normalizedAdminId, {
+          mode: "restore",
+          now,
+        });
+      }
     } else if (normalizedAction === "unrestrict") {
+      Object.assign(
+        updatedAccount,
+        buildCompanyScopedEnforcementPatch({
+          status: "active",
+          reason: "Restriction removed by Super Admin",
+          description: "",
+          now,
+          companyId: targetCompanyId,
+          previousAccount,
+        }),
+      );
       Object.assign(updatedAccount, {
-        status: "active",
-        accountStatus: "active",
-        accountState: "active",
-        adminStatus: "active",
-        userStatus: "active",
-        isActive: true,
-        disabled: false,
-        isRestricted: false,
-        restricted: false,
-        restrictedAt: null,
-        restricted_at: null,
-        restrictedBy: "",
-        restricted_by: "",
-        restrictDurationValue: null,
-        restrictDurationUnit: "",
-        restrictExpiresAt: null,
-        restrictionExpiresAt: null,
-        restrictedUntil: null,
-        restrict_expires_at: null,
-        restrictionReason: "",
-        restrictReason: "",
-        restriction_reason: "",
-        restrict_reason: "",
-        restrictionDescription: "",
-        restrictDescription: "",
-        restriction_description: "",
-        restrict_description: "",
-        restrictionLimits: [],
-        restrictLimits: [],
-        restrictionLimitLabels: [],
-        restrictLimitLabels: [],
         lastRestrictedAt: previousAccount?.restrictedAt || null,
         lastRestrictedBy: String(previousAccount?.restrictedBy || "").trim(),
         lastRestrictionReason: String(previousAccount?.restrictionReason ?? previousAccount?.restrictReason ?? "").trim(),
@@ -25831,11 +31788,11 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         previousAccount,
         {
           type: "seller-unrestricted",
-          title: "Seller Restriction Removed",
+          title: "Seller Company Restriction Removed",
           reason: "Restriction removed by Super Admin",
           message:
             `The restriction on your seller company "${companyName}" has been removed by Super Admin. ` +
-            "Full Seller Mode access is restored.",
+            "Full access to this company workspace is restored. Unexpired store vouchers become active again.",
         },
         now,
       );
@@ -25845,6 +31802,7 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         type: "seller-admin-action",
         source: "super_admin",
         adminId: normalizedAdminId,
+        companyId: targetCompanyId || undefined,
         action: "unrestricted",
         title: unrestrictNotification.title,
         description: unrestrictNotification.message,
@@ -25862,7 +31820,15 @@ async function handleSuperAdminAdminActionApi(request, response, adminId) {
         normalizedAdminId,
         "unrestrict",
         unrestrictNotification.reason,
+        "",
+        targetCompanyId,
       );
+      if (typeof vouchersApi?.setSellerVouchersEnforcement === "function") {
+        await vouchersApi.setSellerVouchersEnforcement(normalizedAdminId, {
+          mode: "restore",
+          now,
+        });
+      }
     }
 
     sources.accounts[accountIndex] = updatedAccount;
@@ -25982,6 +31948,7 @@ function getBuyerActionDuration(payload, action) {
     return {
       durationValue: null,
       durationUnit: "permanent",
+      startsAt: null,
       expiresAt: null,
     };
   }
@@ -25994,11 +31961,13 @@ function getBuyerActionDuration(payload, action) {
     throw new Error("Permanent duration is only available for bans.");
   }
 
+  const startsAt = new Date();
   return {
     durationValue,
     durationUnit: normalizedUnit,
+    startsAt: startsAt.toISOString(),
     expiresAt: new Date(
-      Date.now() + durationValue * (normalizedUnit === "days" ? 86400000 : 3600000),
+      startsAt.getTime() + durationValue * (normalizedUnit === "days" ? 86400000 : 3600000),
     ).toISOString(),
   };
 }
@@ -26009,6 +31978,7 @@ function createBuyerNotification(action, reason, account, now, payload = {}) {
     restrict: "Restriction Notice",
     suspend: "Suspension Notice",
     ban: "Account Ban Notice",
+    activate: "Account Restored",
     "require-verification": "Verification Request",
     "require-contact-verification": "Verification Request",
     "require-password-reset": "Password Reset Required",
@@ -26129,6 +32099,10 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         accountStatus: "active",
         accountState: "active",
         userStatus: "active",
+        enforcementScope: "user",
+        companyStatus: "active",
+        companyEnforcementStatus: "active",
+        enforcedCompanyIds: [],
         isActive: true,
         disabled: false,
         isBanned: false,
@@ -26153,19 +32127,24 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         banType: "",
         banExpiresAt: null,
       });
-      message = "Buyer account restored to active.";
+      notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
+      message = "Buyer account restored to active. Linked seller companies were also cleared.";
     } else if (action === "restrict") {
       Object.assign(updatedAccount, {
         status: "restricted",
         accountStatus: "restricted",
         accountState: "restricted",
         userStatus: "restricted",
+        enforcementScope: "user",
+        companyStatus: "restricted",
+        companyEnforcementStatus: "restricted",
         isActive: true,
         disabled: false,
         isRestricted: true,
         restricted: true,
         restrictedAt: now,
         restrictedBy: SUPER_ADMIN_USERNAME,
+        restrictStartsAt: duration.startsAt || now,
         restrictDurationValue: duration.durationValue,
         restrictDurationUnit: duration.durationUnit,
         restrictExpiresAt: duration.expiresAt,
@@ -26173,8 +32152,9 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         restrictReason: reason,
         buyerInternalNote: internalNote,
       });
+      await forceBuyerRemoteSignOut(updatedAccount, now);
       notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
-      message = "Buyer account restricted.";
+      message = "Buyer account restricted. All linked seller companies and listings were restricted.";
     } else if (action === "suspend") {
       Object.assign(updatedAccount, {
         status: "suspended",
@@ -26198,6 +32178,7 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         suspensionReason: reason,
         buyerInternalNote: internalNote,
       });
+      await forceBuyerRemoteSignOut(updatedAccount, now);
       notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
       message = "Buyer account suspended.";
     } else if (action === "ban") {
@@ -26206,6 +32187,9 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         accountStatus: "banned",
         accountState: "banned",
         userStatus: "banned",
+        enforcementScope: "user",
+        companyStatus: "banned",
+        companyEnforcementStatus: "banned",
         isActive: false,
         disabled: true,
         isBanned: true,
@@ -26225,8 +32209,9 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         banDurationUnit: duration.durationUnit,
         banExpiresAt: duration.expiresAt,
       });
+      await forceBuyerRemoteSignOut(updatedAccount, now);
       notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
-      message = "Buyer account banned.";
+      message = "Buyer account banned. All linked seller companies and listings were banned.";
     } else if (action === "require-verification" || action === "require-contact-verification") {
       Object.assign(updatedAccount, {
         verificationStatus: "pending",
@@ -26250,26 +32235,7 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
       notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
       message = "Password reset required for buyer.";
     } else if (action === "logout-devices") {
-      Object.assign(updatedAccount, {
-        isOnline: false,
-        online: false,
-        loggedIn: false,
-        isLoggedIn: false,
-        sessionActive: false,
-        presenceStatus: "offline",
-        forceLogoutAt: now,
-        sessionVersion: Math.max(0, Number(updatedAccount.sessionVersion) || 0) + 1,
-      });
-      try {
-        const accountId = String(
-          updatedAccount.id ?? updatedAccount.accountId ?? "",
-        ).trim();
-        if (accountId && typeof accountDevicesApi?.revokeAllForAccount === "function") {
-          await accountDevicesApi.revokeAllForAccount(accountId);
-        }
-      } catch (deviceError) {
-        console.warn("Unable to revoke buyer device sessions.", deviceError);
-      }
+      await forceBuyerRemoteSignOut(updatedAccount, now);
       notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
       message = "Buyer devices logged out.";
     } else if (action === "lock") {
@@ -26292,6 +32258,7 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
         isLoggedIn: false,
         sessionActive: false,
       });
+      await forceBuyerRemoteSignOut(updatedAccount, now);
       notification = createBuyerNotification(action, reason, updatedAccount, now, payload);
       message = "Buyer account locked.";
     } else if (action === "notify") {
@@ -26310,6 +32277,7 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
       newStatus,
       durationValue: duration.durationValue,
       durationUnit: duration.durationUnit,
+      startsAt: duration.startsAt,
       expiresAt: duration.expiresAt,
       notificationSent: Boolean(notification),
       createdAt: now,
@@ -26330,6 +32298,142 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
     }
 
     accounts[accountIndex] = updatedAccount;
+
+    // User Data ban/restrict/activate cascades to every linked seller company + seller admin mirror.
+    let cascadeResult = null;
+    if (action === "ban" || action === "restrict" || action === "activate") {
+      const cascadeAction = action === "activate" ? "unban" : action;
+      const linkedIds = collectLinkedSellerAccountIds(updatedAccount, accounts);
+      for (let index = 0; index < accounts.length; index += 1) {
+        const candidate = accounts[index];
+        if (!candidate || typeof candidate !== "object") {
+          continue;
+        }
+        if (index === accountIndex) {
+          continue;
+        }
+        const candidateIds = [
+          candidate?.id,
+          candidate?.accountId,
+          candidate?.adminId,
+          candidate?.userId,
+        ]
+          .map((value) => normalizeAdminTenantId(value, ""))
+          .filter(Boolean);
+        const candidateEmail = String(candidate?.email || "").trim().toLowerCase();
+        const seedEmail = String(updatedAccount?.email || "").trim().toLowerCase();
+        const linked =
+          candidateIds.some((id) => linkedIds.includes(id)) ||
+          (candidateEmail && seedEmail && candidateEmail === seedEmail);
+        if (!linked) {
+          continue;
+        }
+        if (!isAdminAccount(candidate) && !isBuyerAccountRecord(candidate)) {
+          continue;
+        }
+        accounts[index] = applyUserLevelSellerAccountEnforcement(candidate, {
+          action: cascadeAction,
+          reason,
+          description: internalNote,
+          now,
+          restrictDurationValue: duration.durationValue,
+          restrictDurationUnit: duration.durationUnit,
+          restrictStartsAt: duration.startsAt || now,
+          restrictExpiresAt: duration.expiresAt,
+        });
+        if (isAdminAccount(accounts[index]) && (action === "ban" || action === "restrict")) {
+          applySuperAdminSellerEnforcementNotification(
+            accounts[index],
+            candidate,
+            {
+              type: action === "ban" ? "seller-banned" : "seller-restricted",
+              title: action === "ban"
+                ? "Account Banned (User Data)"
+                : "Account Restricted (User Data)",
+              reason,
+              message: action === "ban"
+                ? `Your user account was banned by Super Admin. All of your seller companies and listings are banned. Reason: ${reason}.`
+                : `Your user account was restricted by Super Admin. All of your seller companies are restricted. Reason: ${reason}.`,
+            },
+            now,
+          );
+        }
+      }
+
+      cascadeResult = await cascadeUserEnforcementToSellerCompanies(updatedAccount, {
+        action: cascadeAction,
+        reason,
+        description: internalNote,
+        accounts,
+      });
+
+      if (action === "ban" || action === "restrict" || action === "activate") {
+        const linkedIds = Array.isArray(cascadeResult?.linkedAccountIds)
+          ? cascadeResult.linkedAccountIds
+          : collectLinkedSellerAccountIds(updatedAccount, accounts);
+        const voucherMode = action === "activate"
+          ? "restore"
+          : action === "restrict"
+            ? "restrict"
+            : "ban";
+        for (const linkedId of linkedIds) {
+          if (action === "ban") {
+            await deactivateBannedSellerListings(linkedId, { now });
+          }
+          if (typeof vouchersApi?.setSellerVouchersEnforcement === "function") {
+            await vouchersApi.setSellerVouchersEnforcement(linkedId, {
+              mode: voucherMode,
+              reason,
+              now,
+            });
+          }
+        }
+        if (action === "ban") {
+          await deactivateBannedSellerListings(
+            String(updatedAccount.id ?? updatedAccount.accountId ?? buyerId ?? "").trim(),
+            { now },
+          );
+        }
+        if (typeof vouchersApi?.setSellerVouchersEnforcement === "function") {
+          await vouchersApi.setSellerVouchersEnforcement(
+            String(updatedAccount.id ?? updatedAccount.accountId ?? buyerId ?? "").trim(),
+            {
+              mode: voucherMode,
+              reason,
+              now,
+            },
+          );
+        }
+      }
+
+      const displayName = getActivityAccountDisplayName(updatedAccount) || "User";
+      if (action === "ban" || action === "restrict") {
+        const companyCount = Array.isArray(cascadeResult?.synced)
+          ? cascadeResult.synced.reduce(
+              (total, entry) => total + (Array.isArray(entry?.companyIds) ? entry.companyIds.length : 0),
+              0,
+            )
+          : 0;
+        await persistSuperAdminNotification(
+          createPersistentLinkedNotification({
+            type: action === "ban" ? "user-banned-cascade" : "user-restricted-cascade",
+            audience: "super_admin",
+            title: action === "ban"
+              ? "User ban cascaded to companies"
+              : "User restriction cascaded to companies",
+            reason,
+            message: companyCount > 0
+              ? `${displayName} was ${action === "ban" ? "banned" : "restricted"}. ${companyCount} linked company(ies) and their listings were updated.`
+              : `${displayName} was ${action === "ban" ? "banned" : "restricted"}. Linked seller companies (if any) were synced.`,
+            accountId: String(updatedAccount.id ?? updatedAccount.accountId ?? "").trim(),
+            createdBy: SUPER_ADMIN_USERNAME,
+            targetUrl: "/super_admin.html#companies",
+            createdAt: now,
+          }),
+        );
+      }
+    }
+
     await writeAccounts(accounts);
     await logActivitySafely({
       id: createActivityLogId(),
@@ -26349,6 +32453,7 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
       previousStatus,
       newStatus,
       notificationSent: Boolean(notification),
+      cascadedCompanies: Array.isArray(cascadeResult?.synced) ? cascadeResult.synced.length : 0,
       actor: {
         role: "admin",
         accountId: "super-admin",
@@ -26361,10 +32466,124 @@ async function handleSuperAdminBuyerActionApi(request, response, buyerId) {
       account: serializeAccountForList(updatedAccount),
       action,
       message,
+      cascade: cascadeResult
+        ? {
+            linkedAccountIds: cascadeResult.linkedAccountIds || [],
+            synced: cascadeResult.synced || [],
+          }
+        : null,
     });
   } catch (error) {
     sendJson(response, 400, {
       message: error instanceof Error ? error.message : "Unable to update buyer account.",
+    });
+  }
+}
+
+async function handleSuperAdminBuyerDeleteTestDataApi(request, response, buyerId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "DELETE") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedBuyerId = String(buyerId || "").trim();
+  if (!normalizedBuyerId) {
+    sendJson(response, 400, { message: "Buyer ID is required." });
+    return;
+  }
+
+  try {
+    const testModeOn = await isTestModeEnabled();
+    if (!testModeOn) {
+      sendJson(response, 403, {
+        message:
+          "Company/user data can only be deleted while Test Mode is on. Live accounts created by users are protected.",
+        code: "TEST_MODE_REQUIRED_FOR_DELETE",
+      });
+      return;
+    }
+
+    const accounts = await readAccounts();
+    const accountIndex = findBuyerAccountIndexById(accounts, normalizedBuyerId);
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Buyer account was not found." });
+      return;
+    }
+
+    const target = accounts[accountIndex];
+    assertCanDeleteOrClearInTestMode(target, {
+      testModeOn,
+      action: "deleted",
+    });
+
+    const deleted = await hardDeleteTestModeAccount(normalizedBuyerId, {
+      query: pgQuery,
+      withTransaction: pgWithTransaction,
+    });
+
+    // Keep JSON/accounts mirror in sync when Postgres is the source of truth.
+    try {
+      const remaining = accounts.filter((_, index) => index !== accountIndex);
+      await writeAccounts(remaining);
+    } catch (syncError) {
+      console.warn(
+        "Test Mode buyer deleted in Postgres; accounts mirror sync skipped.",
+        syncError instanceof Error ? syncError.message : syncError,
+      );
+    }
+
+    const now = new Date().toISOString();
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "buyer-admin-action",
+      source: "super_admin",
+      targetPermission: "user-data",
+      action: "delete-test-data",
+      title: "Test Mode buyer deleted",
+      description:
+        `Permanently deleted Test Mode sandbox buyer ${deleted.email || normalizedBuyerId}.`,
+      buyerId: deleted.accountId,
+      accountId: deleted.accountId,
+      userEmail: deleted.email,
+      actor: {
+        role: "admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    if (typeof persistSuperAdminNotification === "function") {
+      await persistSuperAdminNotification({
+        id: `sa-test-buyer-deleted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        type: "test-mode-buyer-deleted",
+        audience: "super_admin",
+        title: "Test Mode buyer deleted",
+        reason: "Super Admin deleted Test Mode sandbox user data",
+        message:
+          `Permanently deleted Test Mode account ${deleted.email || deleted.accountId}.`,
+        status: "unread",
+        targetUrl: "/super_admin.html#user-data",
+        createdAt: now,
+        createdBy: SUPER_ADMIN_USERNAME,
+      });
+    }
+
+    sendJson(response, 200, {
+      accountId: deleted.accountId,
+      email: deleted.email,
+      deletedAt: deleted.deletedAt,
+      message: "Test Mode buyer account permanently deleted.",
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message: error instanceof Error ? error.message : "Unable to delete Test Mode buyer account.",
+      ...(error?.code ? { code: error.code } : {}),
     });
   }
 }
@@ -26402,112 +32621,12 @@ async function handleSuperAdminAdminPasswordResetApi(request, response, adminId)
     return;
   }
 
-  if (request.method !== "POST") {
-    sendJson(response, 405, { message: "Method not allowed." });
-    return;
-  }
-
-  try {
-    const normalizedAdminId = normalizeAdminTenantId(adminId, "");
-    if (!normalizedAdminId) {
-      sendJson(response, 400, { message: "Seller account id is required." });
-      return;
-    }
-
-    const accounts = await readAccounts();
-    const accountIndex = accounts.findIndex(
-      (account) =>
-        isAdminAccount(account) &&
-        isRecordInAdminScope(account, normalizedAdminId),
-    );
-    if (accountIndex < 0) {
-      sendJson(response, 404, { message: "Seller account was not found." });
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const temporaryPassword = generateTemporaryAccountPassword(12);
-    const temporaryPasswordHash = await hashPassword(temporaryPassword);
-    const previousAccount = accounts[accountIndex];
-    const companyName = [
-      previousAccount.companyName,
-      previousAccount.storeName,
-      previousAccount.businessName,
-    ]
-      .map((value) => String(value ?? "").trim())
-      .find(Boolean) || "your store";
-
-    const notification = {
-      id: `seller-password-reset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: "seller-password-reset",
-      audience: "seller",
-      title: "Password Reset by Super Admin",
-      reason: "Security password reset",
-      message:
-        `Super Admin reset the login password for ${companyName}. ` +
-        "Sign in with the temporary password provided by support, then change it immediately in Account Settings.",
-      status: "unread",
-      productId: "",
-      productName: "",
-      feedbackId: "",
-      adminId: getRecordAdminId(previousAccount, previousAccount.adminId || previousAccount.id),
-      targetUrl: "/main.html#account",
-      createdAt: now,
-      createdBy: SUPER_ADMIN_USERNAME,
-      companyName: "",
-      storeName: "",
-      businessName: "",
-    };
-
-    const updatedAccount = {
-      ...previousAccount,
-      password: temporaryPasswordHash,
-      passwordUpdatedAt: now,
-      passwordResetRequired: true,
-      mustChangePassword: true,
-      passwordResetRequestedAt: now,
-      passwordResetRequestedBy: SUPER_ADMIN_USERNAME,
-      passwordResetReason: "Reset by Super Admin",
-      updatedAt: now,
-      superAdminActionUpdatedAt: now,
-      superAdminActionUpdatedBy: SUPER_ADMIN_USERNAME,
-    };
-    assignSellerAdminNotification(updatedAccount, notification);
-
-    accounts[accountIndex] = updatedAccount;
-    await writeAccounts(accounts);
-
-    await logActivitySafely({
-      id: createActivityLogId(),
-      type: "seller-admin-action",
-      source: "super_admin",
-      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
-      action: "password-reset",
-      title: "Seller password reset",
-      description: `Super Admin reset the password for ${companyName}.`,
-      actor: {
-        role: "super-admin",
-        accountId: "super-admin",
-        displayName: SUPER_ADMIN_USERNAME,
-      },
-      createdAt: now,
-      skipLinkedNotification: true,
-    }, request);
-
-    sendJson(response, 200, {
-      message:
-        "Temporary password created. Share it securely once — it will not be shown again.",
-      temporaryPassword,
-      shownOnce: true,
-      passwordResetRequired: true,
-      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
-    });
-  } catch (error) {
-    sendJson(response, 400, {
-      message:
-        error instanceof Error ? error.message : "Unable to reset seller password.",
-    });
-  }
+  // Login password reset is User Data only. Companies use Require PIN Reset for Switch PIN.
+  sendJson(response, 410, {
+    message:
+      "Seller company password reset was removed. Use User Data for login password resets, or Require PIN Reset for Switch PIN.",
+    adminId: normalizeAdminTenantId(adminId, ""),
+  });
 }
 
 async function handleSuperAdminBuyerPasswordResetApi(request, response, buyerId) {
@@ -26602,6 +32721,146 @@ async function handleSuperAdminBuyerPasswordResetApi(request, response, buyerId)
     sendJson(response, 400, {
       message:
         error instanceof Error ? error.message : "Unable to reset buyer password.",
+    });
+  }
+}
+
+async function handleSuperAdminRequirePinResetApi(request, response, adminId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    if (!(await isSellerOnboardingReady())) {
+      sendJson(response, 503, { message: "Seller workspace is unavailable." });
+      return;
+    }
+
+    const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+    if (!normalizedAdminId) {
+      sendJson(response, 400, { message: "Seller account id is required." });
+      return;
+    }
+
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const reason = String(payload?.reason ?? payload?.pinResetReason ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500) || "Security Switch PIN reset required by Super Admin.";
+    const requestedCompanyId = String(payload?.companyId || "").trim();
+
+    const accounts = await readAccounts();
+    const accountIndex = accounts.findIndex(
+      (account) =>
+        isAdminAccount(account) &&
+        isRecordInAdminScope(account, normalizedAdminId),
+    );
+    if (accountIndex < 0) {
+      sendJson(response, 404, { message: "Seller account was not found." });
+      return;
+    }
+
+    const previousAccount = accounts[accountIndex];
+    const accountId = String(
+      previousAccount.id || previousAccount.accountId || normalizedAdminId,
+    ).trim();
+    const companyName = getSellerCompanyDisplayName(previousAccount);
+    const now = new Date().toISOString();
+
+    const pinReset = await requireSellerSwitchPinReset({
+      accountId,
+      companyId: requestedCompanyId,
+      reason,
+      requestedBy: SUPER_ADMIN_USERNAME,
+    });
+
+    const notification = {
+      id: `seller-pin-reset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "seller-pin-reset-required",
+      audience: "seller",
+      title: "Switch PIN Reset Required",
+      reason,
+      message:
+        `Super Admin required a Switch PIN reset for ${companyName}. ` +
+        "Your previous Switch PIN no longer works. Create a new 6-digit Switch PIN the next time you open seller admin.",
+      status: "unread",
+      productId: "",
+      productName: "",
+      feedbackId: "",
+      adminId: getRecordAdminId(previousAccount, previousAccount.adminId || previousAccount.id),
+      companyId: pinReset.companyId || "",
+      targetUrl: "/main.html",
+      createdAt: now,
+      createdBy: SUPER_ADMIN_USERNAME,
+      companyName: "",
+      storeName: "",
+      businessName: "",
+    };
+
+    const updatedAccount = {
+      ...previousAccount,
+      pinResetRequired: true,
+      pinResetRequestedAt: now,
+      pinResetRequestedBy: SUPER_ADMIN_USERNAME,
+      pinResetReason: reason,
+      pinResetCompanyId: pinReset.companyId || "",
+      updatedAt: now,
+      superAdminActionUpdatedAt: now,
+      superAdminActionUpdatedBy: SUPER_ADMIN_USERNAME,
+    };
+    assignSellerAdminNotification(updatedAccount, notification);
+    accounts[accountIndex] = updatedAccount;
+    await writeAccounts(accounts);
+
+    await persistSuperAdminNotification({
+      id: `sa-seller-pin-reset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "seller-pin-reset-required",
+      audience: "super-admin",
+      title: "Seller Switch PIN Reset Required",
+      message: `Required Switch PIN reset for ${companyName}.`,
+      reason,
+      status: "unread",
+      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
+      companyId: pinReset.companyId || "",
+      createdAt: now,
+      createdBy: SUPER_ADMIN_USERNAME,
+    }).catch(() => null);
+
+    await logActivitySafely({
+      id: createActivityLogId(),
+      type: "seller-admin-action",
+      source: "super_admin",
+      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
+      companyId: pinReset.companyId || "",
+      action: "require-pin-reset",
+      title: "Seller Switch PIN reset required",
+      description: `Super Admin required a Switch PIN reset for ${companyName}. ${reason}`,
+      actor: {
+        role: "super-admin",
+        accountId: "super-admin",
+        displayName: SUPER_ADMIN_USERNAME,
+      },
+      createdAt: now,
+      skipLinkedNotification: true,
+    }, request);
+
+    sendJson(response, 200, {
+      message: `Switch PIN reset required for ${companyName}. The seller must create a new PIN.`,
+      pinResetRequired: true,
+      companyId: pinReset.companyId || "",
+      companyName: pinReset.companyName || companyName,
+      adminId: getRecordAdminId(updatedAccount, updatedAccount.adminId || updatedAccount.id),
+      admin: updatedAccount,
+    });
+  } catch (error) {
+    sendJson(response, error?.statusCode || 400, {
+      message:
+        error instanceof Error ? error.message : "Unable to require Switch PIN reset.",
     });
   }
 }
@@ -27481,6 +33740,93 @@ function createSuperAdminProductNotificationSummary(product = {}) {
   };
 }
 
+async function handleSuperAdminActivityApi(request, response, requestUrl) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  try {
+    const category = String(requestUrl.searchParams.get("category") || "all").trim().toLowerCase();
+    const limitRaw = Math.trunc(Number(requestUrl.searchParams.get("limit") || 80));
+    const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 80));
+    let entries = (await readSuperAdminActivityLog())
+      .filter(isSuperAdminSystemActivityEntry)
+      .map((entry) => createSuperAdminSystemActivity(entry));
+    if (category && category !== "all") {
+      entries = entries.filter((entry) => entry.category === category);
+    }
+    sendJson(response, 200, {
+      activities: entries.slice(0, limit),
+      total: entries.length,
+      categories: ["all", "theme", "catalog", "settings", "companies", "listings", "promos", "integrations", "users", "feedback"],
+      policy: {
+        audience: "super_admin",
+        description: "Super Admin system-management activity only. Seller and buyer alerts stay in Notifications.",
+      },
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load Super Admin activity.",
+    });
+  }
+}
+
+async function handleSuperAdminPaymentTransactionsApi(request, response, requestUrl) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  try {
+    const partnerId = String(requestUrl.searchParams.get("partnerId") || "").trim();
+    if (!partnerId) {
+      sendJson(response, 400, { message: "partnerId is required." });
+      return;
+    }
+    const [partners, orders, accounts] = await Promise.all([
+      readPaymentPartners(),
+      readOrders(),
+      readAccounts(),
+    ]);
+    const partner = partners.find((entry) => String(entry?.id ?? "").trim() === partnerId);
+    if (!partner) {
+      sendJson(response, 404, { message: "Payment method not found." });
+      return;
+    }
+    const companyNames = new Map(
+      accounts
+        .filter(isAdminAccount)
+        .map((admin) => [
+          getRecordAdminId(admin, admin.id),
+          String(admin.companyName || admin.storeName || admin.sellerName || admin.name || "").trim(),
+        ]),
+    );
+    const result = buildPaymentPartnerTransactions({
+      partner,
+      orders,
+      companyNames,
+      limit: requestUrl.searchParams.get("limit") || 200,
+    });
+    sendJson(response, 200, {
+      partner: {
+        id: partnerId,
+        name: String(partner.branch || partner.name || "").trim(),
+        paymongoMethod: String(partner.paymongoMethod || "").trim(),
+      },
+      ...result,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load payment transactions.",
+    });
+  }
+}
+
 async function handleSuperAdminProductRequestsApi(request, response) {
   if (!requireSuperAdmin(request, response)) {
     return;
@@ -27498,6 +33844,10 @@ async function handleSuperAdminProductRequestsApi(request, response) {
       readProducts(),
       readAccounts(),
     ]);
+    const bannedListingReconcile = await reconcileBannedCompanyLiveListings(accounts);
+    if ((Number(bannedListingReconcile?.changed) || 0) > 0) {
+      products = await readProducts();
+    }
     if (isNotificationRequest) {
       const notificationProducts = attachProductsCompanyMetadata(
         products
@@ -27512,8 +33862,10 @@ async function handleSuperAdminProductRequestsApi(request, response) {
       ).map(createSuperAdminProductNotificationSummary);
       let linkedNotifications = [];
       try {
-        linkedNotifications = await ensureSuperAdminWelcomeNotification(
-          await readSuperAdminNotifications(),
+        linkedNotifications = filterSuperAdminInboxNotifications(
+          await ensureSuperAdminWelcomeNotification(
+            await readSuperAdminNotifications(),
+          ),
         );
       } catch (_) {
         linkedNotifications = [];
@@ -27522,6 +33874,10 @@ async function handleSuperAdminProductRequestsApi(request, response) {
         products: notificationProducts,
         total: notificationProducts.length,
         notifications: linkedNotifications,
+        policy: {
+          privacyExcluded: true,
+          channels: ["sellers", "listings", "security", "feedback", "system"],
+        },
       });
       return;
     }
@@ -27541,13 +33897,50 @@ async function handleSuperAdminProductRequestsApi(request, response) {
       products = revisionSync.products;
       await writeProducts(products);
     }
+
+    const nowIso = new Date().toISOString();
+    let restrictionCleanupChanged = false;
+    products = products.map((product) => {
+      const cleaned = clearExpiredProductListingRestriction(product, nowIso);
+      if (cleaned.didChange) {
+        restrictionCleanupChanged = true;
+      }
+      return cleaned.product;
+    });
+    if (restrictionCleanupChanged) {
+      await writeProducts(products);
+    }
+
+    const pageSizeRaw = Math.trunc(Number(requestUrl.searchParams.get("pageSize") || 0));
+    const pageRaw = Math.trunc(Number(requestUrl.searchParams.get("page") || 0));
+    const pageSize = Number.isInteger(pageSizeRaw) && pageSizeRaw >= 1
+      ? Math.min(100, pageSizeRaw)
+      : 0;
+    const page = Number.isInteger(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
+    const collection = String(requestUrl.searchParams.get("collection") || "")
+      .trim()
+      .toLowerCase();
+    const isCollectionScoped =
+      ["in-review", "live", "approved", "rejected", "restricted", "banned"].includes(collection);
+    const shouldPaginate = pageSize > 0 && isCollectionScoped;
+    const focusProductId = String(requestUrl.searchParams.get("focus") || "").trim();
+
+    const sliceCollection = (items) => {
+      if (!shouldPaginate) {
+        return items;
+      }
+      const start = (page - 1) * pageSize;
+      return items.slice(start, start + pageSize);
+    };
+
     const normalizedProducts = products.map(normalizeStoredProductRecord);
     const approvedTrainingRecords = await syncApprovedProductTrainingArchive(
       normalizedProducts,
     );
-    const pendingProducts = attachProductsCompanyMetadata(
+    const pendingProductsAll = attachProductsCompanyMetadata(
       normalizedProducts
         .filter(isProductPendingApproval)
+        .map(enrichProductReviewQueueMeta)
         .sort((left, right) =>
           String(right.submittedAt ?? right.createdAt ?? "").localeCompare(
             String(left.submittedAt ?? left.createdAt ?? ""),
@@ -27555,68 +33948,200 @@ async function handleSuperAdminProductRequestsApi(request, response) {
         ),
       accounts,
     );
-    const rejectedProducts = attachProductsCompanyMetadata(
-      normalizedProducts
-        .filter(isProductRejected)
-        .sort((left, right) =>
-          String(
-            right.rejectedAt ??
-            right.yoloInspection?.updatedAt ??
-            right.approvalUpdatedAt ??
-            right.updatedAt ??
-            "",
-          ).localeCompare(String(
-            left.rejectedAt ??
-            left.yoloInspection?.updatedAt ??
-            left.approvalUpdatedAt ??
-            left.updatedAt ??
-            "",
-          )),
-        ),
+    const rejectedTrainingRecords = await readRejectedProductTrainingRecords();
+    const liveRejectedProducts = normalizedProducts
+      .filter(isProductRejected)
+      .sort((left, right) =>
+        String(
+          right.rejectedAt ??
+          right.yoloInspection?.updatedAt ??
+          right.approvalUpdatedAt ??
+          right.updatedAt ??
+          "",
+        ).localeCompare(String(
+          left.rejectedAt ??
+          left.yoloInspection?.updatedAt ??
+          left.approvalUpdatedAt ??
+          left.updatedAt ??
+          "",
+        )),
+      );
+    const liveRejectedIds = new Set(
+      liveRejectedProducts.map((product) => String(product?.id ?? "").trim()).filter(Boolean),
+    );
+    const rejectedArchiveOnlyProducts = rejectedTrainingRecords
+      .map((record) => normalizeStoredProductRecord(record))
+      .filter((record) => {
+        const recordId = String(record?.id ?? "").trim();
+        return recordId && !liveRejectedIds.has(recordId) && isProductRejected(record);
+      })
+      .sort((left, right) =>
+        String(
+          right.rejectedAt ??
+          right.yoloInspection?.updatedAt ??
+          right.approvalUpdatedAt ??
+          right.updatedAt ??
+          "",
+        ).localeCompare(String(
+          left.rejectedAt ??
+          left.yoloInspection?.updatedAt ??
+          left.approvalUpdatedAt ??
+          left.updatedAt ??
+          "",
+        )),
+      );
+    const rejectedProductsAll = attachProductsCompanyMetadata(
+      [...rejectedArchiveOnlyProducts, ...liveRejectedProducts],
       accounts,
     );
     const approvedTrainingDisplayRecords = createApprovedProductTrainingDisplayRecords(
       approvedTrainingRecords,
     );
-    const approvedProducts = attachProductsCompanyMetadata(
+    const approvedProductsAll = attachProductsCompanyMetadata(
       approvedTrainingDisplayRecords,
       accounts,
     );
-    const liveProducts = attachProductsCompanyMetadata(
-      normalizedProducts
-        .filter(isProductLiveListingForApp)
-        .sort((left, right) =>
-          String(
-            right.approvedAt ??
-            right.approvalUpdatedAt ??
-            right.updatedAt ??
-            "",
-          ).localeCompare(String(
-            left.approvedAt ??
-            left.approvalUpdatedAt ??
-            left.updatedAt ??
-            "",
-          )),
-        ),
+    const productsWithCompanyMeta = attachProductsCompanyMetadata(
+      normalizedProducts,
       accounts,
     );
+    const liveProductsAll = productsWithCompanyMeta
+      .filter((product) => isProductEligibleSaLiveListing(product, accounts))
+      .sort((left, right) =>
+        String(
+          right.approvedAt ??
+          right.approvalUpdatedAt ??
+          right.updatedAt ??
+          "",
+        ).localeCompare(String(
+          left.approvedAt ??
+          left.approvalUpdatedAt ??
+          left.updatedAt ??
+          "",
+        )),
+      );
+    const restrictedProductsAll = productsWithCompanyMeta
+      .filter((product) => isProductInSaRestrictedListingBucket(product))
+      .sort((left, right) =>
+        String(
+          right.listingRestriction?.restrictedAt ??
+          right.listingRestrictedAt ??
+          right.updatedAt ??
+          "",
+        ).localeCompare(String(
+          left.listingRestriction?.restrictedAt ??
+          left.listingRestrictedAt ??
+          left.updatedAt ??
+          "",
+        )),
+      );
+    const bannedProductsAll = productsWithCompanyMeta
+      .filter((product) => isProductBannedByCompany(product, accounts))
+      .sort((left, right) =>
+        String(
+          right.updatedAt ??
+          right.approvedAt ??
+          right.createdAt ??
+          "",
+        ).localeCompare(String(
+          left.updatedAt ??
+          left.approvedAt ??
+          left.createdAt ??
+          "",
+        )),
+      );
+    const collectionsByName = {
+      "in-review": pendingProductsAll,
+      live: liveProductsAll,
+      restricted: restrictedProductsAll,
+      banned: bannedProductsAll,
+      approved: approvedProductsAll,
+      rejected: rejectedProductsAll,
+    };
+    const livePage =
+      shouldPaginate && collection === "live"
+        ? paginateLiveListings(liveProductsAll, parseLiveListingQuery(requestUrl.searchParams), {
+            focusId: focusProductId,
+          })
+        : null;
+    const pickCollection = (name) => {
+      if (!isCollectionScoped) {
+        return collectionsByName[name];
+      }
+      if (name === "live" && livePage) {
+        return collection === name ? livePage.items : [];
+      }
+      return collection === name ? sliceCollection(collectionsByName[name]) : [];
+    };
+    const pendingProducts = pickCollection("in-review");
+    const rejectedProducts = pickCollection("rejected");
+    const approvedProducts = pickCollection("approved");
+    const liveProducts = pickCollection("live");
+    const restrictedProducts = pickCollection("restricted");
+    const bannedProducts = pickCollection("banned");
+    const focusCollection = focusProductId
+      ? Object.keys(collectionsByName).find((name) =>
+        collectionsByName[name].some((product) => String(product?.id ?? "").trim() === focusProductId),
+      ) || ""
+      : "";
+    const agingInReview = pendingProductsAll.filter((product) => product?.isAgingReview).length;
     const stats = {
       submitted: normalizedProducts.length,
-      inReview: normalizedProducts.filter(isProductPendingApproval).length,
-      approved: approvedProducts.length,
-      rejected: normalizedProducts.filter(isProductRejected).length,
+      inReview: pendingProductsAll.length,
+      approved: approvedProductsAll.length,
+      rejected: rejectedProductsAll.length,
+      agingInReview,
+      live: liveProductsAll.length,
+      restricted: restrictedProductsAll.length,
+      banned: bannedProductsAll.length,
     };
 
     sendJson(response, 200, {
       products: pendingProducts,
-      total: pendingProducts.length,
+      total: pendingProductsAll.length,
       rejectedProducts,
-      rejectedTotal: rejectedProducts.length,
+      rejectedTotal: rejectedProductsAll.length,
       approvedProducts,
-      approvedTotal: approvedProducts.length,
+      approvedTotal: approvedProductsAll.length,
       liveProducts,
-      liveTotal: liveProducts.length,
+      liveTotal: liveProductsAll.length,
+      restrictedProducts,
+      restrictedTotal: restrictedProductsAll.length,
+      bannedProducts,
+      bannedTotal: bannedProductsAll.length,
       stats,
+      collection: isCollectionScoped ? collection : "",
+      liveProductIds: isCollectionScoped
+        ? liveProductsAll.map((product) => String(product?.id ?? "").trim()).filter(Boolean)
+        : undefined,
+      focusCollection,
+      pagination: livePage
+        ? {
+            collection,
+            page: livePage.page,
+            pageSize: livePage.pageSize,
+            total: livePage.total,
+            totalPages: livePage.totalPages,
+          }
+        : shouldPaginate
+        ? {
+            collection,
+            page,
+            pageSize,
+            total:
+              collection === "rejected"
+                ? rejectedProductsAll.length
+                : collection === "approved"
+                  ? approvedProductsAll.length
+                  : collection === "live"
+                    ? liveProductsAll.length
+                  : collection === "restricted"
+                    ? restrictedProductsAll.length
+                  : collection === "banned"
+                    ? bannedProductsAll.length
+                    : pendingProductsAll.length,
+          }
+        : null,
       yoloInspection: {
         configured: Boolean(YOLO_INSPECTION_ENDPOINT),
         model: YOLO_INSPECTION_MODEL,
@@ -27723,11 +34248,11 @@ async function handleSuperAdminProductListingRestrictionApi(request, response, p
       normalizeAdminTenantId(account?.id, "") === adminId ||
       getRecordAdminId(account, "") === adminId
     );
-    let notification = null;
+    let sellerNotification = null;
     if (notifySeller && accountIndex !== -1) {
       const previousAccount = accounts[accountIndex];
       const updatedAccount = { ...previousAccount };
-      notification = applySuperAdminProductListingRestrictionNotification(
+      sellerNotification = applySuperAdminProductListingRestrictionNotification(
         updatedAccount,
         previousAccount,
         updatedProduct,
@@ -27737,14 +34262,28 @@ async function handleSuperAdminProductListingRestrictionApi(request, response, p
       accounts[accountIndex] = updatedAccount;
     }
 
+    const productName = String(updatedProduct?.name ?? "Product").trim() || "Product";
     const writes = [writeProducts(products)];
     if (notifySeller && accountIndex !== -1) {
       writes.push(writeAccounts(accounts));
     }
-    await Promise.all(writes);
-
-    if (notification) {
-      await logActivitySafely({
+    writes.push(
+      persistSuperAdminNotification(
+        createPersistentLinkedNotification({
+          type: "listing-restriction",
+          audience: "super_admin",
+          title: "Listing restricted",
+          reason,
+          message: `Listing "${productName}" was restricted for ${durationDays} ${durationDays === 1 ? "day" : "days"}.`,
+          productId: normalizedProductId,
+          productName,
+          adminId,
+          createdBy: SUPER_ADMIN_USERNAME,
+          targetUrl: "/super_admin.html#product-requests",
+          createdAt: now,
+        }),
+      ),
+      logActivitySafely({
         id: createActivityLogId(),
         type: "listing-restriction",
         source: "super_admin",
@@ -27752,9 +34291,10 @@ async function handleSuperAdminProductListingRestrictionApi(request, response, p
         adminId,
         action: "restricted",
         productId: normalizedProductId,
-        productName: String(updatedProduct?.name ?? "Product").trim() || "Product",
-        title: notification.title,
-        description: notification.message,
+        productName,
+        title: sellerNotification?.title || "Product Listing Restricted",
+        description: sellerNotification?.message ||
+          `Listing "${productName}" restricted for ${durationDays} ${durationDays === 1 ? "day" : "days"}. Reason: ${reason}`,
         notificationAudience: "admin",
         targetUrl: `/product_panel.html?productId=${encodeURIComponent(normalizedProductId)}`,
         actor: {
@@ -27763,18 +34303,95 @@ async function handleSuperAdminProductListingRestrictionApi(request, response, p
           displayName: SUPER_ADMIN_USERNAME,
         },
         createdAt: now,
-      });
-    }
+        skipLinkedNotification: true,
+      }),
+    );
+    await Promise.all(writes);
 
     sendJson(response, 200, {
       product: normalizeStoredProductRecord(updatedProduct),
       restriction: listingRestriction,
-      sellerNotified: Boolean(notification),
+      sellerNotified: Boolean(sellerNotification),
       message: `Listing restricted for ${durationDays} ${durationDays === 1 ? "day" : "days"}.`,
     });
   } catch (error) {
     sendJson(response, 500, {
       message: error instanceof Error ? error.message : "Unable to restrict product listing.",
+    });
+  }
+}
+
+async function handleSuperAdminProductListingUnrestrictApi(request, response, productId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  const normalizedProductId = String(productId ?? "").trim();
+  if (!normalizedProductId) {
+    sendJson(response, 400, { message: "Product ID is required." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const notifySeller = payload?.notifySeller !== false;
+    const [products, accounts] = await Promise.all([readProducts(), readAccounts()]);
+    const productIndex = products.findIndex((product) =>
+      String(product?.id ?? "").trim() === normalizedProductId
+    );
+    if (productIndex === -1) {
+      sendJson(response, 404, { message: "Product not found." });
+      return;
+    }
+
+    const previousProduct = products[productIndex];
+    const previousRestriction = normalizeProductListingRestriction(previousProduct);
+    if (!previousRestriction.active && !previousProduct?.isListingRestricted) {
+      sendJson(response, 409, { message: "This listing is not currently restricted." });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const updatedProduct = clearProductListingRestrictionFields(
+      previousProduct,
+      now,
+      SUPER_ADMIN_USERNAME,
+    );
+    products[productIndex] = updatedProduct;
+    await writeProducts(products);
+
+    const productName = String(updatedProduct?.name ?? "Product").trim() || "Product";
+    const notifyResult = await fanOutListingLifecycleNotifications({
+      product: updatedProduct,
+      accounts,
+      type: "listing-unrestriction",
+      title: "Listing unrestricted",
+      reason: previousRestriction.reason || "Listing restriction cleared",
+      message: `Listing "${productName}" is visible to customers again.`,
+      sellerTitle: "Product Listing Unrestricted",
+      sellerMessage: `Your listing "${productName}" is visible to customers again.`,
+      sellerTargetUrl: `/product_panel.html?productId=${encodeURIComponent(normalizedProductId)}`,
+      saTargetUrl: "/super_admin.html#product-requests",
+      now,
+      notifySeller,
+      notifySuperAdmin: false,
+      activityAction: "unrestricted",
+      persistAccounts: true,
+    });
+
+    sendJson(response, 200, {
+      product: normalizeStoredProductRecord(updatedProduct),
+      sellerNotified: notifyResult.sellerNotified,
+      message: "Listing unrestricted.",
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to unrestrict product listing.",
     });
   }
 }
@@ -28026,6 +34643,275 @@ function appendSuperAdminUploadedProductImages(product = {}, uploadedImageUrls =
   };
 }
 
+async function buildStandaloneApprovedProductTrainingRecord(imageUrls = [], options = {}) {
+  const now = normalizeOptionalProductDateTime(options.updatedAt, new Date().toISOString());
+  const normalizedImageUrls = normalizeUploadsRelativeProductImageUrls(imageUrls);
+  if (!normalizedImageUrls.length) {
+    throw new Error("Upload at least one /uploads/ image before saving.");
+  }
+
+  const productName = String(options.productName ?? options.name ?? "").trim() ||
+    "Standalone approved YOLO evidence";
+  const categoryLabel = String(options.categoryLabel ?? options.category ?? "").trim() ||
+    "approved-training";
+  const recordId = String(options.id ?? "").trim() ||
+    `standalone-approved-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const mainImageUrl = normalizedImageUrls[0];
+  let record = {
+    id: recordId,
+    name: productName,
+    category: categoryLabel,
+    categories: [categoryLabel],
+    approvalStatus: PRODUCT_APPROVAL_APPROVED,
+    approvedAt: now,
+    approvedBy: SUPER_ADMIN_USERNAME,
+    approvalUpdatedAt: now,
+    submittedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    imageUrl: mainImageUrl,
+    mainImageUrl,
+    imageUrls: normalizedImageUrls,
+    mainImageIndex: 0,
+    superAdminUploadedImageUrls: normalizedImageUrls,
+    superAdminImageUploadedAt: now,
+    superAdminImageUploadedBy: SUPER_ADMIN_USERNAME,
+    visualSearchImageUrl: mainImageUrl,
+    visualSearchImageUrls: normalizedImageUrls,
+    visualSearchImageAngles: {
+      [VISUAL_SEARCH_PRIMARY_IMAGE_ANGLE]: mainImageUrl,
+    },
+    yoloInspection: null,
+    yoloRevision: null,
+  };
+
+  const fingerprintMetas = [];
+  for (const imageUrl of normalizedImageUrls) {
+    const fingerprintMeta = await createProductVisualSearchFingerprintMeta(record, imageUrl);
+    if (fingerprintMeta) {
+      fingerprintMetas.push(fingerprintMeta);
+    }
+  }
+
+  const approvedEvidence = buildApprovedYoloTrainingEvidence(record, normalizedImageUrls, {
+    approvedAt: now,
+    approvedBy: SUPER_ADMIN_USERNAME,
+    updatedAt: now,
+    source: "super-admin-standalone-approved-training",
+    reason: "Super Admin uploaded standalone approved YOLO training evidence.",
+  });
+
+  record = {
+    ...record,
+    visualSearchFingerprint: fingerprintMetas[0] || null,
+    visualSearchFingerprints: fingerprintMetas,
+    yoloInspection: normalizeYoloInspection({
+      status: "clear",
+      flagged: false,
+      datasetBucket: "approved",
+      imageUrls: normalizedImageUrls,
+      fingerprints: fingerprintMetas,
+      approvedEvidence,
+      revisionEvidence: null,
+      rejectedEvidenceMatch: null,
+      requestedAt: now,
+      inspectedAt: now,
+      updatedAt: now,
+      archivedAt: now,
+      autoReject: false,
+    }, normalizedImageUrls),
+  };
+
+  return normalizeApprovedProductTrainingArchiveRecord(record) ||
+    normalizeStoredProductRecord(record);
+}
+
+async function buildStandaloneRejectedProductTrainingRecord(imageUrls = [], options = {}) {
+  const now = normalizeOptionalProductDateTime(options.updatedAt, new Date().toISOString());
+  const normalizedImageUrls = normalizeUploadsRelativeProductImageUrls(imageUrls);
+  if (!normalizedImageUrls.length) {
+    throw new Error("Upload at least one /uploads/ image before saving.");
+  }
+
+  const productName = String(options.productName ?? options.name ?? "").trim() ||
+    "Standalone rejected YOLO evidence";
+  const categoryLabel = String(options.categoryLabel ?? options.category ?? "").trim() ||
+    "rejected-training";
+  const recordId = String(options.id ?? "").trim() ||
+    `standalone-rejected-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const mainImageUrl = normalizedImageUrls[0];
+  let record = {
+    id: recordId,
+    name: productName,
+    category: categoryLabel,
+    categories: [categoryLabel],
+    approvalStatus: PRODUCT_APPROVAL_REJECTED,
+    rejectedAt: now,
+    rejectedBy: SUPER_ADMIN_USERNAME,
+    rejectionReason: String(options.reason ?? "").trim() ||
+      "Super Admin uploaded standalone rejected YOLO training evidence.",
+    approvalUpdatedAt: now,
+    submittedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    imageUrl: mainImageUrl,
+    mainImageUrl,
+    imageUrls: normalizedImageUrls,
+    mainImageIndex: 0,
+    superAdminUploadedImageUrls: normalizedImageUrls,
+    superAdminImageUploadedAt: now,
+    superAdminImageUploadedBy: SUPER_ADMIN_USERNAME,
+    visualSearchImageUrl: mainImageUrl,
+    visualSearchImageUrls: normalizedImageUrls,
+    visualSearchImageAngles: {
+      [VISUAL_SEARCH_PRIMARY_IMAGE_ANGLE]: mainImageUrl,
+    },
+    yoloInspection: null,
+    yoloRevision: null,
+  };
+
+  const fingerprintMetas = [];
+  for (const imageUrl of normalizedImageUrls) {
+    const fingerprintMeta = await createProductVisualSearchFingerprintMeta(record, imageUrl);
+    if (fingerprintMeta) {
+      fingerprintMetas.push(fingerprintMeta);
+    }
+  }
+
+  record = {
+    ...record,
+    visualSearchFingerprint: fingerprintMetas[0] || null,
+    visualSearchFingerprints: fingerprintMetas,
+    yoloInspection: normalizeYoloInspection({
+      status: "queued",
+      flagged: false,
+      datasetBucket: "rejected",
+      imageUrls: normalizedImageUrls,
+      rejectedEvidenceImageUrls: normalizedImageUrls,
+      fingerprints: fingerprintMetas,
+      rejectedEvidenceMatch: null,
+      approvedEvidence: null,
+      revisionEvidence: null,
+      requestedAt: now,
+      updatedAt: now,
+      archivedAt: now,
+      autoReject: false,
+    }, normalizedImageUrls),
+  };
+
+  return normalizeStoredProductRecord(record);
+}
+
+async function handleSuperAdminApprovedProductTrainingImagesApi(request, response) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const uploadedImageUrls = normalizeUploadsRelativeProductImageUrls(
+      payload?.imageUrls ??
+        payload?.uploadedImageUrls ??
+        payload?.superAdminUploadedImageUrls ??
+        [],
+    );
+    if (!uploadedImageUrls.length) {
+      sendJson(response, 400, {
+        message: "Upload at least one /uploads/ image before saving.",
+      });
+      return;
+    }
+
+    const trainingRecord = await buildStandaloneApprovedProductTrainingRecord(
+      uploadedImageUrls,
+      {
+        productName: payload?.productName ?? payload?.name,
+        categoryLabel: payload?.categoryLabel ?? payload?.category,
+      },
+    );
+    const existingRecords = await readApprovedProductTrainingRecords();
+    const nextRecords = mergeApprovedProductTrainingArchiveRecords(
+      existingRecords,
+      [trainingRecord],
+    );
+    await writeApprovedProductTrainingRecords(nextRecords);
+
+    const uploadCount = uploadedImageUrls.length;
+    sendJson(response, 200, {
+      product: normalizeStoredProductRecord(trainingRecord),
+      imageUrls: uploadedImageUrls,
+      message: `${uploadCount} image${uploadCount === 1 ? "" : "s"} uploaded and saved for approved YOLO training.`,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to save approved YOLO training images.",
+    });
+  }
+}
+
+async function handleSuperAdminRejectedProductTrainingImagesApi(request, response) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method !== "POST" && request.method !== "PATCH") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request).catch(() => ({}));
+    const uploadedImageUrls = normalizeUploadsRelativeProductImageUrls(
+      payload?.imageUrls ??
+        payload?.uploadedImageUrls ??
+        payload?.superAdminUploadedImageUrls ??
+        [],
+    );
+    if (!uploadedImageUrls.length) {
+      sendJson(response, 400, {
+        message: "Upload at least one /uploads/ image before saving.",
+      });
+      return;
+    }
+
+    const trainingRecord = await buildStandaloneRejectedProductTrainingRecord(
+      uploadedImageUrls,
+      {
+        productName: payload?.productName ?? payload?.name,
+        categoryLabel: payload?.categoryLabel ?? payload?.category,
+        reason: payload?.reason ?? payload?.rejectionReason,
+      },
+    );
+    const existingRecords = await readRejectedProductTrainingRecords();
+    const nextRecords = [trainingRecord, ...existingRecords.filter((record) =>
+      String(record?.id ?? "").trim() !== String(trainingRecord?.id ?? "").trim()
+    )];
+    await writeRejectedProductTrainingRecords(nextRecords);
+
+    const uploadCount = uploadedImageUrls.length;
+    sendJson(response, 200, {
+      product: normalizeStoredProductRecord(trainingRecord),
+      imageUrls: uploadedImageUrls,
+      message: `${uploadCount} image${uploadCount === 1 ? "" : "s"} uploaded and saved as rejected YOLO evidence.`,
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to save rejected YOLO training images.",
+    });
+  }
+}
+
 async function handleSuperAdminProductImagesApi(request, response, productId) {
   if (!requireSuperAdmin(request, response)) {
     return;
@@ -28211,6 +35097,10 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
       sendJson(response, 409, { message: "Only products in review can be approved." });
       return;
     }
+    if (isProductBannedByCompany(previousProduct, accounts)) {
+      sendCompanyBannedListingBlocked(response);
+      return;
+    }
     const now = new Date().toISOString();
     let approvedProduct = {
       ...previousProduct,
@@ -28230,29 +35120,16 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
       approvalUpdatedAt: now,
       updatedAt: now,
     };
-    const approvedTrainingRecords = await readApprovedProductTrainingRecords();
-    const isFullyTrained = await isApprovedProductFullyTrained(
+    // Every In Review approve = OK listing + approved YOLO training evidence.
+    approvedProduct = await applyApprovedProductYoloTrainingEvidence(
       approvedProduct,
-      [
-        ...approvedTrainingRecords,
-        ...products.filter((product, index) => index !== productIndex),
-      ],
-    );
-    if (isFullyTrained) {
-      approvedProduct = clearApprovedProductYoloTrainingEvidence(approvedProduct, {
+      previousProduct,
+      {
+        approvedAt: now,
+        approvedBy: SUPER_ADMIN_USERNAME,
         updatedAt: now,
-      });
-    } else {
-      approvedProduct = await applyApprovedProductYoloTrainingEvidence(
-        approvedProduct,
-        previousProduct,
-        {
-          approvedAt: now,
-          approvedBy: SUPER_ADMIN_USERNAME,
-          updatedAt: now,
-        },
-      );
-    }
+      },
+    );
     approvedProduct = {
       ...approvedProduct,
       ...normalizeProductListingInsightHistory(approvedProduct),
@@ -28260,9 +35137,25 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
 
     products[productIndex] = approvedProduct;
     await writeProducts(products);
-    if (!isFullyTrained) {
-      await syncApprovedProductTrainingArchive([approvedProduct]);
-    }
+    await syncApprovedProductTrainingArchive([approvedProduct]);
+
+    const productName = String(approvedProduct?.name ?? "Product").trim() || "Product";
+    await fanOutListingLifecycleNotifications({
+      product: approvedProduct,
+      accounts,
+      type: "product-approved",
+      title: "Listing approved",
+      reason: "Super Admin approved listing",
+      message: `Listing "${productName}" was approved and can go live when stock and visibility allow.`,
+      sellerTitle: "Listing Approved",
+      sellerMessage: `Your listing "${productName}" was approved by Super Admin.`,
+      sellerTargetUrl: `/product_panel.html?productId=${encodeURIComponent(normalizedProductId)}`,
+      saTargetUrl: "/super_admin.html#product-requests",
+      now,
+      notifySuperAdmin: false,
+      activityAction: "approved",
+      persistAccounts: true,
+    });
 
     const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
     sendJson(response, 200, {
@@ -28270,9 +35163,7 @@ async function handleSuperAdminProductApproveApi(request, response, productId) {
         normalizeStoredProductRecord(approvedProduct),
         companyMetadataByAdminId,
       ),
-      message: isFullyTrained
-        ? "Product request approved. YOLO is already 100% trained for this listing, so no duplicate approved training record was saved."
-        : "Product request approved.",
+      message: "Product request approved and saved as YOLO training evidence.",
     });
   } catch (error) {
     sendJson(response, 500, {
@@ -28399,6 +35290,35 @@ async function handleSuperAdminProductRevisionApi(request, response, productId) 
           updatedAt: now,
         })
       : null;
+    const revisionImageUrls = getProductYoloInspectionImageUrls(previousProduct);
+    const existingInspection = normalizeYoloInspection(
+      previousProduct?.yoloInspection,
+      revisionImageUrls,
+    );
+    const revisionEvidence = normalizeYoloRevisionEvidence({
+      source: "manual-super-admin-revision",
+      productId: normalizedProductId,
+      productName,
+      adminId: normalizedAdminId,
+      categoryLabel,
+      categoryBuckets: [
+        ...getRevisionBucketsFromText(
+          getProductRevisionCategoryText(previousProduct),
+          { category: true },
+        ),
+      ],
+      imageBuckets: Array.isArray(nextYoloRevision?.imageBuckets)
+        ? nextYoloRevision.imageBuckets
+        : Array.isArray(existingRevision?.imageBuckets)
+          ? existingRevision.imageBuckets
+          : [],
+      imageUrls: revisionImageUrls,
+      requestedAt: now,
+      requestedBy: SUPER_ADMIN_USERNAME,
+      reason: revisionReason,
+      message: revisionMessage,
+      updatedAt: now,
+    });
     let revisedProduct = {
       ...previousProduct,
       yoloRevision: nextYoloRevision,
@@ -28411,6 +35331,13 @@ async function handleSuperAdminProductRevisionApi(request, response, productId) 
       revisionSource: nextYoloRevision ? "yolo-revision" : "manual-super-admin-revision",
       approvalUpdatedAt: now,
       updatedAt: now,
+      yoloInspection: normalizeYoloInspection({
+        ...(existingInspection || {}),
+        datasetBucket: "revision",
+        imageUrls: revisionImageUrls,
+        revisionEvidence,
+        updatedAt: now,
+      }, revisionImageUrls),
     };
 
     const previousAccount = accounts[accountIndex];
@@ -28432,6 +35359,21 @@ async function handleSuperAdminProductRevisionApi(request, response, productId) 
     await Promise.all([
       writeProducts(products),
       writeAccounts(accounts),
+      persistSuperAdminNotification(
+        createPersistentLinkedNotification({
+          type: "product-revision",
+          audience: "super_admin",
+          title: "Product revision requested",
+          reason: revisionReason,
+          message: revisionMessage,
+          productId: normalizedProductId,
+          productName,
+          adminId: normalizedAdminId,
+          createdBy: SUPER_ADMIN_USERNAME,
+          targetUrl: "/super_admin.html#product-requests",
+          createdAt: now,
+        }),
+      ),
       logActivitySafely({
         id: createActivityLogId(),
         type: "product-revision",
@@ -28450,6 +35392,7 @@ async function handleSuperAdminProductRevisionApi(request, response, productId) 
           displayName: SUPER_ADMIN_USERNAME,
         },
         createdAt: now,
+        skipLinkedNotification: true,
       }),
     ]);
 
@@ -28532,6 +35475,9 @@ async function handleSuperAdminProductUnrejectApi(request, response, productId) 
         flagged: detectorFlagged,
         datasetBucket: "inspection",
         imageUrls,
+        rejectedEvidenceImageUrls: [],
+        fingerprints: [],
+        rejectedEvidenceFingerprints: [],
         updatedAt: now,
         archivedAt: "",
         rejectedEvidenceMatch: null,
@@ -28541,6 +35487,24 @@ async function handleSuperAdminProductUnrejectApi(request, response, productId) 
 
     products[productIndex] = restoredProduct;
     await writeProducts(products);
+
+    const productName = String(restoredProduct?.name ?? "Product").trim() || "Product";
+    await fanOutListingLifecycleNotifications({
+      product: restoredProduct,
+      accounts,
+      type: "product-unrejected",
+      title: "Rejected listing returned to review",
+      reason: "Super Admin unrejected listing",
+      message: `Listing "${productName}" was returned to In Review.`,
+      sellerTitle: "Listing Returned to Review",
+      sellerMessage: `Your listing "${productName}" was moved back to In Review by Super Admin.`,
+      sellerTargetUrl: `/product_panel.html?productId=${encodeURIComponent(normalizedProductId)}`,
+      saTargetUrl: "/super_admin.html#product-requests",
+      now,
+      notifySuperAdmin: false,
+      activityAction: "unrejected",
+      persistAccounts: true,
+    });
 
     const companyMetadataByAdminId = getProductCompanyMetadataByAdminId(accounts);
     sendJson(response, 200, {
@@ -28579,6 +35543,7 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
   try {
     const payload = await parseRequestBody(request);
     let products = await readProducts();
+    const accounts = await readAccounts();
     const productIndex = products.findIndex((product) =>
       String(product?.id ?? "").trim() === normalizedProductId
     );
@@ -28591,6 +35556,20 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
     const previousProduct = products[productIndex];
     if (!isProductPendingApproval(previousProduct)) {
       sendJson(response, 409, { message: "Only products in review can be cancelled." });
+      return;
+    }
+
+    const rejectionReason = String(
+      payload?.rejectionReason ?? payload?.reason ?? payload?.message ?? "",
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!rejectionReason) {
+      sendJson(response, 400, { message: "Rejection reason is required." });
+      return;
+    }
+    if (rejectionReason.length > 500) {
+      sendJson(response, 400, { message: "Rejection reason is too long." });
       return;
     }
 
@@ -28618,7 +35597,7 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
       approvalStatus: PRODUCT_APPROVAL_REJECTED,
       rejectedAt: now,
       rejectedBy: SUPER_ADMIN_USERNAME,
-      rejectionReason: String(previousProduct?.rejectionReason || "Rejected during manual product inspection.").trim(),
+      rejectionReason,
       approvalUpdatedAt: now,
       updatedAt: now,
       yoloInspection: normalizeYoloInspection({
@@ -28639,15 +35618,35 @@ async function handleSuperAdminProductCancelApi(request, response, productId) {
     );
     products[productIndex] = rejectedProduct;
     await writeProducts(products);
+    // Every In Review reject = rejected listing + rejected YOLO training evidence.
+    await syncRejectedProductTrainingArchive([rejectedProduct]);
+
+    const productName = String(rejectedProduct?.name ?? "Product").trim() || "Product";
+    await fanOutListingLifecycleNotifications({
+      product: rejectedProduct,
+      accounts,
+      type: "product-rejected",
+      title: "Listing rejected",
+      reason: rejectionReason,
+      message: `Listing "${productName}" was rejected. Reason: ${rejectionReason}`,
+      sellerTitle: "Listing Rejected",
+      sellerMessage: `Your listing "${productName}" was rejected. Reason: ${rejectionReason}`,
+      sellerTargetUrl: `/product_panel.html?productId=${encodeURIComponent(normalizedProductId)}`,
+      saTargetUrl: "/super_admin.html#product-requests",
+      now,
+      notifySuperAdmin: false,
+      activityAction: "rejected",
+      persistAccounts: true,
+    });
 
     sendJson(response, 200, {
       product: normalizeStoredProductRecord(rejectedProduct),
       rejectedEvidenceImageUrls: selectedRejectedEvidence.imageUrls,
       message: !allInspectionImageUrls.length
         ? "Product request rejected."
-        : selectedRejectedEvidence.imageUrls.length === allInspectionImageUrls.length
-          ? "Product request rejected and archived for YOLO inspection evidence."
-          : `Product request rejected. ${selectedRejectedEvidence.imageUrls.length} selected image(s) were archived for YOLO rejection evidence.`,
+        : selectedRejectedEvidence.imageUrls.length
+          ? `Product request rejected and saved as YOLO rejection training (${selectedRejectedEvidence.imageUrls.length} image(s)).`
+          : "Product request rejected and queued for YOLO rejection training.",
     });
   } catch (error) {
     sendJson(response, 500, {
@@ -28788,6 +35787,32 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
   }
 
   try {
+    const testModeOn = await isTestModeEnabled();
+    const sourcesForGuard = await readAdminWorkspaceSources();
+    const targetForGuard = sourcesForGuard.accounts.find((account) =>
+      isAdminAccount(account) && getRecordAdminId(account, account.id) === normalizedAdminId
+    );
+    const companyId = String(
+      targetForGuard?.companyId || targetForGuard?.company_id || "",
+    ).trim();
+    let descriptor = {
+      testMode: Boolean(targetForGuard?.testMode),
+      profileData: { testMode: Boolean(targetForGuard?.testMode) },
+    };
+    if (companyId) {
+      const flags = await loadCompanyTestModeByIds([companyId], { query: pgQuery });
+      const companyFlags = flags.get(companyId);
+      descriptor = {
+        testMode: Boolean(targetForGuard?.testMode) || Boolean(companyFlags?.testMode),
+        profileData: companyFlags?.profileData || descriptor.profileData,
+      };
+    }
+    // Only Test Mode ON + Test Mode companies/users may be cleared/deleted.
+    assertCanDeleteOrClearInTestMode(descriptor, {
+      testModeOn,
+      action: "cleared",
+    });
+
     const sources = await readAdminWorkspaceSources();
     const accountIndex = sources.accounts.findIndex((account) =>
       isAdminAccount(account) && getRecordAdminId(account, account.id) === normalizedAdminId
@@ -28883,17 +35908,40 @@ async function handleSuperAdminClearAdminDataApi(request, response, adminId) {
       skipLinkedNotification: true,
     }, request);
 
+    // Test Mode sandbox: after clearing workspace, hard-delete the Test company.
+    let companyDeleted = false;
+    const companyIdToDelete = String(
+      targetAdmin?.companyId || targetAdmin?.company_id || companyId || "",
+    ).trim();
+    if (companyIdToDelete && isPostgresConfigured()) {
+      try {
+        await hardDeleteTestModeCompany(companyIdToDelete, {
+          query: pgQuery,
+          withTransaction: pgWithTransaction,
+        });
+        companyDeleted = true;
+      } catch (deleteError) {
+        if (deleteError?.code !== "LIVE_DATA_PROTECTED") {
+          throw deleteError;
+        }
+      }
+    }
+
     sendJson(response, 200, {
       adminId: normalizedAdminId,
       cleared: counts,
-      message: "Admin workspace data cleared.",
+      companyDeleted,
+      message: companyDeleted
+        ? "Test Mode company and workspace data deleted."
+        : "Admin workspace data cleared.",
     });
   } catch (error) {
-    sendJson(response, 500, {
+    sendJson(response, error?.statusCode || 500, {
       message:
         error instanceof Error
           ? error.message
           : "Unable to clear admin workspace data.",
+      ...(error?.code ? { code: error.code } : {}),
     });
   }
 }
@@ -28953,9 +36001,9 @@ async function handleSuperAdminPendingCompanyActivateApi(request, response, comp
       createPersistentLinkedNotification({
         type: "seller-onboarding-activated",
         audience: "super_admin",
-        title: "Pending company activated",
+        title: "Pending company approved",
         reason,
-        message: `${companyName} was activated from the pending review queue.`,
+        message: `${companyName} was approved from the pending review queue.`,
         adminId: sellerAdminId,
         companyName,
         storeName: companyName,
@@ -28972,10 +36020,10 @@ async function handleSuperAdminPendingCompanyActivateApi(request, response, comp
         createPersistentLinkedNotification({
           type: "seller-onboarding-activated",
           audience: "seller",
-          title: "Seller Account Activated",
+          title: "Seller Account Approved",
           reason,
           message:
-            `Super Admin activated "${companyName}". You can now open Seller Mode and start listing.`,
+            `Super Admin approved "${companyName}". You can now open Seller Mode and start listing.`,
           adminId: sellerAdminId,
           companyName,
           targetUrl: "/main.html#dashboard",
@@ -28991,8 +36039,8 @@ async function handleSuperAdminPendingCompanyActivateApi(request, response, comp
       source: "super_admin",
       adminId: sellerAdminId,
       action: "pending-review-activated",
-      title: "Pending company activated",
-      description: `${companyName} activated by Super Admin. ${reason}`,
+      title: "Pending company approved",
+      description: `${companyName} approved by Super Admin. ${reason}`,
       actor: {
         role: "super-admin",
         accountId: "super-admin",
@@ -29005,11 +36053,11 @@ async function handleSuperAdminPendingCompanyActivateApi(request, response, comp
     sendJson(response, 200, {
       company: result.company,
       adminId: sellerAdminId,
-      message: `${companyName} activated.`,
+      message: `${companyName} approved.`,
     });
   } catch (error) {
     sendJson(response, error?.statusCode || 400, {
-      message: error instanceof Error ? error.message : "Unable to activate company.",
+      message: error instanceof Error ? error.message : "Unable to approve company.",
     });
   }
 }
@@ -29255,6 +36303,10 @@ async function handleBecomeSellerDocumentsApi(request, response) {
     const now = new Date().toISOString();
     const company = await findCompanyById(companyId);
     const companyName = company?.name || "Seller company";
+    const userActor = await resolveSaNotificationUserActor({
+      accountId,
+      fallback: "Buyer",
+    });
 
     await persistSuperAdminNotification(
       createPersistentLinkedNotification({
@@ -29262,10 +36314,13 @@ async function handleBecomeSellerDocumentsApi(request, response) {
         audience: "super_admin",
         title: "Business document uploaded",
         reason: result.document.type,
-        message: `${companyName} uploaded ${result.document.label} for review.`,
+        message: `${userActor.username} uploaded ${result.document.label} for ${companyName}.`,
         adminId: accountId,
+        companyId,
         companyName,
-        createdBy: accountId,
+        storeName: companyName,
+        businessName: companyName,
+        ...userActor,
         targetUrl: "/super_admin.html#companies",
         createdAt: now,
       }),
@@ -29364,6 +36419,7 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
         iconImageUrl: payload.iconImageUrl ?? payload.iconUrl,
         primaryColor: payload.primaryColor ?? payload.color ?? payload.accentColor,
         secondaryColor: payload.secondaryColor ?? payload.secondaryAccent,
+        storefrontMode: payload.storefrontMode ?? payload.mode ?? payload.verticalMode,
       }, { fallbackSortOrder: maxSortOrder + 1 });
 
       if (!nextPlatform) {
@@ -29375,6 +36431,12 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
       if (!nextPlatform.iconImageUrl) {
         throw new Error("Platform 3D art is required.");
       }
+      const colorOwner = findPlatformUsingPrimaryColor(existing, nextPlatform.primaryColor);
+      if (colorOwner) {
+        throw new Error(
+          `That color is already used by ${colorOwner.name || colorOwner.id}. Each platform needs a unique color.`,
+        );
+      }
 
       const nextPlatforms = [
         ...existing.map(({ businessTypeCount, ...platform }) => platform),
@@ -29382,6 +36444,18 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
       ];
       await writePlatforms(nextPlatforms);
       const platformDetails = getPlatformDetails(nextPlatforms, storedStoreTypes);
+      await logSuperAdminSystemActivity(
+        {
+          type: "platform-catalog",
+          action: "created",
+          category: "catalog",
+          title: "Platform added",
+          description: `Super Admin added platform "${platformName}".`,
+          platformId: nextPlatform.id,
+          targetUrl: "/super_admin.html#platforms",
+        },
+        request,
+      );
       sendJson(response, 201, {
         platform: nextPlatform.id,
         platformRecord: platformDetails.find((platform) => platform.id === nextPlatform.id),
@@ -29400,6 +36474,53 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
   if (request.method === "PUT") {
     try {
       const payload = await parseRequestBody(request);
+
+      if (Array.isArray(payload.orderedIds)) {
+        const orderedIds = payload.orderedIds
+          .map((value) => normalizePlatformId(value))
+          .filter(Boolean);
+        if (!orderedIds.length) {
+          throw new Error("orderedIds must include at least one platform id.");
+        }
+        const [storedPlatforms, storedStoreTypes] = await Promise.all([
+          readPlatforms(),
+          readStoreTypes(),
+        ]);
+        const existing = getPlatformDetails(storedPlatforms, storedStoreTypes);
+        const byId = new Map(existing.map((platform) => [platform.id, platform]));
+        if (orderedIds.length !== existing.length
+          || orderedIds.some((id) => !byId.has(id))
+          || new Set(orderedIds).size !== orderedIds.length) {
+          throw new Error("orderedIds must list every platform exactly once.");
+        }
+        const nextPlatforms = orderedIds.map((id, index) => {
+          const { businessTypeCount, ...rest } = byId.get(id);
+          return normalizePlatformRecord({
+            ...rest,
+            sortOrder: index + 1,
+          }, { fallbackSortOrder: index + 1 });
+        });
+        await writePlatforms(nextPlatforms);
+        const platformDetails = getPlatformDetails(nextPlatforms, storedStoreTypes);
+        await logSuperAdminSystemActivity(
+          {
+            type: "platform-catalog",
+            action: "reordered",
+            category: "catalog",
+            title: "Platform order updated",
+            description: "Super Admin reordered buyer platforms.",
+            targetUrl: "/super_admin.html#platforms",
+          },
+          request,
+        );
+        sendJson(response, 200, {
+          platforms: platformDetails.map((platform) => platform.id),
+          platformDetails,
+          message: "Platform order updated.",
+        });
+        return;
+      }
+
       const previousPlatformId = normalizePlatformId(
         payload.oldId ?? payload.currentId ?? payload.previousPlatformId ?? payload.id,
       );
@@ -29484,7 +36605,23 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
           payload.secondaryColor === undefined && payload.secondaryAccent === undefined
             ? previousPlatform.secondaryColor
             : payload.secondaryColor ?? payload.secondaryAccent,
+        storefrontMode:
+          payload.storefrontMode === undefined
+            && payload.mode === undefined
+            && payload.verticalMode === undefined
+            ? previousPlatform.storefrontMode
+            : payload.storefrontMode ?? payload.mode ?? payload.verticalMode,
       }, { fallbackSortOrder: previousPlatform.sortOrder });
+      const colorOwner = findPlatformUsingPrimaryColor(
+        existing,
+        nextPlatform.primaryColor,
+        previousPlatformId,
+      );
+      if (colorOwner) {
+        throw new Error(
+          `That color is already used by ${colorOwner.name || colorOwner.id}. Each platform needs a unique color.`,
+        );
+      }
 
       let updatedStoreTypes = 0;
       let nextStoreTypes = storedStoreTypes;
@@ -29517,6 +36654,23 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
       ]);
 
       const platformDetails = getPlatformDetails(nextPlatforms, nextStoreTypes);
+      const colorChanged =
+        String(payload.primaryColor ?? payload.color ?? payload.accentColor ?? "").trim() ||
+        String(payload.secondaryColor ?? payload.secondaryAccent ?? "").trim();
+      await logSuperAdminSystemActivity(
+        {
+          type: "platform-catalog",
+          action: colorChanged ? "palette-updated" : "updated",
+          category: colorChanged ? "theme" : "catalog",
+          title: colorChanged ? "Platform color palette updated" : "Platform updated",
+          description: colorChanged
+            ? `Super Admin updated colors for platform "${nextPlatformName}".`
+            : `Super Admin updated platform "${nextPlatformName}".`,
+          platformId: nextPlatformId,
+          targetUrl: "/super_admin.html#platforms",
+        },
+        request,
+      );
       sendJson(response, 200, {
         platform: nextPlatformId,
         platformRecord: platformDetails.find((platform) => platform.id === nextPlatformId),
@@ -29564,6 +36718,18 @@ async function handleSuperAdminPlatformsApi(request, response, requestUrl) {
         .map(({ businessTypeCount, ...platform }) => platform);
       await writePlatforms(nextPlatforms);
       const platformDetails = getPlatformDetails(nextPlatforms, storedStoreTypes);
+      await logSuperAdminSystemActivity(
+        {
+          type: "platform-catalog",
+          action: "deleted",
+          category: "catalog",
+          title: "Platform deleted",
+          description: `Super Admin deleted platform "${target.name}".`,
+          platformId,
+          targetUrl: "/super_admin.html#platforms",
+        },
+        request,
+      );
       sendJson(response, 200, {
         platforms: platformDetails.map((platform) => platform.id),
         platformDetails,
@@ -29605,6 +36771,99 @@ async function handlePlatformsApi(request, response) {
   });
 }
 
+async function readProductSpecificationBusinessTypes() {
+  try {
+    return (await readStoreTypes())
+      .map(normalizeStoreTypeRecord)
+      .filter(Boolean)
+      .map((storeType) => ({
+        name: storeType.name,
+        status: storeType.status,
+        categories: getUniqueCategoryList([storeType.categories]),
+      }));
+  } catch (error) {
+    return [];
+  }
+}
+
+async function buildProductSpecificationsResponse(businessTypes = null) {
+  return {
+    ...getProductSpecificationConfig(),
+    businessTypes: businessTypes ?? await readProductSpecificationBusinessTypes(),
+  };
+}
+
+async function handleSuperAdminProductSpecificationsApi(request, response) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+
+  if (request.method === "GET") {
+    sendJson(response, 200, await buildProductSpecificationsResponse());
+    return;
+  }
+
+  if (request.method !== "PUT" && request.method !== "DELETE") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  try {
+    const payload = await parseRequestBody(request);
+    const isDefault = payload?.isDefault === true;
+    const categoryName = normalizeCategoryName(payload?.category ?? "");
+    const businessTypes = await readProductSpecificationBusinessTypes();
+
+    if (!isDefault) {
+      const categoryKey = categoryName.toLowerCase();
+      const knownCategory = businessTypes.some((businessType) =>
+        businessType.categories.some((name) => normalizeCategoryName(name).toLowerCase() === categoryKey))
+        || getProductSpecificationConfig().categories.some((settings) => settings.key === categoryKey);
+      if (!categoryKey || !knownCategory) {
+        sendJson(response, 400, { message: "Choose a category that exists in Business Types." });
+        return;
+      }
+    }
+
+    const targetLabel = isDefault ? "the default list" : `"${categoryName}"`;
+    if (request.method === "PUT") {
+      const settings = await saveCategorySpecifications(categoryName, payload?.options, { isDefault });
+      await logSuperAdminSystemActivity(
+        {
+          type: "product-specifications",
+          action: "updated",
+          category: "catalog",
+          title: "Specifications updated",
+          description:
+            `Super Admin set ${settings.options.length} specification${settings.options.length === 1 ? "" : "s"} `
+            + `for ${targetLabel}.`,
+        },
+        request,
+      );
+    } else {
+      const removed = await resetCategorySpecifications(categoryName, { isDefault });
+      if (removed) {
+        await logSuperAdminSystemActivity(
+          {
+            type: "product-specifications",
+            action: "reset",
+            category: "catalog",
+            title: "Specifications reset",
+            description: `Super Admin reset the specifications of ${targetLabel} to the code list.`,
+          },
+          request,
+        );
+      }
+    }
+
+    sendJson(response, 200, await buildProductSpecificationsResponse(businessTypes));
+  } catch (error) {
+    sendJson(response, Number(error?.statusCode) || 500, {
+      message: error instanceof Error ? error.message : "Unable to save specifications.",
+    });
+  }
+}
+
 async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
   if (!requireSuperAdmin(request, response)) {
     return;
@@ -29612,12 +36871,20 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
 
   if (request.method === "GET") {
     try {
-      const [storedStoreTypes, accounts, products] = await Promise.all([
+      const [storedStoreTypes, accounts, products, orders, chatThreads] = await Promise.all([
         readStoreTypes(),
         readAccounts(),
         readProducts(),
+        readOrders(),
+        readChatThreads(),
       ]);
-      const storeTypeDetails = getGlobalStoreTypeDetails(storedStoreTypes, accounts, products);
+      const storeTypeDetails = getGlobalStoreTypeDetails(
+        storedStoreTypes,
+        accounts,
+        products,
+        orders,
+        chatThreads,
+      );
       sendJson(response, 200, {
         storeTypes: storeTypeDetails.map((storeType) => storeType.name),
         storeTypeDetails,
@@ -29668,6 +36935,21 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       await writeStoreTypes(persistedStoreTypes);
       const [accounts, products] = await Promise.all([readAccounts(), readProducts()]);
       const storeTypeDetails = getGlobalStoreTypeDetails(persistedStoreTypes, accounts, products);
+      const categoryCount = Array.isArray(payload.categories) ? payload.categories.length : 0;
+      await logSuperAdminSystemActivity(
+        {
+          type: "store-type-catalog",
+          action: "created",
+          category: "catalog",
+          title: "Business type added",
+          description: categoryCount
+            ? `Super Admin added business type "${storeTypeName}" with ${categoryCount} categor${categoryCount === 1 ? "y" : "ies"}.`
+            : `Super Admin added business type "${storeTypeName}".`,
+          storeTypeName,
+          targetUrl: "/super_admin.html#store-types",
+        },
+        request,
+      );
       sendJson(response, 201, {
         storeType: storeTypeName,
         storeTypeRecord: storeTypeDetails.find(
@@ -29807,6 +37089,24 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       ]);
       let products = await readProducts();
       const storeTypeDetails = getGlobalStoreTypeDetails(nextStoredStoreTypes, nextAccounts, products);
+      const categoriesTouched =
+        payload.categories !== undefined ||
+        payload.categoryDetails !== undefined ||
+        payload.categoryStats !== undefined;
+      await logSuperAdminSystemActivity(
+        {
+          type: "store-type-catalog",
+          action: categoriesTouched ? "categories-updated" : "updated",
+          category: "catalog",
+          title: categoriesTouched ? "Categories updated" : "Business type updated",
+          description: categoriesTouched
+            ? `Super Admin updated categories for business type "${nextStoreTypeName}".`
+            : `Super Admin updated business type "${previousStoreTypeName}" → "${nextStoreTypeName}".`,
+          storeTypeName: nextStoreTypeName,
+          targetUrl: "/super_admin.html#store-types",
+        },
+        request,
+      );
       sendJson(response, 200, {
         storeType: nextStoreTypeName,
         storeTypeRecord: storeTypeDetails.find(
@@ -29875,6 +37175,18 @@ async function handleSuperAdminStoreTypesApi(request, response, requestUrl) {
       ]);
       const products = await readProducts();
       const storeTypeDetails = getGlobalStoreTypeDetails(nextStoreTypes, nextAccounts, products);
+      await logSuperAdminSystemActivity(
+        {
+          type: "store-type-catalog",
+          action: "deleted",
+          category: "catalog",
+          title: "Business type deleted",
+          description: `Super Admin deleted business type "${storeTypeName}".`,
+          storeTypeName,
+          targetUrl: "/super_admin.html#store-types",
+        },
+        request,
+      );
       sendJson(response, 200, {
         storeTypes: storeTypeDetails.map((storeType) => storeType.name),
         storeTypeDetails,
@@ -29935,7 +37247,7 @@ async function handleEmployeeLoginApi(request, response) {
       return;
     }
 
-    const loginAttempt = beginLoginAttempt(request, response, employeeId);
+    const loginAttempt = await beginLoginAttempt(request, response, employeeId);
     if (!loginAttempt) {
       return;
     }
@@ -30099,15 +37411,26 @@ async function handleAccountsApi(request, response) {
         readAccounts(),
         readFaceAttendanceData(),
       ]);
-      const visibleAccounts = accounts
-        .filter((account) => !isAdminAccount(account))
-        .filter((account) =>
-          requestShouldUseAdminScope ? isRecordInAdminScope(account, requestAdminId) : true,
-        );
+      const testModeOn = await isTestModeEnabled();
+      const visibleAccounts = filterAccountsForSuperAdmin(
+        accounts
+          .filter((account) => !isAdminAccount(account))
+          .filter((account) =>
+            requestShouldUseAdminScope ? isRecordInAdminScope(account, requestAdminId) : true,
+          ),
+        { testModeOn },
+      );
+      const protectionAccounts = requestIsSuperAdmin
+        && sellerBuyerProtectionApi
+        && typeof sellerBuyerProtectionApi.attachTicketsToBuyerAccounts === "function"
+        ? await sellerBuyerProtectionApi.attachTicketsToBuyerAccounts(visibleAccounts)
+        : visibleAccounts;
       sendJson(response, 200, {
-        accounts: visibleAccounts.map((account) =>
+        accounts: protectionAccounts.map((account) =>
           serializeAccountForList(account, faceAttendanceData),
         ),
+        workspace: testModeOn ? "test" : "live",
+        testMode: testModeOn,
       });
     } catch (error) {
       sendJson(response, 500, {
@@ -30122,6 +37445,24 @@ async function handleAccountsApi(request, response) {
       const payload = await parseRequestBody(request);
       const isAppUserRegistration =
         String(payload.source ?? "").trim().toLowerCase() === "app";
+
+      if (
+        isAppUserRegistration
+        && !(await requireTestModeAccountCreationAllowed(request, response))
+      ) {
+        return;
+      }
+
+      if (
+        isAppUserRegistration
+        && !(await requirePlatformSettingEnabled(
+          response,
+          "buyerRegistration",
+          "Buyer registration is currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
 
       if (
         !isAppUserRegistration
@@ -30590,6 +37931,101 @@ function getListingInsightOverallRankingOrderIncome(order, quantity) {
   return Math.max(0, grandTotal - Math.max(0, shippingFee));
 }
 
+// Uses the same checkout rules as listing income: real buyers, not cancelled, item price without shipping.
+function buildCompanyCheckoutEarnings(orders = []) {
+  const summary = {
+    currency: "PHP",
+    totalAmount: 0,
+    completedAmount: 0,
+    pendingAmount: 0,
+    onHoldAmount: 0,
+    orderCount: 0,
+    unitsSold: 0,
+    lastCheckoutAt: "",
+  };
+  const orderKeys = new Set();
+  let lastCheckoutMs = 0;
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    if (!isListingInsightOverallRankingOrder(order)) {
+      continue;
+    }
+    const quantity = Math.max(
+      0,
+      Math.trunc(parseFiniteNumber(order.quantity ?? order.count ?? order.qty, 0)),
+    );
+    if (quantity <= 0) {
+      continue;
+    }
+    const amount = getListingInsightOverallRankingOrderIncome(order, quantity);
+    const stage = String(order.stage ?? order.status ?? "").trim().toLowerCase();
+    if (stage === "returnrequest") {
+      summary.onHoldAmount += amount;
+    } else if (isSellerOrderCompleted(order)) {
+      summary.completedAmount += amount;
+    } else {
+      summary.pendingAmount += amount;
+    }
+    summary.totalAmount += amount;
+    summary.unitsSold += quantity;
+
+    const createdAtMs = parseFiniteNumber(
+      order.createdAtEpochMs ?? Date.parse(order.createdAt ?? ""),
+      0,
+    );
+    orderKeys.add(
+      String(order.orderGroupId ?? "").trim()
+        || `${String(order.accountId ?? "").trim()}|${createdAtMs}`,
+    );
+    lastCheckoutMs = Math.max(lastCheckoutMs, createdAtMs);
+  }
+
+  const roundMoney = (value) => Math.round(value * 100) / 100;
+  summary.totalAmount = roundMoney(summary.totalAmount);
+  summary.completedAmount = roundMoney(summary.completedAmount);
+  summary.pendingAmount = roundMoney(summary.pendingAmount);
+  summary.onHoldAmount = roundMoney(summary.onHoldAmount);
+  summary.orderCount = orderKeys.size;
+  summary.lastCheckoutAt = lastCheckoutMs > 0 ? new Date(lastCheckoutMs).toISOString() : "";
+  return summary;
+}
+
+async function handleSuperAdminCompanyEarningsApi(request, response, adminId) {
+  if (!requireSuperAdmin(request, response)) {
+    return;
+  }
+  if (request.method !== "GET") {
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+  const normalizedAdminId = normalizeAdminTenantId(adminId, "");
+  if (!normalizedAdminId) {
+    sendJson(response, 400, { message: "Company is required." });
+    return;
+  }
+  try {
+    const accounts = await readAccounts();
+    const company = accounts.find((account) =>
+      isAdminAccount(account)
+      && normalizeAdminTenantId(account.adminId ?? account.id, "") === normalizedAdminId,
+    );
+    if (!company) {
+      sendJson(response, 404, { message: "Company not found." });
+      return;
+    }
+    const orders = await readOrders({ adminId: normalizedAdminId });
+    response.setHeader("Cache-Control", "no-store");
+    sendJson(response, 200, {
+      adminId: normalizedAdminId,
+      earnings: buildCompanyCheckoutEarnings(filterRecordsByAdminId(orders, normalizedAdminId)),
+    });
+  } catch (error) {
+    sendJson(response, 500, {
+      message: error instanceof Error ? error.message : "Unable to load company earnings.",
+    });
+  }
+}
+
 function buildListingInsightOverallRankingMetrics(orders = []) {
   const metricsByProduct = new Map();
 
@@ -30904,6 +38340,56 @@ function enrichOrdersWithListingAndBuyerData(orders, products, accounts, deliver
   });
 }
 
+const SUPER_ADMIN_BUYER_ORDER_SUMMARY_FIELDS = [
+  "id",
+  "orderId",
+  "bookingId",
+  "accountId",
+  "customerAccountId",
+  "userId",
+  "customerId",
+  "email",
+  "clientEmail",
+  "type",
+  "transactionType",
+  "orderType",
+  "bookingDate",
+  "serviceId",
+  "serviceName",
+  "productName",
+  "product",
+  "companyName",
+  "storeName",
+  "sellerName",
+  "adminId",
+  "grandTotalAmount",
+  "amountToPayAmount",
+  "total",
+  "amount",
+  "price",
+  "paymentStatus",
+  "paymentOptionLabel",
+  "paymentMethod",
+  "payment",
+  "bookingStatus",
+  "orderStatus",
+  "stage",
+  "status",
+  "createdAt",
+  "createdAtEpochMs",
+];
+
+function createSuperAdminBuyerOrderSummary(order) {
+  const summary = {};
+  for (const field of SUPER_ADMIN_BUYER_ORDER_SUMMARY_FIELDS) {
+    const value = order?.[field];
+    if (value !== undefined && value !== null && value !== "" && typeof value !== "object") {
+      summary[field] = value;
+    }
+  }
+  return summary;
+}
+
 async function handleOrdersApi(request, response) {
   const requestUrl = new URL(request.url, `http://127.0.0.1:${PORT}`);
   const requestAdminId = getRequestAdminId(request, requestUrl);
@@ -30928,6 +38414,12 @@ async function handleOrdersApi(request, response) {
         sendJson(response, 403, {
           message: "Signed account or store scope is required to list orders.",
         });
+        return;
+      }
+
+      if (requestIsSuperAdmin && requestUrl.searchParams.get("view") === "buyer-summary") {
+        const summaryOrders = (await readOrders()).map(createSuperAdminBuyerOrderSummary);
+        sendJson(response, 200, { orders: summaryOrders, total: summaryOrders.length });
         return;
       }
 
@@ -30997,6 +38489,39 @@ async function handleOrdersApi(request, response) {
         normalizeOrderEntriesPayload(payload, incomingAdminScopeId),
         request,
       );
+      if (requestShouldUseAccountScope) {
+        const platformSettings = await getPlatformSettings();
+        for (const entry of orders) {
+          if (
+            orderPayloadHasBuyerReviewFields(entry)
+            && isPlatformSettingBlocking(platformSettings, "buyerReviews")
+          ) {
+            sendJson(
+              response,
+              403,
+              buildPlatformBlockedPayload(
+                "buyerReviews",
+                "Reviews are currently disabled by Super Admin.",
+              ),
+            );
+            return;
+          }
+        }
+      }
+      let switchRiderPendingJobs = [];
+      if (requestShouldUseAccountScope) {
+        try {
+          switchRiderPendingJobs = switchRiderOrderBridge.prepareCheckout({
+            rawPayload: payload,
+            incomingOrders: orders,
+            existingOrders: await readOrders({ accountId: requestAccountId }),
+            buyerAccountId: requestAccountId,
+          });
+        } catch (switchRiderError) {
+          sendSwitchRiderCheckoutError(response, switchRiderError);
+          return;
+        }
+      }
       try {
         await flashDealsApi.convertReservationsFromOrders(orders);
       } catch (flashError) {
@@ -31028,6 +38553,9 @@ async function handleOrdersApi(request, response) {
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
       );
+      if (switchRiderPendingJobs.length) {
+        await switchRiderOrderBridge.createJobsAfterCheckout(switchRiderPendingJobs);
+      }
       sendJson(response, 200, {
         orders: requestShouldPreserveOtherScopes ? orders : nextOrders,
         total: requestShouldPreserveOtherScopes ? orders.length : nextOrders.length,
@@ -31055,6 +38583,17 @@ async function handleOrdersApi(request, response) {
       }
 
       if (
+        requestShouldUseAccountScope
+        && !(await requirePlatformSettingEnabled(
+          response,
+          "buyerCheckout",
+          "Checkout is currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
+
+      if (
         requestShouldUseAdminScope &&
         !(await requireAdminRestrictionAllowed(
           request,
@@ -31072,6 +38611,92 @@ async function handleOrdersApi(request, response) {
         normalizeOrderEntriesPayload(payload, incomingAdminScopeId),
         request,
       );
+
+      if (requestShouldUseAccountScope && sellerBuyerProtectionApi) {
+        for (const entry of incomingOrders) {
+          try {
+            await sellerBuyerProtectionApi.assertBuyerNotBlockedByStore({
+              buyerAccountId: requestAccountId || entry?.accountId,
+              companyId: entry?.companyId || entry?.company_id,
+              adminId: entry?.adminId,
+            });
+          } catch (blockError) {
+            sendJson(response, blockError?.statusCode || 403, {
+              message:
+                blockError instanceof Error
+                  ? blockError.message
+                  : "This store has blocked checkout for this buyer.",
+              code: blockError?.code || "STORE_BUYER_BLOCKED",
+            });
+            return;
+          }
+        }
+      }
+
+      const platformSettings = await getPlatformSettings();
+      for (const entry of incomingOrders) {
+        if (
+          requestShouldUseAccountScope
+          && isCodPaymentOption(entry?.paymentOptionLabel ?? entry?.paymentOption ?? entry?.paymentMethod)
+          && isPlatformSettingBlocking(platformSettings, "cashOnDelivery")
+        ) {
+          sendJson(
+            response,
+            403,
+            buildPlatformBlockedPayload(
+              "cashOnDelivery",
+              "Cash on delivery is currently disabled by Super Admin.",
+            ),
+          );
+          return;
+        }
+        if (
+          requestShouldUseAccountScope
+          && orderPayloadLooksLikeBooking(entry)
+          && isPlatformSettingBlocking(platformSettings, "buyerBookings")
+        ) {
+          sendJson(
+            response,
+            403,
+            buildPlatformBlockedPayload(
+              "buyerBookings",
+              "Bookings are currently disabled by Super Admin.",
+            ),
+          );
+          return;
+        }
+        if (
+          requestShouldUseAccountScope
+          && orderPayloadHasBuyerReviewFields(entry)
+          && isPlatformSettingBlocking(platformSettings, "buyerReviews")
+        ) {
+          sendJson(
+            response,
+            403,
+            buildPlatformBlockedPayload(
+              "buyerReviews",
+              "Reviews are currently disabled by Super Admin.",
+            ),
+          );
+          return;
+        }
+      }
+
+      let switchRiderPendingJobs = [];
+      if (requestShouldUseAccountScope) {
+        try {
+          switchRiderPendingJobs = switchRiderOrderBridge.prepareCheckout({
+            rawPayload: payload,
+            incomingOrders,
+            existingOrders: await readOrders({ accountId: requestAccountId }),
+            buyerAccountId: requestAccountId,
+          });
+        } catch (switchRiderError) {
+          sendSwitchRiderCheckoutError(response, switchRiderError);
+          return;
+        }
+      }
+
       try {
         await flashDealsApi.convertReservationsFromOrders(incomingOrders);
       } catch (flashError) {
@@ -31083,6 +38708,45 @@ async function handleOrdersApi(request, response) {
         });
         return;
       }
+      let checkoutOrders = incomingOrders;
+      if (
+        requestShouldUseAccountScope &&
+        typeof vouchersApi?.consumeVouchersForOrders === "function"
+      ) {
+        try {
+          const existingOrdersForEligibility = await readOrders();
+          const accountOrders = existingOrdersForEligibility.filter(
+            (entry) => String(entry?.accountId ?? "").trim() === String(requestAccountId || "").trim(),
+          );
+          const orderCount = accountOrders.length;
+          // Re-posted entries (cancel requests, syncs) already consumed their voucher at checkout.
+          const storedOrderIds = new Set(
+            accountOrders.map((entry) => String(entry?.id ?? "").trim()).filter(Boolean),
+          );
+          const newOrders = incomingOrders.filter(
+            (entry) => !storedOrderIds.has(String(entry?.id ?? "").trim()),
+          );
+          if (newOrders.length) {
+            const consumed = await vouchersApi.consumeVouchersForOrders(newOrders, {
+              accountId: requestAccountId,
+              customer: { orderCount, id: requestAccountId },
+            });
+            const consumedOrders = consumed?.orders || newOrders;
+            const consumedByEntry = new Map(
+              newOrders.map((entry, index) => [entry, consumedOrders[index] || entry]),
+            );
+            checkoutOrders = incomingOrders.map((entry) => consumedByEntry.get(entry) || entry);
+          }
+        } catch (voucherError) {
+          sendJson(response, voucherError?.statusCode || 400, {
+            message:
+              voucherError instanceof Error
+                ? voucherError.message
+                : "Unable to apply voucher.",
+          });
+          return;
+        }
+      }
       const existingOrders = await readOrders();
       const existingScopedOrders = requestShouldUseAccountScope
         ? existingOrders.filter(
@@ -31091,7 +38755,7 @@ async function handleOrdersApi(request, response) {
         : requestShouldUseAdminScope
           ? filterRecordsByAdminId(existingOrders, requestAdminId)
           : existingOrders;
-      const mergedOrders = mergeStoredOrderEntries(existingScopedOrders, incomingOrders);
+      const mergedOrders = mergeStoredOrderEntries(existingScopedOrders, checkoutOrders);
       const requestShouldPreserveOtherScopes =
         requestShouldUseAdminScope || requestShouldUseAccountScope;
       const nextOrders = requestShouldPreserveOtherScopes
@@ -31106,15 +38770,18 @@ async function handleOrdersApi(request, response) {
         adminId: requestShouldUseAdminScope ? requestAdminId : "",
         accountId: requestShouldUseAccountScope ? requestAccountId : "",
       }));
-      await recordOrderAnalyticsSafely(incomingOrders);
+      await recordOrderAnalyticsSafely(checkoutOrders);
       await syncProductReviewCommentCountsFromOrders(
         nextOrders,
         requestShouldUseAdminScope ? requestAdminId : null,
       );
+      if (switchRiderPendingJobs.length) {
+        await switchRiderOrderBridge.createJobsAfterCheckout(switchRiderPendingJobs);
+      }
       sendJson(response, 200, {
         orders: mergedOrders,
         total: mergedOrders.length,
-        mergedCount: incomingOrders.length,
+        mergedCount: checkoutOrders.length,
         message: "Orders merged.",
       });
     } catch (error) {
@@ -31258,6 +38925,16 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
     return;
   }
 
+  if (
+    !(await requirePlatformSettingEnabled(
+      response,
+      "deliveryAssignment",
+      "Delivery assignment is currently disabled by Super Admin.",
+    ))
+  ) {
+    return;
+  }
+
   const groupKey = String(createdAtEpochMs ?? "").trim();
   if (!groupKey) {
     sendJson(response, 400, { message: "Invalid order group id." });
@@ -31277,10 +38954,19 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
   }
 
   try {
+    if (await isSwitchRiderOrderGroup(requestAdminId, groupKey)) {
+      sendSwitchRiderOrderConflict(
+        response,
+        "This order ships with Switch Rider. Use \"Ready for Rider\" — the order moves to To Receive when the rider confirms pickup.",
+        "SWITCH_RIDER_USE_READY_FOR_RIDER",
+      );
+      return;
+    }
     const payload = await parseRequestBody(request);
     let trackingNumber = String(
       payload?.trackingNumber ?? payload?.trackingNo ?? "",
     ).trim();
+    let courierShipment = null;
     const orders = await readOrders();
     const salesByProductId = new Map();
     let didUpdateOrderGroup = false;
@@ -31299,8 +38985,14 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
           if (existing) {
             trackingNumber = existing;
           } else {
-            const shipment = await createCourierShipment({
+            courierShipment = await createCourierShipment({
               orderGroupId: String(primary?.orderGroupId || groupKey).trim(),
+              pickupName: String(payload?.pickupName || "").trim(),
+              pickupPhone: String(payload?.pickupPhone || "").trim(),
+              pickupAddress: String(payload?.pickupAddress || "").trim(),
+              pickupCoordinates: payload?.pickupCoordinates,
+              pickupLat: payload?.pickupLat ?? payload?.pickupLatitude,
+              pickupLng: payload?.pickupLng ?? payload?.pickupLongitude,
               recipientName: String(
                 primary?.clientName || primary?.customerName || "",
               ).trim(),
@@ -31310,8 +39002,24 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
               recipientAddress: String(
                 primary?.clientAddress || primary?.address || "",
               ).trim(),
+              recipientCoordinates: payload?.recipientCoordinates,
+              recipientLat:
+                payload?.recipientLat
+                ?? payload?.recipientLatitude
+                ?? primary?.clientLatitude
+                ?? primary?.deliveryLatitude,
+              recipientLng:
+                payload?.recipientLng
+                ?? payload?.recipientLongitude
+                ?? primary?.clientLongitude
+                ?? primary?.deliveryLongitude,
+              scheduleAt: String(payload?.scheduleAt || "").trim(),
+              metadata: {
+                adminId: requestAdminId,
+                accountId: String(primary?.accountId || "").trim(),
+              },
             });
-            trackingNumber = shipment.trackingNumber;
+            trackingNumber = courierShipment.trackingNumber;
           }
         }
       }
@@ -31344,6 +39052,18 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
         shippedAt: new Date().toISOString(),
         shippedAtEpochMs: Date.now(),
         trackingNumber: trackingNumber || entry?.trackingNumber || entry?.trackingNo || "",
+        ...(courierShipment
+          ? {
+              courierProvider: courierShipment.provider,
+              courierShipmentId: courierShipment.providerShipmentId,
+              courierQuotationId: courierShipment.quotationId || "",
+              courierShipmentMode: courierShipment.mode,
+              courierShipmentStatus: courierShipment.status,
+              courierProviderStatus: courierShipment.providerStatus || "",
+              courierShareLink: courierShipment.labelUrl || "",
+              courierUpdatedAt: new Date().toISOString(),
+            }
+          : {}),
       });
     });
 
@@ -31397,10 +39117,11 @@ async function handleShipOrderGroupApi(request, response, createdAtEpochMs) {
       updatedCount: nextOrders.filter(
         (entry) => isScopedOrderGroupEntry(entry, requestAdminId, groupKey),
       ).length,
+      ...(courierShipment ? { shipment: courierShipment } : {}),
       message: "Order group moved to To Receive.",
     });
   } catch (error) {
-    sendJson(response, 500, {
+    sendJson(response, error?.statusCode || 500, {
       message:
         error instanceof Error ? error.message : "Unable to mark order group as shipped.",
     });
@@ -31413,6 +39134,16 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
 
   if (request.method !== "POST") {
     sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (
+    !(await requirePlatformSettingEnabled(
+      response,
+      "refundCenter",
+      "Refund and cancel center is currently disabled by Super Admin.",
+    ))
+  ) {
     return;
   }
 
@@ -31442,6 +39173,12 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
 
     if (!targetEntries.length) {
       sendJson(response, 404, { message: "Order group not found." });
+      return;
+    }
+
+    const switchRiderCancelCheck = await checkSwitchRiderOrderCancellation(targetEntries);
+    if (!switchRiderCancelCheck.allowed) {
+      sendSwitchRiderOrderConflict(response, switchRiderCancelCheck.message, "SWITCH_RIDER_PARCEL_PICKED_UP");
       return;
     }
 
@@ -31492,6 +39229,7 @@ async function handleCancelOrderGroupApi(request, response, createdAtEpochMs) {
     }
 
     await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+    await cancelSwitchRiderJobForOrder(targetEntries, requestAdminId, "Seller cancelled the order.");
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -31518,6 +39256,16 @@ async function handleCancelOrderRequestDecisionApi(
 
   if (request.method !== "POST") {
     sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (
+    !(await requirePlatformSettingEnabled(
+      response,
+      "refundCenter",
+      "Refund and cancel center is currently disabled by Super Admin.",
+    ))
+  ) {
     return;
   }
 
@@ -31554,6 +39302,14 @@ async function handleCancelOrderRequestDecisionApi(
     if (!targetEntries.length) {
       sendJson(response, 404, { message: "Order group not found." });
       return;
+    }
+
+    if (normalizedDecision === "accept") {
+      const switchRiderCancelCheck = await checkSwitchRiderOrderCancellation(targetEntries);
+      if (!switchRiderCancelCheck.allowed) {
+        sendSwitchRiderOrderConflict(response, switchRiderCancelCheck.message, "SWITCH_RIDER_PARCEL_PICKED_UP");
+        return;
+      }
     }
 
     let inventoryRestoredAtEpochMs = 0;
@@ -31611,6 +39367,9 @@ async function handleCancelOrderRequestDecisionApi(
     });
 
     await writeOrders(nextOrders, catalogWriteScope({ adminId: requestAdminId }));
+    if (normalizedDecision === "accept") {
+      await cancelSwitchRiderJobForOrder(targetEntries, requestAdminId, "Buyer's cancellation request was accepted.");
+    }
     sendJson(response, 200, {
       ...getOrderGroupResponseFields(targetEntries, groupKey),
       updatedCount: nextOrders.filter(
@@ -31823,11 +39582,21 @@ async function handleUploadApi(request, response, options = {}) {
     const safeStem =
       sanitizeFileStem(path.basename(sourceFilename, storedDocumentExtension || extension)) ||
       (isDocumentUpload ? "chat-file" : isModelUpload ? "product-model" : "product-image");
-    const fileName = `${safeStem}-${Date.now()}${storedExtension}`;
-    const filePath = path.join(UPLOADS_DIR, fileName);
-    const uploadUrl = `/uploads/${fileName}`;
-
-    await fsPromises.writeFile(filePath, storedBuffer);
+    const fileName = `${safeStem}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${storedExtension}`;
+    const storedContentType = isDocumentUpload
+      ? (MIME_TYPES[storedDocumentExtension] || contentType || "application/octet-stream")
+      : isImageUpload && !shouldPreserveOriginal
+        ? "image/webp"
+        : shouldPreserveSvg
+          ? "image/svg+xml"
+          : contentType || MIME_TYPES[storedExtension] || "application/octet-stream";
+    // Documents stay on the server until a private bucket with signed URLs exists.
+    const uploadUrl = isDocumentUpload
+      ? `/uploads/${fileName}`
+      : await objectStorage.saveUpload(fileName, storedBuffer, { contentType: storedContentType });
+    if (isDocumentUpload) {
+      await fsPromises.writeFile(path.join(UPLOADS_DIR, fileName), storedBuffer);
+    }
 
     sendJson(response, 201, {
       imageUrl: uploadUrl,
@@ -31836,13 +39605,7 @@ async function handleUploadApi(request, response, options = {}) {
       type: isDocumentUpload ? "file" : isVideoUpload ? "video" : "image",
       modelUrl: isModelUpload ? uploadUrl : "",
       fileName,
-      contentType: isDocumentUpload
-        ? (MIME_TYPES[storedDocumentExtension] || contentType || "application/octet-stream")
-        : isImageUpload && !shouldPreserveOriginal
-          ? "image/webp"
-          : shouldPreserveSvg
-            ? "image/svg+xml"
-            : contentType,
+      contentType: storedContentType,
       sizeBytes: storedBuffer.length,
       message: isImageUpload
         ? shouldPreserveSvg
@@ -32000,6 +39763,16 @@ async function handleSingleProductApi(request, response, productId) {
   if (request.method === "DELETE") {
     try {
       if (
+        !(await requirePlatformSettingEnabled(
+          response,
+          "sellerProductEditing",
+          "Product editing is currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
+
+      if (
         !(await requireAdminRestrictionAllowed(
           request,
           response,
@@ -32028,6 +39801,43 @@ async function handleSingleProductApi(request, response, productId) {
       );
       await writeProducts(nextProducts, catalogWriteScope({ adminId: requestAdminId }));
       await logActivitySafely(createProductActivityEntry("deleted", targetProduct, payload?.__activityActor), request);
+      const productName = String(targetProduct?.name ?? "Product").trim() || "Product";
+      const companyActor = resolveSaNotificationCompanyActor({
+        adminId: requestAdminId,
+        companyName: String(
+          targetProduct?.companyName
+          || targetProduct?.storeName
+          || targetProduct?.businessName
+          || payload?.__activityActor?.displayName
+          || payload?.__activityActor?.name
+          || "Seller",
+        ).trim(),
+        storeName: targetProduct?.storeName,
+        businessName: targetProduct?.businessName,
+        companyPictureUrl:
+          targetProduct?.companyPictureUrl
+          || targetProduct?.companyLogoUrl
+          || targetProduct?.logoUrl
+          || "",
+        createdBy: String(
+          payload?.__activityActor?.displayName
+          || payload?.__activityActor?.name
+          || "Seller",
+        ).trim() || "Seller",
+      });
+      await persistSuperAdminNotification(
+        createPersistentLinkedNotification({
+          type: "product-deleted",
+          audience: "super_admin",
+          title: "Seller deleted a listing",
+          reason: "Seller deleted listing",
+          message: `${companyActor.companyName} deleted listing "${productName}".`,
+          productId: String(targetProduct?.id ?? productId).trim(),
+          productName,
+          ...companyActor,
+          targetUrl: "/super_admin.html#product-requests",
+        }),
+      );
       sendJson(response, 200, {
         message: "Product deleted.",
         deletedId: productId,
@@ -32042,6 +39852,16 @@ async function handleSingleProductApi(request, response, productId) {
 
   if (request.method === "PUT") {
     try {
+      if (
+        !(await requirePlatformSettingEnabled(
+          response,
+          "sellerProductEditing",
+          "Product editing is currently disabled by Super Admin.",
+        ))
+      ) {
+        return;
+      }
+
       const payload = await parseRequestBody(request);
       assertSessionPayloadIdentity(request, payload, { admin: true });
       let products = await readProducts();
@@ -32123,6 +39943,19 @@ async function handleSingleProductApi(request, response, productId) {
         ...payload,
         adminId: getRecordAdminId(previousProduct, requestAdminId),
       }, previousProduct), requestAdminId);
+      if (normalizeProductActiveState(updatedProduct?.isActive, true)) {
+        const goLiveBlocked = await isSellerProductGoLiveBlockedByBan(
+          updatedProduct,
+          requestAdminId,
+        );
+        if (goLiveBlocked) {
+          sendCompanyBannedListingBlocked(
+            response,
+            "This company is banned. Listings cannot go live until the company is unbanned.",
+          );
+          return;
+        }
+      }
       if (isInventoryAction) {
         updatedProduct = {
           ...updatedProduct,
@@ -32136,6 +39969,17 @@ async function handleSingleProductApi(request, response, productId) {
           approvalUpdatedAt: normalizeOptionalProductDateTime(
             previousProduct?.approvalUpdatedAt,
           ),
+          yoloInspection: previousProduct?.yoloInspection ?? null,
+          yoloRevision: previousProduct?.yoloRevision ?? null,
+          superAdminUploadedImageUrls: normalizeProductImageUrls(
+            previousProduct?.superAdminUploadedImageUrls,
+          ),
+          superAdminImageUploadedAt: normalizeOptionalProductDateTime(
+            previousProduct?.superAdminImageUploadedAt,
+          ),
+          superAdminImageUploadedBy: String(
+            previousProduct?.superAdminImageUploadedBy ?? "",
+          ).trim(),
         };
       }
       if (!isInventoryAction) {
@@ -32143,6 +39987,9 @@ async function handleSingleProductApi(request, response, productId) {
           updatedProduct,
           requestAdminId,
         );
+        if (Array.isArray(payload?.specifications)) {
+          assertProductSpecificationsComplete(updatedProduct);
+        }
       }
       updatedProduct = await validateProductPartnerSelections(updatedProduct, requestAdminId);
       updatedProduct = syncProductVariantAddOnsWithInventory(
@@ -32187,6 +40034,7 @@ async function handleSingleProductApi(request, response, productId) {
           );
           products[productIndex] = updatedProduct;
           await writeProducts(products, catalogWriteScope({ adminId: requestAdminId }));
+          await syncRejectedProductTrainingArchive([updatedProduct]);
           await logActivitySafely(
           createProductActivityEntry(
             "updated",
@@ -32253,6 +40101,17 @@ async function handleSingleProductApi(request, response, productId) {
         ),
         request,
       );
+      if (!isInventoryAction && isProductPendingApproval(updatedProduct)) {
+        const actorLabel = String(
+          payload?.__activityActor?.displayName ||
+            payload?.__activityActor?.name ||
+            "Seller",
+        ).trim() || "Seller";
+        await notifySuperAdminListingSubmission(updatedProduct, {
+          action: "resubmitted",
+          actorLabel,
+        });
+      }
       const reviewAggregates = buildProductReviewAggregates(
         await readOrders(),
         requestAdminId,
@@ -32313,11 +40172,26 @@ async function handleSingleProductApi(request, response, productId) {
         return;
       }
 
+      const nextIsActive = normalizeProductActiveState(payload?.isActive, true);
+      if (nextIsActive) {
+        const goLiveBlocked = await isSellerProductGoLiveBlockedByBan(
+          previousProduct,
+          requestAdminId,
+        );
+        if (goLiveBlocked) {
+          sendCompanyBannedListingBlocked(
+            response,
+            "This company is banned. Listings cannot go live until the company is unbanned.",
+          );
+          return;
+        }
+      }
+
       const normalizedVisibilityProduct = normalizeProduct({
         ...previousProduct,
         adminId: getRecordAdminId(previousProduct, requestAdminId),
         stock: getNormalizedProductInventoryStock(previousProduct, 0),
-        isActive: normalizeProductActiveState(payload?.isActive, true),
+        isActive: nextIsActive,
       }, previousProduct);
       let updatedProduct = applyAdminId({
         ...normalizedVisibilityProduct,
@@ -32382,7 +40256,7 @@ function hasPartnerActiveStatePayload(payload) {
 }
 
 function hasPartnerDetailPayload(payload) {
-  return ["branch", "name", "description", "imageUrl", "apiKey"].some((key) =>
+  return ["branch", "name", "description", "imageUrl", "apiKey", "paymongoMethod"].some((key) =>
     Object.prototype.hasOwnProperty.call(payload ?? {}, key)
   );
 }
@@ -32648,6 +40522,9 @@ async function handleSinglePartnerApi(request, response, partnerId, partnerType)
 
       const expectedVersion = getPartnerExpectedVersion(payload, request);
       const actorId = getPartnerMutationActorId(payload, requestAdminId, requestIsSuperAdmin);
+      const paymongoSyncState = config.type === "payment"
+        ? getPaymongoSyncState(await readWorkspaceSettings())
+        : null;
       const result = await runPartnerMutation(config.type, async () => {
         const partners = await config.read();
         const partnerIndex = partners.findIndex((partner) =>
@@ -32687,6 +40564,24 @@ async function handleSinglePartnerApi(request, response, partnerId, partnerType)
           action = isPartnerArchived(previousPartner) ? "restored" : "status-updated";
         }
 
+        if (
+          paymongoSyncState
+          && updatedPartner?.isActive === true
+          && (previousPartner?.isActive !== true || hasDetails)
+        ) {
+          const blocker = getPaymongoActivationBlocker(updatedPartner, paymongoSyncState);
+          if (blocker) {
+            throw createPartnerApiError(409, blocker, "PAYMONGO_METHOD_UNAVAILABLE");
+          }
+        }
+
+        if (
+          config.type === "delivery"
+          && isSwitchRiderPartnerName(updatedPartner.branch ?? updatedPartner.name)
+          && !isSwitchRiderPartnerName(previousPartner.branch ?? previousPartner.name)
+        ) {
+          throw createPartnerApiError(409, SWITCH_RIDER_RESERVED_PARTNER_MESSAGE, "PARTNER_NAME_RESERVED");
+        }
         if (hasDuplicatePartnerInScope(partners, updatedPartner, partnerId)) {
           throw createPartnerApiError(
             409,
@@ -32800,6 +40695,9 @@ async function handlePartnerBulkApi(request, response, partnerType) {
       ? payload.expectedVersions
       : {};
     const actorId = getPartnerMutationActorId(payload, requestAdminId, requestIsSuperAdmin);
+    const paymongoSyncState = config.type === "payment"
+      ? getPaymongoSyncState(await readWorkspaceSettings())
+      : null;
 
     const result = await runPartnerMutation(config.type, async () => {
       const partners = await config.read();
@@ -32864,6 +40762,13 @@ async function handlePartnerBulkApi(request, response, partnerType) {
           continue;
         } else {
           updatedPartner = applyPartnerActiveState(previousPartner, { isActive: false });
+        }
+
+        if (paymongoSyncState && updatedPartner?.isActive === true && previousPartner?.isActive !== true) {
+          const blocker = getPaymongoActivationBlocker(updatedPartner, paymongoSyncState);
+          if (blocker) {
+            throw createPartnerApiError(409, blocker, "PAYMONGO_METHOD_UNAVAILABLE", { partnerId });
+          }
         }
 
         if (hasDuplicatePartnerInScope(partners, updatedPartner, partnerId)) {
@@ -33089,6 +40994,16 @@ async function serveStaticFile(request, requestPath, response) {
     });
     fs.createReadStream(finalPath).pipe(response);
   } catch (error) {
+    const uploadFileName = path.dirname(filePath) === UPLOADS_DIR ? path.basename(filePath) : "";
+    if (objectStorage.isRemote && uploadFileName && isSafeUploadFileName(uploadFileName)) {
+      setCorsHeaders(response);
+      response.writeHead(302, {
+        Location: objectStorage.publicUrl(uploadFileName),
+        "Cache-Control": "public, max-age=86400",
+      });
+      response.end();
+      return;
+    }
     sendText(response, 404, "Not Found");
   }
 }
@@ -33096,9 +41011,11 @@ async function serveStaticFile(request, requestPath, response) {
 const platformFeedbackApi = createPlatformFeedbackApi({
   DATA_DIR,
   UPLOADS_DIR,
+  objectStorage,
   ensureStoragePaths,
   writeJsonFileAtomically,
   readAccounts,
+  writeAccounts,
   findAdminAccountByScopeId,
   getExplicitRequestAdminId,
   requireSuperAdmin,
@@ -33112,7 +41029,136 @@ const platformFeedbackApi = createPlatformFeedbackApi({
   MAX_UPLOAD_SIZE_LABEL,
   MAX_REVIEW_VIDEO_BYTES,
   MAX_REVIEW_VIDEO_SIZE_LABEL,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  logActivitySafely,
+  notifySellerAdminInboxByAdminId,
 });
+
+/** Cached public catalog labels used to gate Top Searches (products, sellers, types). */
+let trendingSearchCatalogCache = { expiresAt: 0, terms: [] };
+/** Cached approved live listings used for trending card preview photos. */
+let trendingListingProductsCache = { expiresAt: 0, products: [] };
+
+async function loadSearchCatalogTermsForTrending() {
+  const now = Date.now();
+  if (
+    trendingSearchCatalogCache.expiresAt > now &&
+    Array.isArray(trendingSearchCatalogCache.terms)
+  ) {
+    return trendingSearchCatalogCache.terms;
+  }
+
+  const terms = [];
+  const pushTerm = (value, source) => {
+    const display = String(value ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+    if (!display) return;
+    terms.push({ display, source });
+  };
+
+  try {
+    const [products, accounts, storeTypes, platforms] = await Promise.all([
+      readProducts({ publicCatalog: true }).catch(() => []),
+      readAccounts().catch(() => []),
+      readStoreTypes().catch(() => []),
+      (async () => {
+        try {
+          await ensureStoragePaths();
+          const raw = await fsPromises.readFile(PLATFORMS_FILE, "utf8");
+          const decoded = JSON.parse(raw);
+          return Array.isArray(decoded) ? decoded : [];
+        } catch (_) {
+          return [];
+        }
+      })(),
+    ]);
+
+    for (const product of Array.isArray(products) ? products : []) {
+      if (product?.isActive === false) continue;
+      pushTerm(product?.name ?? product?.title, "product");
+      for (const category of getProductCategoryList(product)) {
+        pushTerm(category, "category");
+      }
+      pushTerm(product?.companyName ?? product?.storeName ?? product?.sellerName, "seller");
+      pushTerm(getProductStoreTypeName(product), "store_type");
+    }
+
+    for (const account of Array.isArray(accounts) ? accounts : []) {
+      if (!isAdminAccount(account)) continue;
+      if (isSellerAccountRecordBanned(account)) continue;
+      if (getSellerAccountDeletionStatus(account) === "deleted") continue;
+      pushTerm(getSellerCompanyDisplayName(account), "seller");
+      pushTerm(account?.name, "seller");
+      pushTerm(getAccountStoreTypeName(account), "store_type");
+    }
+
+    for (const storeType of Array.isArray(storeTypes) ? storeTypes : []) {
+      pushTerm(storeType?.name, "store_type");
+      const categories = Array.isArray(storeType?.categories)
+        ? storeType.categories
+        : Array.isArray(storeType?.categoryDetails)
+          ? storeType.categoryDetails.map((detail) => detail?.name)
+          : [];
+      for (const category of categories) {
+        pushTerm(category, "category");
+      }
+    }
+
+    for (const platform of Array.isArray(platforms) ? platforms : []) {
+      pushTerm(platform?.name ?? platform?.label, "platform");
+    }
+  } catch (error) {
+    console.warn(
+      "Trending search catalog load failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+
+  trendingSearchCatalogCache = {
+    expiresAt: now + 60_000,
+    terms,
+  };
+  return terms;
+}
+
+async function loadPublicListingProductsForTrending() {
+  const now = Date.now();
+  if (
+    trendingListingProductsCache.expiresAt > now &&
+    Array.isArray(trendingListingProductsCache.products)
+  ) {
+    return trendingListingProductsCache.products;
+  }
+
+  let products = [];
+  try {
+    products = await readProducts({ publicCatalog: true });
+    products = Array.isArray(products) ? products : [];
+  } catch (error) {
+    console.warn(
+      "Trending listing preview load failed:",
+      error instanceof Error ? error.message : error,
+    );
+    products = [];
+  }
+
+  trendingListingProductsCache = {
+    expiresAt: now + 60_000,
+    products,
+  };
+  return products;
+}
+
+async function countSearchAudienceUsersForTrending() {
+  try {
+    const accounts = await readAccounts();
+    return (Array.isArray(accounts) ? accounts : []).filter((account) =>
+      isBuyerAccountRecord(account),
+    ).length;
+  } catch (_) {
+    return 0;
+  }
+}
 
 const trendingSearchesApi = createTrendingSearchesApi({
   DATA_DIR,
@@ -33120,8 +41166,10 @@ const trendingSearchesApi = createTrendingSearchesApi({
   writeJsonFileAtomically,
   requireSuperAdmin,
   sendJson,
-  parseRequestBody,
   getRequestAccountIdentifier,
+  loadSearchCatalogTerms: loadSearchCatalogTermsForTrending,
+  loadPublicListingProducts: loadPublicListingProductsForTrending,
+  countSearchAudienceUsers: countSearchAudienceUsersForTrending,
 });
 
 const mapsPlacesApi = createMapsPlacesApi({
@@ -33139,12 +41187,17 @@ const vouchersApi = createVouchersApi({
   isUsableProductAdminScope,
   readAccounts,
   findAdminAccountByScopeId,
+  findCompanyById,
+  readStoreTypes,
+  readProducts,
   requireAdminRestrictionAllowed,
   persistSuperAdminNotification,
   createPersistentLinkedNotification,
   logActivitySafely,
+  notifySellerAdminInboxByAdminId,
   sendJson,
   parseRequestBody,
+  getRequestAccountIdentifier,
 });
 
 const flashDealsApi = createFlashDealsApi({
@@ -33168,7 +41221,9 @@ const flashDealsApi = createFlashDealsApi({
   writeAccounts,
   notifySellerAdminInboxByAdminId,
   readProducts,
+  readApprovedProductTrainingRecords,
   isRecordInAdminScope,
+  readStoreTypeDetails: async () => getGlobalStoreTypeDetails(await readStoreTypes()),
   sendJson,
   parseRequestBody,
 });
@@ -33196,6 +41251,7 @@ const buyerDeliveryAddressesApi = createBuyerDeliveryAddressesApi({
 const restoredSaApis = createRestoreMissingSaApis({
   DATA_DIR,
   UPLOADS_DIR,
+  objectStorage,
   ensureStoragePaths,
   writeJsonFileAtomically,
   enqueueSerializedMutation,
@@ -33208,6 +41264,12 @@ const restoredSaApis = createRestoreMissingSaApis({
   writeWorkspaceSettings,
   setCorsHeaders,
   biometricFirmwareCompile,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  notifySellerAdminInboxByAdminId,
+  findCompanyById,
+  logSuperAdminSystemActivity,
+  isSuperAdminAuthorized,
 });
 
 const ordersWaybillApi = createOrdersWaybillApi({
@@ -33223,6 +41285,352 @@ const ordersWaybillApi = createOrdersWaybillApi({
   isRecordInAdminScope,
   parseFiniteNumber,
   normalizeStoredOrderEntry,
+});
+
+const sellerBuyerProtectionApi = createSellerBuyerProtectionApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  enqueueSerializedMutation,
+  requireSuperAdmin,
+  sendJson,
+  parseRequestBody,
+  createHttpError,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  notifySellerAdminInboxByAdminId,
+  findCompanyById,
+  logActivitySafely,
+  readAccounts,
+  writeAccounts,
+  readOrders,
+  readProducts,
+  writeProducts,
+  findCustomerById,
+  getRequestAdminId,
+  getRecordAdminId,
+  SUPER_ADMIN_USERNAME,
+});
+
+const companyReportsApi = createCompanyReportsApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  enqueueSerializedMutation,
+  requireSuperAdmin,
+  sendJson,
+  parseRequestBody,
+  createHttpError,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  notifySellerAdminInboxByAdminId,
+  findCompanyById,
+  logActivitySafely,
+  readAccounts,
+  writeAccounts,
+  readProducts,
+  readOrders,
+  findAdminAccountByScopeId,
+  applySuperAdminSellerNotifyAction,
+  getRecordAdminId,
+  SUPER_ADMIN_USERNAME,
+  getRequestClientIp,
+  resolveSaNotificationUserActor,
+});
+
+function switchRiderDatabaseUnavailable() {
+  return createHttpError("Switch Rider needs PostgreSQL. Set DATABASE_URL and run npm run db:migrate.", 503, {
+    code: "SWITCH_RIDER_UNAVAILABLE",
+  });
+}
+
+const switchRiderDb = {
+  query(text, params) {
+    if (!isPostgresConfigured()) return Promise.reject(switchRiderDatabaseUnavailable());
+    return pgQuery(text, params);
+  },
+  withTransaction(work) {
+    if (!isPostgresConfigured()) return Promise.reject(switchRiderDatabaseUnavailable());
+    return pgWithTransaction(work);
+  },
+};
+
+async function notifySellerForSwitchRider(adminId, notice) {
+  const createdAt = new Date().toISOString();
+  const id = `switch-rider-${notice.type}-${notice.deliveryId || "general"}-${Date.now()}`;
+  await notifySellerAdminInboxByAdminId(adminId, {
+    id,
+    type: notice.type,
+    audience: "seller",
+    title: notice.title,
+    message: notice.message,
+    priority: notice.priority || "normal",
+    adminId,
+    deliveryId: notice.deliveryId || "",
+    orderGroupId: notice.orderGroupId || "",
+    status: "unread",
+    createdAt,
+    createdBy: "Switch Rider",
+  });
+  await logActivitySafely({
+    id: `activity-${id}`,
+    type: notice.type,
+    action: notice.type,
+    source: "switch_rider",
+    adminId,
+    title: notice.title,
+    description: notice.message,
+    actor: { role: "system", accountId: "switch-rider", displayName: "Switch Rider" },
+    createdAt,
+    skipLinkedNotification: true,
+  });
+}
+
+async function notifySuperAdminForSwitchRider(notice) {
+  const createdAt = new Date().toISOString();
+  const shaped = createPersistentLinkedNotification({
+    id: `sa-switch-rider-${notice.type}-${notice.deliveryId || notice.riderId || "general"}-${Date.now()}`,
+    type: notice.type,
+    title: notice.title,
+    message: notice.message,
+    priority: notice.priority || "normal",
+    adminId: notice.sellerAdminId || "",
+    actorType: "system",
+    createdBy: "switch-rider",
+    targetUrl: notice.deliveryId
+      ? `/super_admin.html#switch-rider?delivery=${encodeURIComponent(notice.deliveryId)}`
+      : notice.riderId
+        ? `/super_admin.html#switch-rider?rider=${encodeURIComponent(notice.riderId)}`
+        : "/super_admin.html#switch-rider",
+    createdAt,
+  });
+  await persistSuperAdminNotification(shaped);
+  await logActivitySafely({
+    id: `activity-${shaped.id}`,
+    type: notice.type,
+    action: notice.type,
+    source: "switch_rider",
+    adminId: notice.sellerAdminId || "",
+    title: notice.title,
+    description: notice.message,
+    actor: { role: "system", accountId: "switch-rider", displayName: "Switch Rider" },
+    createdAt,
+    skipLinkedNotification: true,
+  });
+}
+
+const switchRiderOrderBridge = createSwitchRiderOrderBridge({
+  readOrders,
+  writeOrders,
+  catalogWriteScope,
+  normalizeStoredOrderEntry,
+  isScopedOrderGroupEntry,
+  isCodPaymentOption,
+  readProducts,
+  writeProducts,
+  isRecordInAdminScope,
+  readAccounts,
+  findAdminAccountByScopeId,
+});
+
+const switchRiderService = createSwitchRiderService({
+  db: switchRiderDb,
+  secret: resolveSwitchRiderSecret(process.env),
+  notifier: {
+    notifySeller: notifySellerForSwitchRider,
+    notifySuperAdmin: notifySuperAdminForSwitchRider,
+  },
+  orderBridge: switchRiderOrderBridge,
+  privateFiles: createPrivateFileStore({ env: process.env, baseDir: path.join(DATA_DIR, "private_uploads") }),
+  routeProvider: createRouteProvider({
+    getApiKey: () => String(process.env.GOOGLE_MAPS_ROUTES_API_KEY || process.env.GOOGLE_MAPS_API_KEY || "").trim(),
+  }),
+  verifyRiderSocialCredential: async ({ provider, idToken, accessToken }) => {
+    const normalizedProvider = String(provider || "").trim().toLowerCase();
+    if (normalizedProvider === "google") {
+      const profile = await verifyGoogleCredential({ idToken, accessToken });
+      return { ...profile, provider: "google" };
+    }
+    throw new Error("Facebook sign-in is not configured yet.");
+  },
+  verifyRegistrationEmail: async ({ email, verificationToken, socialProvider, idToken, accessToken }) => {
+    if (socialProvider) {
+      const normalizedProvider = String(socialProvider).trim().toLowerCase();
+      if (normalizedProvider !== "google") throw new Error("Facebook sign-in is not configured yet.");
+      const profile = await verifyGoogleCredential({ idToken, accessToken });
+      if (String(profile.email || "").trim().toLowerCase() !== String(email || "").trim().toLowerCase()) {
+        throw new Error("The Google account does not match this rider application.");
+      }
+      return profile;
+    }
+    return consumeVerificationToken({
+      purpose: "rider_registration",
+      channel: "email",
+      target: email,
+      verificationToken,
+    });
+  },
+});
+switchRiderOrderBridge.attachService(switchRiderService);
+
+const switchRiderApi = createSwitchRiderApi({
+  service: switchRiderService,
+  appSessionAuth,
+  sendJson,
+  parseRequestBody,
+  setCorsHeaders,
+  isSuperAdminAuthorized,
+  loginLockout,
+  getRequestIpAddress,
+  loadSellerOrderGroup: switchRiderOrderBridge.loadSellerOrderGroup,
+  superAdminActorId: SUPER_ADMIN_USERNAME || "super-admin",
+  supportContacts: {
+    hotline: String(process.env.SWITCH_RIDER_SUPPORT_HOTLINE || "").trim(),
+    email: String(process.env.SWITCH_RIDER_SUPPORT_EMAIL || "").trim(),
+  },
+});
+
+async function getAiAssistantBuyerProfile(accountId) {
+  let account = null;
+  if (await isCustomerPostgresReady()) {
+    account = await findCustomerById(accountId).catch(() => null);
+  }
+  if (!account) {
+    const accounts = await readAccounts();
+    const index = findBuyerAccountIndexById(accounts, accountId);
+    account = index >= 0 ? accounts[index] : null;
+  }
+  if (!account) return null;
+  const name = [account.firstName, account.lastName].map((part) => String(part ?? "").trim()).filter(Boolean).join(" ")
+    || String(account.fullName ?? account.name ?? "").trim();
+  const digits = String(account.mobileNumber ?? "").replace(/\D/g, "").replace(/^0+/, "");
+  const countryCode = String(account.countryCode ?? "+63").trim() || "+63";
+  const phone = digits ? `${countryCode.startsWith("+") ? countryCode : `+${countryCode}`}${digits}` : "";
+  return { name, phone };
+}
+
+const aiAssistantApi = createAiAssistantApi({
+  DATA_DIR,
+  pg: { query: pgQuery, isPostgresConfigured },
+  sendJson,
+  getSessionToken: (request) => appSessionAuth.getRequestSessionToken(request),
+  getHandler: () => handleHttpRequest,
+  getPlatformSettings,
+  isPlatformSettingEnabled,
+  flashDealPricing,
+  flashDealsApi,
+  vouchersApi,
+  voucherRules,
+  readOrders,
+  getBuyerProfile: getAiAssistantBuyerProfile,
+  getSwitchRiderBuyerTracking: (accountId, orderGroupId) => switchRiderService.getBuyerTracking(accountId, orderGroupId),
+  isSwitchRiderPartnerName,
+  resolveLaunchedProvider: () => restoredSaApis.getLaunchedAssistantProvider(),
+  isSuperAdminAuthorized,
+  confirmationSecret: String(
+    process.env.AI_ASSISTANT_CONFIRMATION_SECRET
+      || process.env.APP_SESSION_SECRET
+      || process.env.ADMIN_API_SESSION_SECRET
+      || "",
+  ).trim(),
+});
+
+function sendSwitchRiderCheckoutError(response, error) {
+  sendJson(response, error?.statusCode || 409, {
+    message: error?.message || "Switch Rider could not confirm this delivery.",
+    code: error?.code || "SWITCH_RIDER_CHECKOUT_FAILED",
+    ...(error?.expectedFee !== undefined ? { expectedFee: error.expectedFee } : {}),
+  });
+}
+
+function sendSwitchRiderOrderConflict(response, message, code = "SWITCH_RIDER_ORDER") {
+  sendJson(response, 409, { message, code });
+}
+
+function isSwitchRiderUnavailableError(error) {
+  return error?.code === "SWITCH_RIDER_UNAVAILABLE" || error?.code === "42P01";
+}
+
+async function checkSwitchRiderOrderCancellation(entries) {
+  if (!entries.length || !entries.every(isSwitchRiderOrderEntry)) return { allowed: true };
+  try {
+    const { orderGroupId } = switchRiderOrderBridge.summarizeOrderGroup(entries);
+    return await switchRiderService.canCancelOrderGroup(orderGroupId);
+  } catch (error) {
+    if (isSwitchRiderUnavailableError(error)) return { allowed: true };
+    throw error;
+  }
+}
+
+async function cancelSwitchRiderJobForOrder(entries, sellerAdminId, reason) {
+  if (!entries.length || !entries.every(isSwitchRiderOrderEntry)) return;
+  try {
+    const { orderGroupId } = switchRiderOrderBridge.summarizeOrderGroup(entries);
+    await switchRiderService.cancelJobForOrderGroup(orderGroupId, { reason }, { type: "seller", id: sellerAdminId });
+  } catch (error) {
+    // The periodic reconcile retries cancelled orders whose delivery is still open.
+    if (!isSwitchRiderUnavailableError(error)) {
+      console.warn("Switch Rider: could not cancel delivery for cancelled order:", error?.message || error);
+    }
+  }
+}
+
+async function isSwitchRiderOrderGroup(adminId, groupKey) {
+  const orders = await readOrders({ adminId });
+  const entries = orders.filter((entry) => isScopedOrderGroupEntry(entry, adminId, groupKey));
+  return entries.length > 0 && entries.every(isSwitchRiderOrderEntry);
+}
+
+const SWITCH_RIDER_SWEEP_MS = 10 * 1000;
+const SWITCH_RIDER_RECONCILE_MS = 2 * 60 * 1000;
+let switchRiderSchemaWarned = false;
+let switchRiderLastReconcileAt = 0;
+
+async function runSwitchRiderMaintenance() {
+  if (!isPostgresConfigured()) return;
+  try {
+    await switchRiderService.runSweep();
+    if (Date.now() - switchRiderLastReconcileAt >= SWITCH_RIDER_RECONCILE_MS) {
+      switchRiderLastReconcileAt = Date.now();
+      await switchRiderOrderBridge.reconcileCancelledOrders();
+    }
+  } catch (error) {
+    if (error?.code === "42P01") {
+      if (!switchRiderSchemaWarned) {
+        switchRiderSchemaWarned = true;
+        console.warn("Switch Rider: tables missing — run `npm run db:migrate` to enable it.");
+      }
+      return;
+    }
+    console.warn("Switch Rider maintenance failed:", error?.message || error);
+  }
+}
+
+const listingReportsApi = createListingReportsApi({
+  DATA_DIR,
+  ensureStoragePaths,
+  writeJsonFileAtomically,
+  enqueueSerializedMutation,
+  requireSuperAdmin,
+  sendJson,
+  parseRequestBody,
+  createHttpError,
+  persistSuperAdminNotification,
+  createPersistentLinkedNotification,
+  notifySellerAdminInboxByAdminId,
+  findCompanyById,
+  logActivitySafely,
+  readAccounts,
+  writeAccounts,
+  readProducts,
+  writeProducts,
+  readOrders,
+  findAdminAccountByScopeId,
+  applySuperAdminProductListingRestrictionNotification,
+  getRecordAdminId,
+  SUPER_ADMIN_USERNAME,
+  getRequestClientIp,
+  resolveSaNotificationUserActor,
 });
 
 const analyticsApi = createAnalyticsApi({
@@ -33262,8 +41670,16 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
     || pathname.startsWith("/api/account/devices")
     || pathname.startsWith("/api/account/become-seller/")
     || pathname.startsWith("/api/account/seller-switch-pin/")
+    || pathname === "/api/account/company-reports"
+    || pathname.startsWith("/api/account/company-reports/")
+    || pathname === "/api/account/listing-reports"
+    || pathname.startsWith("/api/account/listing-reports/")
   ) {
     return { roles: allAccountRoles, identityKind: "account" };
+  }
+
+  if (pathname.startsWith("/api/seller/buyer-protection/")) {
+    return { roles: tenantRoles, identityKind: "admin" };
   }
 
   if (
@@ -33296,6 +41712,10 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
 
   if (pathname === "/api/product-reviews/reply") {
     return { roles: tenantRoles, identityKind: "admin" };
+  }
+
+  if (pathname === "/api/review-media-likes") {
+    return method === "GET" ? null : { roles: allAccountRoles };
   }
 
   if (
@@ -33359,14 +41779,17 @@ function getRequiredAppSessionPolicy(requestUrl, methodValue) {
     return { roles: tenantRoles, identityKind: "admin" };
   }
 
-  if (pathname === "/api/platform-feedback" && method === "POST") {
-    return { roles: tenantRoles, identityKind: "admin" };
+  if (
+    (pathname === "/api/platform-feedback" || pathname === "/api/platform-feedback/uploads")
+    && method === "POST"
+  ) {
+    return { roles: allAccountRoles, identityKind: "auto" };
   }
 
   return null;
 }
 
-const server = http.createServer(async (request, response) => {
+async function handleHttpRequest(request, response) {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
   corsRequestByResponse.set(response, request);
 
@@ -33392,6 +41815,7 @@ const server = http.createServer(async (request, response) => {
     requestUrl.pathname.startsWith("/api/")
     && requestUrl.pathname !== "/api/payments/paymongo/seller-webhook"
     && requestUrl.pathname !== "/api/payments/paymongo/buyer-webhook"
+    && requestUrl.pathname !== "/api/couriers/lalamove/webhook"
     && isDisallowedCrossOrigin(request, CORS_EXTRA_ORIGINS)
   ) {
     sendJson(response, 403, {
@@ -33409,6 +41833,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   attachAppSession(request);
+
+  if (await enforcePlatformMaintenanceGate(request, response, requestUrl)) {
+    return;
+  }
+
   const appSessionPolicy = getRequiredAppSessionPolicy(requestUrl, request.method);
   if (
     appSessionPolicy
@@ -33532,6 +41961,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/couriers/lalamove/webhook") {
+    await handleLalamoveCourierWebhookApi(request, response);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/orders/checkout-session") {
     await handleBuyerOrderCheckoutSessionApi(request, response);
     return;
@@ -33572,8 +42006,40 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/account/seller-switch-pin/forgot") {
+    await handleSellerSwitchPinApi(request, response, "forgot");
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public/seller-switch-pin/reset") {
+    if (request.method === "GET") {
+      await handlePublicSellerSwitchPinResetApi(request, response, requestUrl, "preview");
+      return;
+    }
+    if (request.method === "POST") {
+      await handlePublicSellerSwitchPinResetApi(request, response, requestUrl, "reset");
+      return;
+    }
+    sendJson(response, 405, { message: "Method not allowed." });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/public/seller-switch-pin/unlock") {
+    if (request.method !== "POST") {
+      sendJson(response, 405, { message: "Method not allowed." });
+      return;
+    }
+    await handlePublicSellerSwitchPinResetApi(request, response, requestUrl, "unlock");
+    return;
+  }
+
   if (requestUrl.pathname === "/api/account/become-seller/open-workspace") {
     await handleBecomeSellerOpenWorkspaceApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/account/become-seller/withdraw-company") {
+    await handleWithdrawPendingSellerCompanyApi(request, response);
     return;
   }
 
@@ -33641,12 +42107,29 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (requestUrl.pathname === "/api/super-admin/admins") {
-    await handleSuperAdminAdminsApi(request, response);
+    await handleSuperAdminAdminsApi(request, response, requestUrl);
     return;
   }
 
   if (requestUrl.pathname === "/api/super-admin/companies/pending-review") {
     await handleSuperAdminPendingCompaniesApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/super-admin/companies/export") {
+    await handleSuperAdminCompaniesExportApi(request, response);
+    return;
+  }
+
+  const superAdminCompanyEarningsMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/companies\/([^/]+)\/earnings$/,
+  );
+  if (superAdminCompanyEarningsMatch) {
+    await handleSuperAdminCompanyEarningsApi(
+      request,
+      response,
+      decodeURIComponent(superAdminCompanyEarningsMatch[1] ?? ""),
+    );
     return;
   }
 
@@ -33704,13 +42187,28 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/super-admin/product-specifications") {
+    await handleSuperAdminProductSpecificationsApi(request, response);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/super-admin/platforms") {
     await handleSuperAdminPlatformsApi(request, response, requestUrl);
     return;
   }
 
+  if (requestUrl.pathname === "/api/super-admin/activity") {
+    await handleSuperAdminActivityApi(request, response, requestUrl);
+    return;
+  }
+
   if (requestUrl.pathname === "/api/super-admin/product-requests") {
     await handleSuperAdminProductRequestsApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/super-admin/payment-transactions") {
+    await handleSuperAdminPaymentTransactionsApi(request, response, requestUrl);
     return;
   }
 
@@ -33763,6 +42261,18 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  const superAdminAdminRequirePinResetMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/admins\/([^/]+)\/require-pin-reset$/,
+  );
+  if (superAdminAdminRequirePinResetMatch) {
+    await handleSuperAdminRequirePinResetApi(
+      request,
+      response,
+      decodeURIComponent(superAdminAdminRequirePinResetMatch[1] ?? ""),
+    );
+    return;
+  }
+
   const superAdminBuyerActivityMatch = requestUrl.pathname.match(
     /^\/api\/super-admin\/buyers\/([^/]+)\/activity$/,
   );
@@ -33784,6 +42294,18 @@ const server = http.createServer(async (request, response) => {
       request,
       response,
       decodeURIComponent(superAdminBuyerActionMatch[1] ?? ""),
+    );
+    return;
+  }
+
+  const superAdminBuyerDeleteTestDataMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/buyers\/([^/]+)\/data$/,
+  );
+  if (superAdminBuyerDeleteTestDataMatch) {
+    await handleSuperAdminBuyerDeleteTestDataApi(
+      request,
+      response,
+      decodeURIComponent(superAdminBuyerDeleteTestDataMatch[1] ?? ""),
     );
     return;
   }
@@ -33836,6 +42358,18 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  const superAdminProductListingUnrestrictMatch = requestUrl.pathname.match(
+    /^\/api\/super-admin\/products\/([^/]+)\/unrestrict-listing$/,
+  );
+  if (superAdminProductListingUnrestrictMatch) {
+    await handleSuperAdminProductListingUnrestrictApi(
+      request,
+      response,
+      decodeURIComponent(superAdminProductListingUnrestrictMatch[1] ?? ""),
+    );
+    return;
+  }
+
   const superAdminProductDetectionLabelMatch = requestUrl.pathname.match(
     /^\/api\/super-admin\/products\/([^/]+)\/detection-label$/,
   );
@@ -33857,6 +42391,16 @@ const server = http.createServer(async (request, response) => {
       response,
       decodeURIComponent(superAdminProductImagesMatch[1] ?? ""),
     );
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/super-admin/approved-product-training/images") {
+    await handleSuperAdminApprovedProductTrainingImagesApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/super-admin/rejected-product-training/images") {
+    await handleSuperAdminRejectedProductTrainingImagesApi(request, response);
     return;
   }
 
@@ -33897,7 +42441,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   const superAdminProductCancelMatch = requestUrl.pathname.match(
-    /^\/api\/super-admin\/products\/([^/]+)\/cancel$/,
+    /^\/api\/super-admin\/products\/([^/]+)\/(cancel|reject)$/,
   );
   if (superAdminProductCancelMatch) {
     await handleSuperAdminProductCancelApi(
@@ -33937,6 +42481,11 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/product-reviews/reply") {
     await handleProductReviewReplyApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/review-media-likes") {
+    await handleReviewMediaLikesApi(request, response);
     return;
   }
 
@@ -33992,6 +42541,15 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/product-specifications") {
+    if (request.method !== "GET") {
+      sendJson(response, 405, { message: "Method not allowed." });
+      return;
+    }
+    sendJson(response, 200, await buildProductSpecificationsResponse());
+    return;
+  }
+
   if (requestUrl.pathname === "/api/delivery-partners") {
     await handleDeliveryPartnersApi(request, response);
     return;
@@ -34004,6 +42562,11 @@ const server = http.createServer(async (request, response) => {
 
   if (requestUrl.pathname === "/api/payment-partners/api-key") {
     await handlePaymentPartnerApiKeyApi(request, response);
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/payment-partners/paymongo-methods") {
+    await handlePaymongoPaymentMethodsApi(request, response);
     return;
   }
 
@@ -34146,6 +42709,26 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (await aiAssistantApi.tryHandleAssistantRoutes(request, response, requestUrl)) {
+    return;
+  }
+
+  if (await switchRiderApi.tryHandleSwitchRiderRoutes(request, response, requestUrl)) {
+    return;
+  }
+
+  if (await sellerBuyerProtectionApi.tryHandleSellerBuyerProtectionRoutes(request, response, requestUrl)) {
+    return;
+  }
+
+  if (await companyReportsApi.tryHandleCompanyReportRoutes(request, response, requestUrl)) {
+    return;
+  }
+
+  if (await listingReportsApi.tryHandleListingReportRoutes(request, response, requestUrl)) {
+    return;
+  }
+
   if (await restoredSaApis.tryHandleRestoredRoutes(request, response, requestUrl)) {
     return;
   }
@@ -34262,8 +42845,32 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  const shareLinkMatch = ["GET", "HEAD"].includes(String(request.method || "GET").toUpperCase())
+    ? requestUrl.pathname.match(/^\/([ls])\/([^/]+)\/?$/)
+    : null;
+  if (shareLinkMatch) {
+    let shareId = "";
+    try {
+      shareId = decodeURIComponent(shareLinkMatch[2] || "").trim();
+    } catch (_) {
+      shareId = "";
+    }
+    const shareParam = shareLinkMatch[1] === "l" ? "productId" : "adminId";
+    response.statusCode = 302;
+    response.setHeader(
+      "Location",
+      shareId
+        ? `/switch_shop.html?${shareParam}=${encodeURIComponent(shareId)}`
+        : "/switch_shop.html",
+    );
+    response.end();
+    return;
+  }
+
   await serveStaticFile(request, requestUrl.pathname, response);
-});
+}
+
+const server = http.createServer(handleHttpRequest);
 
 Promise.resolve()
   .then(() => {
@@ -34332,6 +42939,7 @@ Promise.resolve()
       for (const url of getServerUrls()) {
         console.log(`- ${url}`);
       }
+      console.log(`Upload storage: ${objectStorage.describe()}`);
       void processDueSellerAccountDeletions();
       setInterval(() => {
         void processDueSellerAccountDeletions();
@@ -34351,6 +42959,12 @@ Promise.resolve()
           );
         });
       }, FLASH_DEAL_LIFECYCLE_MS).unref?.();
+      if (isPostgresConfigured()) {
+        void runSwitchRiderMaintenance();
+        setInterval(() => {
+          void runSwitchRiderMaintenance();
+        }, SWITCH_RIDER_SWEEP_MS).unref?.();
+      }
     });
   })
   .catch((error) => {

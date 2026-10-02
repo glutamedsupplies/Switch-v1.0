@@ -37,7 +37,7 @@
     />
     <link rel="stylesheet" href="/main_dart.css?v=main-dart-companies-add-1" />
     <link rel="stylesheet" href="/admin_signup.css?v=switch-upgrade-signup-ui-1" />
-    <link rel="stylesheet" href="/switch_account.css?v=switch-account-upgrade-pin-1" />
+    <link rel="stylesheet" href="/switch_account.css?v=first-company-free-1" />
   </head>
   <body class="md-app md-account-settings-app">
     <header class="login-site-header" aria-label="Switch header">
@@ -365,17 +365,16 @@
               <div>
                 <p class="ba-eyebrow">Switch Partners</p>
                 <h2>Be Part of Switch</h2>
-                <p>Start on Free, or pick a paid plan for the Legit seller badge on original products. Create a Switch PIN, then set up your company.</p>
+                <p>Every account gets one free company. There is no subscription. The legitimate seller badge is earned from ratings, fast replies, and how well you resolve buyer problems.</p>
               </div>
-              <button type="button" class="ba-primary-btn" data-ba-start-seller>Start upgrade</button>
+              <button type="button" class="ba-primary-btn" data-ba-start-seller>Start free company</button>
             </div>
             <ol class="ba-steps-preview">
-              <li>Choose Free or a paid plan (paid plans unlock the Legit badge)</li>
-              <li>Register Visa / Mastercard (paid plans only)</li>
+              <li>One free company per account — no plan and no payment</li>
               <li>Create a Switch PIN</li>
-              <li>Verify email or phone if needed</li>
-              <li>Company name, business type &amp; photo</li>
-              <li>Enter Switch PIN to open seller admin</li>
+              <li>Company name, seller type, documents &amp; payout bank</li>
+              <li>Earn the legitimate badge from ratings, speed, and service</li>
+              <li>Super Admin review, then Switch PIN to open seller admin</li>
             </ol>
             <p class="ba-feedback" data-ba-seller-status aria-live="polite"></p>
           </article>
@@ -420,7 +419,7 @@
         <header class="ba-wizard__header">
           <div>
             <p class="ba-eyebrow">Switch Partners</p>
-            <h2 id="ba-wizard-title">Choose Your Plan</h2>
+            <h2 id="ba-wizard-title">Create your company</h2>
           </div>
           <button type="button" class="ba-icon-btn" data-ba-wizard-close aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -430,91 +429,8 @@
         <div class="ba-wizard__progress" data-ba-wizard-progress aria-hidden="true"></div>
         <p class="ba-wizard__feedback" data-ba-wizard-feedback aria-live="polite"></p>
 
-        <div class="ba-wizard__step is-active" data-ba-step="plan">
-          <p class="ba-wizard__lead">Get the tools you need to build, grow, and scale â€” with flexible plans for every stage.</p>
-          <div class="ba-billing-toggle" role="group" aria-label="Billing cycle">
-            <button type="button" class="is-active" data-ba-billing="monthly">Monthly</button>
-            <button type="button" data-ba-billing="yearly">Yearly <span class="ba-save-badge">Save 20%</span></button>
-          </div>
-          <div class="ba-plan-grid" data-ba-plan-grid></div>
-          <div class="ba-trust-row">
-            <div><strong>Prototype billing</strong><span>No real charge in this build.</span></div>
-            <div><strong>Change anytime</strong><span>Plans stay editable after launch.</span></div>
-            <div><strong>Unified account</strong><span>Keep shopping as a buyer.</span></div>
-          </div>
-        </div>
-
-        <div class="ba-wizard__step" data-ba-step="card" hidden>
-          <p class="ba-wizard__lead">Register a Visa or Mastercard. This is a prototype â€” nothing is charged.</p>
-          <div class="admin-signup-payment-card ba-upgrade-signup-ui">
-            <div class="admin-signup-payment-card__heading">
-              <span class="admin-signup-payment-card__title">Payment details</span>
-              <span class="admin-signup-payment-card__brands" aria-label="Accepted cards">
-                <img src="/assets/payment/mastercard.svg" alt="" aria-hidden="true" />
-                <img src="/assets/payment/visa.svg" alt="" aria-hidden="true" />
-              </span>
-            </div>
-
-            <label class="admin-signup-field">
-              <span>Card number</span>
-              <span class="admin-signup-field__control admin-signup-field__control--plain">
-                <input
-                  type="text"
-                  data-ba-card-number
-                  inputmode="numeric"
-                  autocomplete="cc-number"
-                  maxlength="23"
-                  placeholder="1234 5678 9012 3456"
-                />
-              </span>
-            </label>
-
-            <div class="admin-signup-payment-card__row">
-              <label class="admin-signup-field">
-                <span>Name on card</span>
-                <span class="admin-signup-field__control admin-signup-field__control--plain">
-                  <input type="text" data-ba-card-name autocomplete="cc-name" placeholder="Cardholder name" />
-                </span>
-              </label>
-              <label class="admin-signup-field">
-                <span>Expiry</span>
-                <span class="admin-signup-field__control admin-signup-field__control--plain">
-                  <input
-                    type="text"
-                    data-ba-card-expiry
-                    inputmode="numeric"
-                    autocomplete="cc-exp"
-                    maxlength="7"
-                    placeholder="MM / YY"
-                  />
-                </span>
-              </label>
-              <label class="admin-signup-field">
-                <span>CVV</span>
-                <span class="admin-signup-field__control admin-signup-field__control--plain">
-                  <input
-                    type="password"
-                    data-ba-card-cvc
-                    inputmode="numeric"
-                    autocomplete="cc-csc"
-                    maxlength="4"
-                    placeholder="123"
-                  />
-                </span>
-              </label>
-            </div>
-          </div>
-          <p class="admin-signup-field-note admin-signup-field-note--centered ba-upgrade-signup-ui">
-            Only the card brand, expiry, and last four digits will be saved.
-          </p>
-          <div class="ba-wizard__actions">
-            <button type="button" class="ba-secondary-btn" data-ba-back>Back</button>
-            <button type="button" class="ba-primary-btn" data-ba-next-card>Continue</button>
-          </div>
-        </div>
-
-        <div class="ba-wizard__step" data-ba-step="pin" hidden>
-          <p class="ba-wizard__lead">Create a Switch PIN for this seller admin. This is not your login password. Anyone opening this business seller admin, including you after subscribe, must enter this PIN first.</p>
+        <div class="ba-wizard__step is-active" data-ba-step="pin">
+          <p class="ba-wizard__lead">Create a Switch PIN for this seller admin. This is not your login password. Anyone opening seller admin must enter this PIN first.</p>
           <div class="ba-upgrade-signup-ui ba-pin-fields">
             <label class="admin-signup-field">
               <span>Create Switch PIN</span>
@@ -572,8 +488,23 @@
         </div>
 
         <div class="ba-wizard__step" data-ba-step="company" hidden>
-          <p class="ba-wizard__lead">Set your company name, business type, and company photo.</p>
+          <p class="ba-wizard__lead">Choose how you will sell, then set your shop name, payout bank, and required documents.</p>
           <div class="ba-upgrade-signup-ui ba-company-setup">
+            <fieldset class="ba-seller-kind" data-ba-seller-kind>
+              <legend>Seller type</legend>
+              <div class="ba-seller-kind__grid">
+                <button type="button" class="ba-seller-kind__card" data-ba-seller-kind-option="individual">
+                  <strong>Individual Seller</strong>
+                  <span>Personal / walang rehistradong negosyo. Valid ID + bank account in your name.</span>
+                </button>
+                <button type="button" class="ba-seller-kind__card" data-ba-seller-kind-option="business">
+                  <strong>Business / Corporate Seller</strong>
+                  <span>May DTI o SEC. Registration, BIR, owner ID, and a business bank account.</span>
+                </button>
+              </div>
+            </fieldset>
+            <p class="ba-muted" data-ba-seller-kind-copy>Select a seller type to see the documents Super Admin will review.</p>
+
             <label class="admin-signup-field">
               <span>Company name</span>
               <span class="admin-signup-field__control admin-signup-field__control--plain">
@@ -587,6 +518,64 @@
                 />
               </span>
             </label>
+
+            <label class="admin-signup-field">
+              <span>Mobile number</span>
+              <span class="admin-signup-field__control admin-signup-field__control--plain">
+                <input
+                  type="tel"
+                  data-ba-company-mobile
+                  autocomplete="tel"
+                  inputmode="tel"
+                  maxlength="20"
+                  placeholder="09XXXXXXXXX"
+                />
+              </span>
+            </label>
+            <label class="admin-signup-field">
+              <span>Store address</span>
+              <span class="admin-signup-field__control admin-signup-field__control--plain">
+                <input
+                  type="text"
+                  data-ba-store-address
+                  autocomplete="street-address"
+                  minlength="8"
+                  maxlength="300"
+                  placeholder="e.g. 16-B Lanzones St., Barangay, City, Pampanga"
+                />
+              </span>
+            </label>
+            <input type="hidden" data-ba-store-lat value="" />
+            <input type="hidden" data-ba-store-lng value="" />
+            <div class="ba-store-location">
+              <button type="button" class="admin-signup-logo-action" data-ba-store-locate>Use my current location</button>
+              <span class="admin-signup-field-note" data-ba-store-location-status>Switch Riders near this address pick up your orders. We pin it on the map from the address, or tap the button while you're at the store.</span>
+            </div>
+            <label class="admin-signup-field">
+              <span>Company password</span>
+              <span class="admin-signup-field__control admin-signup-field__control--plain">
+                <input
+                  type="password"
+                  data-ba-company-password
+                  autocomplete="new-password"
+                  minlength="8"
+                  placeholder="8+ characters, letter and number"
+                />
+              </span>
+            </label>
+            <label class="admin-signup-field">
+              <span>Confirm password</span>
+              <span class="admin-signup-field__control admin-signup-field__control--plain">
+                <input
+                  type="password"
+                  data-ba-company-password-confirm
+                  autocomplete="new-password"
+                  minlength="8"
+                  placeholder="Re-enter company password"
+                />
+              </span>
+            </label>
+            <p class="admin-signup-field-note">This password is saved with the company. Forgot Switch PIN asks for it after you tap the Gmail reset link.</p>
 
             <div class="admin-signup-step--business ba-company-business-type">
               <label class="admin-signup-business-type-search">
@@ -629,31 +618,36 @@
               </div>
             </div>
 
-            <div class="ba-company-documents" data-ba-company-documents>
+            <div class="ba-payout-bank" data-ba-payout-bank hidden>
+              <p class="ba-payout-bank__title">Payout bank account</p>
               <label class="admin-signup-field">
-                <span>Business document (optional)</span>
+                <span>Bank name</span>
                 <span class="admin-signup-field__control admin-signup-field__control--plain">
-                  <select data-ba-document-type>
-                    <option value="business_permit">Business Permit</option>
-                    <option value="dti">DTI Registration</option>
-                    <option value="sec">SEC Registration</option>
-                    <option value="bir">BIR / TIN</option>
-                    <option value="valid_id">Valid ID</option>
-                    <option value="other">Other</option>
-                  </select>
+                  <input type="text" data-ba-bank-name maxlength="80" autocomplete="off" placeholder="BDO, BPI, UnionBank" />
                 </span>
               </label>
+              <label class="admin-signup-field">
+                <span data-ba-bank-account-name-label>Account name</span>
+                <span class="admin-signup-field__control admin-signup-field__control--plain">
+                  <input type="text" data-ba-bank-account-name maxlength="120" autocomplete="off" placeholder="Must match the payout owner" />
+                </span>
+              </label>
+              <label class="admin-signup-field">
+                <span>Account number</span>
+                <span class="admin-signup-field__control admin-signup-field__control--plain">
+                  <input type="text" data-ba-bank-account-number inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Digits only" />
+                </span>
+              </label>
+            </div>
+
+            <div class="ba-company-documents" data-ba-company-documents hidden>
+              <div class="ba-kyc-slots" data-ba-kyc-slots></div>
               <input type="file" accept=".pdf,.doc,.docx,image/*" data-ba-document-input hidden />
-              <div class="admin-signup-logo-card__actions">
-                <button type="button" class="admin-signup-logo-action" data-ba-document-select>Upload document</button>
-                <button type="button" class="admin-signup-logo-action admin-signup-logo-action--remove" data-ba-document-remove hidden>Remove</button>
-              </div>
-              <p class="ba-muted" data-ba-document-status>PDF or image of your business permit / DTI / SEC helps Super Admin review faster.</p>
             </div>
           </div>
           <div class="ba-wizard__actions">
             <button type="button" class="ba-secondary-btn" data-ba-back>Back</button>
-            <button type="button" class="ba-primary-btn" data-ba-finish-seller>Activate seller dashboard</button>
+            <button type="button" class="ba-primary-btn" data-ba-finish-seller>Submit for review</button>
           </div>
         </div>
 
@@ -696,8 +690,8 @@
       </div>
     </div>
 
-    <script src="/switch_buyer_auth.js?v=switch-buyer-saved-location-1"></script>
+    <script src="/switch_buyer_auth.js?v=one-free-company-1"></script>
     <script src="/switch_site_footer.js?v=switch-footer-embed-1"></script>
-    <script src="/switch_account.js?v=switch-account-device-signout-1"></script>
+    <script src="/switch_account.js?v=no-subscription-modal-1"></script>
   </body>
 </html>

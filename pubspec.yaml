@@ -120,6 +120,9 @@ flutter:
     - assets/images/shop-platform-icon.png
     - assets/images/shop-home-label-art.png
     - assets/images/food-platform-icon.png
+    - backend/public/assets/platform-shop-art.png
+    - backend/public/assets/platform-food-art.png
+    - backend/public/assets/switch-all-platform-3d-clear.png
     - assets/images/location-not-found-art.png
     - assets/images/top-search-fire-art.png
     - assets/images/recent-search-heading-art.png

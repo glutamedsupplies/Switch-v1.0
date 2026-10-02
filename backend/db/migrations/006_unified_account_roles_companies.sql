@@ -83,7 +83,6 @@ CREATE INDEX IF NOT EXISTS idx_account_capabilities_capability
 
 CREATE TABLE IF NOT EXISTS companies (
   id                    TEXT PRIMARY KEY DEFAULT encode(gen_random_bytes(12), 'hex'),
-  company_code          TEXT UNIQUE,
   type                  company_type NOT NULL,
   status                company_status NOT NULL DEFAULT 'draft',
   name                  TEXT NOT NULL,
@@ -227,7 +226,6 @@ ON CONFLICT (account_id, capability) DO NOTHING;
 -- Backfill seller companies from seller profiles.
 INSERT INTO companies (
   id,
-  company_code,
   type,
   status,
   name,
@@ -248,7 +246,6 @@ INSERT INTO companies (
 )
 SELECT
   CONCAT('comp_', s.admin_id),
-  s.admin_id,
   'seller'::company_type,
   CASE
     WHEN a.status::text IN ('banned', 'restricted', 'deactivated', 'deleted') THEN a.status::text::company_status

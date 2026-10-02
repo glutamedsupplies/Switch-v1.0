@@ -1,0 +1,1829 @@
+/* Standalone Companies actions. Kept fully scoped so Reports Center is unaffected. */
+body.super-admin-page.super-admin-company-action-modal-open {
+  overflow: hidden;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal {
+  --company-action-accent: #dc2626;
+  --company-action-accent-rgb: 220, 38, 38;
+  --company-action-accent-deep: #991b1b;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(720px, calc(100vw - 40px));
+  max-width: none;
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 24px;
+  background: var(--sa-surface, #ffffff);
+  color: var(--sa-on-surface, #0f172a);
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.24), 0 8px 28px rgba(15, 23, 42, 0.1);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-restrict {
+  --company-action-accent: #f97316;
+  --company-action-accent-rgb: 249, 115, 22;
+  --company-action-accent-deep: #9a3412;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:is(.is-unban, .is-unrestrict) {
+  --company-action-accent: #16a34a;
+  --company-action-accent-rgb: 22, 163, 74;
+  --company-action-accent-deep: #166534;
+}
+
+body.super-admin-page #super-admin-notify-modal.company-notify-modal {
+  --company-action-accent: var(--accent, #0891b2);
+  --company-action-accent-rgb: var(--accent-rgb, 8, 145, 178);
+  --company-action-accent-deep: #0e7490;
+  width: min(600px, calc(100vw - 40px));
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal::before,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal::before {
+  inset: 0 0 auto;
+  width: 100%;
+  height: 132px;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 7% -10%, rgba(var(--company-action-accent-rgb), 0.16), transparent 64%),
+    linear-gradient(180deg, rgba(var(--company-action-accent-rgb), 0.045), transparent);
+  pointer-events: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-visible,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal.is-visible {
+  animation: var(--sa-modal-popup);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal > .validation-modal__close {
+  top: 14px;
+  right: 14px;
+  z-index: 12;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent;
+  color: #6b7280;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close:hover,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close:focus-visible,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal > .validation-modal__close:hover,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal > .validation-modal__close:focus-visible {
+  border-color: transparent !important;
+  background: var(--sa-surface-high, #f3f4f6);
+  color: var(--sa-on-surface, #111827);
+  outline: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .super-admin-ban-modal__title,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal > .super-admin-ban-modal__title {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 24px 72px 20px 28px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__danger-icon,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__danger-icon {
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(var(--company-action-accent-rgb), 0.18);
+  border-radius: 15px;
+  background: rgba(var(--company-action-accent-rgb), 0.1);
+  color: var(--company-action-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__danger-icon svg,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__danger-icon svg {
+  width: 23px;
+  height: 23px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__title h2,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__title h2 {
+  margin: 0;
+  color: var(--sa-on-surface, #0f172a);
+  font-size: clamp(19px, 2.2vw, 23px);
+  font-weight: 760;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__title p,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__title p {
+  margin: 5px 0 0;
+  color: var(--sa-hint, #64748b);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .company-notify-modal__body {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  padding: 20px 28px 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > *,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .company-notify-modal__body > * {
+  min-width: 0;
+  margin: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > .super-admin-ban-modal__company,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .company-notify-modal__body > .super-admin-ban-modal__company {
+  order: 1;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > .super-admin-ban-modal__alert,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .company-notify-modal__body > .super-admin-ban-modal__alert {
+  order: 2;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > .super-admin-ban-modal__review {
+  order: 3;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__restriction-reason-picker) {
+  order: 4;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > :is(.super-admin-ban-modal__reason, .super-admin-ban-modal__restriction-description) {
+  order: 5;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > .super-admin-ban-modal__duration {
+  order: 6;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__company,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__company {
+  min-height: 78px;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 15px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(var(--company-action-accent-rgb), 0.055), rgba(248, 250, 252, 0.72));
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__avatar,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__avatar {
+  width: 50px;
+  height: 50px;
+  flex-basis: 50px;
+  font-size: 15px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__company strong,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__company strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__company small,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__company small {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__tags,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__tags {
+  gap: 5px;
+  margin-top: 8px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__tags > span,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__tags > span {
+  min-height: 23px;
+  padding: 4px 7px;
+  font-size: 10px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__alert,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__alert {
+  min-height: 0;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--company-action-accent-rgb), 0.2);
+  border-radius: 14px;
+  background: rgba(var(--company-action-accent-rgb), 0.07);
+  color: var(--company-action-accent-deep);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__alert svg,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__alert svg {
+  width: 19px;
+  height: 19px;
+  flex-basis: 19px;
+  margin-top: 1px;
+  color: var(--company-action-accent);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__reason, .super-admin-ban-modal__duration, .super-admin-ban-modal__review) {
+  gap: 8px;
+  padding: 15px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 15px;
+  background: var(--sa-surface, #ffffff);
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.035);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__review {
+  padding: 15px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__reason) > span:first-child,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration label > span:first-child,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits-label,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__reason > span:first-child {
+  color: var(--sa-on-surface, #334155);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-select,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-trigger {
+  width: 100%;
+  max-width: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-trigger {
+  grid-template-columns: minmax(0, 1fr) 18px;
+  min-height: 44px;
+  margin-top: 2px;
+  border-radius: 11px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason input[type="text"],
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__reason textarea,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__reason input[type="text"] {
+  min-height: 44px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  line-height: 1.45;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__reason textarea {
+  min-height: 82px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr);
+  gap: 12px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration-input-shell,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__unit-trigger, .super-admin-ban-modal__limit-trigger) {
+  min-height: 44px;
+  border: 1px solid #dbe3ef !important;
+  border-radius: 11px !important;
+  background: var(--sa-surface, #ffffff) !important;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal #super-admin-ban-duration-input {
+  background: transparent !important;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits {
+  grid-column: 1 / -1;
+  gap: 7px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__limit-select {
+  width: 100%;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-menu, .super-admin-ban-modal__unit-menu, .super-admin-ban-modal__limit-menu):not([hidden]) {
+  position: static;
+  inset: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: 230px;
+  margin-top: 8px;
+  transform: none;
+  transform-origin: top;
+  animation: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-reason-menu.super-admin-company-card__action-menu {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .company-notify-modal__body > .super-admin-ban-modal__reason {
+  order: 3;
+  gap: 7px;
+}
+
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__reason {
+  display: grid;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .super-admin-ban-modal__actions,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal > .super-admin-ban-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 0;
+  padding: 16px 28px 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: var(--sa-surface, #ffffff);
+  background: color-mix(in srgb, var(--sa-surface, #ffffff) 92%, #f8fafc 8%);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__cancel,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__confirm,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__cancel,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__confirm {
+  min-width: 132px;
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__cancel,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__cancel {
+  border: 1px solid rgba(148, 163, 184, 0.38) !important;
+  background: var(--sa-surface, #ffffff);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__confirm,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__confirm {
+  background: var(--company-action-accent);
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(var(--company-action-accent-rgb), 0.2);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__confirm:hover:not(:disabled),
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__confirm:focus-visible,
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__confirm:hover:not(:disabled),
+body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__confirm:focus-visible {
+  background: var(--company-action-accent-deep);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal,
+html[data-sa-scheme="dark"] body.super-admin-page #super-admin-notify-modal.company-notify-modal {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: #111827;
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.52);
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close,
+html[data-sa-scheme="dark"] body.super-admin-page #super-admin-notify-modal.company-notify-modal > .validation-modal__close {
+  background: transparent;
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__company,
+html[data-sa-scheme="dark"] body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__company,
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__reason, .super-admin-ban-modal__duration, .super-admin-ban-modal__review) {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(30, 41, 59, 0.72);
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .super-admin-ban-modal__actions,
+html[data-sa-scheme="dark"] body.super-admin-page #super-admin-notify-modal.company-notify-modal > .super-admin-ban-modal__actions {
+  background: #111827;
+}
+
+@media (max-width: 640px) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    max-height: min(92dvh, 820px);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 24px 24px 0 0;
+    transform: none;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-visible,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal.is-visible {
+    animation: super-admin-company-action-sheet-enter 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes super-admin-company-action-sheet-enter {
+    from {
+      opacity: 0;
+      transform: translateY(28px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal > .validation-modal__close {
+    top: 14px;
+    right: 14px;
+    width: 40px;
+    height: 40px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .super-admin-ban-modal__title,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal > .super-admin-ban-modal__title {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 11px;
+    padding: 16px 58px 15px 18px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__danger-icon,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__danger-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__title h2,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__title h2 {
+    font-size: 18px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__title p,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__title p {
+    font-size: 11.5px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .company-notify-modal__body {
+    gap: 10px;
+    padding: 14px 16px 18px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__company,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__company {
+    min-height: 68px;
+    padding: 10px 12px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__avatar,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__avatar {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__reason, .super-admin-ban-modal__duration, .super-admin-ban-modal__review) {
+    padding: 12px;
+    border-radius: 13px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .super-admin-ban-modal__actions,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal > .super-admin-ban-modal__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__cancel,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__confirm,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__cancel,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal .super-admin-ban-modal__confirm {
+    width: 100%;
+    min-width: 0;
+    min-height: 43px;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(input, textarea, select, button.super-admin-ban-modal__reason-trigger),
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal :is(input, textarea, select) {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 380px) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration {
+    grid-template-columns: 1fr;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits {
+    grid-column: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-visible,
+  body.super-admin-page #super-admin-notify-modal.company-notify-modal.is-visible {
+    animation-duration: 1ms;
+  }
+}
+
+/* Direct Company decision studio: mirrors the Reports Center review workspace. */
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal {
+  width: min(960px, calc(100vw - 40px));
+  height: min(680px, calc(100dvh - 40px));
+  max-width: none;
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--sa-modal-radius, 12px);
+  background: var(--sa-surface, #ffffff);
+  box-shadow: 0 34px 90px rgba(15, 23, 42, 0.28), 0 8px 24px rgba(15, 23, 42, 0.12);
+  isolation: isolate;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-visible {
+  display: block;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal::before {
+  display: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close {
+  top: 14px;
+  right: 14px;
+  z-index: 12;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent;
+  color: #6b7280;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close:hover,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal > .validation-modal__close:focus-visible {
+  border-color: transparent !important;
+  background: var(--sa-surface-high, #f3f4f6);
+  color: var(--sa-on-surface, #111827);
+  outline: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__layout {
+  display: grid;
+  grid-template-columns: 304px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__dossier {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 30px 24px 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  background:
+    radial-gradient(circle at 18% 5%, rgba(var(--company-action-accent-rgb), 0.12), transparent 34%),
+    linear-gradient(155deg, #f8fafc 0%, #f3f6fa 55%, #eef3f8 100%);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__case-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__case-heading > span,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__section-label,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__account-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__case-heading > strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(var(--company-action-accent-rgb), 0.2);
+  border-radius: 999px;
+  background: rgba(var(--company-action-accent-rgb), 0.09);
+  color: var(--company-action-accent-deep);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__action-art {
+  display: grid;
+  place-items: center;
+  width: 118px;
+  height: 118px;
+  margin: 22px auto 14px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__action-art img {
+  display: none;
+  grid-area: 1 / 1;
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  filter: drop-shadow(0 15px 20px rgba(15, 23, 42, 0.14));
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-restrict):not(.is-unban):not(.is-unrestrict) .company-control-modal__action-art img[data-company-control-art="ban"],
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-restrict .company-control-modal__action-art img[data-company-control-art="restrict"] {
+  display: block;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:is(.is-unban, .is-unrestrict) .company-control-modal__action-art {
+  display: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company.super-admin-ban-modal__company {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company .super-admin-ban-modal__avatar {
+  width: 54px;
+  height: 54px;
+  flex-basis: 54px;
+  border-radius: 50%;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company > div {
+  min-width: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__tags.super-admin-ban-modal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__tags.super-admin-ban-modal__tags > span {
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__dossier-divider {
+  height: 1px;
+  margin: 24px 0;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome {
+  display: grid;
+  gap: 6px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome > strong {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome > small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__impact.super-admin-ban-modal__alert {
+  display: block;
+  margin-top: 12px;
+  padding: 12px 13px;
+  border: 1px solid rgba(var(--company-action-accent-rgb), 0.18);
+  border-radius: 12px;
+  background: rgba(var(--company-action-accent-rgb), 0.07);
+  color: var(--company-action-accent-deep);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__impact > svg {
+  display: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sa-surface, #ffffff);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title {
+  display: block;
+  margin: 0;
+  padding: 30px 72px 20px 34px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  text-align: left;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__danger-icon {
+  display: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:is(.is-unban, .is-unrestrict) .company-control-modal__workspace > .super-admin-ban-modal__title {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(23px, 2.5vw, 32px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.14;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title p {
+  margin: 7px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 16px;
+  padding: 20px 34px 28px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > * {
+  min-width: 0;
+  margin: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__step-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  order: 0;
+  padding-bottom: 2px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__step-heading h3 {
+  margin: 5px 0 0;
+  color: #0f172a;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__step-heading > p {
+  max-width: 250px;
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: right;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > .super-admin-ban-modal__review {
+  order: 1;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__restriction-reason-picker) {
+  order: 2;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > .super-admin-ban-modal__duration {
+  order: 3;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > :is(.super-admin-ban-modal__reason, .super-admin-ban-modal__restriction-description) {
+  order: 4;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body > [hidden] {
+  display: none !important;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__reason, .super-admin-ban-modal__duration, .super-admin-ban-modal__review) {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-picker, .super-admin-ban-modal__reason) > span:first-child,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration label > span:first-child,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits-label,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-description-heading > label {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-select,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__unit-select,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__limit-select {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-trigger, .super-admin-ban-modal__unit-trigger, .super-admin-ban-modal__limit-trigger) {
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #dbe3ef !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.03);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-select, .super-admin-ban-modal__unit-select, .super-admin-ban-modal__limit-select).is-open > :is(.super-admin-ban-modal__reason-trigger, .super-admin-ban-modal__unit-trigger, .super-admin-ban-modal__limit-trigger),
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-trigger, .super-admin-ban-modal__unit-trigger, .super-admin-ban-modal__limit-trigger):focus-visible {
+  border-color: var(--company-action-accent) !important;
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--company-action-accent), 0 0 0 3px rgba(var(--company-action-accent-rgb), 0.12);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__reason-menu, .super-admin-ban-modal__unit-menu, .super-admin-ban-modal__limit-menu):not([hidden]) {
+  position: static;
+  inset: auto;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: 230px;
+  margin-top: 8px;
+  padding: 8px;
+  overflow: auto;
+  transform: none;
+  animation: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-group-label {
+  padding: 8px 10px 5px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-option {
+  min-height: var(--sa-dd-option-min-height, 36px);
+  padding: 7px var(--sa-dd-option-pad-x, 12px);
+  border-radius: var(--sa-dd-option-radius, 10px);
+  background: transparent;
+  color: var(--sa-dd-option-fg, #334155);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-option:hover,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason-option:focus-visible {
+  background: var(--sa-dd-option-hover-bg, rgba(15, 23, 42, 0.05));
+  color: var(--company-action-accent-deep);
+  outline: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.7fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(var(--company-action-accent-rgb), 0.18);
+  border-radius: 14px;
+  background: rgba(var(--company-action-accent-rgb), 0.035);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration > label {
+  display: grid;
+  gap: 8px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration-input-shell {
+  min-height: 42px;
+  border: 1px solid #dbe3ef !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal #super-admin-ban-duration-input {
+  height: 40px;
+  background: transparent !important;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-description-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea {
+  min-height: 108px;
+  padding: 12px 13px;
+  border: 1px solid #dce4ed;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  resize: vertical;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea:hover {
+  background: #ffffff;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea:focus,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea:focus-visible {
+  border-color: var(--company-action-accent);
+  outline: none;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(var(--company-action-accent-rgb), 0.1);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__summarize-ai,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason:hover .super-admin-ban-modal__summarize-ai,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason:focus-within .super-admin-ban-modal__summarize-ai {
+  border-color: transparent;
+  background: transparent;
+  color: var(--company-action-accent);
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__summarize-ai:not(:disabled):hover,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__summarize-ai:not(:disabled):focus-visible {
+  border-color: var(--company-action-accent);
+  background: var(--company-action-accent);
+  color: #ffffff;
+  outline: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 76px;
+  margin: 0;
+  padding: 14px 34px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.025);
+  backdrop-filter: blur(12px);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 17px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__cancel {
+  min-width: 0;
+  margin-right: auto;
+  padding: 0 4px;
+  border: 0 !important;
+  background: transparent;
+  color: #64748b;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__cancel:hover,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__cancel:focus-visible {
+  background: transparent;
+  color: #0f172a;
+  outline: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm {
+  min-width: 152px;
+  border: 1px solid var(--company-action-accent);
+  background: var(--company-action-accent);
+  color: #ffffff;
+  box-shadow: 0 9px 20px rgba(var(--company-action-accent-rgb), 0.22);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm:hover:not(:disabled),
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm:focus-visible:not(:disabled) {
+  background: var(--company-action-accent-deep);
+  border-color: var(--company-action-accent-deep);
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(var(--company-action-accent-rgb), 0.12), 0 10px 22px rgba(var(--company-action-accent-rgb), 0.24);
+  transform: translateY(-1px);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm:disabled {
+  border-color: #cbd5e1;
+  background: #cbd5e1;
+  color: #f8fafc;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__dossier {
+  border-color: rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at 18% 5%, rgba(var(--company-action-accent-rgb), 0.16), transparent 36%),
+    linear-gradient(155deg, #111827 0%, #0f172a 100%);
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.company-control-modal__company strong, .company-control-modal__outcome > strong, .company-control-modal__step-heading h3, .company-control-modal__workspace > .super-admin-ban-modal__title h2) {
+  color: var(--sa-on-surface, #f8fafc);
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.company-control-modal__account-label, .company-control-modal__section-label, .company-control-modal__company small, .company-control-modal__outcome > small, .company-control-modal__step-heading > p, .company-control-modal__workspace > .super-admin-ban-modal__title p) {
+  color: #94a3b8;
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.super-admin-ban-modal__duration-input-shell, .super-admin-ban-modal__reason textarea) {
+  border-color: rgba(148, 163, 184, 0.3) !important;
+  background: rgba(15, 23, 42, 0.66) !important;
+  color: #f8fafc;
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.94);
+}
+
+@media (max-width: 760px) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: min(92dvh, 780px);
+    max-height: 92dvh;
+    min-width: 0;
+    max-width: 100vw;
+    border-radius: 20px 20px 0 0;
+    transform: none;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal.is-visible {
+    animation: super-admin-company-control-sheet-enter 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__dossier {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 16px;
+    padding: 18px 58px 16px 18px;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__case-heading,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__action-art,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__dossier-divider,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome {
+    display: none;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__tags.super-admin-ban-modal__tags {
+    justify-content: flex-end;
+    margin: 0;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__tags.super-admin-ban-modal__tags > span:nth-child(n + 2) {
+    display: none;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title {
+    padding: 18px 58px 14px 18px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title h2 {
+    font-size: 21px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title p {
+    font-size: 12px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body {
+    gap: 14px;
+    padding: 16px 18px 22px;
+    scrollbar-gutter: auto;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__step-heading {
+    display: block;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__step-heading > p {
+    max-width: none;
+    margin-top: 6px;
+    text-align: left;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions {
+    flex-direction: row;
+    min-height: 68px;
+    padding: 11px 18px calc(11px + env(safe-area-inset-bottom));
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions button,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__cancel,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm {
+    width: auto;
+    min-height: 42px;
+    padding: 0 13px;
+    border-radius: 11px;
+    font-size: 10px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm {
+    min-width: 138px;
+  }
+}
+
+@media (max-width: 460px) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__dossier {
+    display: block;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__tags.super-admin-ban-modal__tags {
+    display: none;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__duration {
+    grid-template-columns: 1fr;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits {
+    grid-column: 1;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__cancel {
+    margin-right: auto;
+    border: 0 !important;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm {
+    min-width: 128px;
+  }
+}
+
+/* User Data keeps its compact modal for ordinary actions, while Restrict and
+   Ban share the same review workspace used by Restrict Listing. */
+body.super-admin-page .buyer-data-modal:not(.is-buyer-moderation) .buyer-data-action-dossier {
+  display: none;
+}
+
+body.super-admin-page .buyer-data-modal:not(.is-buyer-moderation) :is(.buyer-data-action-workspace, .buyer-data-action-form__body) {
+  display: contents;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal.is-buyer-moderation .buyer-data-action-form.company-control-modal__layout {
+  gap: 0;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal.is-buyer-moderation {
+  z-index: 2810;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal.is-buyer-moderation .company-control-modal__company .super-admin-ban-modal__avatar {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: var(--sa-surface, #ffffff);
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal.is-buyer-moderation .company-control-modal__company .super-admin-ban-modal__avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+@keyframes super-admin-company-control-sheet-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* V3: direct Restrict/Ban review matches the Issue Warning review step. */
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company.super-admin-ban-modal__company {
+  margin-top: 26px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__tags.super-admin-ban-modal__tags > span {
+  min-height: 29px;
+  padding: 5px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(255, 255, 255, 0.72);
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.035);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome {
+  gap: 12px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome-heading {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome-heading > span:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome-heading strong {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__outcome-heading small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__action-art {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 52px;
+  margin: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__action-art img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  filter: drop-shadow(0 7px 8px rgba(15, 23, 42, 0.13));
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__impact.super-admin-ban-modal__alert {
+  margin-top: 2px;
+  padding: 15px 14px;
+  border-radius: 13px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__safety-note {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 26px;
+  color: #0f172a;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__safety-note strong {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__safety-note small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__title {
+  padding: 28px 72px 18px 34px;
+  border-bottom: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .company-control-modal__step-heading {
+  display: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body {
+  gap: 18px;
+  padding: 17px 34px 24px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-picker {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 5px 16px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__reason-helper {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: right;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-select {
+  grid-column: 1 / -1;
+  width: fit-content;
+  max-width: 100%;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-trigger {
+  grid-template-columns: minmax(0, auto) 18px;
+  width: auto;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 2px 6px 2px 2px;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-menu:not([hidden]) {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 7px);
+  right: auto;
+  bottom: auto;
+  left: 0;
+  display: grid;
+  width: max(100%, 340px);
+  min-width: 0;
+  max-width: min(420px, calc(100vw - 48px));
+  max-height: min(330px, 46vh);
+  margin: 0;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: var(--sa-surface, #ffffff);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16), 0 3px 10px rgba(15, 23, 42, 0.07);
+  transform: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-trigger:hover,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-trigger:focus-visible,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-select.is-open .super-admin-ban-modal__reason-trigger {
+  border: 0 !important;
+  outline: none;
+  background: rgba(var(--company-action-accent-rgb), 0.07) !important;
+  box-shadow: 0 0 0 3px rgba(var(--company-action-accent-rgb), 0.09);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__restriction-panel.super-admin-ban-modal__duration {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__restriction-panel > :is(input[hidden], select[hidden]) {
+  display: none !important;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__control-field,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__schedule-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__control-field > span:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__control-field em {
+  color: #94a3b8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 400;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair .product-expiry-date-picker,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair .product-expiry-date-picker__trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair .product-expiry-date-picker__trigger {
+  min-height: 42px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair .product-expiry-date-picker.is-readonly .product-expiry-date-picker__trigger,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair .product-expiry-date-picker.is-disabled .product-expiry-date-picker__trigger {
+  border-color: #dce4ed;
+  background: #f8fafc;
+  color: #475569;
+  cursor: default;
+  box-shadow: none;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__datetime-pair .product-expiry-date-picker.is-invalid .product-expiry-date-picker__trigger {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits {
+  display: grid;
+  gap: 8px;
+  padding-top: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits-label small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits-label b {
+  color: var(--company-action-accent-deep);
+  font-weight: 800;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__limit-trigger {
+  min-height: 44px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-description-heading {
+  align-items: center;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-heading-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-heading-copy > label {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-heading-copy > small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea {
+  min-height: 144px;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-restrict):not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason textarea:focus,
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-restrict):not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason textarea:focus-visible {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace > .super-admin-ban-modal__actions .super-admin-ban-modal__confirm svg {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal :is(.company-control-modal__outcome-heading strong, .company-control-modal__safety-note strong, .super-admin-ban-modal__reason-trigger) {
+  color: var(--sa-on-surface, #f8fafc);
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-heading-copy > small {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+}
+
+/* Restrict listing reuses the company control modal; only listing-specific bits live here. */
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__company .super-admin-ban-modal__avatar.company-control-modal__listing-thumb {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__dossier > * {
+  flex-shrink: 0;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__company .company-control-modal__listing-thumb::after {
+  display: none;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__company .company-control-modal__listing-thumb img {
+  border-radius: 14px;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .super-admin-ban-modal__limit-select .super-admin-ban-modal__limit-menu:not([hidden]) {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 7px);
+  right: 0;
+  bottom: auto;
+  left: 0;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: min(240px, 40vh);
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: var(--sa-surface, #ffffff);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16), 0 3px 10px rgba(15, 23, 42, 0.07);
+  transform: none;
+  animation: none;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__reported-reason-value {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 0;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-sa-scheme="dark"] body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__reported-reason-value {
+  color: var(--sa-on-surface, #f8fafc);
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__body > .company-control-modal__status {
+  order: 5;
+  min-height: 0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__body > .company-control-modal__status:empty {
+  display: none;
+}
+
+body.super-admin-page #super-admin-listing-restrict-modal.company-control-modal .company-control-modal__body > .company-control-modal__status.is-error {
+  color: #dc2626;
+}
+
+@media (max-width: 760px) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__workspace {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__company.super-admin-ban-modal__company {
+    margin-top: 0;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__body {
+    padding-top: 14px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-picker {
+    grid-template-columns: 1fr;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__reason-helper {
+    text-align: left;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__reason textarea {
+    min-height: 124px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 460px) {
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal:not(.is-unban):not(.is-unrestrict) .super-admin-ban-modal__reason-menu:not([hidden]) {
+    width: min(340px, calc(100vw - 48px));
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__control-field > span:first-child,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .super-admin-ban-modal__restriction-limits-label {
+    font-size: 10px;
+  }
+
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-heading-copy > small,
+  body.super-admin-page :is(#super-admin-ban-modal, #super-admin-listing-restrict-modal).company-control-modal .company-control-modal__message-meta > span:first-child {
+    display: none;
+  }
+}

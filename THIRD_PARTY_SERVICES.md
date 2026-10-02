@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project uses third-party packages and optional integrations. Seller and buyer PayMongo checkout are optional. Courier booking uses a provider adapter (manual or Lalamove stub/live-ready).
+The project uses third-party packages and optional integrations. Seller and buyer PayMongo checkout are optional. Courier booking supports manual fulfillment or the live Lalamove v3 API.
 
 ## Backend Integrations
 
@@ -26,18 +26,19 @@ The project uses third-party packages and optional integrations. Seller and buye
 
 - **Environment variables:** `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET`
 - **Location:** `backend/services/sellerCheckoutGateway.js`, `backend/services/buyerCheckoutGateway.js`, `backend/server.js`
-- **Used for:** Hosted seller-plan checkout and buyer order checkout sessions with signed webhooks.
+- **Used for:** Hosted seller-plan checkout and buyer order checkout sessions with signed webhooks. Paid seller prices are resolved from the server catalog; client-submitted amounts are ignored.
 - **Seller webhook:** `POST /api/payments/paymongo/seller-webhook`
+- **Seller safety:** Free plans remain available without a gateway. Paid seller checkout and activation return `503` when PayMongo is not configured, and activation requires a verified paid webhook.
 - **Buyer webhook:** `POST /api/payments/paymongo/buyer-webhook` (provider ledger key `paymongo_buyer`)
-- **Buyer checkout:** `POST /api/orders/checkout-session` (buyer session) → returns `checkoutUrl` when PayMongo is enabled; marks the order paid locally when keys are unset (`provider: manual`)
-- **Status:** Optional. Live when credentials are configured. Unsigned client confirm cannot mark buyer orders paid when PayMongo is enabled — webhook is source of truth.
+- **Buyer checkout:** `POST /api/orders/checkout-session` (buyer session) returns a hosted `checkoutUrl`. It returns `503` and leaves the order unpaid when PayMongo is not configured.
+- **Status:** Optional. Live when credentials are configured. Buyer payment is fail-closed and the signed webhook is the only path that marks an online order paid.
 
 ### Courier provider adapter (optional)
 
-- **Environment variables:** `COURIER_PROVIDER` (`manual` \| `lalamove`), `LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET`, `LALAMOVE_WEBHOOK_SECRET`
+- **Environment variables:** `COURIER_PROVIDER` (`manual` \| `lalamove`), `LALAMOVE_ENVIRONMENT`, `LALAMOVE_API_KEY`, `LALAMOVE_API_SECRET`, `LALAMOVE_WEBHOOK_SECRET`, `LALAMOVE_MARKET`, `LALAMOVE_SERVICE_TYPE`, and `LALAMOVE_PICKUP_*`
 - **Location:** `backend/services/courierProviderAdapter.js`, `backend/server.js`
-- **Endpoints:** `POST /api/orders/{groupId}/shipments`; ship flow auto-creates a Lalamove stub tracking number when `COURIER_PROVIDER=lalamove` and no tracking is supplied
-- **Status:** Adapter is wired. Without live Lalamove credentials, shipments return deterministic stub tracking (`LALA-…`). Manual mode keeps existing local waybill + optional tracking entry.
+- **Endpoints:** `POST /api/orders/{groupId}/shipments` creates a quotation and order; `GET` on the same URL retrieves live tracking; `POST /api/couriers/lalamove/webhook` receives signed provider updates.
+- **Status:** The Lalamove path uses HMAC-signed v3 quotation/order/tracking calls and fails closed when credentials, pickup settings, or destination coordinates are missing. Manual mode keeps local waybill and optional tracking entry.
 
 ### Face Attendance Local Integration
 
@@ -90,6 +91,12 @@ The project uses third-party packages and optional integrations. Seller and buye
 - **Package:** `google_fonts`
 - **Used for:** Flutter typography.
 
+### Open-Meteo (weather)
+
+- **Endpoint:** `https://api.open-meteo.com/v1/forecast` (free, no API key)
+- **Location:** `lib/services/home_sky_weather*.dart`, `lib/widgets/home_sky_backdrop.dart`
+- **Used for:** Current weather code for the animated sky on the buyer home platform picker. Uses the device's current GPS location (asks location permission once per session), else last known GPS, else the selected delivery address, else Metro Manila. Refreshed every 20 minutes, or immediately when the device moves ~11 km.
+
 ## Admin Web Assets and Libraries
 
 ### Font/Icon Assets
@@ -112,7 +119,7 @@ The admin pages use iconography and inline SVG/icon patterns. Some pages include
 
 - **Location:** `delivery_partners.json`, `backend/public/delivery_partners.*`, Flutter delivery partner repository/model, `courierProviderAdapter.js`.
 - **Purpose:** Configurable courier/delivery options shown in checkout and product management.
-- **Status:** Partner catalog remains local. Shipments can mint tracking via `POST /api/orders/{groupId}/shipments` (`COURIER_PROVIDER=lalamove` stub without live keys). Local waybill print remains available.
+- **Status:** Partner catalog remains local. Live Lalamove shipments are available through `POST /api/orders/{groupId}/shipments` when the provider and coordinates are configured. Local waybill print remains available in manual mode.
 
 ## Email Services
 
@@ -130,6 +137,6 @@ Only the optional OpenAI-compatible chat reply integration was found. Visual sea
 
 - Add secret management for AI/API keys.
 - Move uploaded files to cloud object storage with signed URLs.
-- Complete live Lalamove market signing when production courier credentials are available.
+- Configure and validate Lalamove sandbox credentials and pickup coordinates before switching `LALAMOVE_ENVIRONMENT=production`.
 - Add an email/SMS provider for account verification, receipts, and status updates.
 

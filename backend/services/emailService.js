@@ -213,10 +213,23 @@ async function sendViaGmailApi({ to, subject, text, html }) {
   );
   oauth2Client.setCredentials({ refresh_token: config.refreshToken });
 
-  const accessTokenResponse = await oauth2Client.getAccessToken();
-  const accessToken = String(
-    accessTokenResponse?.token ?? accessTokenResponse ?? "",
-  ).trim();
+  let accessToken = "";
+  try {
+    const accessTokenResponse = await oauth2Client.getAccessToken();
+    accessToken = String(
+      accessTokenResponse?.token ?? accessTokenResponse ?? "",
+    ).trim();
+  } catch (tokenError) {
+    const detail = String(
+      tokenError?.message || tokenError?.response?.data?.error || tokenError || "",
+    );
+    if (/invalid_grant/i.test(detail)) {
+      throw new Error(
+        "Gmail OAuth expired (invalid_grant). Re-run: node scripts/gmail-oauth-setup.js, or set GMAIL_APP_PASSWORD for SMTP.",
+      );
+    }
+    throw tokenError;
+  }
   if (!accessToken) {
     throw new Error(
       "Unable to refresh Gmail access token. Re-run: node scripts/gmail-oauth-setup.js",
@@ -245,8 +258,16 @@ async function sendViaGmailApi({ to, subject, text, html }) {
   );
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const apiMessage = String(
+      data?.error?.message || data?.error || data?.message || "",
+    );
+    if (/invalid_grant/i.test(apiMessage)) {
+      throw new Error(
+        "Gmail OAuth expired (invalid_grant). Re-run: node scripts/gmail-oauth-setup.js, or set GMAIL_APP_PASSWORD for SMTP.",
+      );
+    }
     throw new Error(
-      data?.error?.message ||
+      apiMessage ||
         `Gmail API send failed (${response.status}). Reconnect Google Sign-In for Gmail.`,
     );
   }
@@ -337,7 +358,34 @@ async function sendViaGmailWithOptionalSmtp(payload) {
   return sendViaSmtp(payload);
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function assertEmailNotificationsAllowed({ critical = false } = {}) {
+  if (critical) {
+    return;
+  }
+  try {
+    const {
+      getPlatformSettings,
+      isPlatformSettingBlocking,
+    } = require("./platformSettings");
+    const settings = await getPlatformSettings();
+    if (isPlatformSettingBlocking(settings, "emailNotifications")) {
+      throw new Error(
+        "Email notifications are disabled by Super Admin platform settings.",
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof Error
+      && /disabled by Super Admin platform settings/i.test(error.message)
+    ) {
+      throw error;
+    }
+    // If settings cannot be read, allow mail so OTP/recovery stays available.
+  }
+}
+
+async function sendMail({ to, subject, text, html, critical = false }) {
+  await assertEmailNotificationsAllowed({ critical });
   if (!isEmailEnabled()) {
     throw new Error(
       "Email OTP is not configured. Set BREVO_API_KEY (recommended, no domain) or RESEND_API_KEY in backend/.env.",
@@ -406,6 +454,43 @@ async function sendVerificationEmail({ email, code, purpose = "registration" }) 
 
   return sendMail({
     to: email,
+    critical: true,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function sendSwitchPinResetEmail({ email, resetUrl, companyName }) {
+  const appName = String(process.env.SMS_APP_NAME ?? "Switch").trim() || "Switch";
+  const store = String(companyName || "your company").trim() || "your company";
+  const link = String(resetUrl || "").trim();
+  if (!link) {
+    throw new Error("Switch PIN reset link is missing.");
+  }
+
+  const subject = `${appName} Switch PIN reset`;
+  const text = [
+    `Reset the Switch PIN for ${store}.`,
+    "This is a link, not a code. Tap it to open Switch, then enter your company password before you can set a new PIN.",
+    link,
+    "The link expires in 30 minutes. If you did not request this, ignore the email.",
+  ].join("\n\n");
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+      <h2 style="margin:0 0 12px">${appName}</h2>
+      <p style="margin:0 0 12px">Reset the Switch PIN for <strong>${store.replace(/[<>&]/g, "")}</strong>.</p>
+      <p style="margin:0 0 16px">This is a link, not a code. Tap it to open Switch, then enter your company password before you can set a new PIN.</p>
+      <p style="margin:0 0 16px">
+        <a href="${link}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:700">Reset Switch PIN</a>
+      </p>
+      <p style="margin:0;color:#6b7280">The link expires in 30 minutes. If you did not request this, ignore the email.</p>
+    </div>
+  `;
+
+  return sendMail({
+    to: email,
+    critical: true,
     subject,
     text,
     html,
@@ -421,4 +506,5 @@ module.exports = {
   preferredProvider,
   sendMail,
   sendVerificationEmail,
+  sendSwitchPinResetEmail,
 };

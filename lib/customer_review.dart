@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:switch_app/widgets/horizontal_end_fade.dart';
 import 'package:switch_app/models/product.dart';
+import 'package:switch_app/review_media_viewer.dart';
 import 'package:video_player/video_player.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
 
@@ -11,10 +12,12 @@ class CustomerReviewItem {
     required this.title,
     required this.message,
     required this.rating,
+    this.id = '',
     this.media = const <ProductReviewMedia>[],
     this.sellerReply,
   });
 
+  final String id;
   final String reviewer;
   final String title;
   final String message;
@@ -28,12 +31,42 @@ class CustomerReviewPage extends StatelessWidget {
     super.key,
     required this.productName,
     required this.reviews,
+    this.productId = '',
     this.productCompanyName = '',
   });
 
   final String productName;
   final List<CustomerReviewItem> reviews;
+  final String productId;
   final String productCompanyName;
+
+  void _openMediaViewer(
+    BuildContext context,
+    CustomerReviewItem review,
+    int mediaIndex,
+  ) {
+    final feed = buildReviewMediaFeed(
+      reviews.map(
+        (item) => (
+          id: item.id,
+          reviewer: item.reviewer,
+          rating: item.rating,
+          message: item.message,
+          media: item.media,
+        ),
+      ),
+    );
+    final tappedUrl = review.media[mediaIndex].url;
+    final initialIndex = feed.indexWhere(
+      (entry) => entry.reviewId == review.id && entry.media.url == tappedUrl,
+    );
+    openReviewMediaViewer(
+      context,
+      productId: productId,
+      entries: feed,
+      initialIndex: initialIndex < 0 ? 0 : initialIndex,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -119,9 +152,12 @@ class CustomerReviewPage extends StatelessWidget {
                     );
                   }
 
+                  final review = reviews[index - 1];
                   return _CustomerReviewListCard(
-                    review: reviews[index - 1],
+                    review: review,
                     fallbackCompanyName: productCompanyName,
+                    onMediaTap: (mediaIndex) =>
+                        _openMediaViewer(context, review, mediaIndex),
                   );
                 },
               ),
@@ -135,10 +171,14 @@ class CustomerReviewMediaStrip extends StatelessWidget {
     super.key,
     required this.media,
     this.tileSize = 84,
+    this.onMediaTap,
   });
 
   final List<ProductReviewMedia> media;
   final double tileSize;
+
+  /// Opens the tapped item; when null, a single-item preview dialog is shown.
+  final ValueChanged<int>? onMediaTap;
 
   @override
   Widget build(BuildContext context) {
@@ -154,7 +194,11 @@ class CustomerReviewMediaStrip extends StatelessWidget {
           children: [
             for (var index = 0; index < media.length; index += 1) ...[
               if (index > 0) const SizedBox(width: 8),
-              _CustomerReviewMediaTile(media: media[index], size: tileSize),
+              _CustomerReviewMediaTile(
+                media: media[index],
+                size: tileSize,
+                onTap: onMediaTap == null ? null : () => onMediaTap!(index),
+              ),
             ],
           ],
         ),
@@ -164,10 +208,15 @@ class CustomerReviewMediaStrip extends StatelessWidget {
 }
 
 class _CustomerReviewMediaTile extends StatelessWidget {
-  const _CustomerReviewMediaTile({required this.media, required this.size});
+  const _CustomerReviewMediaTile({
+    required this.media,
+    required this.size,
+    this.onTap,
+  });
 
   final ProductReviewMedia media;
   final double size;
+  final VoidCallback? onTap;
 
   void _openPreview(BuildContext context) {
     showDialog<void>(
@@ -227,7 +276,7 @@ class _CustomerReviewMediaTile extends StatelessWidget {
       label: media.isVideo ? 'Review video' : 'Review photo',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _openPreview(context),
+        onTap: onTap ?? () => _openPreview(context),
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
@@ -652,10 +701,12 @@ class _CustomerReviewListCard extends StatelessWidget {
   const _CustomerReviewListCard({
     required this.review,
     required this.fallbackCompanyName,
+    this.onMediaTap,
   });
 
   final CustomerReviewItem review;
   final String fallbackCompanyName;
+  final ValueChanged<int>? onMediaTap;
 
   @override
   Widget build(BuildContext context) {
@@ -731,7 +782,7 @@ class _CustomerReviewListCard extends StatelessWidget {
         ],
         if (review.media.isNotEmpty) ...[
           const SizedBox(height: 10),
-          CustomerReviewMediaStrip(media: review.media),
+          CustomerReviewMediaStrip(media: review.media, onMediaTap: onMediaTap),
         ],
         if (review.sellerReply != null) ...[
           const SizedBox(height: 12),

@@ -43,6 +43,23 @@ class _UnsupportedUnifiedAccountService implements UnifiedAccountService {
     required String companyName,
     String businessType = '',
     String planName = 'Starter Seller Plan',
+    String sellerKind = '',
+    Map<String, String> payoutBank = const <String, String>{},
+    String storeAddress = '',
+    double? storeLatitude,
+    double? storeLongitude,
+  }) async {
+    throw _error;
+  }
+
+  @override
+  Future<void> addSellerDocument({
+    required String accountId,
+    required String companyId,
+    required String type,
+    required String url,
+    String fileName = '',
+    String label = '',
   }) async {
     throw _error;
   }
@@ -57,6 +74,16 @@ class _UnsupportedUnifiedAccountService implements UnifiedAccountService {
     String paymentReference = '',
     double amount = 0,
     String currencyCode = 'PHP',
+  }) async {
+    throw _error;
+  }
+
+  @override
+  Future<UnifiedAccountSessionResult> withdrawPendingCompany({
+    required String accountId,
+    required String companyId,
+    String email = '',
+    String reason = '',
   }) async {
     throw _error;
   }

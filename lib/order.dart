@@ -7,6 +7,8 @@ import 'package:switch_app/models/product.dart';
 import 'package:switch_app/order_store.dart';
 import 'package:switch_app/place_order.dart';
 import 'package:switch_app/services/product_repository.dart';
+import 'package:switch_app/services/switch_rider_service.dart';
+import 'package:switch_app/switch_rider_tracking_page.dart';
 import 'package:switch_app/tacking.dart';
 import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:switch_app/utils/currency_format.dart';
@@ -1142,6 +1144,18 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
   }
 
   void _handleTrackOrder(BuildContext context) {
+    if (isSwitchRiderPartnerName(order.deliveryPartnerName)) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SwitchRiderTrackingPage(
+            orderReference: order.createdAtEpochMs.toString(),
+            orderLabel: order.headline,
+            destinationAddress: order.clientAddress,
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TackingPage(
@@ -1270,6 +1284,27 @@ class _OrderSummaryCardState extends State<_OrderSummaryCard> {
             valueColor: primaryColor,
           ),
           const SizedBox(height: 14),
+          if (isSwitchRiderPartnerName(order.deliveryPartnerName)) ...[
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                onPressed: () => _handleTrackOrder(context),
+                icon: const Icon(Icons.two_wheeler_rounded, size: 18),
+                label: Text(
+                  hasConfirmedReceipt ? 'Delivery details' : 'Track delivery',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryColor,
+                  side: BorderSide(color: primaryColor.withOpacity(0.28)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           if (hasConfirmedReceipt) ...[
             Text(
               'This completed order stays here as your record.',

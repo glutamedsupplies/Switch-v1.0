@@ -10,6 +10,7 @@ class BuyerPlatformSummary {
     this.heroImageUrl = '',
     this.primaryColor = '',
     this.secondaryColor = '',
+    this.storefrontMode = 'commerce',
   });
 
   final String id;
@@ -22,6 +23,14 @@ class BuyerPlatformSummary {
   final String heroImageUrl;
   final String primaryColor;
   final String secondaryColor;
+  final String storefrontMode;
+
+  bool get isCommerceStorefront {
+    final mode = storefrontMode.trim().toLowerCase();
+    if (mode == 'booking') return false;
+    if (mode == 'commerce') return true;
+    return id != 'hotels' && id != 'resort';
+  }
 
   factory BuyerPlatformSummary.fromJson(Map<String, dynamic> json) {
     final id = (json['id'] ?? json['platformId'] ?? json['slug'] ?? '')
@@ -38,6 +47,13 @@ class BuyerPlatformSummary {
     final comingSoonRaw = json['comingSoon'] ?? json['isComingSoon'] ?? json['soon'];
     final comingSoon = comingSoonRaw == true ||
         comingSoonRaw.toString().trim().toLowerCase() == 'true';
+    final modeRaw = (json['storefrontMode'] ?? json['mode'] ?? json['verticalMode'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final storefrontMode = modeRaw == 'booking' || modeRaw == 'commerce'
+        ? modeRaw
+        : (id == 'hotels' || id == 'resort' ? 'booking' : 'commerce');
 
     return BuyerPlatformSummary(
       id: id,
@@ -63,6 +79,7 @@ class BuyerPlatformSummary {
               .toString()
               .trim()
               .toLowerCase(),
+      storefrontMode: storefrontMode,
     );
   }
 }

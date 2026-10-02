@@ -4,19 +4,11 @@ import 'dart:io';
 
 import 'package:switch_app/services/account_registration_base.dart';
 import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 
 AccountRegistrationService createAccountRegistrationService({String? baseUrl}) {
-  return _HttpAccountRegistrationService(
-    baseUrls: _buildBaseUrls(baseUrl: baseUrl),
-  );
-}
-
-List<String> _buildBaseUrls({String? baseUrl}) {
-  return buildLocalApiBaseUrls(
-    baseUrl: baseUrl,
-    isAndroid: Platform.isAndroid,
-  );
+  return _HttpAccountRegistrationService(baseUrl: baseUrl);
 }
 
 /// Result of an account registration attempt at a specific URL
@@ -33,13 +25,11 @@ class _AccountResult {
 }
 
 class _HttpAccountRegistrationService implements AccountRegistrationService {
-  _HttpAccountRegistrationService({
-    required this.baseUrls,
-  });
+  _HttpAccountRegistrationService({this.baseUrl});
 
-  final List<String> baseUrls;
+  final String? baseUrl;
   final HttpClient _client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 10);
+    ..connectionTimeout = const Duration(seconds: 3);
 
   Future<_AccountResult> _tryRegisterAtUrl(
     String baseUrl,
@@ -129,21 +119,27 @@ class _HttpAccountRegistrationService implements AccountRegistrationService {
       if (googleProfile != null) 'googleProfile': googleProfile,
     });
 
-    // Try each URL until one succeeds
+    await resolveWorkingLocalApiBaseUrl();
+    final baseUrls = buildLocalApiBaseUrls(
+      baseUrl: baseUrl,
+      isAndroid: Platform.isAndroid,
+    );
     for (final baseUrl in baseUrls) {
       final result = await _tryRegisterAtUrl(baseUrl, payload);
 
       if (result.statusCode == HttpStatus.created) {
-        return; // Success!
+        rememberWorkingLocalApiBaseUrl(baseUrl);
+        return;
       }
 
-      // For 400 errors (validation failures), report immediately
-      if (result.statusCode == HttpStatus.badRequest) {
-        throw AccountRegistrationException(result.errorMessage ?? 'Registration failed.');
+      // Any HTTP reply came from the real backend; only network failures
+      // (status 0) move on to the next address.
+      if (result.statusCode != 0) {
+        rememberWorkingLocalApiBaseUrl(baseUrl);
+        throw AccountRegistrationException(
+          result.errorMessage ?? 'Registration failed.',
+        );
       }
-
-      // For other errors (network issues), try next URL
-      // Continue to next URL...
     }
 
     // All URLs failed

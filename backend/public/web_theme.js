@@ -1,3 +1,4 @@
+//ito pwedi idelete
 const themeForm = document.getElementById("theme-form");
 const themeFeedback = document.getElementById("theme-feedback");
 const previewSwatch = document.getElementById("theme-preview-swatch");
@@ -93,5 +94,6 @@ resetThemeButton.addEventListener("click", () => {
 
 const initialTheme = setControls(window.WebTheme.loadTheme());
 updatePreview(initialTheme);
+//hanggang dito
 
 

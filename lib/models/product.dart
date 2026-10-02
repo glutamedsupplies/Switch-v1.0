@@ -18,6 +18,55 @@ class ProductVariantAddOn {
   }
 }
 
+class ProductSpecification {
+  const ProductSpecification({
+    required this.key,
+    required this.label,
+    required this.value,
+  });
+
+  final String key;
+  final String label;
+  final String value;
+
+  static ProductSpecification? tryParse(Object? raw) {
+    if (raw is! Map) {
+      return null;
+    }
+
+    final key = raw['key']?.toString().trim() ?? '';
+    final value = raw['value']?.toString().trim() ?? '';
+    if (value.isEmpty) {
+      return null;
+    }
+
+    var label = raw['label']?.toString().trim() ?? '';
+    if (label.isEmpty) {
+      label = key
+          .split('_')
+          .where((word) => word.isNotEmpty)
+          .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+          .join(' ');
+    }
+    if (label.isEmpty) {
+      return null;
+    }
+
+    return ProductSpecification(key: key, label: label, value: value);
+  }
+}
+
+List<ProductSpecification> _normalizeProductSpecifications(Object? raw) {
+  if (raw is! List) {
+    return const <ProductSpecification>[];
+  }
+
+  return raw
+      .map(ProductSpecification.tryParse)
+      .whereType<ProductSpecification>()
+      .toList(growable: false);
+}
+
 class ProductVariant {
   const ProductVariant({
     required this.id,
@@ -137,6 +186,7 @@ class ProductReviewMedia {
     this.thumbnailUrl = '',
     this.fileName = '',
     this.contentType = '',
+    this.likeCount = 0,
   });
 
   final ProductReviewMediaType type;
@@ -144,6 +194,7 @@ class ProductReviewMedia {
   final String thumbnailUrl;
   final String fileName;
   final String contentType;
+  final int likeCount;
 
   bool get isImage => type == ProductReviewMediaType.image;
   bool get isVideo => type == ProductReviewMediaType.video;
@@ -155,6 +206,7 @@ class ProductReviewMedia {
     'thumbnailUrl': thumbnailUrl,
     'fileName': fileName,
     'contentType': contentType,
+    'likeCount': likeCount,
   };
 
   factory ProductReviewMedia.fromJson(Object? value) {
@@ -212,6 +264,10 @@ class ProductReviewMedia {
       fileName: (json['fileName'] ?? json['name'])?.toString().trim() ?? '',
       contentType:
           (json['contentType'] ?? json['mimeType'])?.toString().trim() ?? '',
+      likeCount: (num.tryParse(json['likeCount']?.toString() ?? '') ?? 0)
+          .toInt()
+          .clamp(0, 1 << 31)
+          .toInt(),
     );
   }
 }
@@ -393,6 +449,7 @@ class Product {
     this.model3dUrl = '',
     this.model3dScanImageUrls = const <String>[],
     this.variants = const <ProductVariant>[],
+    this.specifications = const <ProductSpecification>[],
     this.mainImageIndex = 0,
     this.buyModalImageUrl = '',
     this.buyModalImageSourceUrl = '',
@@ -419,6 +476,7 @@ class Product {
     this.reviewComments = const <ProductReviewComment>[],
     this.isActive = true,
     this.adminId = '',
+    this.companyId = '',
     this.approvalStatus = 'approved',
     this.companyName = '',
     this.companyPictureUrl = '',
@@ -428,6 +486,7 @@ class Product {
 
   final String id;
   final String adminId;
+  final String companyId;
   final String approvalStatus;
   final String companyName;
   final String companyPictureUrl;
@@ -454,6 +513,7 @@ class Product {
   final String model3dUrl;
   final List<String> model3dScanImageUrls;
   final List<ProductVariant> variants;
+  final List<ProductSpecification> specifications;
   final int mainImageIndex;
   final String buyModalImageUrl;
   final String buyModalImageSourceUrl;
@@ -733,6 +793,7 @@ class Product {
   Product copyWith({
     String? id,
     String? adminId,
+    String? companyId,
     String? approvalStatus,
     String? companyName,
     String? companyPictureUrl,
@@ -759,6 +820,7 @@ class Product {
     String? model3dUrl,
     List<String>? model3dScanImageUrls,
     List<ProductVariant>? variants,
+    List<ProductSpecification>? specifications,
     int? mainImageIndex,
     String? buyModalImageUrl,
     String? buyModalImageSourceUrl,
@@ -788,6 +850,7 @@ class Product {
     return Product(
       id: id ?? this.id,
       adminId: adminId ?? this.adminId,
+      companyId: companyId ?? this.companyId,
       approvalStatus: approvalStatus ?? this.approvalStatus,
       companyName: companyName ?? this.companyName,
       companyPictureUrl: companyPictureUrl ?? this.companyPictureUrl,
@@ -815,6 +878,7 @@ class Product {
       model3dUrl: model3dUrl ?? this.model3dUrl,
       model3dScanImageUrls: model3dScanImageUrls ?? this.model3dScanImageUrls,
       variants: variants ?? this.variants,
+      specifications: specifications ?? this.specifications,
       mainImageIndex: mainImageIndex ?? this.mainImageIndex,
       buyModalImageUrl: buyModalImageUrl ?? this.buyModalImageUrl,
       buyModalImageSourceUrl:
@@ -931,6 +995,11 @@ class Product {
               ?.toString()
               .trim() ??
           '',
+      companyId:
+          (json['companyId'] ?? json['company_id'] ?? json['activeCompanyId'])
+              ?.toString()
+              .trim() ??
+          '',
       companyName:
           (json['companyName'] ??
                   json['storeName'] ??
@@ -961,14 +1030,8 @@ class Product {
       planName: (json['planName'] ?? json['subscriptionPlan'] ?? '')
           .toString()
           .trim(),
-      hasPaidPlan: json['hasPaidPlan'] == true ||
-          json['isLegitSeller'] == true ||
-          _productPlanLooksPaid(
-            (json['planName'] ?? json['subscriptionPlan'] ?? '')
-                .toString()
-                .trim(),
-            json['planAmount'] ?? json['subscriptionAmount'] ?? json['amount'],
-          ),
+      hasPaidPlan: json['legitimateBadge'] == true ||
+          json['isLegitSeller'] == true,
       name: json['name']?.toString() ?? '',
       originalPrice: originalPrice,
       category: normalizedCategories.isNotEmpty
@@ -1012,6 +1075,7 @@ class Product {
         json['model3dScanImageUrls'] as List<dynamic>?,
       ),
       variants: variants,
+      specifications: _normalizeProductSpecifications(json['specifications']),
       mainImageIndex: mainImageIndex,
       buyModalImageUrl: json['buyModalImageUrl']?.toString() ?? '',
       buyModalImageSourceUrl: json['buyModalImageSourceUrl']?.toString() ?? '',

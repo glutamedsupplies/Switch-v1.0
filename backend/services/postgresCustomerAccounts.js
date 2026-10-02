@@ -17,7 +17,6 @@ const {
   stripInternalFields,
   asObject,
 } = require("../db/accountHelpers");
-
 function extractUserProfileData(account) {
   const omit = new Set([
     "id",
@@ -227,7 +226,9 @@ const CUSTOMER_SELECT = `
     ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
     LIMIT 1
   ) gi ON TRUE
-  WHERE a.role = 'user'
+  -- Buyer profile is the source of User Data. Keep shoppers listed after they
+  -- open a company (role may already be admin from older Super Admin approvals).
+  WHERE a.role IN ('user', 'admin')
 `;
 
 function isGoogleHostedProfileImage(url) {
@@ -540,6 +541,7 @@ async function createCustomerAccount(input) {
   const profileImageUrl = String(
     input.profileImageUrl ?? googleProfile?.picture ?? "",
   ).trim();
+  const userProfileData = extractUserProfileData(input);
 
   await withTransaction(async (client) => {
     await client.query(
@@ -597,7 +599,7 @@ async function createCustomerAccount(input) {
         Boolean(input.faceVerified),
         input.verifiedAt ? toIso(input.verifiedAt) : now.toISOString(),
         adminId,
-        JSON.stringify(extractUserProfileData(input)),
+        JSON.stringify(userProfileData),
         now.toISOString(),
       ],
     );
@@ -689,7 +691,6 @@ async function createCustomerAccountFromGoogle(profile, options = {}) {
   const googleProfileData = preferredLanguage
     ? { preferredLanguage }
     : {};
-
   await withTransaction(async (client) => {
     await client.query(
       `
@@ -889,7 +890,7 @@ async function markCustomerLoggedIn(accountId) {
         presence_status = 'online',
         presence_updated_at = $2,
         updated_at = $2
-      WHERE id = $1 AND role = 'user'
+      WHERE id = $1
     `,
     [accountId, now],
   );
@@ -1023,7 +1024,6 @@ async function changeCustomerPassword({
         password_updated_at = $3,
         updated_at = $3
       WHERE id = $1
-        AND role = 'user'
     `,
     [account.id, passwordHash, now],
   );

@@ -19,6 +19,11 @@ enum OrderStageKey {
 
 const Duration _highRatingReviewLockDuration = Duration(days: 30);
 
+double? _optionalDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse('${value ?? ''}'.trim());
+}
+
 class OrderItemAddOn {
   const OrderItemAddOn({
     required this.id,
@@ -31,11 +36,7 @@ class OrderItemAddOn {
   final int quantity;
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'id': id,
-      'name': name,
-      'quantity': quantity,
-    };
+    return <String, dynamic>{'id': id, 'name': name, 'quantity': quantity};
   }
 
   factory OrderItemAddOn.fromJson(Map<String, dynamic> json) {
@@ -47,10 +48,7 @@ class OrderItemAddOn {
   }
 }
 
-enum OrderReviewMediaType {
-  image,
-  video,
-}
+enum OrderReviewMediaType { image, video }
 
 class OrderReviewMedia {
   const OrderReviewMedia({
@@ -129,13 +127,15 @@ class OrderReviewMedia {
       ),
       url: url,
       id: json['id']?.toString().trim() ?? '',
-      fileName: json['fileName']?.toString().trim() ??
+      fileName:
+          json['fileName']?.toString().trim() ??
           json['name']?.toString().trim() ??
           '',
       contentType: contentType,
       sizeBytes: _normalizeNonNegativeInt(json['sizeBytes'] ?? json['size']),
-      uploadedAtEpochMs:
-          _normalizeNonNegativeInt(json['uploadedAtEpochMs'] ?? json['createdAtEpochMs']),
+      uploadedAtEpochMs: _normalizeNonNegativeInt(
+        json['uploadedAtEpochMs'] ?? json['createdAtEpochMs'],
+      ),
     );
   }
 }
@@ -161,6 +161,11 @@ class OrderEntryData {
     this.amountToPayAmount = 0,
     this.remainingBalanceAmount = 0,
     this.shippingFeeAmount = 0,
+    this.voucherId = '',
+    this.voucherCode = '',
+    this.voucherDiscountAmount = 0,
+    this.shippingVoucherId = '',
+    this.shippingVoucherCode = '',
     this.paymentOptionLabel = '',
     this.paymentPartnerName = '',
     this.paymentPartnerImageUrl = '',
@@ -169,6 +174,9 @@ class OrderEntryData {
     this.clientName = '',
     this.clientContactNumber = '',
     this.clientAddress = '',
+    this.clientLatitude,
+    this.clientLongitude,
+    this.switchRiderQuoteToken = '',
     this.skipRemoteSync = false,
     this.cancelRequestStatus = '',
     this.cancelRequestReason = '',
@@ -205,6 +213,11 @@ class OrderEntryData {
   final double amountToPayAmount;
   final double remainingBalanceAmount;
   final double shippingFeeAmount;
+  final String voucherId;
+  final String voucherCode;
+  final double voucherDiscountAmount;
+  final String shippingVoucherId;
+  final String shippingVoucherCode;
   final String paymentOptionLabel;
   final String paymentPartnerName;
   final String paymentPartnerImageUrl;
@@ -213,6 +226,11 @@ class OrderEntryData {
   final String clientName;
   final String clientContactNumber;
   final String clientAddress;
+  final double? clientLatitude;
+  final double? clientLongitude;
+
+  /// Signed server quote; only sent while placing a Switch Rider order.
+  final String switchRiderQuoteToken;
   final bool skipRemoteSync;
   final String cancelRequestStatus;
   final String cancelRequestReason;
@@ -274,6 +292,11 @@ class OrderEntryData {
     double? amountToPayAmount,
     double? remainingBalanceAmount,
     double? shippingFeeAmount,
+    String? voucherId,
+    String? voucherCode,
+    double? voucherDiscountAmount,
+    String? shippingVoucherId,
+    String? shippingVoucherCode,
     String? paymentOptionLabel,
     String? paymentPartnerName,
     String? paymentPartnerImageUrl,
@@ -282,6 +305,9 @@ class OrderEntryData {
     String? clientName,
     String? clientContactNumber,
     String? clientAddress,
+    double? clientLatitude,
+    double? clientLongitude,
+    String? switchRiderQuoteToken,
     bool? skipRemoteSync,
     String? cancelRequestStatus,
     String? cancelRequestReason,
@@ -319,6 +345,12 @@ class OrderEntryData {
       remainingBalanceAmount:
           remainingBalanceAmount ?? this.remainingBalanceAmount,
       shippingFeeAmount: shippingFeeAmount ?? this.shippingFeeAmount,
+      voucherId: voucherId ?? this.voucherId,
+      voucherCode: voucherCode ?? this.voucherCode,
+      voucherDiscountAmount:
+          voucherDiscountAmount ?? this.voucherDiscountAmount,
+      shippingVoucherId: shippingVoucherId ?? this.shippingVoucherId,
+      shippingVoucherCode: shippingVoucherCode ?? this.shippingVoucherCode,
       paymentOptionLabel: paymentOptionLabel ?? this.paymentOptionLabel,
       paymentPartnerName: paymentPartnerName ?? this.paymentPartnerName,
       paymentPartnerImageUrl:
@@ -327,14 +359,18 @@ class OrderEntryData {
       deliveryPartnerImageUrl:
           deliveryPartnerImageUrl ?? this.deliveryPartnerImageUrl,
       clientName: clientName ?? this.clientName,
-      clientContactNumber:
-          clientContactNumber ?? this.clientContactNumber,
+      clientContactNumber: clientContactNumber ?? this.clientContactNumber,
       clientAddress: clientAddress ?? this.clientAddress,
+      clientLatitude: clientLatitude ?? this.clientLatitude,
+      clientLongitude: clientLongitude ?? this.clientLongitude,
+      switchRiderQuoteToken:
+          switchRiderQuoteToken ?? this.switchRiderQuoteToken,
       skipRemoteSync: skipRemoteSync ?? this.skipRemoteSync,
       cancelRequestStatus: cancelRequestStatus ?? this.cancelRequestStatus,
       cancelRequestReason: cancelRequestReason ?? this.cancelRequestReason,
       cancelRequestSubmittedAtEpochMs:
-          cancelRequestSubmittedAtEpochMs ?? this.cancelRequestSubmittedAtEpochMs,
+          cancelRequestSubmittedAtEpochMs ??
+          this.cancelRequestSubmittedAtEpochMs,
       cancelRequestResolvedAtEpochMs:
           cancelRequestResolvedAtEpochMs ?? this.cancelRequestResolvedAtEpochMs,
       inventoryDeducted: inventoryDeducted ?? this.inventoryDeducted,
@@ -349,8 +385,7 @@ class OrderEntryData {
       productReviewRating: productReviewRating ?? this.productReviewRating,
       productRatedAtEpochMs:
           productRatedAtEpochMs ?? this.productRatedAtEpochMs,
-      productReviewComment:
-          productReviewComment ?? this.productReviewComment,
+      productReviewComment: productReviewComment ?? this.productReviewComment,
       productReviewMedia: productReviewMedia ?? this.productReviewMedia,
     );
   }
@@ -387,6 +422,15 @@ class OrderEntryData {
       'amountToPayAmount': amountToPayAmount,
       'remainingBalanceAmount': remainingBalanceAmount,
       'shippingFeeAmount': shippingFeeAmount,
+      if (voucherId.trim().isNotEmpty) 'voucherId': voucherId.trim(),
+      if (voucherCode.trim().isNotEmpty)
+        'voucherCode': voucherCode.trim().toUpperCase(),
+      if (voucherDiscountAmount > 0)
+        'voucherDiscountAmount': voucherDiscountAmount,
+      if (shippingVoucherId.trim().isNotEmpty)
+        'shippingVoucherId': shippingVoucherId.trim(),
+      if (shippingVoucherCode.trim().isNotEmpty)
+        'shippingVoucherCode': shippingVoucherCode.trim().toUpperCase(),
       'paymentOptionLabel': paymentOptionLabel,
       'paymentPartnerName': paymentPartnerName,
       'paymentPartnerImageUrl': paymentPartnerImageUrl,
@@ -395,6 +439,10 @@ class OrderEntryData {
       'clientName': clientName,
       'clientContactNumber': clientContactNumber,
       'clientAddress': clientAddress,
+      if (clientLatitude != null) 'clientLatitude': clientLatitude,
+      if (clientLongitude != null) 'clientLongitude': clientLongitude,
+      if (switchRiderQuoteToken.trim().isNotEmpty)
+        'switchRiderQuoteToken': switchRiderQuoteToken.trim(),
       'skipRemoteSync': skipRemoteSync,
       'cancelRequestStatus': cancelRequestStatus,
       'cancelRequestReason': cancelRequestReason,
@@ -409,11 +457,14 @@ class OrderEntryData {
       'productReviewRating': productReviewRating,
       'productRatedAtEpochMs': productRatedAtEpochMs,
       'productReviewComment': productReviewComment,
-      'productReviewMedia':
-          productReviewMedia.map((media) => media.toJson()).toList(growable: false),
+      'productReviewMedia': productReviewMedia
+          .map((media) => media.toJson())
+          .toList(growable: false),
       'customerName': clientName,
       'contactNumber': clientContactNumber,
       'address': clientAddress,
+      if (clientLatitude != null) 'deliveryLatitude': clientLatitude,
+      if (clientLongitude != null) 'deliveryLongitude': clientLongitude,
       'courier': deliveryPartnerName,
       'deliveryProvider': deliveryPartnerName,
       'payment': normalizedPaymentLabel,
@@ -481,7 +532,8 @@ class OrderEntryData {
       json['productReviewAttachments'],
       json['productReviewMediaUrls'],
     ]);
-    final productReviewRating = (json['productReviewRating'] as num?)?.toDouble() ??
+    final productReviewRating =
+        (json['productReviewRating'] as num?)?.toDouble() ??
         ((productRatedAtEpochMs > 0 ||
                 productReviewComment.isNotEmpty ||
                 productReviewMedia.isNotEmpty)
@@ -504,7 +556,8 @@ class OrderEntryData {
 
     return OrderEntryData(
       id: json['id']?.toString() ?? '',
-      adminId: json['adminId']?.toString() ??
+      adminId:
+          json['adminId']?.toString() ??
           json['tenantId']?.toString() ??
           json['ownerAdminId']?.toString() ??
           '',
@@ -516,8 +569,14 @@ class OrderEntryData {
       variantName: json['variantName']?.toString() ?? '',
       addOns: (json['addOns'] as List<dynamic>? ?? const [])
           .whereType<Map>()
-          .map((entry) => OrderItemAddOn.fromJson(Map<String, dynamic>.from(entry)))
-          .where((addOn) => addOn.id.trim().isNotEmpty && addOn.name.trim().isNotEmpty)
+          .map(
+            (entry) =>
+                OrderItemAddOn.fromJson(Map<String, dynamic>.from(entry)),
+          )
+          .where(
+            (addOn) =>
+                addOn.id.trim().isNotEmpty && addOn.name.trim().isNotEmpty,
+          )
           .toList(growable: false),
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
@@ -533,6 +592,14 @@ class OrderEntryData {
       remainingBalanceAmount:
           (json['remainingBalanceAmount'] as num?)?.toDouble() ?? 0,
       shippingFeeAmount: (json['shippingFeeAmount'] as num?)?.toDouble() ?? 0,
+      voucherId: json['voucherId']?.toString().trim() ?? '',
+      voucherCode:
+          json['voucherCode']?.toString().trim().toUpperCase() ?? '',
+      voucherDiscountAmount:
+          (json['voucherDiscountAmount'] as num?)?.toDouble() ?? 0,
+      shippingVoucherId: json['shippingVoucherId']?.toString().trim() ?? '',
+      shippingVoucherCode:
+          json['shippingVoucherCode']?.toString().trim().toUpperCase() ?? '',
       paymentOptionLabel: _firstNonEmptyString(<Object?>[
         json['paymentOptionLabel'],
         json['payment'],
@@ -554,19 +621,22 @@ class OrderEntryData {
             ]),
       clientContactNumber: clientContactNumber,
       clientAddress: clientAddress,
+      clientLatitude: _optionalDouble(
+        json['clientLatitude'] ?? json['deliveryLatitude'],
+      ),
+      clientLongitude: _optionalDouble(
+        json['clientLongitude'] ?? json['deliveryLongitude'],
+      ),
       skipRemoteSync: json['skipRemoteSync'] == true,
-      cancelRequestStatus:
-          json['cancelRequestStatus']?.toString().trim() ?? '',
+      cancelRequestStatus: json['cancelRequestStatus']?.toString().trim() ?? '',
       cancelRequestReason: json['cancelRequestReason']?.toString().trim() ?? '',
       cancelRequestSubmittedAtEpochMs:
           (json['cancelRequestSubmittedAtEpochMs'] as num?)?.toInt() ?? 0,
       cancelRequestResolvedAtEpochMs:
           (json['cancelRequestResolvedAtEpochMs'] as num?)?.toInt() ?? 0,
-      inventoryDeducted:
-          inventoryRestoredAtEpochMs > 0
-              ? false
-              : json['inventoryDeducted'] == true ||
-                    inventoryDeductedAtEpochMs > 0,
+      inventoryDeducted: inventoryRestoredAtEpochMs > 0
+          ? false
+          : json['inventoryDeducted'] == true || inventoryDeductedAtEpochMs > 0,
       inventoryDeductedAtEpochMs: inventoryDeductedAtEpochMs,
       inventoryRestoredAtEpochMs: inventoryRestoredAtEpochMs,
       inventoryMovements: inventoryMovements,
@@ -631,7 +701,9 @@ int _normalizeNonNegativeInt(Object? value) {
   return number.toInt();
 }
 
-List<OrderReviewMedia> _normalizeOrderReviewMediaList(Iterable<Object?> values) {
+List<OrderReviewMedia> _normalizeOrderReviewMediaList(
+  Iterable<Object?> values,
+) {
   final media = <OrderReviewMedia>[];
   final seenUrls = <String>{};
 
@@ -719,10 +791,7 @@ bool _isRealOrderAccountId(String? value) {
       !normalizedAccountId.startsWith('unknown-');
 }
 
-bool _isOrderEntryForAccount(
-  OrderEntryData entry,
-  String accountId,
-) {
+bool _isOrderEntryForAccount(OrderEntryData entry, String accountId) {
   final entryAccountId = entry.accountId.trim();
   final currentAccountId = accountId.trim();
   if (!_isRealOrderAccountId(entryAccountId) ||
@@ -775,7 +844,8 @@ class OrderStore {
   Future<void> _removeLegacyOrderKeys(SharedPreferences preferences) async {
     for (final key in preferences.getKeys().toList(growable: false)) {
       final normalizedKey = key.toLowerCase();
-      final isLegacyOrderKey = normalizedKey == 'client_orders' ||
+      final isLegacyOrderKey =
+          normalizedKey == 'client_orders' ||
           normalizedKey == 'client_orders_guest' ||
           normalizedKey.startsWith('client_orders_guest_') ||
           normalizedKey.startsWith('client_orders_guest-') ||
@@ -800,9 +870,11 @@ class OrderStore {
     // If the account changed, clear orders and reload with the new key.
     // This ensures each account has its own separate orders.
     // Handle null comparisons properly - different null states mean different users
-    final accountChanged = trimmedCurrentAccountId != lastTrimmedAccountId ||
+    final accountChanged =
+        trimmedCurrentAccountId != lastTrimmedAccountId ||
         (trimmedCurrentAccountId == null) != (lastTrimmedAccountId == null);
-    final emailChanged = trimmedEmail != lastTrimmedEmail ||
+    final emailChanged =
+        trimmedEmail != lastTrimmedEmail ||
         (trimmedEmail == null) != (lastTrimmedEmail == null);
 
     if (_hasLoaded && (accountChanged || emailChanged)) {
@@ -853,9 +925,7 @@ class OrderStore {
       ordersNotifier.value = List<OrderEntryData>.unmodifiable(loadedOrders);
       await preferences.setString(
         ordersKey,
-        jsonEncode([
-          for (final entry in loadedOrders) entry.toJson(),
-        ]),
+        jsonEncode([for (final entry in loadedOrders) entry.toJson()]),
       );
     } catch (_) {
       ordersNotifier.value = const <OrderEntryData>[];
@@ -891,26 +961,25 @@ class OrderStore {
   Future<void> syncPackingQueueOrdersToRemote() async {
     await ensureLoaded();
 
-    final currentEntries = List<OrderEntryData>.unmodifiable(ordersNotifier.value);
+    final currentEntries = List<OrderEntryData>.unmodifiable(
+      ordersNotifier.value,
+    );
     final packingQueueEntries = currentEntries
-        .where(
-          (entry) => entry.stage == OrderStageKey.toPrepare,
-        )
+        .where((entry) => entry.stage == OrderStageKey.toPrepare)
         .toList(growable: false);
     if (packingQueueEntries.isEmpty) {
       return;
     }
 
-    await _pushEntriesToRemote(
-      currentEntries,
-      fallbackEntries: currentEntries,
-    );
+    await _pushEntriesToRemote(currentEntries, fallbackEntries: currentEntries);
   }
 
   Future<void> syncFullPaymentQueueOrdersToRemote() async {
     await ensureLoaded();
 
-    final currentEntries = List<OrderEntryData>.unmodifiable(ordersNotifier.value);
+    final currentEntries = List<OrderEntryData>.unmodifiable(
+      ordersNotifier.value,
+    );
     final fullPaymentQueueEntries = currentEntries
         .where(
           (entry) =>
@@ -936,7 +1005,9 @@ class OrderStore {
   Future<void> syncCodQueueOrdersToRemote() async {
     await ensureLoaded();
 
-    final currentEntries = List<OrderEntryData>.unmodifiable(ordersNotifier.value);
+    final currentEntries = List<OrderEntryData>.unmodifiable(
+      ordersNotifier.value,
+    );
     final codQueueEntries = currentEntries
         .where(
           (entry) =>
@@ -962,7 +1033,9 @@ class OrderStore {
   Future<void> syncCodQueueOrderGroupToRemote(int createdAtEpochMs) async {
     await ensureLoaded();
 
-    final currentEntries = List<OrderEntryData>.unmodifiable(ordersNotifier.value);
+    final currentEntries = List<OrderEntryData>.unmodifiable(
+      ordersNotifier.value,
+    );
     final codQueueEntries = currentEntries
         .where(
           (entry) =>
@@ -975,10 +1048,7 @@ class OrderStore {
       return;
     }
 
-    await _pushEntriesToRemote(
-      currentEntries,
-      fallbackEntries: currentEntries,
-    );
+    await _pushEntriesToRemote(currentEntries, fallbackEntries: currentEntries);
   }
 
   Future<void> addOrders(
@@ -995,8 +1065,8 @@ class OrderStore {
         .where(
           (entry) =>
               entry.id.trim().isNotEmpty &&
-                entry.productId.trim().isNotEmpty &&
-                entry.productName.trim().isNotEmpty,
+              entry.productId.trim().isNotEmpty &&
+              entry.productName.trim().isNotEmpty,
         )
         .map((entry) => entry.copyWith(accountId: currentAccountId))
         .map(_normalizePendingOrderEntry)
@@ -1051,10 +1121,7 @@ class OrderStore {
         await _orderSyncService.cancelOrderGroup(createdAtEpochMs);
       } catch (_) {
         try {
-          await _syncToRemote(
-            normalizedNextOrders,
-            rethrowOnFailure: true,
-          );
+          await _syncToRemote(normalizedNextOrders, rethrowOnFailure: true);
         } catch (_) {
           await _refreshFromRemoteInternal();
         }
@@ -1076,19 +1143,21 @@ class OrderStore {
 
     final requestSubmittedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     var didUpdate = false;
-    final nextOrders = ordersNotifier.value.map((entry) {
-      if (entry.createdAtEpochMs != createdAtEpochMs) {
-        return entry;
-      }
+    final nextOrders = ordersNotifier.value
+        .map((entry) {
+          if (entry.createdAtEpochMs != createdAtEpochMs) {
+            return entry;
+          }
 
-      didUpdate = true;
-      return entry.copyWith(
-        cancelRequestStatus: 'pending',
-        cancelRequestReason: normalizedReason,
-        cancelRequestSubmittedAtEpochMs: requestSubmittedAtEpochMs,
-        cancelRequestResolvedAtEpochMs: 0,
-      );
-    }).toList(growable: false);
+          didUpdate = true;
+          return entry.copyWith(
+            cancelRequestStatus: 'pending',
+            cancelRequestReason: normalizedReason,
+            cancelRequestSubmittedAtEpochMs: requestSubmittedAtEpochMs,
+            cancelRequestResolvedAtEpochMs: 0,
+          );
+        })
+        .toList(growable: false);
 
     if (!didUpdate) {
       return;
@@ -1118,31 +1187,33 @@ class OrderStore {
       return;
     }
 
-    final nextOrders = ordersNotifier.value.map((entry) {
-      if (entry.createdAtEpochMs != createdAtEpochMs) {
-        return entry;
-      }
+    final nextOrders = ordersNotifier.value
+        .map((entry) {
+          if (entry.createdAtEpochMs != createdAtEpochMs) {
+            return entry;
+          }
 
-      final nextRemainingBalance = math.max(
-        entry.remainingBalanceAmount - amount,
-        0.0,
-      );
-      final isCodOrder = _isCodPaymentOption(entry.paymentOptionLabel);
-      final nextAmountToPay = isCodOrder
-          ? _codAmountStillNeededToProceed(
-              entry,
-              remainingBalanceAmount: nextRemainingBalance,
-            )
-          : nextRemainingBalance;
-      final nextStage = nextAmountToPay > 0.009
-          ? OrderStageKey.toPay
-          : OrderStageKey.toPrepare;
-      return entry.copyWith(
-        stage: nextStage,
-        amountToPayAmount: nextAmountToPay,
-        remainingBalanceAmount: nextRemainingBalance,
-      );
-    }).toList(growable: false);
+          final nextRemainingBalance = math.max(
+            entry.remainingBalanceAmount - amount,
+            0.0,
+          );
+          final isCodOrder = _isCodPaymentOption(entry.paymentOptionLabel);
+          final nextAmountToPay = isCodOrder
+              ? _codAmountStillNeededToProceed(
+                  entry,
+                  remainingBalanceAmount: nextRemainingBalance,
+                )
+              : nextRemainingBalance;
+          final nextStage = nextAmountToPay > 0.009
+              ? OrderStageKey.toPay
+              : OrderStageKey.toPrepare;
+          return entry.copyWith(
+            stage: nextStage,
+            amountToPayAmount: nextAmountToPay,
+            remainingBalanceAmount: nextRemainingBalance,
+          );
+        })
+        .toList(growable: false);
     final updatedEntries = nextOrders
         .where((entry) => entry.createdAtEpochMs == createdAtEpochMs)
         .toList(growable: false);
@@ -1160,21 +1231,22 @@ class OrderStore {
 
     var didUpdate = false;
     final receivedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
-    final nextOrders = ordersNotifier.value.map((entry) {
-      if (entry.createdAtEpochMs != createdAtEpochMs) {
-        return entry;
-      }
+    final nextOrders = ordersNotifier.value
+        .map((entry) {
+          if (entry.createdAtEpochMs != createdAtEpochMs) {
+            return entry;
+          }
 
-      didUpdate = true;
-      return entry.copyWith(
-        amountToPayAmount: 0,
-        remainingBalanceAmount: 0,
-        customerReceivedAtEpochMs:
-            entry.customerReceivedAtEpochMs > 0
+          didUpdate = true;
+          return entry.copyWith(
+            amountToPayAmount: 0,
+            remainingBalanceAmount: 0,
+            customerReceivedAtEpochMs: entry.customerReceivedAtEpochMs > 0
                 ? entry.customerReceivedAtEpochMs
                 : receivedAtEpochMs,
-      );
-    }).toList(growable: false);
+          );
+        })
+        .toList(growable: false);
 
     if (!didUpdate) {
       return;
@@ -1222,22 +1294,24 @@ class OrderStore {
 
     final ratedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     var didUpdate = false;
-    final nextOrders = ordersNotifier.value.map((entry) {
-      if (entry.createdAtEpochMs != createdAtEpochMs) {
-        return entry;
-      }
+    final nextOrders = ordersNotifier.value
+        .map((entry) {
+          if (entry.createdAtEpochMs != createdAtEpochMs) {
+            return entry;
+          }
 
-      final nextRating = normalizedRatingsByEntryId[entry.id.trim()];
-      if (nextRating == null) {
-        return entry;
-      }
+          final nextRating = normalizedRatingsByEntryId[entry.id.trim()];
+          if (nextRating == null) {
+            return entry;
+          }
 
-      didUpdate = true;
-      return entry.copyWith(
-        productReviewRating: nextRating.toDouble(),
-        productRatedAtEpochMs: ratedAtEpochMs,
-      );
-    }).toList(growable: false);
+          didUpdate = true;
+          return entry.copyWith(
+            productReviewRating: nextRating.toDouble(),
+            productRatedAtEpochMs: ratedAtEpochMs,
+          );
+        })
+        .toList(growable: false);
 
     if (!didUpdate) {
       return;
@@ -1282,23 +1356,25 @@ class OrderStore {
 
     final ratedAtEpochMs = DateTime.now().millisecondsSinceEpoch;
     var didUpdate = false;
-    final nextOrders = ordersNotifier.value.map((entry) {
-      if (entry.id.trim() != normalizedEntryId) {
-        return entry;
-      }
+    final nextOrders = ordersNotifier.value
+        .map((entry) {
+          if (entry.id.trim() != normalizedEntryId) {
+            return entry;
+          }
 
-      if (entry.isHighRatingReviewLocked) {
-        return entry;
-      }
+          if (entry.isHighRatingReviewLocked) {
+            return entry;
+          }
 
-      didUpdate = true;
-      return entry.copyWith(
-        productReviewRating: normalizedRating.toDouble(),
-        productRatedAtEpochMs: ratedAtEpochMs,
-        productReviewComment: normalizedComment,
-        productReviewMedia: normalizedMedia,
-      );
-    }).toList(growable: false);
+          didUpdate = true;
+          return entry.copyWith(
+            productReviewRating: normalizedRating.toDouble(),
+            productRatedAtEpochMs: ratedAtEpochMs,
+            productReviewComment: normalizedComment,
+            productReviewMedia: normalizedMedia,
+          );
+        })
+        .toList(growable: false);
 
     if (!didUpdate) {
       return;
@@ -1364,7 +1440,9 @@ class OrderStore {
     }
 
     final normalizedEntries = List<OrderEntryData>.unmodifiable(
-      entries.where((entry) => _isOrderEntryForAccount(entry, currentAccountId)),
+      entries.where(
+        (entry) => _isOrderEntryForAccount(entry, currentAccountId),
+      ),
     );
     ordersNotifier.value = normalizedEntries;
 
@@ -1373,9 +1451,7 @@ class OrderStore {
     final ordersKey = _ordersKeyForAccount(currentAccountId);
     await preferences.setString(
       ordersKey,
-      jsonEncode([
-        for (final entry in normalizedEntries) entry.toJson(),
-      ]),
+      jsonEncode([for (final entry in normalizedEntries) entry.toJson()]),
     );
   }
 
@@ -1478,10 +1554,7 @@ class OrderStore {
     }
 
     try {
-      await _upsertToRemote(
-        entries,
-        rethrowOnFailure: true,
-      );
+      await _upsertToRemote(entries, rethrowOnFailure: true);
       return;
     } catch (_) {
       try {
@@ -1512,15 +1585,17 @@ class OrderStore {
 
     final syncableEntries = includeSkipped
         ? entries
-            .where((entry) => _isOrderEntryForAccount(entry, currentAccountId))
-            .toList(growable: false)
+              .where(
+                (entry) => _isOrderEntryForAccount(entry, currentAccountId),
+              )
+              .toList(growable: false)
         : entries
-            .where(
-              (entry) =>
-                  !entry.skipRemoteSync &&
-                  _isOrderEntryForAccount(entry, currentAccountId),
-            )
-            .toList(growable: false);
+              .where(
+                (entry) =>
+                    !entry.skipRemoteSync &&
+                    _isOrderEntryForAccount(entry, currentAccountId),
+              )
+              .toList(growable: false);
     if (syncableEntries.isEmpty) {
       return;
     }
@@ -1546,12 +1621,8 @@ bool _areOrderListsEqual(
     return false;
   }
 
-  return jsonEncode([
-        for (final entry in left) entry.toJson(),
-      ]) ==
-      jsonEncode([
-        for (final entry in right) entry.toJson(),
-      ]);
+  return jsonEncode([for (final entry in left) entry.toJson()]) ==
+      jsonEncode([for (final entry in right) entry.toJson()]);
 }
 
 bool _isCodPaymentOption(String value) {
@@ -1584,8 +1655,9 @@ double _codAmountStillNeededToProceed(
   OrderEntryData entry, {
   double? remainingBalanceAmount,
 }) {
-  final requiredProceedPayment =
-      _requiredCodProceedPaymentFor(entry.grandTotalAmount);
+  final requiredProceedPayment = _requiredCodProceedPaymentFor(
+    entry.grandTotalAmount,
+  );
   final paidAmount = _codPaidAmountFor(
     entry,
     remainingBalanceAmount: remainingBalanceAmount,
@@ -1732,11 +1804,14 @@ bool _areOrderEntriesEqual(OrderEntryData left, OrderEntryData right) {
   return jsonEncode(left.toJson()) == jsonEncode(right.toJson());
 }
 
-List<OrderEntryData> _sortOrderEntriesByNewest(Iterable<OrderEntryData> entries) {
+List<OrderEntryData> _sortOrderEntriesByNewest(
+  Iterable<OrderEntryData> entries,
+) {
   final sortedEntries = entries.toList(growable: true)
     ..sort((left, right) {
-      final createdAtDifference =
-          right.createdAtEpochMs.compareTo(left.createdAtEpochMs);
+      final createdAtDifference = right.createdAtEpochMs.compareTo(
+        left.createdAtEpochMs,
+      );
       if (createdAtDifference != 0) {
         return createdAtDifference;
       }

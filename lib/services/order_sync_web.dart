@@ -118,10 +118,12 @@ Future<Map<String, String>> _withOrderAccountHeaders(
   final accountId = (await AuthSession.getAccountId())?.trim() ?? '';
   final accountEmail = (await AuthSession.getAccountEmail())?.trim() ?? '';
   final requestAccountId = accountId.isNotEmpty ? accountId : accountEmail;
+  final sessionToken = (await AuthSession.getSessionToken())?.trim() ?? '';
   final scopedHeaders = withAdminScopeHeaders(headers);
 
   return <String, String>{
     ...scopedHeaders,
+    if (sessionToken.isNotEmpty) 'X-Switch-Session': sessionToken,
     if (requestAccountId.isNotEmpty) 'X-GMS-Account-ID': requestAccountId,
     if (accountEmail.isNotEmpty) 'X-GMS-Account-Email': accountEmail,
   };

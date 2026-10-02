@@ -83,6 +83,7 @@ class _HttpPlatformRepository implements PlatformRepository {
         throw _BaseUrlAttemptFailure('${response.statusCode}');
       }
       _preferredBaseUrl = baseUrl;
+      rememberWorkingLocalApiBaseUrl(baseUrl);
       return _parse(body, baseUrl);
     } on SocketException {
       throw const _BaseUrlAttemptFailure('socket error');

@@ -1,3 +1,4 @@
+//ito pwedi idelete
 const salesChart = document.getElementById("sales-chart");
 const salesChartTotalPill = document.getElementById("sales-chart-total-pill");
 const salesChartPeriodLabel = document.getElementById("sales-chart-period-label");
@@ -1347,3 +1348,4 @@ updateSalesPanelView();
 initializeAdminDashboard();
 window.setInterval(refreshDashboardFollowersStat, 15000);
 window.addEventListener("gms:realtime-change", handleAdminDashboardRealtimeChange);
+//hanggang dito

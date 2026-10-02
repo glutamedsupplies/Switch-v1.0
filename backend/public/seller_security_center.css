@@ -1,0 +1,86 @@
+.seller-security__lede {
+  margin: 8px 0 0;
+  max-width: 46rem;
+  color: #475569;
+}
+
+.seller-security__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.seller-security__tabs button {
+  border: 1px solid #d6dbe3;
+  border-radius: 999px;
+  background: #fff;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.seller-security__tabs button.is-active {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.seller-security__grid,
+.seller-security__list {
+  display: grid;
+  gap: 12px;
+}
+
+.seller-security__form {
+  display: grid;
+  gap: 12px;
+  padding: 0 18px 18px;
+}
+
+.seller-security__form label,
+.seller-security__form input,
+.seller-security__form select,
+.seller-security__form textarea {
+  display: block;
+  width: 100%;
+}
+
+.seller-security__form input,
+.seller-security__form select,
+.seller-security__form textarea {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #d6dbe3;
+  border-radius: 10px;
+}
+
+.seller-security__form button,
+.seller-security__list button {
+  justify-self: start;
+  border: 0;
+  border-radius: 10px;
+  background: #0f766e;
+  color: #fff;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+
+.seller-security__card {
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.seller-security__card.is-flagged {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.seller-security__status[data-tone="error"] {
+  color: #b91c1c;
+}
+
+.seller-security__status[data-tone="ok"] {
+  color: #047857;
+}

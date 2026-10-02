@@ -51,6 +51,7 @@ class _HttpLoginService implements LoginService {
             account,
             message: decoded['message']?.toString(),
             created: decoded['created'] == true,
+            sessionToken: decoded['sessionToken']?.toString(),
           );
         }
 
@@ -114,6 +115,7 @@ class _HttpLoginService implements LoginService {
             account,
             message: decoded['message']?.toString(),
             created: decoded['created'] == true,
+            sessionToken: decoded['sessionToken']?.toString(),
           );
         }
 

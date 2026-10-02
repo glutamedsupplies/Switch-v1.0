@@ -189,6 +189,7 @@ class _ShopPageState extends State<ShopPage> {
   // Notifier for the number of products currently visible in the grid.
   // Used for lazy loading pagination.
   late final ValueNotifier<int> _visibleProductCountNotifier;
+  bool _isBottomRefreshing = false;
 
   // ========================================================================
   // Category Future Setter
@@ -442,6 +443,22 @@ class _ShopPageState extends State<ShopPage> {
     ]);
   }
 
+  Future<void> _refreshShopFromBottom() async {
+    if (_isBottomRefreshing || !mounted) {
+      return;
+    }
+
+    setState(() => _isBottomRefreshing = true);
+    _bottomOverscrollSignal = _bottomOverscrollSignal + 1;
+    try {
+      await _refreshShopData();
+    } finally {
+      if (mounted) {
+        setState(() => _isBottomRefreshing = false);
+      }
+    }
+  }
+
   // ========================================================================
   // _updateScrollToTopButtonVisibility
   // ========================================================================
@@ -541,7 +558,7 @@ class _ShopPageState extends State<ShopPage> {
       // Trigger overscroll signal if not already loading more
       if (!loadedMoreProducts &&
           !_loadMoreProductsIfNeeded(totalProductCount)) {
-        _bottomOverscrollSignal = _bottomOverscrollSignal + 1;
+        unawaited(_refreshShopFromBottom());
       }
     }
 
@@ -1017,6 +1034,8 @@ class _ShopPageState extends State<ShopPage> {
                                                                 .primaryColor,
                                                             secondaryColor: widget
                                                                 .secondaryColor,
+                                                            isRefreshing:
+                                                                _isBottomRefreshing,
                                                           );
                                                         },
                                                   ),

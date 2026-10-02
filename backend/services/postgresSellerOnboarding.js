@@ -5,6 +5,60 @@ const { normalizeEmail, normalizePhone, asObject } = require("../db/accountHelpe
 const { resolveUnifiedSession } = require("./postgresUnifiedAccounts");
 const crypto = require("crypto");
 const { hashPassword, verifyPassword } = require("../db/password");
+const {
+  isTestModeEnabled,
+  isTestModeCompany,
+  companyVisibleToSellerSession,
+} = require("./testModeService");
+const {
+  resolveSellerPlanSelection,
+  resolveFirstCompanyFreePlan,
+  nextMonthlySlotExpiry,
+} = require("./sellerPlanCatalog");
+const {
+  ALLOWED_DOCUMENT_TYPES,
+  normalizeSellerKind,
+  sellerKindLabel,
+  normalizeDocumentType,
+  documentTypeLabel,
+  normalizePayoutBank,
+  hasPayoutBank,
+  sanitizePayoutBankForAdmin,
+  evaluateSellerKyc,
+  resolveSellerKind,
+  assertSellerKindAllowedDocument,
+} = require("./sellerClassification");
+
+const MIN_STORE_ADDRESS_LENGTH = 8;
+
+function toStoreCoordinate(value, limit) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && Math.abs(parsed) <= limit ? parsed : null;
+}
+
+/**
+ * Store (pickup) address captured at "Become a Seller". Switch Rider uses it as
+ * the pickup point until the seller pins a dedicated pickup location.
+ */
+function normalizeStoreLocation(input = {}) {
+  const source = input.storeLocation && typeof input.storeLocation === "object" ? input.storeLocation : input;
+  const address = String(source.storeAddress ?? source.address ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (address.length < MIN_STORE_ADDRESS_LENGTH) return null;
+  let lat = toStoreCoordinate(source.storeLatitude ?? source.lat ?? source.latitude, 90);
+  let lng = toStoreCoordinate(source.storeLongitude ?? source.lng ?? source.longitude, 180);
+  if (lat === null || lng === null || (lat === 0 && lng === 0)) {
+    lat = null;
+    lng = null;
+  }
+  return {
+    address,
+    area: String(source.storeArea ?? source.area ?? "").replace(/\s+/g, " ").trim().slice(0, 80),
+    lat,
+    lng,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 async function isSellerOnboardingReady() {
   if (!isPostgresConfigured()) {
@@ -29,14 +83,16 @@ async function findAccountForOnboarding({ accountId, email }) {
   const result = await query(
     `
       SELECT
-        id,
-        email,
-        country_code,
-        mobile_number,
-        email_verified,
-        mobile_verified,
-        first_name,
-        last_name,
+        a.id,
+        a.email,
+        a.country_code,
+        a.mobile_number,
+        a.email_verified,
+        a.mobile_verified,
+        a.profile_image_url,
+        COALESCE(u.first_name, '') AS first_name,
+        COALESCE(u.last_name, '') AS last_name,
+        COALESCE(NULLIF(u.username, ''), a.email, '') AS username,
         a.created_at
       FROM accounts a
       LEFT JOIN user_profiles u ON u.account_id = a.id
@@ -62,17 +118,26 @@ async function findAccountForOnboarding({ accountId, email }) {
       mobileVerified: Boolean(row.mobile_verified),
       firstName: row.first_name || "",
       lastName: row.last_name || "",
+      username: row.username || row.email || "",
+      profileImageUrl: String(row.profile_image_url || "").trim(),
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     },
   };
 }
 
-async function findSellerCompanyByAccount(accountId) {
+async function findSellerCompanyByAccount(accountId, options = {}) {
+  const normalizedAccountId = String(accountId || "").trim();
+  if (!normalizedAccountId) {
+    return null;
+  }
+
+  const preferredCompanyId = String(options.companyId || "").trim();
+  const preferStatuses = Array.isArray(options.preferStatuses) ? options.preferStatuses : null;
+
   const result = await query(
     `
       SELECT
         c.id,
-        c.company_code,
         c.type::text AS type,
         c.status::text AS status,
         c.name,
@@ -87,25 +152,61 @@ async function findSellerCompanyByAccount(accountId) {
         c.subscription_status::text AS subscription_status,
         c.verification_status,
         c.profile_data,
+        c.source_account_id,
         c.created_at,
         c.updated_at
       FROM companies c
       WHERE c.source_account_id = $1
         AND c.type = 'seller'
-      ORDER BY c.created_at ASC
-      LIMIT 1
+      ORDER BY
+        CASE
+          WHEN c.id = $2 THEN 0
+          WHEN c.status = 'active' THEN 1
+          WHEN c.status = 'pending_review' THEN 2
+          WHEN c.subscription_status = 'pending_payment' THEN 3
+          WHEN c.status = 'draft' THEN 4
+          ELSE 5
+        END ASC,
+        c.updated_at DESC,
+        c.created_at DESC
+      LIMIT 50
     `,
-    [accountId],
+    [normalizedAccountId, preferredCompanyId || null],
   );
 
-  const row = result.rows[0];
-  if (!row) {
+  const testModeOn = await isTestModeEnabled();
+  const rows = (result.rows || []).filter((row) =>
+    companyVisibleToSellerSession(asObject(row.profile_data), { testModeOn }),
+  );
+  if (!rows.length) {
     return null;
   }
 
+  let selected = rows[0];
+  if (preferredCompanyId) {
+    selected = rows.find((row) => String(row.id) === preferredCompanyId) || selected;
+  } else if (preferStatuses?.length) {
+    selected =
+      rows.find((row) => preferStatuses.includes(String(row.status || "").toLowerCase())) ||
+      selected;
+  }
+
+  return mapSellerCompanyRow(selected);
+}
+
+function hasOperatingSellerIdentity(status) {
+  const token = String(status || "").trim().toLowerCase();
+  return token !== "" && !["draft", "pending_review", "rejected"].includes(token);
+}
+
+function mapSellerCompanyRow(row) {
+  if (!row) {
+    return null;
+  }
+  const profileData = asObject(row.profile_data);
   return {
     id: row.id,
-    companyCode: row.company_code || "",
+    companyCode: "",
     type: row.type,
     status: row.status,
     name: row.name || "",
@@ -119,10 +220,310 @@ async function findSellerCompanyByAccount(accountId) {
     businessType: row.business_type || "",
     subscriptionStatus: row.subscription_status || "draft",
     verificationStatus: row.verification_status || "unverified",
-    profileData: asObject(row.profile_data),
+    profileData,
+    testMode: isTestModeCompany(profileData),
+    sourceAccountId: row.source_account_id || "",
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+    planName: String(profileData.planName || "").trim(),
+    slotPlaceholder: profileData.slotPlaceholder === true,
+    slotPaidAt: String(profileData.slotPaidAt || "").trim(),
   };
+}
+
+const OCCUPIED_SELLER_STATUSES = new Set([
+  "draft",
+  "pending_payment",
+  "pending_review",
+  "active",
+]);
+
+function isOccupiedSellerCompany(company) {
+  const status = String(company?.status || "").trim().toLowerCase();
+  return OCCUPIED_SELLER_STATUSES.has(status);
+}
+
+function isFreeCompanyPlan(company) {
+  const plan = String(
+    company?.planName
+    || company?.profileData?.planName
+    || "",
+  ).trim().toLowerCase();
+  return !plan || plan === "free" || plan === "free plan";
+}
+
+function isIncompleteFreeCompany(company) {
+  const status = String(company?.status || "").trim().toLowerCase();
+  return isFreeCompanyPlan(company)
+    && ["draft", "pending_payment"].includes(status);
+}
+
+function buildSellerCompanyEntitlement(companies = []) {
+  const occupied = (Array.isArray(companies) ? companies : []).filter(isOccupiedSellerCompany);
+  const incompleteFree = occupied.find(isIncompleteFreeCompany);
+  const firstCompany = occupied.length === 0;
+  const canSubmitFreeFirst = firstCompany || (occupied.length === 1 && Boolean(incompleteFree));
+  return {
+    existingCompanyCount: occupied.length,
+    firstCompanyFree: true,
+    requiresPaidPlan: false,
+    canSubmitFreeFirst,
+    oneCompanyPerAccount: true,
+    subscriptionsRetired: true,
+    incompleteFreeCompanyId: incompleteFree?.id || "",
+  };
+}
+
+async function findPaidExtraCompanySlot(accountId) {
+  const normalizedAccountId = String(accountId || "").trim();
+  if (!normalizedAccountId) {
+    return null;
+  }
+  const result = await query(
+    `
+      SELECT
+        i.id,
+        i.company_id,
+        i.account_id,
+        i.plan_name,
+        i.billing_cycle,
+        i.amount,
+        i.currency_code,
+        i.payment_reference,
+        i.status::text AS status,
+        i.metadata,
+        i.updated_at,
+        c.profile_data,
+        c.status::text AS company_status,
+        c.name AS company_name
+      FROM seller_checkout_intents i
+      JOIN companies c ON c.id = i.company_id
+      WHERE i.account_id = $1
+        AND c.type = 'seller'
+        AND (
+          COALESCE(i.metadata->>'slotPurchase', '') = 'true'
+          OR COALESCE(c.profile_data->>'slotPlaceholder', '') = 'true'
+        )
+      ORDER BY i.updated_at DESC
+      LIMIT 8
+    `,
+    [normalizedAccountId],
+  );
+  for (const row of result.rows || []) {
+    const metadata = asObject(row.metadata);
+    const profile = asObject(row.profile_data);
+    const paid = String(row.status || "").toLowerCase() === "active"
+      || Boolean(String(metadata.paymentPaidAt || profile.slotPaidAt || "").trim());
+    const companyStatus = String(row.company_status || "").toLowerCase();
+    if (!paid || !["draft", "pending_payment"].includes(companyStatus)) {
+      continue;
+    }
+    return {
+      intentId: row.id,
+      companyId: row.company_id,
+      accountId: row.account_id,
+      planName: row.plan_name || profile.planName || "",
+      billingCycle: row.billing_cycle || "monthly",
+      amount: Number(row.amount) || 0,
+      currencyCode: row.currency_code || "PHP",
+      paymentReference: row.payment_reference || "",
+      paidAt: String(metadata.paymentPaidAt || profile.slotPaidAt || "").trim(),
+      placeholder: profile.slotPlaceholder === true,
+    };
+  }
+  return null;
+}
+
+async function getSellerCompanyEntitlement(accountId) {
+  const companies = await listSellerCompaniesByAccount(accountId);
+  return {
+    ...buildSellerCompanyEntitlement(companies),
+    companies,
+    paidExtraSlot: null,
+  };
+}
+
+async function createPlaceholderExtraCompany(client, {
+  account,
+  selectedPlan,
+}) {
+  const companyName = "New company slot";
+  const insert = await client.query(
+    `
+      INSERT INTO companies (
+        type,
+        status,
+        name,
+        legal_name,
+        public_name,
+        masked_public_name,
+        email,
+        country_code,
+        mobile_number,
+        logo_url,
+        business_type,
+        subscription_status,
+        verification_status,
+        source_account_id,
+        profile_data,
+        created_at,
+        updated_at
+      ) VALUES (
+        'seller',
+        'draft',
+        $1,
+        $1,
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        '',
+        '',
+        'pending_payment',
+        'unverified',
+        $6,
+        $7::jsonb,
+        NOW(),
+        NOW()
+      )
+      RETURNING id
+    `,
+    [
+      companyName,
+      `Seller ${String(account.id).slice(-4)}`,
+      account.email || "",
+      account.countryCode || "+63",
+      account.mobileNumber || "",
+      account.id,
+      JSON.stringify({
+        onboardingSource: "extra_company_slot",
+        slotPlaceholder: true,
+        extraCompanySlot: true,
+        slotBilling: "monthly",
+        planName: selectedPlan.planName,
+        billingCycle: "monthly",
+        requestedAt: new Date().toISOString(),
+      }),
+    ],
+  );
+  const companyId = insert.rows[0]?.id;
+  await client.query(
+    `
+      INSERT INTO company_memberships (
+        company_id, account_id, membership_role, membership_status,
+        title, is_primary, metadata, created_at, updated_at
+      ) VALUES (
+        $1, $2, 'owner', 'pending', 'Owner', FALSE, $3::jsonb, NOW(), NOW()
+      )
+      ON CONFLICT (company_id, account_id, membership_role) DO UPDATE SET
+        membership_status = EXCLUDED.membership_status,
+        updated_at = NOW()
+    `,
+    [
+      companyId,
+      account.id,
+      JSON.stringify({ onboardingStage: "slot_checkout" }),
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO seller_subscriptions (
+        company_id, plan_name, status, billing_cycle, payment_gateway,
+        payment_reference, amount, currency_code, metadata, created_at, updated_at
+      ) VALUES (
+        $1, $2, 'pending_payment', 'monthly', 'paymongo',
+        '', $3, $4, $5::jsonb, NOW(), NOW()
+      )
+    `,
+    [
+      companyId,
+      selectedPlan.planName,
+      selectedPlan.amount,
+      selectedPlan.currencyCode || "PHP",
+      JSON.stringify({
+        slotPurchase: true,
+        slotBilling: "monthly",
+        extraCompanySlot: true,
+      }),
+    ],
+  );
+  return companyId;
+}
+
+async function listSellerCompaniesByAccount(accountId) {
+  const normalizedAccountId = String(accountId || "").trim();
+  if (!normalizedAccountId) {
+    return [];
+  }
+  const result = await query(
+    `
+      SELECT
+        c.id,
+        c.type::text AS type,
+        c.status::text AS status,
+        c.name,
+        c.legal_name,
+        c.public_name,
+        c.masked_public_name,
+        c.email,
+        c.country_code,
+        c.mobile_number,
+        c.logo_url,
+        c.business_type,
+        c.subscription_status::text AS subscription_status,
+        c.verification_status,
+        c.profile_data,
+        c.source_account_id,
+        c.created_at,
+        c.updated_at
+      FROM companies c
+      WHERE c.source_account_id = $1
+        AND c.type = 'seller'
+      ORDER BY c.updated_at DESC, c.created_at DESC
+    `,
+    [normalizedAccountId],
+  );
+  const testModeOn = await isTestModeEnabled();
+  return (result.rows || [])
+    .filter((row) =>
+      companyVisibleToSellerSession(asObject(row.profile_data), { testModeOn }),
+    )
+    .map(mapSellerCompanyRow);
+}
+
+function normalizeCompanyNameKey(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+async function setPrimaryCompanyMembership(client, { companyId, accountId }) {
+  const queryFn = client?.query ? client.query.bind(client) : query;
+  await queryFn(
+    `
+      UPDATE company_memberships
+      SET
+        is_primary = FALSE,
+        updated_at = NOW()
+      WHERE account_id = $1
+        AND company_id <> $2
+        AND is_primary = TRUE
+    `,
+    [accountId, companyId],
+  );
+  await queryFn(
+    `
+      UPDATE company_memberships
+      SET
+        is_primary = TRUE,
+        updated_at = NOW()
+      WHERE account_id = $1
+        AND company_id = $2
+    `,
+    [accountId, companyId],
+  );
 }
 
 async function findSellerSubscriptionByCompany(companyId) {
@@ -182,30 +583,67 @@ async function startSellerOnboarding(input = {}) {
     input.companyName ?? input.storeName ?? input.businessName ?? "",
   ).trim();
   const businessType = String(input.businessType ?? input.storeType ?? "").trim();
-  const planName = String(input.planName ?? "Starter Seller Plan").trim() || "Starter Seller Plan";
-  const billingCycle = String(input.billingCycle ?? "monthly").trim() || "monthly";
-  const gateway = String(input.paymentGateway ?? "").trim();
-  const gatewayReference = String(input.paymentReference ?? "").trim();
   const countryCode = String(input.countryCode ?? account.countryCode ?? "+63").trim() || "+63";
   const mobileNumber = normalizePhone(input.mobileNumber ?? account.mobileNumber);
   const email = normalizeEmail(input.email ?? account.email);
-  const amount = Number(input.amount ?? 0) || 0;
 
   if (!companyName || companyName.length < 2) {
     throw new Error("Company name must be at least 2 characters long.");
   }
 
-  const existingCompany = await findSellerCompanyByAccount(account.id);
-  if (existingCompany && ["active", "pending_review"].includes(existingCompany.status)) {
+  const allCompanies = await listSellerCompaniesByAccount(account.id);
+  const entitlement = buildSellerCompanyEntitlement(allCompanies);
+  const selectedPlan = resolveFirstCompanyFreePlan();
+  const planName = selectedPlan.planName;
+  const billingCycle = selectedPlan.billingCycle;
+  const amount = selectedPlan.amount;
+  const gateway = selectedPlan.free
+    ? "free"
+    : (String(input.paymentGateway ?? "").trim() || "paymongo");
+  const gatewayReference = String(input.paymentReference ?? "").trim();
+  const companyNameKey = normalizeCompanyNameKey(companyName);
+  const matchingNamedCompany = allCompanies.find(
+    (entry) => normalizeCompanyNameKey(entry.name) === companyNameKey,
+  );
+  const resumableDraft = allCompanies.find((entry) =>
+    ["draft", "pending_payment"].includes(String(entry.status || "").toLowerCase())
+    && (
+      normalizeCompanyNameKey(entry.name) === companyNameKey
+      || entry.slotPlaceholder === true
+    ),
+  );
+  const existingSameLiveCompany = matchingNamedCompany
+    && ["active", "pending_review"].includes(String(matchingNamedCompany.status || "").toLowerCase())
+    ? matchingNamedCompany
+    : null;
+
+  const liveCompany = allCompanies.find((entry) => (
+    ["active", "pending_review"].includes(String(entry.status || "").toLowerCase())
+  ));
+  if (liveCompany && !existingSameLiveCompany) {
+    const error = new Error(
+      "This account already has a company. Switch allows one company per account.",
+    );
+    error.statusCode = 409;
+    error.code = "SELLER_ONE_COMPANY_LIMIT";
+    throw error;
+  }
+
+  // Resume the same live company only when the user re-enters the same company name.
+  if (existingSameLiveCompany) {
     const pinUnlock = await saveSellerSwitchPinIfProvided({
       accountId: account.id,
-      companyId: existingCompany.id,
+      companyId: existingSameLiveCompany.id,
       pin: input.sellerPin ?? input.pin,
+    });
+    await setPrimaryCompanyMembership(null, {
+      companyId: existingSameLiveCompany.id,
+      accountId: account.id,
     });
     return {
       account: session.account,
-      company: existingCompany,
-      onboardingStatus: existingCompany.subscriptionStatus || existingCompany.status,
+      company: existingSameLiveCompany,
+      onboardingStatus: existingSameLiveCompany.subscriptionStatus || existingSameLiveCompany.status,
       alreadyExists: true,
       pinUnlockToken: pinUnlock.unlockToken || "",
     };
@@ -224,13 +662,49 @@ async function startSellerOnboarding(input = {}) {
     sellerPinHash = await hashPassword(rawSellerPin);
   }
 
+  const sellerKind = normalizeSellerKind(input.sellerKind ?? input.sellerType ?? input.classification);
+  if (!sellerKind) {
+    const error = new Error("Choose Individual Seller or Business / Corporate Seller.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const payoutBank = normalizePayoutBank(input.payoutBank ?? input.bankAccount);
+  if (!hasPayoutBank(payoutBank)) {
+    const error = new Error(
+      sellerKind === "business"
+        ? "Enter the business bank account that matches the registered company name."
+        : "Enter a bank account in your name for seller payouts.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const storeLocation = normalizeStoreLocation(input);
+  if (!storeLocation) {
+    const error = new Error("Enter your full store address (street, barangay, city/municipality, province).");
+    error.statusCode = 400;
+    error.code = "STORE_ADDRESS_REQUIRED";
+    throw error;
+  }
+
+  const companyPasswordHash = await resolveCompanyPasswordHash({
+    accountId: account.id,
+    rawPassword: input.companyPassword ?? input.password,
+  });
   const onboardingProfileData = {
     onboardingSource: "buyer_upgrade",
     planName,
     billingCycle,
+    sellerKind,
+    payoutBank,
+    storeLocation,
+    slotPlaceholder: false,
+    extraCompanySlot: false,
+    slotBilling: "none",
     requestedAt: new Date().toISOString(),
     ...(profileAbout ? { about: profileAbout } : {}),
     ...(sellerPinHash ? { sellerPinHash } : {}),
+    ...(companyPasswordHash ? { companyPasswordHash } : {}),
     ...(input.businessLogoSkipped === true ? { businessLogoSkipped: true } : {}),
     ...(paymentCard
       ? {
@@ -246,10 +720,7 @@ async function startSellerOnboarding(input = {}) {
       : {}),
   };
 
-  if (
-    existingCompany
-    && ["draft", "pending_payment"].includes(existingCompany.status)
-  ) {
+  if (resumableDraft) {
     await query(
       `
         UPDATE companies
@@ -267,7 +738,7 @@ async function startSellerOnboarding(input = {}) {
         WHERE id = $1
       `,
       [
-        existingCompany.id,
+        resumableDraft.id,
         companyName,
         businessType,
         email,
@@ -278,13 +749,18 @@ async function startSellerOnboarding(input = {}) {
       ],
     );
 
+    await setPrimaryCompanyMembership(null, {
+      companyId: resumableDraft.id,
+      accountId: account.id,
+    });
+
     return {
       account: session.account,
-      company: await findSellerCompanyByAccount(account.id),
-      onboardingStatus: existingCompany.subscriptionStatus || existingCompany.status,
+      company: await findCompanyById(resumableDraft.id),
+      onboardingStatus: resumableDraft.subscriptionStatus || resumableDraft.status,
       alreadyExists: true,
       pinUnlockToken: sellerPinHash
-        ? issueSwitchPinUnlock({ accountId: account.id, companyId: existingCompany.id })
+        ? issueSwitchPinUnlock({ accountId: account.id, companyId: resumableDraft.id })
         : "",
     };
   }
@@ -294,7 +770,6 @@ async function startSellerOnboarding(input = {}) {
     const companyInsert = await client.query(
       `
         INSERT INTO companies (
-          company_code,
           type,
           status,
           name,
@@ -313,29 +788,27 @@ async function startSellerOnboarding(input = {}) {
           created_at,
           updated_at
         ) VALUES (
-          $1,
           'seller',
           'draft',
-          $2,
-          $2,
+          $1,
+          $1,
+          $1,
           $2,
           $3,
           $4,
           $5,
           $6,
           $7,
-          $8,
           'pending_payment',
+          $8,
           $9,
-          $10,
-          $11::jsonb,
+          $10::jsonb,
           NOW(),
           NOW()
         )
         RETURNING id
       `,
       [
-        `SELLER-${Date.now()}`,
         companyName,
         `Seller ${String(account.id).slice(-4)}`,
         email,
@@ -389,6 +862,11 @@ async function startSellerOnboarding(input = {}) {
       ],
     );
 
+    await setPrimaryCompanyMembership(client, {
+      companyId,
+      accountId: account.id,
+    });
+
     await client.query(
       `
         INSERT INTO seller_subscriptions (
@@ -424,16 +902,43 @@ async function startSellerOnboarding(input = {}) {
         gateway,
         gatewayReference,
         amount,
-        String(input.currencyCode ?? "PHP").trim() || "PHP",
+        selectedPlan.currencyCode || "PHP",
         JSON.stringify({
           onboardingStage: "started",
           initiatedByAccountId: account.id,
+          slotBilling: selectedPlan.free ? "none" : "monthly",
+          extraCompanySlot: !selectedPlan.free,
         }),
       ],
     );
 
-    createdCompany = await findSellerCompanyByAccount(account.id);
+    createdCompany = {
+      id: companyId,
+      companyCode: "",
+      type: "seller",
+      sellerKind,
+      status: "draft",
+      name: companyName,
+      legalName: companyName,
+      publicName: companyName,
+      maskedPublicName: `Seller ${String(account.id).slice(-4)}`,
+      email,
+      countryCode,
+      mobileNumber,
+      logoUrl,
+      businessType,
+      subscriptionStatus: "pending_payment",
+      verificationStatus: account.emailVerified || account.mobileVerified ? "verified" : "unverified",
+      profileData: onboardingProfileData,
+      sourceAccountId: account.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   });
+
+  if (createdCompany?.id) {
+    createdCompany = (await findCompanyById(createdCompany.id)) || createdCompany;
+  }
 
   return {
     account: session.account,
@@ -447,11 +952,75 @@ async function startSellerOnboarding(input = {}) {
 }
 
 async function createSellerCheckoutIntent(input = {}) {
-  const { account } = await findAccountForOnboarding(input);
-  const existingCompany = await findSellerCompanyByAccount(account.id);
-  const companyId = String(input.companyId ?? existingCompany?.id ?? "").trim();
+  await findAccountForOnboarding(input);
+  const error = new Error(
+    "Seller subscriptions were removed. Each account gets one free company — PayMongo is not used for company creation.",
+  );
+  error.statusCode = 400;
+  error.code = "SELLER_PLANS_RETIRED";
+  throw error;
+  const selectedCheckoutPlan = resolveSellerPlanSelection(input, { requirePaid: true });
+  Object.assign(input, {
+    planName: selectedCheckoutPlan.planName,
+    billingCycle: selectedCheckoutPlan.billingCycle,
+    amount: selectedCheckoutPlan.amount,
+    currencyCode: selectedCheckoutPlan.currencyCode,
+    paymentGateway: "paymongo",
+  });
+  const slotPurchase = input.slotPurchase === true || input.extraCompanySlot === true
+    || !String(input.companyId || "").trim();
+  let companyId = String(input.companyId || "").trim();
+  if (slotPurchase) {
+    const existingPaid = entitlement.paidExtraSlot;
+    if (existingPaid?.paidAt && existingPaid.placeholder) {
+      const error = new Error(
+        "This monthly slot is already paid. Continue by creating the company profile.",
+      );
+      error.statusCode = 409;
+      error.code = "SELLER_SLOT_ALREADY_PAID";
+      error.paidExtraSlot = existingPaid;
+      throw error;
+    }
+    const placeholder = (entitlement.companies || []).find((company) => (
+      company.slotPlaceholder
+      && ["draft", "pending_payment"].includes(String(company.status || "").toLowerCase())
+    ));
+    if (placeholder?.id) {
+      companyId = placeholder.id;
+    } else {
+      await withTransaction(async (client) => {
+        companyId = await createPlaceholderExtraCompany(client, {
+          account,
+          selectedPlan: selectedCheckoutPlan,
+        });
+      });
+    }
+  }
   if (!companyId) {
-    throw new Error("Seller onboarding record not found. Start onboarding first.");
+    const existingCompany = await findSellerCompanyByAccount(account.id);
+    companyId = String(existingCompany?.id || "").trim();
+  }
+  if (!companyId) {
+    throw new Error("Pay the monthly extra-company slot first.");
+  }
+  const checkoutCompany = await findCompanyById(companyId);
+  const checkoutProfile = asObject(checkoutCompany?.profileData);
+  const isSlotPlaceholder = slotPurchase || checkoutProfile.slotPlaceholder === true;
+  if (checkoutCompany && !isSlotPlaceholder) {
+    const kyc = evaluateSellerKyc({
+      sellerKind: checkoutProfile.sellerKind || checkoutCompany.sellerKind,
+      documents: checkoutProfile.businessDocuments,
+      payoutBank: checkoutProfile.payoutBank,
+    });
+    if (!kyc.complete) {
+      const error = new Error(
+        `Finish seller requirements before checkout: ${kyc.missing.join(", ")}.`,
+      );
+      error.statusCode = 400;
+      error.code = "SELLER_KYC_INCOMPLETE";
+      error.missing = kyc.missing;
+      throw error;
+    }
   }
 
   const subscription = await findSellerSubscriptionByCompany(companyId);
@@ -581,6 +1150,9 @@ async function createSellerCheckoutIntent(input = {}) {
           companyId,
           accountId: account.id,
           checkoutPreparedAt: new Date().toISOString(),
+          slotPurchase: Boolean(isSlotPlaceholder),
+          extraCompanySlot: Boolean(isSlotPlaceholder),
+          slotBilling: "monthly",
         }),
       ],
     );
@@ -682,6 +1254,55 @@ async function updateSellerCheckoutIntentGatewayState(intentId, patch = {}) {
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
+}
+
+async function markExtraCompanySlotPaid(intent, extras = {}) {
+  const companyId = String(intent?.companyId || "").trim();
+  const paidAt = new Date().toISOString();
+  if (companyId) {
+    await query(
+      `
+        UPDATE companies
+        SET
+          profile_data = profile_data || $2::jsonb,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        companyId,
+        JSON.stringify({
+          slotPaidAt: paidAt,
+          slotBilling: "monthly",
+          extraCompanySlot: true,
+          slotPaidIntentId: String(intent.id || "").trim(),
+        }),
+      ],
+    );
+    await query(
+      `
+        UPDATE seller_subscriptions
+        SET
+          status = 'pending_payment',
+          payment_gateway = 'paymongo',
+          payment_reference = COALESCE(NULLIF($2, ''), payment_reference),
+          expires_at = COALESCE(expires_at, $3::timestamptz),
+          metadata = metadata || $4::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+      `,
+      [
+        companyId,
+        String(intent.paymentReference || "").trim(),
+        nextMonthlySlotExpiry(),
+        JSON.stringify({
+          slotPaidAt: paidAt,
+          slotPurchase: true,
+          paymongoEventId: extras.paymongoEventId || "",
+        }),
+      ],
+    );
+  }
+  return { paidAt, companyId };
 }
 
 async function findSellerCheckoutIntentByPaymentReference(paymentReference) {
@@ -829,12 +1450,67 @@ async function finishPaymentWebhookEvent({ provider, eventId, error = "" }) {
 async function confirmSellerOnboarding(input = {}) {
   const { session, account } = await findAccountForOnboarding(input);
   const companyId = String(input.companyId ?? "").trim();
-  const paymentGateway = String(input.paymentGateway ?? "").trim();
-  const paymentReference = String(input.paymentReference ?? "").trim();
-  const planName = String(input.planName ?? "Starter Seller Plan").trim() || "Starter Seller Plan";
-  const billingCycle = String(input.billingCycle ?? "monthly").trim() || "monthly";
-  const amount = Number(input.amount ?? 0) || 0;
-  const currencyCode = String(input.currencyCode ?? "PHP").trim() || "PHP";
+  const entitlement = await getSellerCompanyEntitlement(account.id);
+  if (!entitlement.canSubmitFreeFirst) {
+    const error = new Error(
+      "This account already has a company. Switch allows one company per account.",
+    );
+    error.statusCode = 409;
+    error.code = "SELLER_ONE_COMPANY_LIMIT";
+    throw error;
+  }
+  const selectedPlan = resolveFirstCompanyFreePlan();
+  const paymentGateway = selectedPlan.free
+    ? "free"
+    : String(input.paymentGateway ?? "").trim();
+  const paymentReference = selectedPlan.free
+    ? (String(input.paymentReference ?? "").trim() || `FREE-FIRST-${Date.now()}`)
+    : String(input.paymentReference ?? "").trim();
+  const planName = selectedPlan.planName;
+  const billingCycle = selectedPlan.billingCycle;
+  const amount = selectedPlan.amount;
+  const currencyCode = selectedPlan.currencyCode;
+  const gatewayKey = paymentGateway.toLowerCase();
+
+  if (!selectedPlan.free) {
+  const liveGatewayOk = gatewayKey === "paymongo";
+  const refUpper = paymentReference.toUpperCase();
+  const blockedRef =
+    refUpper.startsWith("PROTO-")
+    || refUpper.startsWith("MANUAL-")
+    || refUpper.startsWith("TESTMODE-")
+    || refUpper.startsWith("FREE-");
+  if (!liveGatewayOk || blockedRef) {
+    const error = new Error(
+      "Seller activation requires a completed PayMongo checkout. Finish payment before Super Admin review.",
+    );
+    error.statusCode = 409;
+    error.code = "PAYMONGO_REQUIRED";
+    throw error;
+  }
+  if (input.paymentVerified !== true) {
+    const intent = paymentReference
+      ? await findSellerCheckoutIntentByPaymentReference(paymentReference)
+      : null;
+    const metadata = asObject(intent?.metadata);
+    const webhookVerified =
+      intent
+      && String(intent.accountId || "").trim() === String(account.id).trim()
+      && (
+        String(intent.status || "").trim().toLowerCase() === "active"
+        || Boolean(String(metadata.paymentPaidAt || "").trim())
+        || String(metadata.paymongoEventType || "").trim() === "checkout_session.payment.paid"
+      );
+    if (!webhookVerified) {
+      const error = new Error(
+        "Seller activation requires a verified PayMongo webhook before pending review.",
+      );
+      error.statusCode = 409;
+      error.code = "PAYMONGO_WEBHOOK_REQUIRED";
+      throw error;
+    }
+  }
+  }
 
   const company = companyId
     ? await query(
@@ -853,10 +1529,40 @@ async function confirmSellerOnboarding(input = {}) {
     throw new Error("Seller onboarding record not found. Start onboarding first.");
   }
 
-  const shouldActivate = account.emailVerified || account.mobileVerified;
-  const companyStatus = shouldActivate ? "active" : "pending_review";
-  const subscriptionStatus = shouldActivate ? "active" : "pending_review";
-  const verificationStatus = shouldActivate ? "verified" : "pending_review";
+  if (selectedPlan.free) {
+    const reviewCompany = await findCompanyById(company);
+    const reviewProfile = asObject(reviewCompany?.profileData);
+    const kyc = evaluateSellerKyc({
+      sellerKind: reviewProfile.sellerKind || reviewCompany?.sellerKind,
+      documents: reviewProfile.businessDocuments,
+      payoutBank: reviewProfile.payoutBank,
+    });
+    if (!kyc.complete) {
+      const error = new Error(
+        `Finish seller requirements before review: ${kyc.missing.join(", ")}.`,
+      );
+      error.statusCode = 400;
+      error.code = "SELLER_KYC_INCOMPLETE";
+      error.missing = kyc.missing;
+      throw error;
+    }
+  }
+
+  // Always submit to Super Admin In Review after confirm.
+  // Never auto-activate from email/mobile verification (Google Instant Sign-In
+  // buyers are email-verified and were skipping In Review).
+  const shouldActivate = false;
+  const companyStatus = "pending_review";
+  const subscriptionStatus = "pending_review";
+  const verificationStatus = "pending_review";
+  const confirmProfilePatch = {
+    paymentConfirmedAt: new Date().toISOString(),
+    paymentGateway: selectedPlan.free ? "free" : "paymongo",
+    paymentReference,
+    planName,
+    onboardingStage: "pending_review",
+    submittedForReviewAt: new Date().toISOString(),
+  };
 
   await withTransaction(async (client) => {
     await client.query(
@@ -875,11 +1581,7 @@ async function confirmSellerOnboarding(input = {}) {
         companyStatus,
         subscriptionStatus,
         verificationStatus,
-        JSON.stringify({
-          paymentConfirmedAt: new Date().toISOString(),
-          paymentGateway,
-          paymentReference,
-        }),
+        JSON.stringify(confirmProfilePatch),
       ],
     );
 
@@ -916,6 +1618,10 @@ async function confirmSellerOnboarding(input = {}) {
           amount = $7,
           currency_code = $8,
           started_at = COALESCE(started_at, NOW()),
+          expires_at = CASE
+            WHEN $10::boolean THEN COALESCE(expires_at, $11::timestamptz)
+            ELSE expires_at
+          END,
           approved_at = CASE WHEN $3::text = 'active' THEN COALESCE(approved_at, NOW()) ELSE approved_at END,
           metadata = metadata || $9::jsonb,
           updated_at = NOW()
@@ -933,7 +1639,11 @@ async function confirmSellerOnboarding(input = {}) {
         currencyCode,
         JSON.stringify({
           paymentConfirmedAt: new Date().toISOString(),
+          slotBilling: selectedPlan.free ? "none" : "monthly",
+          extraCompanySlot: !selectedPlan.free,
         }),
+        !selectedPlan.free,
+        selectedPlan.free ? null : nextMonthlySlotExpiry(),
       ],
     );
 
@@ -950,6 +1660,7 @@ async function confirmSellerOnboarding(input = {}) {
             amount,
             currency_code,
             started_at,
+            expires_at,
             approved_at,
             metadata,
             created_at,
@@ -964,6 +1675,7 @@ async function confirmSellerOnboarding(input = {}) {
             $7,
             $8,
             NOW(),
+            $10::timestamptz,
             CASE WHEN $3::text = 'active' THEN NOW() ELSE NULL END,
             $9::jsonb,
             NOW(),
@@ -981,7 +1693,10 @@ async function confirmSellerOnboarding(input = {}) {
           currencyCode,
           JSON.stringify({
             paymentConfirmedAt: new Date().toISOString(),
+            slotBilling: selectedPlan.free ? "none" : "monthly",
+            extraCompanySlot: !selectedPlan.free,
           }),
+          selectedPlan.free ? null : nextMonthlySlotExpiry(),
         ],
       );
     }
@@ -998,7 +1713,7 @@ async function confirmSellerOnboarding(input = {}) {
 
   return {
     account: session.account,
-    company: await findSellerCompanyByAccount(account.id),
+    company: await findCompanyById(company),
     onboardingStatus: subscriptionStatus,
     active: shouldActivate,
     session: await resolveUnifiedSession({
@@ -1014,17 +1729,37 @@ async function grantSellerAdminAccess(client, {
   companyId,
   planName = "Starter Seller Plan",
   grantedReason = "seller_subscription_activated",
+  promoteToAdmin = false,
 }) {
-  await client.query(
-    `
-      UPDATE accounts
-      SET
-        role = CASE WHEN role = 'user' THEN 'admin'::account_role ELSE role END,
-        updated_at = NOW()
-      WHERE id = $1
-    `,
-    [account.id],
-  );
+  // Never flip a buyer to role=admin. User Data is the buyer store — shoppers
+  // who never open a company stay there, and shoppers who do must stay there
+  // too. Seller access is seller_admin capability + company membership.
+  if (promoteToAdmin) {
+    await client.query(
+      `
+        UPDATE accounts
+        SET
+          role = CASE WHEN role = 'user' THEN 'admin'::account_role ELSE role END,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [account.id],
+    );
+  } else {
+    await client.query(
+      `
+        UPDATE accounts
+        SET updated_at = NOW()
+        WHERE id = $1
+      `,
+      [account.id],
+    );
+  }
+
+  await setPrimaryCompanyMembership(client, {
+    companyId,
+    accountId: account.id,
+  });
 
   await client.query(
     `
@@ -1102,6 +1837,7 @@ async function grantSellerAdminAccess(client, {
         businessType: companyMeta.business_type || "",
         logoUrl: companyMeta.logo_url || "",
         onboardingSource: "buyer_upgrade",
+        sellerKind: profileExtra.sellerKind || "",
         paymentCard: profileExtra.paymentCard || null,
         ...(profileExtra.sellerPinHash
           ? { sellerPinHash: profileExtra.sellerPinHash }
@@ -1126,7 +1862,6 @@ async function listPendingReviewCompanies() {
     `
       SELECT
         c.id,
-        c.company_code,
         c.status::text AS status,
         c.name,
         c.legal_name,
@@ -1143,18 +1878,29 @@ async function listPendingReviewCompanies() {
         c.created_at,
         c.updated_at,
         a.email AS account_email,
-        a.first_name,
-        a.last_name,
+        a.profile_image_url,
+        COALESCE(up.first_name, '') AS first_name,
+        COALESCE(up.last_name, '') AS last_name,
         a.email_verified,
         a.mobile_verified,
+        gi.google_picture,
         ss.plan_name,
         ss.amount,
         ss.currency_code,
-        ss.payment_reference
+        ss.payment_reference,
+        ss.payment_gateway
       FROM companies c
       LEFT JOIN accounts a ON a.id = c.source_account_id
+      LEFT JOIN user_profiles up ON up.account_id = a.id
       LEFT JOIN LATERAL (
-        SELECT plan_name, amount, currency_code, payment_reference
+        SELECT NULLIF(BTRIM(COALESCE(profile_data->>'picture', '')), '') AS google_picture
+        FROM auth_identities
+        WHERE account_id = a.id AND provider = 'google'
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 1
+      ) gi ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT plan_name, amount, currency_code, payment_reference, payment_gateway
         FROM seller_subscriptions
         WHERE company_id = c.id
         ORDER BY created_at DESC
@@ -1162,6 +1908,11 @@ async function listPendingReviewCompanies() {
       ) ss ON TRUE
       WHERE c.type = 'seller'
         AND c.status = 'pending_review'
+        AND COALESCE(NULLIF(c.profile_data->>'paymentConfirmedAt', ''), '') <> ''
+        AND (
+          lower(COALESCE(c.profile_data->>'paymentGateway', ss.payment_gateway::text, '')) IN ('free', 'paymongo')
+          OR COALESCE(ss.amount, 0) <= 0
+        )
       ORDER BY c.updated_at DESC, c.created_at DESC
     `,
   );
@@ -1173,15 +1924,29 @@ async function listPendingReviewCompanies() {
       id: row.source_account_id || row.id,
       adminId: row.source_account_id || row.id,
       companyId: row.id,
-      companyCode: row.company_code || "",
+      companyCode: "",
       companyName,
       storeName: companyName,
       businessName: companyName,
       email: row.account_email || row.email || "",
       countryCode: row.country_code || "+63",
       mobileNumber: row.mobile_number || "",
-      logoUrl: row.logo_url || "",
-      companyPictureUrl: row.logo_url || "",
+      logoUrl: row.logo_url || profileData.logoUrl || profileData.businessLogoUrl || "",
+      companyPictureUrl:
+        profileData.companyPictureUrl
+        || profileData.companyProfileImageUrl
+        || row.logo_url
+        || "",
+      companyProfileImageUrl: profileData.companyProfileImageUrl || profileData.companyPictureUrl || "",
+      companyBackgroundUrl:
+        profileData.companyBackgroundUrl
+        || profileData.backgroundUrl
+        || profileData.coverImageUrl
+        || profileData.companyPictureUrl
+        || row.logo_url
+        || "",
+      profileImageUrl: String(row.profile_image_url || row.google_picture || "").trim(),
+      avatarUrl: String(row.profile_image_url || row.google_picture || "").trim(),
       storeType: row.business_type || "",
       businessType: row.business_type || "",
       status: "pending_review",
@@ -1195,10 +1960,22 @@ async function listPendingReviewCompanies() {
       displayName: [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || companyName,
       firstName: row.first_name || "",
       lastName: row.last_name || "",
+      testMode: isTestModeCompany(profileData),
+      profileData,
       paymentReference: row.payment_reference || "",
       planAmount: Number(row.amount) || 0,
       currencyCode: row.currency_code || "PHP",
+      sellerKind: resolveSellerKind(profileData.sellerKind, profileData.businessDocuments),
+      sellerKindLabel: sellerKindLabel(resolveSellerKind(profileData.sellerKind, profileData.businessDocuments)),
+      payoutBank: sanitizePayoutBankForAdmin(profileData.payoutBank),
+      kyc: evaluateSellerKyc({
+        sellerKind: resolveSellerKind(profileData.sellerKind, profileData.businessDocuments),
+        documents: profileData.businessDocuments,
+        payoutBank: profileData.payoutBank,
+      }),
       businessDocuments: normalizeBusinessDocuments(profileData.businessDocuments),
+      submittedForReviewAt: profileData.submittedForReviewAt || profileData.paymentConfirmedAt || null,
+      paymentConfirmedAt: profileData.paymentConfirmedAt || null,
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
       updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
       isPendingReviewCompany: true,
@@ -1223,7 +2000,6 @@ async function findCompanyById(companyId) {
     `
       SELECT
         c.id,
-        c.company_code,
         c.type::text AS type,
         c.status::text AS status,
         c.name,
@@ -1253,7 +2029,7 @@ async function findCompanyById(companyId) {
   }
   return {
     id: row.id,
-    companyCode: row.company_code || "",
+    companyCode: "",
     type: row.type,
     status: row.status,
     name: row.name || "",
@@ -1267,10 +2043,106 @@ async function findCompanyById(companyId) {
     subscriptionStatus: row.subscription_status || "draft",
     verificationStatus: row.verification_status || "unverified",
     profileData: asObject(row.profile_data),
+    testMode: isTestModeCompany(asObject(row.profile_data)),
     sourceAccountId: row.source_account_id,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
   };
+}
+
+async function accountOwnsSellerCompany(accountId, companyId) {
+  const normalizedAccountId = String(accountId || "").trim();
+  const normalizedCompanyId = String(companyId || "").trim();
+  if (!normalizedAccountId || !normalizedCompanyId) {
+    return false;
+  }
+  const result = await query(
+    `
+      SELECT 1
+      FROM company_memberships m
+      INNER JOIN companies c ON c.id = m.company_id
+      WHERE m.account_id = $1
+        AND m.company_id = $2
+        AND c.type = 'seller'
+        AND m.membership_role IN ('owner', 'seller_admin')
+      LIMIT 1
+    `,
+    [normalizedAccountId, normalizedCompanyId],
+  );
+  return Boolean(result.rows[0]);
+}
+
+async function updateCompanyWorkspaceProfile(companyId, patch = {}) {
+  const company = await findCompanyById(companyId);
+  if (!company) {
+    return null;
+  }
+
+  const nextName = String(
+    patch.companyName ?? patch.storeName ?? patch.name ?? company.name ?? "",
+  ).replace(/\s+/g, " ").trim() || company.name;
+  const nextLogoUrl = Object.prototype.hasOwnProperty.call(patch, "companyPictureUrl")
+    || Object.prototype.hasOwnProperty.call(patch, "logoUrl")
+    || Object.prototype.hasOwnProperty.call(patch, "profileImageUrl")
+    ? String(
+        patch.companyPictureUrl
+          ?? patch.logoUrl
+          ?? patch.profileImageUrl
+          ?? "",
+      ).trim()
+    : String(company.logoUrl || "").trim();
+  const nextBusinessType = String(
+    patch.storeType ?? patch.businessType ?? company.businessType ?? "",
+  ).trim();
+  const nextProfileData = {
+    ...(company.profileData || {}),
+    companyId: company.id,
+    companyName: nextName,
+    storeName: nextName,
+    businessName: nextName,
+    companyPictureUrl: nextLogoUrl,
+    businessLogoUrl: nextLogoUrl,
+    logoUrl: nextLogoUrl,
+    profileImageUrl: nextLogoUrl,
+    companyBackgroundUrl: Object.prototype.hasOwnProperty.call(patch, "companyBackgroundUrl")
+      ? String(patch.companyBackgroundUrl ?? "").trim()
+      : String(
+          company.profileData?.companyBackgroundUrl
+            ?? company.profileData?.backgroundUrl
+            ?? "",
+        ).trim(),
+    storeType: nextBusinessType,
+    businessType: nextBusinessType,
+  };
+
+  await query(
+    `
+      UPDATE companies
+      SET
+        name = $2,
+        public_name = CASE
+          WHEN BTRIM(COALESCE(public_name, '')) = '' THEN $2
+          ELSE public_name
+        END,
+        logo_url = $3,
+        business_type = CASE
+          WHEN $4 <> '' THEN $4
+          ELSE business_type
+        END,
+        profile_data = COALESCE(profile_data, '{}'::jsonb) || $5::jsonb,
+        updated_at = NOW()
+      WHERE id = $1
+    `,
+    [
+      company.id,
+      nextName,
+      nextLogoUrl,
+      nextBusinessType,
+      JSON.stringify(nextProfileData),
+    ],
+  );
+
+  return findCompanyById(company.id);
 }
 
 function normalizeBusinessDocuments(rawDocuments) {
@@ -1287,8 +2159,8 @@ function normalizeBusinessDocuments(rawDocuments) {
       }
       return {
         id,
-        type: String(entry.type || "business_permit").trim().toLowerCase() || "business_permit",
-        label: String(entry.label || entry.fileName || "Business document").replace(/\s+/g, " ").trim().slice(0, 160),
+        type: normalizeDocumentType(entry.type) || "other",
+        label: String(entry.label || entry.fileName || documentTypeLabel(entry.type)).replace(/\s+/g, " ").trim().slice(0, 160),
         fileName: String(entry.fileName || "").trim().slice(0, 200),
         url,
         uploadedAt: String(entry.uploadedAt || "").trim() || new Date().toISOString(),
@@ -1304,14 +2176,7 @@ function normalizeBusinessDocuments(rawDocuments) {
     .filter(Boolean);
 }
 
-const BUSINESS_DOCUMENT_TYPES = new Set([
-  "business_permit",
-  "dti",
-  "sec",
-  "bir",
-  "valid_id",
-  "other",
-]);
+const BUSINESS_DOCUMENT_TYPES = ALLOWED_DOCUMENT_TYPES;
 
 async function addCompanyBusinessDocument({
   companyId,
@@ -1350,7 +2215,11 @@ async function addCompanyBusinessDocument({
     throw error;
   }
 
-  const normalizedType = String(type || "business_permit").trim().toLowerCase();
+  const companyKind = resolveSellerKind(
+    asObject(company.profileData).sellerKind,
+    asObject(company.profileData).businessDocuments,
+  );
+  const normalizedType = assertSellerKindAllowedDocument(companyKind, type);
   if (!BUSINESS_DOCUMENT_TYPES.has(normalizedType)) {
     const error = new Error("Unsupported business document type.");
     error.statusCode = 400;
@@ -1506,7 +2375,7 @@ async function activatePendingReviewCompany({
     throw error;
   }
   if (company.status !== "pending_review") {
-    const error = new Error("Only pending review companies can be activated from this queue.");
+    const error = new Error("Only pending review companies can be approved from this queue.");
     error.statusCode = 400;
     throw error;
   }
@@ -1521,16 +2390,17 @@ async function activatePendingReviewCompany({
   const accountResult = await query(
     `
       SELECT
-        id,
-        email,
-        country_code,
-        mobile_number,
-        email_verified,
-        mobile_verified,
-        first_name,
-        last_name
-      FROM accounts
-      WHERE id = $1
+        a.id,
+        a.email,
+        a.country_code,
+        a.mobile_number,
+        a.email_verified,
+        a.mobile_verified,
+        COALESCE(up.first_name, '') AS first_name,
+        COALESCE(up.last_name, '') AS last_name
+      FROM accounts a
+      LEFT JOIN user_profiles up ON up.account_id = a.id
+      WHERE a.id = $1
       LIMIT 1
     `,
     [accountId],
@@ -1594,6 +2464,10 @@ async function activatePendingReviewCompany({
         SET
           status = 'active'::subscription_status,
           approved_at = COALESCE(approved_at, NOW()),
+          expires_at = CASE
+            WHEN lower(COALESCE(plan_name, '')) IN ('free', 'free plan') THEN expires_at
+            ELSE COALESCE(expires_at, NOW() + INTERVAL '1 month')
+          END,
           metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
           updated_at = NOW()
         WHERE company_id = $1
@@ -1603,6 +2477,9 @@ async function activatePendingReviewCompany({
         JSON.stringify({
           activatedBySuperAdmin: approvedBy,
           activationReason: approvalReason,
+          slotBilling: /^(free)(\s+plan)?$/i.test(String(planName || "").trim())
+            ? "none"
+            : "monthly",
         }),
       ],
     );
@@ -1616,6 +2493,9 @@ async function activatePendingReviewCompany({
       companyId: company.id,
       planName,
       grantedReason: "super_admin_pending_review_activation",
+      // Keep role=user so Super Admin User Data still lists this person as a
+      // buyer. Companies already includes seller_admin capability.
+      promoteToAdmin: false,
     });
   });
 
@@ -1882,6 +2762,30 @@ function readSwitchPinUnlock(token, { accountId = "", companyId = "" } = {}) {
   return entry;
 }
 
+function revokeSwitchPinUnlocksForCompany(companyId) {
+  const normalizedCompanyId = String(companyId || "").trim();
+  if (!normalizedCompanyId) return;
+  for (const [token, entry] of switchPinUnlocks.entries()) {
+    if (String(entry?.companyId || "").trim() === normalizedCompanyId) {
+      switchPinUnlocks.delete(token);
+    }
+  }
+}
+
+function clearSwitchPinFailuresForCompany(companyId) {
+  const normalizedCompanyId = String(companyId || "").trim();
+  if (!normalizedCompanyId) return;
+  for (const key of switchPinAttempts.keys()) {
+    if (String(key).endsWith(`:${normalizedCompanyId}`)) {
+      switchPinAttempts.delete(key);
+    }
+  }
+}
+
+function isPinResetRequired(profileData) {
+  return asObject(profileData).pinResetRequired === true;
+}
+
 async function findSellerCompanyForSwitchPin({ accountId, companyId }) {
   const normalizedAccountId = String(accountId || "").trim();
   const normalizedCompanyId = String(companyId || "").trim();
@@ -1927,7 +2831,8 @@ async function findSellerCompanyForSwitchPin({ accountId, companyId }) {
         )
       ORDER BY
         CASE WHEN $1 <> '' AND c.id::text = $1 THEN 0 ELSE 1 END,
-        c.created_at ASC
+        c.updated_at DESC,
+        c.created_at DESC
       LIMIT 1
     `,
     [normalizedCompanyId, normalizedAccountId],
@@ -1942,7 +2847,10 @@ async function findSellerCompanyForSwitchPin({ accountId, companyId }) {
 
   const profileData = asObject(row.profile_data);
   let sellerPinHash = String(profileData.sellerPinHash || "").trim();
-  if (!sellerPinHash) {
+  let pinResetRequired = isPinResetRequired(profileData);
+  let pinResetReason = String(profileData.pinResetReason || "").trim();
+  let pinResetRequestedAt = String(profileData.pinResetRequestedAt || "").trim();
+  if (!sellerPinHash || !pinResetRequired) {
     const profileResult = await query(
       `
         SELECT profile_data
@@ -1952,7 +2860,15 @@ async function findSellerCompanyForSwitchPin({ accountId, companyId }) {
       `,
       [normalizedAccountId || row.source_account_id],
     );
-    sellerPinHash = String(asObject(profileResult.rows[0]?.profile_data).sellerPinHash || "").trim();
+    const sellerProfileData = asObject(profileResult.rows[0]?.profile_data);
+    if (!sellerPinHash) {
+      sellerPinHash = String(sellerProfileData.sellerPinHash || "").trim();
+    }
+    if (!pinResetRequired && isPinResetRequired(sellerProfileData)) {
+      pinResetRequired = true;
+      pinResetReason = String(sellerProfileData.pinResetReason || pinResetReason).trim();
+      pinResetRequestedAt = String(sellerProfileData.pinResetRequestedAt || pinResetRequestedAt).trim();
+    }
   }
 
   return {
@@ -1961,10 +2877,14 @@ async function findSellerCompanyForSwitchPin({ accountId, companyId }) {
     sourceAccountId: row.source_account_id,
     profileData,
     sellerPinHash,
+    pinResetRequired,
+    pinResetReason,
+    pinResetRequestedAt,
   };
 }
 
-async function persistSellerSwitchPinHash({ companyId, accountId, sellerPinHash }) {
+async function persistSellerSwitchPinProfile({ companyId, accountId, patch }) {
+  const payload = JSON.stringify(asObject(patch));
   await query(
     `
       UPDATE companies
@@ -1973,7 +2893,7 @@ async function persistSellerSwitchPinHash({ companyId, accountId, sellerPinHash 
         updated_at = NOW()
       WHERE id = $1
     `,
-    [companyId, JSON.stringify({ sellerPinHash })],
+    [companyId, payload],
   );
 
   if (accountId) {
@@ -1985,9 +2905,24 @@ async function persistSellerSwitchPinHash({ companyId, accountId, sellerPinHash 
           updated_at = NOW()
         WHERE account_id = $1
       `,
-      [accountId, JSON.stringify({ sellerPinHash })],
+      [accountId, payload],
     );
   }
+}
+
+async function persistSellerSwitchPinHash({ companyId, accountId, sellerPinHash }) {
+  await persistSellerSwitchPinProfile({
+    companyId,
+    accountId,
+    patch: {
+      sellerPinHash,
+      pinResetRequired: false,
+      pinResetRequestedAt: null,
+      pinResetRequestedBy: "",
+      pinResetReason: "",
+      pinUpdatedAt: new Date().toISOString(),
+    },
+  });
 }
 
 async function saveSellerSwitchPinIfProvided({ accountId, companyId, pin }) {
@@ -2003,6 +2938,7 @@ async function saveSellerSwitchPinIfProvided({ accountId, companyId, pin }) {
   const sellerPinHash = await hashPassword(rawPin);
   await persistSellerSwitchPinHash({ companyId, accountId, sellerPinHash });
   clearSwitchPinFailures(accountId, companyId);
+  revokeSwitchPinUnlocksForCompany(companyId);
   return {
     unlockToken: issueSwitchPinUnlock({ accountId, companyId }),
   };
@@ -2010,8 +2946,12 @@ async function saveSellerSwitchPinIfProvided({ accountId, companyId, pin }) {
 
 async function getSellerSwitchPinStatus({ accountId, companyId }) {
   const company = await findSellerCompanyForSwitchPin({ accountId, companyId });
+  const pinResetRequired = company.pinResetRequired === true;
   return {
-    hasPin: Boolean(company.sellerPinHash),
+    hasPin: Boolean(company.sellerPinHash) && !pinResetRequired,
+    pinResetRequired,
+    pinResetReason: company.pinResetReason || "",
+    pinResetRequestedAt: company.pinResetRequestedAt || "",
     companyId: company.id,
     companyName: company.name || "Seller admin",
   };
@@ -2038,6 +2978,7 @@ async function setSellerSwitchPin({ accountId, companyId, pin, confirmPin }) {
   });
   return {
     hasPin: true,
+    pinResetRequired: false,
     companyId: company.id,
     companyName: company.name || "Seller admin",
     unlockToken: saved.unlockToken,
@@ -2046,6 +2987,15 @@ async function setSellerSwitchPin({ accountId, companyId, pin, confirmPin }) {
 
 async function verifySellerSwitchPin({ accountId, companyId, pin }) {
   const company = await findSellerCompanyForSwitchPin({ accountId, companyId });
+  if (company.pinResetRequired) {
+    const error = new Error(
+      company.pinResetReason
+        ? `Switch PIN reset required: ${company.pinResetReason}`
+        : "Switch PIN reset is required. Create a new Switch PIN to continue.",
+    );
+    error.statusCode = 409;
+    throw error;
+  }
   if (!company.sellerPinHash) {
     const error = new Error("Create a Switch PIN before opening seller admin.");
     error.statusCode = 409;
@@ -2060,6 +3010,7 @@ async function verifySellerSwitchPin({ accountId, companyId, pin }) {
   clearSwitchPinFailures(accountId, company.id);
   return {
     hasPin: true,
+    pinResetRequired: false,
     companyId: company.id,
     companyName: company.name || "Seller admin",
     unlockToken: issueSwitchPinUnlock({ accountId, companyId: company.id }),
@@ -2071,6 +3022,341 @@ function checkSellerSwitchPinUnlock({ token, accountId, companyId }) {
   return {
     unlocked: Boolean(entry),
     companyId: entry?.companyId || "",
+  };
+}
+
+async function requireSellerSwitchPinReset({
+  accountId = "",
+  companyId = "",
+  reason = "",
+  requestedBy = "super-admin",
+} = {}) {
+  const company = await findSellerCompanyForSwitchPin({ accountId, companyId });
+  const now = new Date().toISOString();
+  const normalizedReason = String(reason || "Security Switch PIN reset required by Super Admin.")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500) || "Security Switch PIN reset required by Super Admin.";
+  const ownerAccountId = String(accountId || company.sourceAccountId || "").trim();
+
+  await persistSellerSwitchPinProfile({
+    companyId: company.id,
+    accountId: ownerAccountId,
+    patch: {
+      sellerPinHash: "",
+      pinResetRequired: true,
+      pinResetRequestedAt: now,
+      pinResetRequestedBy: String(requestedBy || "super-admin").trim() || "super-admin",
+      pinResetReason: normalizedReason,
+      pinUpdatedAt: now,
+    },
+  });
+
+  revokeSwitchPinUnlocksForCompany(company.id);
+  clearSwitchPinFailuresForCompany(company.id);
+  if (ownerAccountId) {
+    clearSwitchPinFailures(ownerAccountId, company.id);
+  }
+
+  return {
+    hasPin: false,
+    pinResetRequired: true,
+    pinResetReason: normalizedReason,
+    pinResetRequestedAt: now,
+    companyId: company.id,
+    companyName: company.name || "Seller admin",
+    sourceAccountId: ownerAccountId,
+  };
+}
+
+function hashSwitchPinForgotToken(token) {
+  return crypto.createHash("sha256").update(String(token || "").trim()).digest("hex");
+}
+
+function maskEmailAddress(email) {
+  const value = String(email || "").trim();
+  const at = value.indexOf("@");
+  if (at <= 0) {
+    return "your Gmail";
+  }
+  const name = value.slice(0, at);
+  const domain = value.slice(at);
+  const visible = name.slice(0, Math.min(3, name.length));
+  return `${visible}${"•".repeat(Math.max(2, Math.min(4, name.length - visible.length)))}${domain}`;
+}
+
+function assertCompanyAccessPassword(plainPassword) {
+  const password = String(plainPassword ?? "");
+  if (password.length < 8) {
+    throw Object.assign(new Error("Company password must be at least 8 characters."), { statusCode: 400 });
+  }
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    throw Object.assign(new Error("Company password must include a letter and a number."), { statusCode: 400 });
+  }
+  return password;
+}
+
+async function resolveCompanyPasswordHash({ accountId, rawPassword }) {
+  const raw = String(rawPassword || "");
+  if (raw) {
+    const password = assertCompanyAccessPassword(raw);
+    return hashPassword(password);
+  }
+  const id = String(accountId || "").trim();
+  if (!id) {
+    return "";
+  }
+  const result = await query(
+    `SELECT password_hash FROM accounts WHERE id = $1 LIMIT 1`,
+    [id],
+  );
+  return String(result.rows[0]?.password_hash || "").trim();
+}
+
+async function getAccountPasswordRecord(accountId) {
+  const id = String(accountId || "").trim();
+  if (!id) {
+    return null;
+  }
+  const result = await query(
+    `
+      SELECT id, email, password_hash
+      FROM accounts
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id],
+  );
+  return result.rows[0] || null;
+}
+
+async function verifyCompanyAccessPassword({ company, accountId, password }) {
+  const raw = String(password || "");
+  if (!raw) {
+    throw Object.assign(new Error("Enter your company password first."), { statusCode: 400 });
+  }
+  const companyHash = String(company?.profileData?.companyPasswordHash || "").trim();
+  if (companyHash && await verifyPassword(raw, companyHash)) {
+    return { source: "company" };
+  }
+  const account = await getAccountPasswordRecord(accountId || company?.sourceAccountId);
+  const accountHash = String(account?.password_hash || "").trim();
+  if (accountHash && await verifyPassword(raw, accountHash)) {
+    return { source: "account", account };
+  }
+  throw Object.assign(new Error("Incorrect password. Use the password saved with this company."), {
+    statusCode: 401,
+  });
+}
+
+async function persistCompanyAccessPassword({ companyId, accountId, password }) {
+  const raw = String(password || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const companyPasswordHash = await resolveCompanyPasswordHash({ accountId, rawPassword: raw });
+  if (!companyPasswordHash) {
+    return "";
+  }
+  await persistSellerSwitchPinProfile({
+    companyId,
+    accountId,
+    patch: {
+      companyPasswordHash,
+      companyPasswordUpdatedAt: new Date().toISOString(),
+    },
+  });
+  return companyPasswordHash;
+}
+
+async function requestSellerSwitchPinForgotLink({
+  accountId,
+  companyId,
+  resetBaseUrl,
+}) {
+  const company = await findSellerCompanyForSwitchPin({ accountId, companyId });
+  const account = await getAccountPasswordRecord(accountId || company.sourceAccountId);
+  const email = normalizeEmail(account?.email || company.profileData?.email || "");
+  if (!email) {
+    throw Object.assign(new Error("This company has no Gmail on file for a Switch PIN reset."), {
+      statusCode: 409,
+    });
+  }
+  const hasPassword = Boolean(
+    String(company.profileData?.companyPasswordHash || "").trim()
+    || String(account?.password_hash || "").trim(),
+  );
+  if (!hasPassword) {
+    throw Object.assign(
+      new Error("This company has no password yet. Add a company password when you create or update the company."),
+      { statusCode: 409 },
+    );
+  }
+
+  const token = crypto.randomBytes(24).toString("hex");
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  await persistSellerSwitchPinProfile({
+    companyId: company.id,
+    accountId: accountId || company.sourceAccountId,
+    patch: {
+      pinForgotTokenHash: hashSwitchPinForgotToken(token),
+      pinForgotExpiresAt: expiresAt,
+    },
+  });
+
+  const base = String(resetBaseUrl || "").replace(/\/$/, "") || "http://127.0.0.1:8080";
+  const resetUrl = `${base}/switch_pin_reset.html?token=${encodeURIComponent(token)}`;
+  const { sendSwitchPinResetEmail } = require("./emailService");
+  await sendSwitchPinResetEmail({
+    email,
+    resetUrl,
+    companyName: company.name || "your company",
+  });
+
+  return {
+    companyId: company.id,
+    companyName: company.name || "Seller admin",
+    emailMasked: maskEmailAddress(email),
+    expiresAt,
+  };
+}
+
+async function findCompanyByPinForgotToken(token) {
+  const hash = hashSwitchPinForgotToken(token);
+  if (!hash || hash.length < 32) {
+    const error = new Error("This Switch PIN reset link is invalid.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const result = await query(
+    `
+      SELECT
+        c.id,
+        c.name,
+        c.email,
+        c.profile_data,
+        c.source_account_id
+      FROM companies c
+      WHERE c.profile_data->>'pinForgotTokenHash' = $1
+      LIMIT 1
+    `,
+    [hash],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw Object.assign(new Error("This Switch PIN reset link is invalid or already used."), {
+      statusCode: 404,
+    });
+  }
+  const profileData = asObject(row.profile_data);
+  const expiresAt = new Date(profileData.pinForgotExpiresAt || "");
+  if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() < Date.now()) {
+    throw Object.assign(new Error("This Switch PIN reset link expired. Request a new one."), {
+      statusCode: 410,
+    });
+  }
+  return {
+    id: row.id,
+    name: row.name || "",
+    email: row.email || "",
+    sourceAccountId: row.source_account_id,
+    profileData,
+  };
+}
+
+async function previewSellerSwitchPinForgotToken(token) {
+  const company = await findCompanyByPinForgotToken(token);
+  const account = await getAccountPasswordRecord(company.sourceAccountId);
+  return {
+    valid: true,
+    companyId: company.id,
+    companyName: company.name || "Seller admin",
+    emailMasked: maskEmailAddress(account?.email || company.email),
+  };
+}
+
+async function verifySellerSwitchPinForgotPassword({ token, password }) {
+  const company = await findCompanyByPinForgotToken(token);
+  await verifyCompanyAccessPassword({
+    company,
+    accountId: company.sourceAccountId,
+    password,
+  });
+  const unlockToken = crypto.randomBytes(16).toString("hex");
+  await persistSellerSwitchPinProfile({
+    companyId: company.id,
+    accountId: company.sourceAccountId,
+    patch: {
+      pinForgotUnlockHash: hashSwitchPinForgotToken(unlockToken),
+      pinForgotUnlockExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    },
+  });
+  return {
+    unlockToken,
+    companyId: company.id,
+    companyName: company.name || "Seller admin",
+  };
+}
+
+async function completeSellerSwitchPinForgotReset({
+  token,
+  unlockToken,
+  password,
+  pin,
+  confirmPin,
+}) {
+  const company = await findCompanyByPinForgotToken(token);
+  const unlockHash = hashSwitchPinForgotToken(unlockToken);
+  const savedUnlock = String(company.profileData?.pinForgotUnlockHash || "").trim();
+  const unlockExpires = new Date(company.profileData?.pinForgotUnlockExpiresAt || "");
+  if (
+    !unlockHash
+    || unlockHash !== savedUnlock
+    || !Number.isFinite(unlockExpires.getTime())
+    || unlockExpires.getTime() < Date.now()
+  ) {
+    throw Object.assign(new Error("Enter your company password again before resetting the Switch PIN."), {
+      statusCode: 401,
+    });
+  }
+
+  await verifyCompanyAccessPassword({
+    company,
+    accountId: company.sourceAccountId,
+    password,
+  });
+
+  const saved = await setSellerSwitchPin({
+    accountId: company.sourceAccountId,
+    companyId: company.id,
+    pin,
+    confirmPin,
+  });
+  if (password) {
+    await persistSellerSwitchPinProfile({
+      companyId: company.id,
+      accountId: company.sourceAccountId,
+      patch: {
+        companyPasswordHash: await hashPassword(String(password)),
+        companyPasswordUpdatedAt: new Date().toISOString(),
+      },
+    });
+  }
+  await persistSellerSwitchPinProfile({
+    companyId: company.id,
+    accountId: company.sourceAccountId,
+    patch: {
+      pinForgotTokenHash: null,
+      pinForgotExpiresAt: null,
+      pinForgotUnlockHash: null,
+      pinForgotUnlockExpiresAt: null,
+    },
+  });
+
+  return {
+    ...saved,
+    companyId: company.id,
+    companyName: company.name || "Seller admin",
   };
 }
 
@@ -2110,8 +3396,48 @@ async function syncSellerCompanyEnforcementStatus(accountId, options = {}) {
     return null;
   }
 
-  const company = await findSellerCompanyByAccount(normalizedAccountId);
-  if (!company?.id) {
+  const preferredCompanyId = String(options.companyId || "").trim();
+  const listedByAccount = await listSellerCompaniesByAccount(normalizedAccountId);
+  const accountCompanies = Array.isArray(listedByAccount)
+    ? listedByAccount.filter((entry) => entry?.id)
+    : [];
+  let preferredCompany = null;
+  if (preferredCompanyId) {
+    preferredCompany = await findCompanyById(preferredCompanyId);
+    if (!preferredCompany?.id) {
+      preferredCompany = null;
+    }
+  }
+
+  let targetCompanies = [];
+  if (companyStatus === "active") {
+    // Unban/unrestrict/activate: clear every stuck banned/restricted company on
+    // this account. Do not retarget a preferred draft/pending sibling id that SA
+    // may resolve while the real banned company stays blocked.
+    const stuck = accountCompanies.filter((entry) => {
+      const status = String(entry.status || "").trim().toLowerCase();
+      return status === "banned" || status === "restricted";
+    });
+    if (stuck.length) {
+      targetCompanies = stuck;
+    } else if (preferredCompany) {
+      targetCompanies = [preferredCompany];
+    } else {
+      targetCompanies = accountCompanies;
+    }
+  } else if (preferredCompany) {
+    targetCompanies = [preferredCompany];
+  } else {
+    targetCompanies = accountCompanies;
+  }
+
+  if (!targetCompanies.length) {
+    const fallback = await findSellerCompanyByAccount(normalizedAccountId);
+    if (fallback?.id) {
+      targetCompanies = [fallback];
+    }
+  }
+  if (!targetCompanies.length) {
     return null;
   }
 
@@ -2122,38 +3448,191 @@ async function syncSellerCompanyEnforcementStatus(accountId, options = {}) {
   const subscriptionStatus = String(options.subscriptionStatus || "").trim().toLowerCase();
   const verificationStatus = String(options.verificationStatus || "").trim();
   const reason = String(options.reason || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  const description = String(options.description || "").replace(/\s+/g, " ").trim().slice(0, 900);
+  // On unban/unrestrict/activate, explicitly null ban keys. jsonb `||` merge
+  // otherwise leaves stale banReason behind and the user Companies UI / workspace
+  // gate keep treating the company as banned (and a heal path can re-ban it).
+  const profilePatch = JSON.stringify({
+    lastEnforcementStatus: companyStatus,
+    lastEnforcementReason: reason,
+    lastEnforcementDescription: description,
+    lastEnforcementAt: new Date().toISOString(),
+    ...(companyStatus === "banned"
+      ? {
+          banReason: reason,
+          banDescription: description,
+          bannedAt: new Date().toISOString(),
+        }
+      : {
+          banReason: null,
+          banDescription: null,
+          bannedAt: null,
+        }),
+  });
+  const membershipPatch = JSON.stringify({
+    lastEnforcementStatus: companyStatus,
+    lastEnforcementReason: reason,
+    lastEnforcementDescription: description,
+  });
+
+  await withTransaction(async (client) => {
+    for (const company of targetCompanies) {
+      await client.query(
+        `
+          UPDATE companies
+          SET
+            status = $2::company_status,
+            subscription_status = CASE
+              WHEN $3::boolean AND $4::text IN (
+                'active', 'pending_review', 'pending_payment', 'expired', 'cancelled', 'past_due', 'draft'
+              )
+                THEN $4::subscription_status
+              ELSE subscription_status
+            END,
+            verification_status = CASE
+              WHEN NULLIF($5, '') IS NOT NULL THEN $5
+              ELSE verification_status
+            END,
+            profile_data = COALESCE(profile_data, '{}'::jsonb) || $6::jsonb,
+            updated_at = NOW()
+          WHERE id = $1
+        `,
+        [
+          company.id,
+          companyStatus,
+          shouldUpdateSubscription,
+          subscriptionStatus || null,
+          verificationStatus,
+          profilePatch,
+        ],
+      );
+
+      // Update every membership on this company — SA admin id can differ from
+      // membership.account_id for unified buyer/seller accounts.
+      await client.query(
+        `
+          UPDATE company_memberships
+          SET
+            membership_status = $2::account_status,
+            metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+            updated_at = NOW()
+          WHERE company_id = $1
+        `,
+        [
+          company.id,
+          membershipStatus,
+          membershipPatch,
+        ],
+      );
+
+      if (
+        shouldUpdateSubscription &&
+        ["active", "pending_review", "expired", "cancelled", "past_due", "pending_payment", "draft"].includes(
+          subscriptionStatus,
+        )
+      ) {
+        await client.query(
+          `
+            UPDATE seller_subscriptions
+            SET
+              status = $2::subscription_status,
+              approved_at = CASE
+                WHEN $2::text = 'active' THEN COALESCE(approved_at, NOW())
+                ELSE approved_at
+              END,
+              metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+              updated_at = NOW()
+            WHERE company_id = $1
+          `,
+          [
+            company.id,
+            subscriptionStatus,
+            JSON.stringify({
+              lastEnforcementStatus: companyStatus,
+              lastEnforcementReason: reason,
+            }),
+          ],
+        );
+      }
+    }
+  });
+
+  const primary = targetCompanies[0];
+  return {
+    ...primary,
+    status: companyStatus,
+    subscriptionStatus: shouldUpdateSubscription ? subscriptionStatus : primary.subscriptionStatus,
+    verificationStatus: verificationStatus || primary.verificationStatus,
+    syncedCompanyIds: targetCompanies.map((entry) => entry.id),
+  };
+}
+
+async function withdrawPendingSellerCompany({
+  accountId = "",
+  companyId = "",
+  reason = "",
+} = {}) {
+  if (!(await isSellerOnboardingReady())) {
+    const error = new Error("Seller onboarding storage is unavailable.");
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const normalizedAccountId = String(accountId || "").trim();
+  const normalizedCompanyId = String(companyId || "").trim();
+  if (!normalizedAccountId || !normalizedCompanyId) {
+    const error = new Error("Account ID and company ID are required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const ownsCompany = await accountOwnsSellerCompany(normalizedAccountId, normalizedCompanyId);
+  if (!ownsCompany) {
+    const error = new Error("You do not have access to that company.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const company = await findCompanyById(normalizedCompanyId);
+  if (!company) {
+    const error = new Error("Company not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const status = String(company.status || "").trim().toLowerCase();
+  if (!["pending_review", "pending_payment", "draft"].includes(status)) {
+    const error = new Error("Only in-review or unfinished companies can be withdrawn.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const withdrawReason = String(reason || "Withdrawn by seller")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
 
   await withTransaction(async (client) => {
     await client.query(
       `
         UPDATE companies
         SET
-          status = $2::company_status,
-          subscription_status = CASE
-            WHEN $3::boolean AND $4::text IN (
-              'active', 'pending_review', 'pending_payment', 'expired', 'cancelled', 'past_due', 'draft'
-            )
-              THEN $4::subscription_status
-            ELSE subscription_status
-          END,
+          status = 'deactivated'::company_status,
+          subscription_status = 'cancelled'::subscription_status,
           verification_status = CASE
-            WHEN NULLIF($5, '') IS NOT NULL THEN $5
+            WHEN verification_status = 'pending_review' THEN 'withdrawn'
             ELSE verification_status
           END,
-          profile_data = COALESCE(profile_data, '{}'::jsonb) || $6::jsonb,
+          profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
           updated_at = NOW()
         WHERE id = $1
       `,
       [
         company.id,
-        companyStatus,
-        shouldUpdateSubscription,
-        subscriptionStatus || null,
-        verificationStatus,
         JSON.stringify({
-          lastEnforcementStatus: companyStatus,
-          lastEnforcementReason: reason,
-          lastEnforcementAt: new Date().toISOString(),
+          withdrawnBySellerAt: new Date().toISOString(),
+          withdrawnBySeller: true,
+          withdrawReason,
         }),
       ],
     );
@@ -2162,59 +3641,47 @@ async function syncSellerCompanyEnforcementStatus(accountId, options = {}) {
       `
         UPDATE company_memberships
         SET
-          membership_status = $2::account_status,
-          metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
+          membership_status = 'deactivated'::account_status,
+          is_primary = FALSE,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
           updated_at = NOW()
         WHERE company_id = $1
-          AND account_id = $4
+          AND account_id = $3
       `,
       [
         company.id,
-        membershipStatus,
         JSON.stringify({
-          lastEnforcementStatus: companyStatus,
-          lastEnforcementReason: reason,
+          onboardingStage: "withdrawn",
+          withdrawReason,
         }),
         normalizedAccountId,
       ],
     );
 
-    if (
-      shouldUpdateSubscription &&
-      ["active", "pending_review", "expired", "cancelled", "past_due", "pending_payment", "draft"].includes(
-        subscriptionStatus,
-      )
-    ) {
-      await client.query(
-        `
-          UPDATE seller_subscriptions
-          SET
-            status = $2::subscription_status,
-            approved_at = CASE
-              WHEN $2::text = 'active' THEN COALESCE(approved_at, NOW())
-              ELSE approved_at
-            END,
-            metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
-            updated_at = NOW()
-          WHERE company_id = $1
-        `,
-        [
-          company.id,
-          subscriptionStatus,
-          JSON.stringify({
-            lastEnforcementStatus: companyStatus,
-            lastEnforcementReason: reason,
-          }),
-        ],
-      );
-    }
+    await client.query(
+      `
+        UPDATE seller_subscriptions
+        SET
+          status = 'cancelled'::subscription_status,
+          metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
+          updated_at = NOW()
+        WHERE company_id = $1
+      `,
+      [
+        company.id,
+        JSON.stringify({
+          withdrawnBySeller: true,
+          withdrawReason,
+        }),
+      ],
+    );
   });
 
   return {
-    ...company,
-    status: companyStatus,
-    subscriptionStatus: shouldUpdateSubscription ? subscriptionStatus : company.subscriptionStatus,
-    verificationStatus: verificationStatus || company.verificationStatus,
+    companyId: company.id,
+    companyName: company.name || "Seller company",
+    withdrawn: true,
+    reason: withdrawReason,
   };
 }
 
@@ -2223,12 +3690,18 @@ module.exports = {
   startSellerOnboarding,
   createSellerCheckoutIntent,
   updateSellerCheckoutIntentGatewayState,
+  markExtraCompanySlotPaid,
   findSellerCheckoutIntentByPaymentReference,
   claimPaymentWebhookEvent,
   finishPaymentWebhookEvent,
   confirmSellerOnboarding,
   findSellerCompanyByAccount,
   findCompanyById,
+  accountOwnsSellerCompany,
+  updateCompanyWorkspaceProfile,
+  listSellerCompaniesByAccount,
+  getSellerCompanyEntitlement,
+  findPaidExtraCompanySlot, 
   listPendingReviewCompanies,
   activatePendingReviewCompany,
   rejectPendingReviewCompany,
@@ -2238,8 +3711,15 @@ module.exports = {
   normalizeBusinessDocuments,
   markAccountVerifiedForSellerOnboarding,
   syncSellerCompanyEnforcementStatus,
+  withdrawPendingSellerCompany,
   getSellerSwitchPinStatus,
   setSellerSwitchPin,
   verifySellerSwitchPin,
   checkSellerSwitchPinUnlock,
+  requireSellerSwitchPinReset,
+  requestSellerSwitchPinForgotLink,
+  previewSellerSwitchPinForgotToken,
+  verifySellerSwitchPinForgotPassword,
+  completeSellerSwitchPinForgotReset,
+  normalizeStoreLocation,
 };

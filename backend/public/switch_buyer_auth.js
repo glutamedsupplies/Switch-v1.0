@@ -288,11 +288,16 @@
   }
 
   function persistSellerAdminSession(admin, redirectPath) {
+    const companyId = String(
+      admin?.companyId || admin?.activeCompanyId || "",
+    ).trim();
     const adminSession = {
       ...(admin && typeof admin === "object" ? admin : {}),
       role: "admin",
       adminId: String(admin?.adminId || admin?.id || "").trim(),
       email: String(admin?.email || "").trim().toLowerCase(),
+      companyId,
+      activeCompanyId: companyId,
       dashboardPath: redirectPath || "/main.html#dashboard",
       signedInAt: new Date().toISOString(),
     };
@@ -301,6 +306,20 @@
       window.sessionStorage.removeItem("gms-employee-session");
       window.sessionStorage.removeItem("gms-super-admin-session");
       window.localStorage.setItem("gms-admin-id", adminSession.adminId);
+      if (companyId) {
+        window.localStorage.setItem("gms-active-company-id", companyId);
+      }
+      // Drop stale seller listing/profile caches so the next company loads fresh.
+      for (const key of Object.keys(window.sessionStorage || {})) {
+        if (
+          key.startsWith("gms-products")
+          || key.startsWith("gms-product-")
+          || key.includes("product-cache")
+          || key.includes("listing-cache")
+        ) {
+          window.sessionStorage.removeItem(key);
+        }
+      }
     } catch (_) {}
     return adminSession;
   }
@@ -425,8 +444,405 @@
         opacity: 0.7;
         cursor: wait;
       }
+      .switch-pin-gate__forgot {
+        display: inline-flex;
+        margin: 10px 0 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: #0f766e;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .switch-pin-gate__forgot:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      .company-status-gate__card {
+        width: min(440px, 100%);
+        background: #fff;
+        color: #0f172a;
+        border-radius: 18px;
+        padding: 22px 22px 18px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+      }
+      .company-status-gate__card.is-banned {
+        border-top: 4px solid #dc2626;
+      }
+      .company-status-gate__card.is-review {
+        border-top: 4px solid #0284c7;
+      }
+      .company-status-gate__kicker {
+        margin: 0 0 6px;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #64748b;
+        font-weight: 700;
+      }
+      .company-status-gate__card h2 {
+        margin: 0 0 8px;
+        font-size: 1.25rem;
+      }
+      .company-status-gate__lead {
+        margin: 0 0 14px;
+        color: #475569;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+      .company-status-gate__block {
+        margin: 0 0 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+      }
+      .company-status-gate__block strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .company-status-gate__block p {
+        margin: 0;
+        color: #0f172a;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+      .company-status-gate__reqs {
+        margin: 0 0 14px;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+      .company-status-gate__reqs[hidden] { display: none; }
+      .company-status-gate__req {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        font-size: 0.92rem;
+      }
+      .company-status-gate__req-state {
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 999px;
+      }
+      .company-status-gate__req-state.is-done {
+        background: #dcfce7;
+        color: #166534;
+      }
+      .company-status-gate__req-state.is-missing {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .company-status-gate__feedback {
+        min-height: 1.2em;
+        margin: 0 0 10px;
+        color: #b91c1c;
+        font-size: 0.88rem;
+      }
+      .company-status-gate__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .company-status-gate__actions button {
+        min-height: 40px;
+        border-radius: 12px;
+        border: 0;
+        padding: 0 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .company-status-gate__secondary {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      .company-status-gate__danger {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      .company-status-gate__primary {
+        background: #0f766e;
+        color: #fff;
+      }
+      .company-status-gate__primary.is-ban {
+        background: #dc2626;
+      }
     `;
     document.head.appendChild(style);
+  }
+
+  function getCompanyMembershipById(session, companyId) {
+    const wanted = String(companyId || "").trim();
+    if (!wanted) return null;
+    const list = Array.isArray(session?.companies) ? session.companies : [];
+    return list.find((item) =>
+      String(item?.companyId || item?.company?.id || "").trim() === wanted,
+    ) || null;
+  }
+
+  function buildCompanyRequirementChecks(membership) {
+    const company = membership?.company && typeof membership.company === "object"
+      ? membership.company
+      : {};
+    const profile = company.profileData && typeof company.profileData === "object"
+      ? company.profileData
+      : {};
+    const docs = Array.isArray(profile.businessDocuments) ? profile.businessDocuments : [];
+    const logoSkipped = profile.businessLogoSkipped === true;
+    const hasLogo = Boolean(String(company.logoUrl || profile.logoUrl || "").trim()) || logoSkipped;
+    const hasPayment = Boolean(
+      String(profile.paymentConfirmedAt || profile.paymentReference || "").trim()
+      || String(company.subscriptionStatus || "").trim().toLowerCase() === "pending_review"
+      || String(company.subscriptionStatus || "").trim().toLowerCase() === "active",
+    );
+    const hasContact = Boolean(
+      String(company.email || "").trim()
+      || String(company.mobileNumber || "").trim(),
+    );
+    return [
+      {
+        key: "companyName",
+        label: t("account.companies.review.req.companyName"),
+        done: Boolean(String(company.name || company.publicName || "").trim()),
+      },
+      {
+        key: "businessType",
+        label: t("account.companies.review.req.businessType"),
+        done: Boolean(String(company.businessType || profile.businessType || "").trim()),
+      },
+      {
+        key: "logo",
+        label: t("account.companies.review.req.logo"),
+        done: hasLogo,
+      },
+      {
+        key: "payment",
+        label: t("account.companies.review.req.payment"),
+        done: hasPayment,
+      },
+      {
+        key: "documents",
+        label: t("account.companies.review.req.documents"),
+        done: docs.length > 0,
+        detail: docs.length ? `${docs.length}` : "",
+      },
+      {
+        key: "contact",
+        label: t("account.companies.review.req.contact"),
+        done: hasContact,
+      },
+    ];
+  }
+
+  function getCompanyBanDetails(membership) {
+    const company = membership?.company && typeof membership.company === "object"
+      ? membership.company
+      : {};
+    const profile = company.profileData && typeof company.profileData === "object"
+      ? company.profileData
+      : {};
+    const metadata = membership?.metadata && typeof membership.metadata === "object"
+      ? membership.metadata
+      : {};
+    const reason = String(
+      profile.banReason
+        || profile.lastEnforcementReason
+        || metadata.lastEnforcementReason
+        || membership?.banReason
+        || "",
+    ).replace(/\s+/g, " ").trim();
+    const description = String(
+      profile.banDescription
+        || profile.lastEnforcementDescription
+        || metadata.lastEnforcementDescription
+        || membership?.banDescription
+        || "",
+    ).replace(/\s+/g, " ").trim();
+    return { reason, description };
+  }
+
+  async function fetchSellerWorkspaceGate({ accountId, email, companyId }) {
+    const response = await fetch("/api/account/seller-switch-pin/status", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId, email, companyId }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || t("account.companies.error"));
+    }
+    const workspaceStatus = String(payload.workspaceStatus || "").trim().toLowerCase();
+    const workspaceBlocked = payload.workspaceBlocked === true
+      || ["banned", "pending_review", "pending_payment", "deactivated", "suspended"].includes(workspaceStatus);
+    return {
+      ...payload,
+      workspaceBlocked,
+      workspaceStatus: workspaceStatus || "active",
+      banReason: String(payload.banReason || "").trim(),
+      banDescription: String(payload.banDescription || "").trim(),
+    };
+  }
+
+  function applyWorkspaceGateToMembership(membership, gate = {}) {
+    const base = membership && typeof membership === "object" ? { ...membership } : {};
+    const company = base.company && typeof base.company === "object"
+      ? { ...base.company }
+      : {};
+    const profile = company.profileData && typeof company.profileData === "object"
+      ? { ...company.profileData }
+      : {};
+    if (gate.workspaceStatus) {
+      company.status = gate.workspaceStatus;
+      company.accountState = gate.workspaceStatus;
+      company.enforcementStatus = gate.workspaceStatus;
+    }
+    if (gate.banReason) {
+      profile.banReason = gate.banReason;
+      profile.lastEnforcementReason = gate.banReason;
+    }
+    if (gate.banDescription) {
+      profile.banDescription = gate.banDescription;
+      profile.lastEnforcementDescription = gate.banDescription;
+    }
+    if (gate.workspaceStatus === "banned") {
+      profile.lastEnforcementStatus = "banned";
+    }
+    company.profileData = profile;
+    base.company = company;
+    if (gate.banReason) base.banReason = gate.banReason;
+    if (gate.banDescription) base.banDescription = gate.banDescription;
+    return base;
+  }
+
+  function promptCompanyStatusModal({
+    mode,
+    companyName,
+    membership,
+    accountId,
+    onWithdraw,
+  }) {
+    ensureSwitchPinStyles();
+    return new Promise((resolve) => {
+      const isBan = mode === "banned";
+      const ban = isBan ? getCompanyBanDetails(membership) : { reason: "", description: "" };
+      const requirements = isBan ? [] : buildCompanyRequirementChecks(membership);
+      const overlay = document.createElement("div");
+      overlay.className = "switch-pin-gate";
+      overlay.innerHTML = `
+        <div class="company-status-gate__card ${isBan ? "is-banned" : "is-review"}" role="dialog" aria-modal="true">
+          <p class="company-status-gate__kicker">${escapeHtml(companyName || "Company")}</p>
+          <h2>${escapeHtml(isBan ? t("account.companies.ban.title") : t("account.companies.review.title"))}</h2>
+          <p class="company-status-gate__lead">${escapeHtml(isBan ? t("account.companies.ban.lead") : t("account.companies.review.lead"))}</p>
+          ${isBan ? `
+            <div class="company-status-gate__block">
+              <strong>${escapeHtml(t("account.companies.ban.reason"))}</strong>
+              <p>${escapeHtml(ban.reason || t("account.companies.ban.noReason"))}</p>
+            </div>
+            <div class="company-status-gate__block">
+              <strong>${escapeHtml(t("account.companies.ban.description"))}</strong>
+              <p>${escapeHtml(ban.description || t("account.companies.ban.noDescription"))}</p>
+            </div>
+          ` : `
+            <ul class="company-status-gate__reqs" data-company-reqs hidden>
+              ${requirements.map((item) => `
+                <li class="company-status-gate__req">
+                  <span>${escapeHtml(item.label)}${item.detail ? ` (${escapeHtml(item.detail)})` : ""}</span>
+                  <span class="company-status-gate__req-state ${item.done ? "is-done" : "is-missing"}">
+                    ${escapeHtml(item.done ? t("account.companies.review.done") : t("account.companies.review.missing"))}
+                  </span>
+                </li>
+              `).join("")}
+            </ul>
+          `}
+          <p class="company-status-gate__feedback" data-company-status-feedback></p>
+          <div class="company-status-gate__actions">
+            ${isBan ? "" : `
+              <button type="button" class="company-status-gate__secondary" data-company-check-reqs>
+                ${escapeHtml(t("account.companies.review.check"))}
+              </button>
+              <button type="button" class="company-status-gate__danger" data-company-withdraw>
+                ${escapeHtml(t("account.companies.review.withdraw"))}
+              </button>
+            `}
+            <button type="button" class="company-status-gate__primary ${isBan ? "is-ban" : ""}" data-company-status-close>
+              ${escapeHtml(isBan ? t("account.companies.ban.close") : t("account.companies.review.close"))}
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      const feedback = overlay.querySelector("[data-company-status-feedback]");
+      const closeBtn = overlay.querySelector("[data-company-status-close]");
+      const checkBtn = overlay.querySelector("[data-company-check-reqs]");
+      const withdrawBtn = overlay.querySelector("[data-company-withdraw]");
+      const reqs = overlay.querySelector("[data-company-reqs]");
+      let settled = false;
+      let busy = false;
+
+      const close = (result) => {
+        if (settled) return;
+        settled = true;
+        overlay.remove();
+        resolve(result || { action: "close" });
+      };
+
+      closeBtn?.addEventListener("click", () => close({ action: "close" }));
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay && !busy) close({ action: "close" });
+      });
+
+      checkBtn?.addEventListener("click", () => {
+        if (!(reqs instanceof HTMLElement)) return;
+        const open = reqs.hasAttribute("hidden");
+        if (open) {
+          reqs.removeAttribute("hidden");
+          checkBtn.textContent = t("account.companies.review.hide");
+        } else {
+          reqs.setAttribute("hidden", "");
+          checkBtn.textContent = t("account.companies.review.check");
+        }
+      });
+
+      withdrawBtn?.addEventListener("click", async () => {
+        if (busy) return;
+        if (!window.confirm(t("account.companies.review.withdrawConfirm"))) return;
+        busy = true;
+        withdrawBtn.disabled = true;
+        checkBtn && (checkBtn.disabled = true);
+        closeBtn.disabled = true;
+        if (feedback) feedback.textContent = "";
+        try {
+          const result = typeof onWithdraw === "function"
+            ? await onWithdraw()
+            : null;
+          close({ action: "withdrawn", result });
+        } catch (error) {
+          busy = false;
+          withdrawBtn.disabled = false;
+          checkBtn && (checkBtn.disabled = false);
+          closeBtn.disabled = false;
+          if (feedback) {
+            feedback.textContent = error instanceof Error && error.message
+              ? error.message
+              : t("account.companies.error");
+          }
+        }
+      });
+    });
   }
 
   function promptSwitchPin({ accountId, email, companyId, companyName }) {
@@ -470,14 +886,19 @@
         if (message) feedback.textContent = message;
       };
 
-      const renderFields = (nextMode) => {
+      const renderFields = (nextMode, options = {}) => {
         mode = nextMode;
-        lead.textContent = nextMode === "create"
-          ? t("account.pin.createLead")
-          : t("account.pin.enterLead");
+        const pinResetRequired = options.pinResetRequired === true;
+        lead.textContent = pinResetRequired
+          ? (options.reason
+            ? t("account.pin.resetLeadReason").replace("{reason}", options.reason)
+            : t("account.pin.resetLead"))
+          : nextMode === "create"
+            ? t("account.pin.createLead")
+            : t("account.pin.enterLead");
         fields.innerHTML = nextMode === "create"
           ? `
-            <label>${escapeHtml(t("account.pin.create"))}
+            <label>${escapeHtml(pinResetRequired ? t("account.pin.resetCreate") : t("account.pin.create"))}
               <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-switch-pin required />
             </label>
             <label>${escapeHtml(t("account.pin.confirm"))}
@@ -488,7 +909,31 @@
             <label>${escapeHtml(companyName || t("account.pin.enter"))}
               <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-switch-pin required />
             </label>
+            <button type="button" class="switch-pin-gate__forgot" data-switch-pin-forgot>${escapeHtml(t("account.pin.forgot"))}</button>
           `;
+        overlay.querySelector("[data-switch-pin-forgot]")?.addEventListener("click", async () => {
+          const forgotBtn = overlay.querySelector("[data-switch-pin-forgot]");
+          setBusy(true, t("account.pin.forgotSending"));
+          if (forgotBtn) forgotBtn.disabled = true;
+          try {
+            const response = await fetch("/api/account/seller-switch-pin/forgot", {
+              method: "POST",
+              headers: { Accept: "application/json", "Content-Type": "application/json" },
+              body: JSON.stringify({ accountId, email, companyId }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(payload.message || t("account.companies.error"));
+            }
+            setBusy(false, payload.message || t("account.pin.forgotSent"));
+          } catch (error) {
+            setBusy(false, error instanceof Error && error.message
+              ? error.message
+              : t("account.companies.error"));
+          } finally {
+            if (forgotBtn) forgotBtn.disabled = false;
+          }
+        });
         fields.querySelectorAll("input").forEach((input) => {
           input.addEventListener("input", () => {
             input.value = String(input.value || "").replace(/\D/g, "").slice(0, 6);
@@ -560,6 +1005,26 @@
         .then((response) => response.json().then((payload) => ({ ok: response.ok, payload })))
         .then(({ ok, payload }) => {
           if (!ok) throw new Error(payload.message || t("account.companies.error"));
+          const workspaceStatus = String(payload.workspaceStatus || "").trim().toLowerCase();
+          const workspaceBlocked = payload.workspaceBlocked === true
+            || ["banned", "pending_review", "pending_payment", "deactivated", "suspended"].includes(workspaceStatus);
+          if (workspaceBlocked) {
+            close({
+              blocked: true,
+              workspaceStatus: workspaceStatus || "banned",
+              banReason: String(payload.banReason || "").trim(),
+              banDescription: String(payload.banDescription || "").trim(),
+              companyId: String(payload.companyId || companyId || "").trim(),
+            });
+            return;
+          }
+          if (payload.pinResetRequired) {
+            renderFields("create", {
+              pinResetRequired: true,
+              reason: String(payload.pinResetReason || "").trim(),
+            });
+            return;
+          }
           renderFields(payload.hasPin ? "enter" : "create");
         })
         .catch((error) => {
@@ -641,6 +1106,20 @@
         headers: { Accept: "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
+      const forceLogoutCodes = new Set([
+        "ACCOUNT_NOT_FOUND",
+        "ACCOUNT_BANNED",
+        "ACCOUNT_RESTRICTED",
+        "ACCOUNT_SUSPENDED",
+        "ACCOUNT_LOCKED",
+        "device_revoked",
+      ]);
+      const code = String(payload?.code || "").trim();
+      if (forceLogoutCodes.has(code)) {
+        forgetRememberedLogin(current);
+        signOut();
+        return null;
+      }
       const account = payload?.session?.account;
       if (!response.ok || !account || typeof account !== "object") return current;
 
@@ -843,6 +1322,7 @@
       "platform.name.food": "Food",
       "platform.name.hotels": "Hotels",
       "platform.name.resort": "Resort",
+      "platform.name.groceries": "Groceries",
       "platform.title": "What are you looking for?",
       "platform.choose": "Choose a platform",
       "platform.search.placeholder": "Search food, hotels, items...",
@@ -945,7 +1425,7 @@
       "account.back": "Back",
       "account.phone": "Phone",
       "account.seller": "Be Part of Switch",
-      "account.seller.copy": "Pick a plan, create a Switch PIN, then set up your company. Opening seller admin always asks for that PIN first.",
+      "account.seller.copy": "Create one free company, then a Switch PIN. The legitimate badge is earned from ratings, fast replies, and resolving buyer problems. Opening seller admin always asks for that PIN first.",
       "account.seller.start": "Start upgrade",
       "account.companies": "Companies",
       "account.companies.copy": "Choose a company, then enter your Switch PIN to open its seller admin.",
@@ -955,16 +1435,54 @@
       "account.companies.active": "Current",
       "account.companies.role": "Seller admin",
       "account.companies.add": "Add company",
+      "account.companies.banned.blocked": "This company is banned by Super Admin. Seller dashboard cannot be opened.",
+      "account.companies.deactivated.blocked": "This company is deactivated. Seller dashboard cannot be opened.",
+      "account.companies.review.title": "Thank you for submitting",
+      "account.companies.review.lead": "Thank you for submitting your company for review. Super Admin is carefully checking your application. Please allow up to 24 hours for a decision. Your seller dashboard will open as soon as it is approved.",
+      "account.companies.review.requirements": "Submitted requirements",
+      "account.companies.review.check": "Check requirements",
+      "account.companies.review.hide": "Hide requirements",
+      "account.companies.review.withdraw": "Withdraw application",
+      "account.companies.review.withdrawConfirm": "Withdraw this company application? You can start again later.",
+      "account.companies.review.withdrawn": "Company application withdrawn.",
+      "account.companies.review.close": "Close",
+      "account.companies.review.req.companyName": "Company name",
+      "account.companies.review.req.businessType": "Business type",
+      "account.companies.review.req.logo": "Business logo",
+      "account.companies.review.req.payment": "Plan payment",
+      "account.companies.review.req.documents": "Business documents",
+      "account.companies.review.req.contact": "Contact details",
+      "account.companies.review.done": "Submitted",
+      "account.companies.review.missing": "Missing",
+      "account.companies.ban.title": "Company banned",
+      "account.companies.ban.lead": "Super Admin banned this company. Seller dashboard cannot be opened.",
+      "account.companies.ban.reason": "Reason for ban",
+      "account.companies.ban.description": "Ban details",
+      "account.companies.ban.noReason": "No ban reason was provided.",
+      "account.companies.ban.noDescription": "No additional ban description was provided.",
+      "account.companies.ban.close": "Close",
+      "account.companies.status.banned": "Banned",
+      "account.companies.status.restricted": "Restricted",
+      "account.companies.status.pending_review": "In review",
+      "account.companies.status.pending_payment": "Pending payment",
+      "account.companies.status.suspended": "Suspended",
+      "account.companies.status.deactivated": "Deactivated",
       "account.pin.title": "Switch PIN",
       "account.pin.enterLead": "Enter your Switch PIN to open seller admin. This is not your login password.",
       "account.pin.createLead": "Create a Switch PIN for this seller admin. Subscribers must enter this PIN before opening seller admin.",
+      "account.pin.resetLead": "Super Admin required a Switch PIN reset. Create a new 6-digit Switch PIN to continue. This is not your login password.",
+      "account.pin.resetLeadReason": "Super Admin required a Switch PIN reset: {reason} Create a new 6-digit Switch PIN to continue.",
       "account.pin.create": "Create Switch PIN",
+      "account.pin.resetCreate": "New Switch PIN",
       "account.pin.confirm": "Confirm Switch PIN",
       "account.pin.enter": "Switch PIN",
       "account.pin.continue": "Continue",
       "account.pin.cancel": "Cancel",
       "account.pin.checking": "Checking Switch PIN...",
       "account.pin.saving": "Saving Switch PIN...",
+      "account.pin.forgot": "Forgot PIN",
+      "account.pin.forgotSending": "Sending a reset link to your Gmail...",
+      "account.pin.forgotSent": "We sent a reset link to your Gmail. Tap the link — it is not a code.",
       "notifications.title": "Notifications",
       "notifications.empty": "No notifications yet.",
       "notifications.emptyUnread": "No unread notifications.",
@@ -986,6 +1504,7 @@
       "platform.name.food": "Pagkain",
       "platform.name.hotels": "Mga Hotel",
       "platform.name.resort": "Resort",
+      "platform.name.groceries": "Grocery",
       "platform.title": "Ano ang hinahanap mo?",
       "platform.choose": "Pumili ng platform",
       "platform.search.placeholder": "Maghanap ng food, hotels, items...",
@@ -1088,7 +1607,7 @@
       "account.back": "Bumalik",
       "account.phone": "Telepono",
       "account.seller": "Maging Bahagi ng Switch",
-      "account.seller.copy": "Pumili ng plan, gumawa ng Switch PIN, tapos i-set up ang company. Kailangang dumaan sa PIN bago mabuksan ang seller admin.",
+      "account.seller.copy": "Gumawa ng isang libreng company, tapos Switch PIN. Ang legitimate badge ay kikitain mula sa ratings, mabilis na sagot, at paglutas ng problema ng buyer. Kailangang dumaan sa PIN bago mabuksan ang seller admin.",
       "account.seller.start": "Simulan ang upgrade",
       "account.companies": "Mga Company",
       "account.companies.copy": "Pumili ng company, tapos ilagay ang Switch PIN para buksan ang seller admin.",
@@ -1098,16 +1617,54 @@
       "account.companies.active": "Kasalukuyan",
       "account.companies.role": "Seller admin",
       "account.companies.add": "Magdagdag ng company",
+      "account.companies.banned.blocked": "Naka-ban ang company na ito ng Super Admin. Hindi mabubuksan ang seller dashboard.",
+      "account.companies.deactivated.blocked": "Naka-deactivate ang company na ito. Hindi mabubuksan ang seller dashboard.",
+      "account.companies.review.title": "Salamat sa pag-submit",
+      "account.companies.review.lead": "Salamat sa pag-submit ng company ninyo para sa review. Sinusuri na ito ng Super Admin. Maghintay po ng hanggang 24 oras para sa desisyon. Magbubukas ang seller dashboard kapag na-approve na.",
+      "account.companies.review.requirements": "Mga naipasa na requirements",
+      "account.companies.review.check": "Tingnan ang requirements",
+      "account.companies.review.hide": "Itago ang requirements",
+      "account.companies.review.withdraw": "Bitawan ang application",
+      "account.companies.review.withdrawConfirm": "Bitawan ang company application na ito? Pwede kang mag-umpisa ulit mamaya.",
+      "account.companies.review.withdrawn": "Na-withdraw ang company application.",
+      "account.companies.review.close": "Isara",
+      "account.companies.review.req.companyName": "Pangalan ng company",
+      "account.companies.review.req.businessType": "Business type",
+      "account.companies.review.req.logo": "Business logo",
+      "account.companies.review.req.payment": "Bayad sa plan",
+      "account.companies.review.req.documents": "Business documents",
+      "account.companies.review.req.contact": "Contact details",
+      "account.companies.review.done": "Naipasa",
+      "account.companies.review.missing": "Kulang",
+      "account.companies.ban.title": "Naka-ban ang company",
+      "account.companies.ban.lead": "Binawal ng Super Admin ang company na ito. Hindi mabubuksan ang seller dashboard.",
+      "account.companies.ban.reason": "Dahilan ng ban",
+      "account.companies.ban.description": "Detalye ng ban",
+      "account.companies.ban.noReason": "Walang ibinigay na dahilan ng ban.",
+      "account.companies.ban.noDescription": "Walang karagdagang detalye ng ban.",
+      "account.companies.ban.close": "Isara",
+      "account.companies.status.banned": "Banned",
+      "account.companies.status.restricted": "Restricted",
+      "account.companies.status.pending_review": "Under review",
+      "account.companies.status.pending_payment": "Pending payment",
+      "account.companies.status.suspended": "Suspended",
+      "account.companies.status.deactivated": "Deactivated",
       "account.pin.title": "Switch PIN",
       "account.pin.enterLead": "Ilagay ang Switch PIN para buksan ang seller admin. Hindi ito ang login password mo.",
       "account.pin.createLead": "Gumawa ng Switch PIN para sa seller admin na ito. Kailangang dumaan sa PIN ang subscriber bago makapasok.",
+      "account.pin.resetLead": "Kinailangan ng Super Admin ng Switch PIN reset. Gumawa ng bagong 6-digit Switch PIN para magpatuloy. Hindi ito ang login password mo.",
+      "account.pin.resetLeadReason": "Kinailangan ng Super Admin ng Switch PIN reset: {reason} Gumawa ng bagong 6-digit Switch PIN para magpatuloy.",
       "account.pin.create": "Gumawa ng Switch PIN",
+      "account.pin.resetCreate": "Bagong Switch PIN",
       "account.pin.confirm": "Kumpirmahin ang Switch PIN",
       "account.pin.enter": "Switch PIN",
       "account.pin.continue": "Magpatuloy",
       "account.pin.cancel": "Kanselahin",
       "account.pin.checking": "Tinitingnan ang Switch PIN...",
       "account.pin.saving": "Sine-save ang Switch PIN...",
+      "account.pin.forgot": "Nakalimutan ang PIN",
+      "account.pin.forgotSending": "Pinapadala ang reset link sa Gmail mo...",
+      "account.pin.forgotSent": "May reset link na sa Gmail mo. I-tap ang link — hindi ito code.",
       "notifications.title": "Mga notification",
       "notifications.empty": "Wala pang notification.",
       "notifications.emptyUnread": "Walang unread na notification.",
@@ -1129,6 +1686,7 @@
       "platform.name.food": "美食",
       "platform.name.hotels": "酒店",
       "platform.name.resort": "度假村",
+      "platform.name.groceries": "杂货",
       "platform.title": "你在找什么？",
       "platform.choose": "选择平台",
       "platform.search.placeholder": "搜索美食、酒店、商品...",
@@ -1162,6 +1720,7 @@
       "platform.name.food": "Comida",
       "platform.name.hotels": "Hoteles",
       "platform.name.resort": "Resort",
+      "platform.name.groceries": "Ultramarinos",
       "platform.title": "¿Qué estás buscando?",
       "platform.choose": "Elige una plataforma",
       "platform.search.placeholder": "Buscar comida, hoteles, artículos...",
@@ -1195,6 +1754,7 @@
       "platform.name.food": "フード",
       "platform.name.hotels": "ホテル",
       "platform.name.resort": "リゾート",
+      "platform.name.groceries": "食料品",
       "platform.title": "何をお探しですか？",
       "platform.choose": "プラットフォームを選択",
       "platform.search.placeholder": "フード、ホテル、商品を検索...",
@@ -1226,6 +1786,7 @@
       "platform.name.food": "음식",
       "platform.name.hotels": "호텔",
       "platform.name.resort": "리조트",
+      "platform.name.groceries": "식료품",
       "platform.title": "무엇을 찾고 계신가요?",
       "platform.choose": "플랫폼 선택",
       "platform.search.placeholder": "음식, 호텔, 상품 검색...",
@@ -1257,6 +1818,7 @@
       "platform.name.food": "Ẩm thực",
       "platform.name.hotels": "Khách sạn",
       "platform.name.resort": "Khu nghỉ dưỡng",
+      "platform.name.groceries": "Tạp hóa",
       "platform.title": "Bạn đang tìm gì?",
       "platform.choose": "Chọn nền tảng",
       "platform.search.placeholder": "Tìm đồ ăn, khách sạn, sản phẩm...",
@@ -1287,6 +1849,7 @@
       "platform.name.food": "อาหาร",
       "platform.name.hotels": "โรงแรม",
       "platform.name.resort": "รีสอร์ต",
+      "platform.name.groceries": "ของชำ",
       "platform.title": "คุณกำลังมองหาอะไร?",
       "platform.choose": "เลือกแพลตฟอร์ม",
       "platform.search.placeholder": "ค้นหาอาหาร โรงแรม สินค้า...",
@@ -1317,6 +1880,7 @@
       "platform.name.food": "Makanan",
       "platform.name.hotels": "Hotel",
       "platform.name.resort": "Resor",
+      "platform.name.groceries": "Bahan makanan",
       "platform.title": "Apa yang kamu cari?",
       "platform.choose": "Pilih platform",
       "platform.search.placeholder": "Cari makanan, hotel, item...",
@@ -1347,6 +1911,7 @@
       "platform.name.food": "Restauration",
       "platform.name.hotels": "Hôtels",
       "platform.name.resort": "Complexe hôtelier",
+      "platform.name.groceries": "Épicerie",
       "platform.title": "Que recherchez-vous ?",
       "platform.choose": "Choisir une plateforme",
       "platform.search.placeholder": "Rechercher nourriture, hôtels, articles...",
@@ -1377,6 +1942,7 @@
       "platform.name.food": "Essen",
       "platform.name.hotels": "Hotels",
       "platform.name.resort": "Resort",
+      "platform.name.groceries": "Lebensmittel",
       "platform.title": "Wonach suchst du?",
       "platform.choose": "Plattform wählen",
       "platform.search.placeholder": "Essen, Hotels, Artikel suchen...",
@@ -1407,6 +1973,7 @@
       "platform.name.food": "Comida",
       "platform.name.hotels": "Hotéis",
       "platform.name.resort": "Resort",
+      "platform.name.groceries": "Mercearia",
       "platform.title": "O que você está procurando?",
       "platform.choose": "Escolha uma plataforma",
       "platform.search.placeholder": "Buscar comida, hotéis, itens...",
@@ -1437,6 +2004,7 @@
       "platform.name.food": "Еда",
       "platform.name.hotels": "Отели",
       "platform.name.resort": "Курорт",
+      "platform.name.groceries": "Продукты",
       "platform.title": "Что вы ищете?",
       "platform.choose": "Выберите платформу",
       "platform.search.placeholder": "Искать еду, отели, товары...",
@@ -1467,6 +2035,7 @@
       "platform.name.food": "भोजन",
       "platform.name.hotels": "होटल",
       "platform.name.resort": "रिज़ॉर्ट",
+      "platform.name.groceries": "किराना",
       "platform.title": "आप क्या खोज रहे हैं?",
       "platform.choose": "प्लेटफ़ॉर्म चुनें",
       "platform.search.placeholder": "खाना, होटल, आइटम खोजें...",
@@ -1497,6 +2066,7 @@
       "platform.name.food": "طعام",
       "platform.name.hotels": "فنادق",
       "platform.name.resort": "منتجع",
+      "platform.name.groceries": "بقالة",
       "platform.title": "عمّا تبحث؟",
       "platform.choose": "اختر منصة",
       "platform.search.placeholder": "ابحث عن طعام أو فنادق أو منتجات...",
@@ -2001,10 +2571,9 @@
   function voucherPlatformLabel(platformId) {
     const id = String(platformId || "").trim().toLowerCase();
     if (!id || id === "all") return t("account.vouchers.platformAll") || "All platforms";
-    if (id === "shop") return t("platform.name.shop");
-    if (id === "food") return t("platform.name.food");
-    if (id === "hotels") return t("platform.name.hotels");
-    if (id === "resort") return t("platform.name.resort");
+    const key = `platform.name.${id}`;
+    const translated = t(key);
+    if (translated && translated !== key) return translated;
     return id.charAt(0).toUpperCase() + id.slice(1);
   }
 
@@ -3612,6 +4181,71 @@
               </button>`;
   }
 
+  function getCompanyAccountStatusIndicator(company = {}, membership = {}) {
+    const profile = company?.profileData && typeof company.profileData === "object"
+      ? company.profileData
+      : {};
+    const metadata = membership?.metadata && typeof membership.metadata === "object"
+      ? membership.metadata
+      : {};
+    // Prefer company enforcement status over membership "active".
+    // Otherwise banned/in-review companies still look open and ask for PIN.
+    // Do not force "banned" from a leftover profile.banReason after Super Admin unban.
+    const candidates = [
+      company?.accountState,
+      company?.enforcementStatus,
+      company?.status,
+      profile.lastEnforcementStatus,
+      metadata.lastEnforcementStatus,
+      company?.subscriptionStatus,
+      membership?.membershipStatus,
+      company?.membershipStatus,
+    ]
+      .map((value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_"))
+      .filter(Boolean);
+
+    const pick = (tester) => candidates.find((raw) => tester(raw)) || "";
+    if (pick((raw) => raw.includes("ban") && !raw.includes("unban"))) {
+      return { key: "banned", tone: "banned", label: t("account.companies.status.banned") };
+    }
+    if (pick((raw) => raw.includes("restrict"))) {
+      return { key: "restricted", tone: "restricted", label: t("account.companies.status.restricted") };
+    }
+    if (pick((raw) => raw.includes("pending_payment") || (raw.includes("payment") && !raw.includes("approved")))) {
+      return {
+        key: "pending_payment",
+        tone: "pending",
+        label: t("account.companies.status.pending_payment"),
+      };
+    }
+    if (pick((raw) => raw.includes("pending") || raw.includes("review") || raw === "draft")) {
+      return {
+        key: "pending_review",
+        tone: "pending",
+        label: t("account.companies.status.pending_review"),
+      };
+    }
+    if (pick((raw) => raw.includes("suspend"))) {
+      return { key: "suspended", tone: "suspended", label: t("account.companies.status.suspended") };
+    }
+    if (pick((raw) => raw.includes("deactivat") || raw.includes("inactive") || raw.includes("deleted") || raw.includes("withdraw"))) {
+      return {
+        key: "deactivated",
+        tone: "suspended",
+        label: t("account.companies.status.deactivated"),
+      };
+    }
+    return null;
+  }
+
+  function resolveCompanyWorkspaceStatus(membership, fallbackStatus = "") {
+    const company = membership?.company && typeof membership.company === "object"
+      ? membership.company
+      : {};
+    const indicator = getCompanyAccountStatusIndicator(company, membership || {});
+    return String(indicator?.key || fallbackStatus || "active").trim().toLowerCase();
+  }
+
   function renderCompaniesSelectionMarkup(session) {
     const memberships = getSellerCompanyMemberships(session);
     const activeCompanyId = String(session?.activeCompanyId || "").trim();
@@ -3621,8 +4255,9 @@
               <p class="md-account-panel__intro" style="margin:0 0 14px">
                 ${escapeHtml(t("account.companies.empty"))}
               </p>
-              <a class="md-account-detail__action md-account-detail__action--accent" href="/switch_account.html?tab=seller&amp;becomeSeller=1">
-                ${escapeHtml(t("account.seller.start"))}
+              <a class="md-account-detail__action md-account-detail__action--accent md-account-companies__add" href="/switch_account.html?tab=seller&amp;becomeSeller=1" data-md-add-company>
+                <span class="md-account-companies__add-icon" aria-hidden="true">+</span>
+                <span>${escapeHtml(t("account.companies.add"))}</span>
               </a>
             </div>`;
     }
@@ -3633,21 +4268,50 @@
       const companyId = String(membership.companyId || company.id || "").trim();
       const name = getCompanyDisplayName(membership);
       const role = String(membership.membershipRole || "").trim() || t("account.companies.role");
+      const statusIndicator = getCompanyAccountStatusIndicator(company, membership);
       const detail = [
         role.replace(/_/g, " "),
         String(company.businessType || "").trim(),
-        String(company.status || company.subscriptionStatus || "").trim(),
       ].filter(Boolean).join(" · ");
       const imageUrl = getCompanyProfileImageUrl(company);
       const toneIndex = getCompanyLogoToneIndex(companyId || name);
       const isActive = Boolean(activeCompanyId && companyId && activeCompanyId === companyId);
+      const isStatusModal =
+        statusIndicator?.key === "banned"
+        || statusIndicator?.key === "pending_review"
+        || statusIndicator?.key === "pending_payment";
+      const isBlocked =
+        statusIndicator?.key === "deactivated"
+        || statusIndicator?.key === "suspended";
+      const statusClass = [
+        statusIndicator ? ` is-${statusIndicator.tone}` : "",
+        isBlocked ? " is-blocked" : "",
+        isStatusModal ? " is-status-modal" : "",
+      ].join("");
+      const badges = [];
+      if (statusIndicator) {
+        badges.push(
+          `<span class="md-account-companies__badge md-account-companies__badge--${escapeHtml(statusIndicator.tone)}">${escapeHtml(statusIndicator.label)}</span>`,
+        );
+      }
+      if (isActive && !isBlocked && !isStatusModal) {
+        badges.push(
+          `<span class="md-account-companies__badge">${escapeHtml(t("account.companies.active"))}</span>`,
+        );
+      }
+      const trailing = badges.length
+        ? `<span class="md-account-companies__badges">${badges.join("")}</span>`
+        : `<svg class="md-account-panel__link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`;
+      const ariaStatus = statusIndicator ? ` (${statusIndicator.label})` : "";
       return `
         <button
           type="button"
-          class="md-account-companies__item${isActive ? " is-active" : ""}"
+          class="md-account-companies__item${isActive ? " is-active" : ""}${statusClass}"
           data-md-company-select="${escapeHtml(companyId)}"
-          aria-label="${escapeHtml(name)}"
-          title="${escapeHtml(name)}"
+          data-company-status="${escapeHtml(statusIndicator?.key || "active")}"
+          ${isBlocked ? "disabled aria-disabled=\"true\"" : ""}
+          aria-label="${escapeHtml(name)}${escapeHtml(ariaStatus)}"
+          title="${escapeHtml(`${name}${ariaStatus}`)}"
           style="z-index:${index + 1}"
         >
           <span class="md-account-companies__avatar seller-company-logo--tone-${toneIndex}${imageUrl ? " has-image" : ""}" aria-hidden="true">
@@ -3659,14 +4323,15 @@
                 ${COMPANY_DEFAULT_LOGO_SVG}
               </span>
             </span>
+            ${statusIndicator
+              ? `<span class="md-account-companies__avatar-dot md-account-companies__avatar-dot--${escapeHtml(statusIndicator.tone)}" aria-hidden="true"></span>`
+              : ""}
           </span>
           <span class="md-account-companies__copy">
             <span class="md-account-companies__name">${escapeHtml(name)}</span>
             <span class="md-account-companies__detail">${escapeHtml(detail || t("account.companies.role"))}</span>
           </span>
-          ${isActive
-            ? `<span class="md-account-companies__badge">${escapeHtml(t("account.companies.active"))}</span>`
-            : `<svg class="md-account-panel__link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`}
+          ${trailing}
         </button>`;
     }).join("");
     return `
@@ -3682,19 +4347,15 @@
                 href="/switch_account.html?tab=seller&amp;becomeSeller=1"
                 data-md-add-company
               >
-                ${escapeHtml(t("account.companies.add"))}
+                <span class="md-account-companies__add-icon" aria-hidden="true">+</span>
+                <span>${escapeHtml(t("account.companies.add"))}</span>
               </a>
               <p class="md-account-companies__status" data-md-companies-status hidden></p>
             </div>`;
   }
 
   async function openSelectedCompanyWorkspace(panel, companyId) {
-    const session = readBuyerSession();
-    if (!session) return;
-    const accountId = String(session.accountId || session.id || "").trim();
-    const email = String(session.email || "").trim().toLowerCase();
     const status = panel.querySelector("[data-md-companies-status]");
-    const buttons = panel.querySelectorAll("[data-md-company-select]");
     const setStatus = (message, kind = "") => {
       if (!(status instanceof HTMLElement)) return;
       status.hidden = !message;
@@ -3702,6 +4363,116 @@
       status.classList.toggle("is-error", kind === "error");
       status.classList.toggle("is-busy", kind === "busy");
     };
+
+    // Always re-fetch before PIN/status gate so SA ban/review is not stale.
+    setStatus(t("account.pin.checking"), "busy");
+    const session = await refreshBuyerProfile({ silent: true }) || readBuyerSession();
+    if (!session) return;
+    const accountId = String(session.accountId || session.id || "").trim();
+    const email = String(session.email || "").trim().toLowerCase();
+    const buttons = panel.querySelectorAll("[data-md-company-select]");
+    const selectedButton = panel.querySelector(
+      `[data-md-company-select="${CSS.escape(String(companyId || ""))}"]`,
+    );
+    let membership = getCompanyMembershipById(session, companyId);
+    const companyName = String(
+      membership?.company?.publicName
+        || membership?.company?.name
+        || "Seller admin",
+    ).trim() || "Seller admin";
+    let companyStatus = resolveCompanyWorkspaceStatus(
+      membership,
+      selectedButton?.getAttribute("data-company-status") || "",
+    );
+    // Server gate is authoritative: seller-account bans may leave company.status active.
+    try {
+      const gate = await fetchSellerWorkspaceGate({ accountId, email, companyId });
+      if (gate.workspaceBlocked && gate.workspaceStatus) {
+        companyStatus = gate.workspaceStatus;
+        membership = applyWorkspaceGateToMembership(membership, gate);
+      }
+    } catch (_) {
+      // Fall back to session-derived status.
+    }
+    const restoreButtons = () => {
+      buttons.forEach((button) => {
+        const blocked = ["deactivated", "suspended"].includes(
+          String(button.getAttribute("data-company-status") || "").trim().toLowerCase(),
+        );
+        button.disabled = blocked;
+      });
+    };
+
+    if (
+      companyStatus === "banned"
+      || companyStatus === "pending_review"
+      || companyStatus === "pending_payment"
+    ) {
+      setStatus("", "");
+      const modalResult = await promptCompanyStatusModal({
+        mode: companyStatus === "banned" ? "banned" : "pending_review",
+        companyName,
+        membership,
+        accountId,
+        onWithdraw: async () => {
+          const response = await fetch("/api/account/become-seller/withdraw-company", {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              accountId,
+              email,
+              companyId,
+              reason: "Withdrawn by seller from Companies panel",
+            }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.message || t("account.companies.error"));
+          }
+          if (payload.session && typeof payload.session === "object") {
+            const unified = payload.session;
+            const account = unified.account && typeof unified.account === "object"
+              ? unified.account
+              : {};
+            saveBuyerSession({
+              ...session,
+              ...account,
+              accountId: String(account.id || account.accountId || accountId).trim(),
+              email: String(account.email || email).trim().toLowerCase(),
+              availableModes: Array.isArray(unified.availableModes)
+                ? unified.availableModes
+                : session.availableModes,
+              activeMode: String(unified.activeMode || "buyer").trim() || "buyer",
+              activeCompanyId: unified.activeCompanyId || null,
+              activeCompany: unified.activeCompany || null,
+              companies: Array.isArray(unified.companies) ? unified.companies : [],
+              capabilities: Array.isArray(unified.capabilities)
+                ? unified.capabilities
+                : session.capabilities,
+            });
+          }
+          return payload;
+        },
+      });
+      if (modalResult?.action === "withdrawn") {
+        setStatus(t("account.companies.review.withdrawn"), "");
+        await refreshCompaniesView(panel);
+      }
+      restoreButtons();
+      return;
+    }
+
+    if (
+      companyStatus === "deactivated"
+      || companyStatus === "suspended"
+    ) {
+      setStatus(t("account.companies.deactivated.blocked"), "error");
+      return;
+    }
+
     buttons.forEach((button) => {
       button.disabled = true;
     });
@@ -3711,16 +4482,23 @@
         accountId,
         email,
         companyId,
-        companyName: String(
-          session?.companies?.find((item) => String(item?.companyId || item?.company?.id || "") === companyId)?.company?.name
-            || "Seller admin",
-        ).trim() || "Seller admin",
+        companyName,
       });
       if (!pinGate) {
         setStatus("", "");
-        buttons.forEach((button) => {
-          button.disabled = false;
+        restoreButtons();
+        return;
+      }
+      if (pinGate.blocked) {
+        setStatus("", "");
+        membership = applyWorkspaceGateToMembership(membership, pinGate);
+        await promptCompanyStatusModal({
+          mode: pinGate.workspaceStatus === "banned" ? "banned" : "pending_review",
+          companyName,
+          membership,
+          accountId,
         });
+        restoreButtons();
         return;
       }
 
@@ -3797,9 +4575,7 @@
           : t("account.companies.error"),
         "error",
       );
-      buttons.forEach((button) => {
-        button.disabled = false;
-      });
+      restoreButtons();
     }
   }
 
@@ -3964,8 +4740,10 @@
     window.clearInterval(window.__switchDeviceSessionTimer);
     if (!readBuyerSession()) return;
     void enforceRemoteDeviceSignOut();
+    void refreshBuyerProfile({ silent: true });
     window.__switchDeviceSessionTimer = window.setInterval(() => {
       void enforceRemoteDeviceSignOut();
+      void refreshBuyerProfile({ silent: true });
     }, 5000);
   }
 
@@ -4568,11 +5346,11 @@
                 ${escapeHtml(t("account.seller.copy"))}
               </p>
               <ol class="md-account-detail__steps">
-                <li>Choose Free or a paid plan (paid plans unlock the Legit badge)</li>
-                <li>Register Visa / Mastercard (paid plans only)</li>
+                <li>One free company per account — no plan and no payment</li>
                 <li>Create a Switch PIN</li>
                 <li>Verify email or phone if needed</li>
-                <li>Company name, business type &amp; photo</li>
+                <li>Company name, seller type, documents &amp; photo</li>
+                <li>Earn the legitimate badge from ratings, speed, and service</li>
                 <li>Enter Switch PIN to open seller admin</li>
               </ol>
               <a class="md-account-detail__action md-account-detail__action--accent" href="/switch_account.html?tab=seller&amp;becomeSeller=1">
@@ -5173,10 +5951,10 @@
   }
 
   function shouldShowHeaderCart() {
-    // Cart chrome is for Shop + Food storefronts.
+    // Cart chrome is for commerce storefronts (shop/food/groceries/custom), not booking.
     if (!isPlatformStorefrontPage()) return false;
     const platform = currentPlatformId();
-    return platform === "shop" || platform === "food";
+    return platform !== "hotels" && platform !== "resort";
   }
 
   function readCartItems() {

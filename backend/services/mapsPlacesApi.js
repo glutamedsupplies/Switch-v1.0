@@ -953,6 +953,20 @@ function createMapsPlacesApi({ sendJson }) {
     return searchNominatimPlaces(q);
   }
 
+  /** Forward geocode a free-text Philippine address to the best matching place with coordinates. */
+  async function geocodeAddress(query) {
+    const results = await searchPlaces(query);
+    const hasCoords = (place) => place && place.lat !== null && place.lng !== null && !(place.lat === 0 && place.lng === 0);
+    for (const place of results.slice(0, 3)) {
+      if (hasCoords(place)) return place;
+      if (place?.provider === "google" && place?.id && getGoogleMapsApiKey()) {
+        const details = await detailsGooglePlace(place.id).catch(() => null);
+        if (hasCoords(details)) return details;
+      }
+    }
+    return null;
+  }
+
   async function reverseGeocode(lat, lng) {
     if (getGoogleMapsApiKey()) {
       try {
@@ -1121,6 +1135,7 @@ function createMapsPlacesApi({ sendJson }) {
 
   return {
     tryHandleMapsPlacesRoutes,
+    geocodeAddress,
     get hasGoogleMapsKey() {
       return Boolean(getGoogleMapsApiKey());
     },

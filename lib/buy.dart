@@ -11,6 +11,7 @@ Future<BuySelection?> showBuyModal(
   ProductVariant? selectedVariant,
   int? discountPercent,
   bool showsTopBrand = false,
+  Map<String, double> flashPricesByVariantId = const {},
 }) {
   return showAddToCartModal(
     context,
@@ -20,5 +21,6 @@ Future<BuySelection?> showBuyModal(
     discountPercent: discountPercent,
     showsTopBrand: showsTopBrand,
     submitButtonVerb: 'Buy',
+    flashPricesByVariantId: flashPricesByVariantId,
   );
 }

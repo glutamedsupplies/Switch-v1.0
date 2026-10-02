@@ -111,23 +111,41 @@
     try {
       const session = window.SwitchBuyerAuth?.readBuyerSession?.() || null;
       const accountId = String(session?.accountId || session?.id || "").trim();
+      const resultCountRaw =
+        extra.resultCount ?? extra.resultsCount ?? extra.hitCount;
+      const resultCount =
+        resultCountRaw === undefined || resultCountRaw === null || resultCountRaw === ""
+          ? null
+          : Number(resultCountRaw);
+      const body = {
+        term: next,
+        accountId,
+        clientKey: getClientKey(),
+        client: "web",
+        platformId,
+        category: String(extra.category || extra.categoryFilter || "").trim(),
+        storeType: String(
+          extra.storeType || extra.businessType || extra.type || "",
+        ).trim(),
+      };
+      if (resultCount !== null && Number.isFinite(resultCount)) {
+        body.resultCount = Math.max(0, Math.floor(resultCount));
+        body.hasResults = body.resultCount > 0;
+      } else if (
+        extra.hasResults === true ||
+        extra.hasResults === false ||
+        extra.hasResults === 0 ||
+        extra.hasResults === 1
+      ) {
+        body.hasResults = Boolean(extra.hasResults);
+      }
       await fetch("/api/search-events", {
         method: "POST",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          term: next,
-          accountId,
-          clientKey: getClientKey(),
-          client: "web",
-          platformId,
-          category: String(extra.category || extra.categoryFilter || "").trim(),
-          storeType: String(
-            extra.storeType || extra.businessType || extra.type || "",
-          ).trim(),
-        }),
+        body: JSON.stringify(body),
       });
     } catch (_) {
       // local recent already saved

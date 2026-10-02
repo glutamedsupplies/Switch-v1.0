@@ -122,6 +122,7 @@
     isLoading: false,
     activePackRequestId: "",
     activeShipRequestId: "",
+    switchRiderDeliveries: new Map(),
     groupScannedQuantities: {},
     selectedScanGroupId: "",
     selectedScanProductId: "",
@@ -1902,6 +1903,10 @@
     `;
   }
 
+  function resolveButtonLabel(options, group) {
+    return typeof options.buttonLabel === "function" ? options.buttonLabel(group) : options.buttonLabel;
+  }
+
   function buildPackingOrderListRowMarkup(group, options) {
     const isBusy = options.activeRequestId === String(group.createdAtEpochMs);
     const paymentLabel =
@@ -1942,7 +1947,7 @@
               ${options.buttonAttribute}="${escapeHtml(group.createdAtEpochMs)}"
               ${actionDisabled ? "disabled" : ""}
             >
-              ${isBusy ? options.loadingLabel : options.buttonLabel}
+              ${escapeHtml(isBusy ? options.loadingLabel : resolveButtonLabel(options, group))}
             </button>
           ` : ""}
         </div>
@@ -2205,6 +2210,7 @@
       if (preserveWorkspaceState && state.selectedScanGroupId && !getSelectedScanEntry()) {
         clearBarcodeSelection();
       }
+      await loadSwitchRiderDeliveries();
       render();
     } catch (error) {
       if (options?.preserveOnError === true) {
@@ -2402,8 +2408,106 @@
     }
   }
 
+  function isSwitchRiderGroup(group) {
+    return String(group?.courierName || "").replace(/\s+/g, " ").trim().toLowerCase() === "switch rider";
+  }
+
+  function findShippingGroup(createdAtEpochMs) {
+    return state.shippingGroups.find((group) => String(group.createdAtEpochMs) === String(createdAtEpochMs)) || null;
+  }
+
+  async function loadSwitchRiderDeliveries() {
+    const ids = state.shippingGroups.filter(isSwitchRiderGroup).map((group) => String(group.createdAtEpochMs));
+    if (!ids.length) {
+      state.switchRiderDeliveries = new Map();
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/switch-rider/seller/deliveries?orderGroupIds=${encodeURIComponent(ids.join(","))}`,
+        { headers: withPackingAdminTenantHeaders({ Accept: "application/json" }), cache: "no-store" },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      state.switchRiderDeliveries = new Map(
+        (Array.isArray(data?.deliveries) ? data.deliveries : []).map((delivery) => [
+          String(delivery.orderCreatedAtEpochMs || delivery.orderGroupId),
+          delivery,
+        ]),
+      );
+    } catch (error) {
+      console.warn("Unable to load Switch Rider delivery status.", error);
+    }
+  }
+
+  function getSwitchRiderDelivery(group) {
+    return state.switchRiderDeliveries.get(String(group?.createdAtEpochMs)) || null;
+  }
+
+  function getShipActionLabel(group, defaultLabel) {
+    if (!isSwitchRiderGroup(group)) return defaultLabel;
+    const delivery = getSwitchRiderDelivery(group);
+    if (!delivery || delivery.canMarkReady) return "Ready for Rider";
+    return delivery.statusLabel || "Rider requested";
+  }
+
+  function isShipActionDisabled(group) {
+    if (!isSwitchRiderGroup(group)) return false;
+    const delivery = getSwitchRiderDelivery(group);
+    return Boolean(delivery && !delivery.canMarkReady);
+  }
+
+  function getShipNote(group, defaultNote) {
+    if (!isSwitchRiderGroup(group)) return defaultNote;
+    const delivery = getSwitchRiderDelivery(group);
+    if (!delivery || delivery.canMarkReady) {
+      return "Switch Rider: press Ready for Rider when the parcel is sealed. A rider will be dispatched to your pickup location.";
+    }
+    const parts = [`Switch Rider ${delivery.deliveryCode}: ${delivery.statusLabel}`];
+    if (delivery.rider?.firstName) parts.push(`Rider ${delivery.rider.firstName}`);
+    if (delivery.pickupPin) parts.push(`Pickup PIN ${delivery.pickupPin} (give only to the rider at handoff)`);
+    return parts.join(" · ");
+  }
+
+  async function markReadyForSwitchRider(createdAtEpochMs) {
+    const confirmed = window.confirm(
+      "Call a Switch Rider for this order? Only confirm when the parcel is sealed and ready for pickup.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    state.activeShipRequestId = String(createdAtEpochMs);
+    render();
+
+    try {
+      const response = await fetch(
+        `/api/switch-rider/seller/deliveries/${encodeURIComponent(createdAtEpochMs)}/ready`,
+        {
+          method: "POST",
+          headers: withPackingAdminTenantHeaders({ Accept: "application/json" }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to call a Switch Rider.");
+      }
+      await loadPackingOrders({ preserveWorkspaceState: true });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to call a Switch Rider.");
+    } finally {
+      state.activeShipRequestId = "";
+      render();
+    }
+  }
+
   async function markOrderShipped(createdAtEpochMs) {
     if (!createdAtEpochMs || state.activeShipRequestId === String(createdAtEpochMs)) {
+      return;
+    }
+
+    if (isSwitchRiderGroup(findShippingGroup(createdAtEpochMs))) {
+      await markReadyForSwitchRider(createdAtEpochMs);
       return;
     }
 
@@ -2970,7 +3074,7 @@
                   ${options.buttonAttribute}="${escapeHtml(group.createdAtEpochMs)}"
                   ${isBusy || (typeof options.disableAction === "function" && options.disableAction(group)) ? "disabled" : ""}
                 >
-                  ${isBusy ? options.loadingLabel : options.buttonLabel}
+                  ${escapeHtml(isBusy ? options.loadingLabel : resolveButtonLabel(options, group))}
                 </button>` : ""}
             </div>
           </article>
@@ -3831,9 +3935,10 @@
             stageKey: "shipping",
             buttonAttribute: "data-ship-order-group",
             activeRequestId: state.activeShipRequestId,
-            buttonLabel: "Handover to Courier",
+            buttonLabel: (group) => getShipActionLabel(group, "Handover to Courier"),
             loadingLabel: "Updating...",
-            note: (group) => `Ready to dispatch: ${formatItemsLabel(group.itemCount)}.`,
+            note: (group) => getShipNote(group, `Ready to dispatch: ${formatItemsLabel(group.itemCount)}.`),
+            disableAction: isShipActionDisabled,
             onAction: markOrderShipped,
           },
           "in-transit": {
@@ -3869,9 +3974,11 @@
           stageKey: "shipping",
           buttonAttribute: "data-ship-order-group",
           activeRequestId: state.activeShipRequestId,
-          buttonLabel: "Shipped",
+          buttonLabel: (group) => getShipActionLabel(group, "Shipped"),
           loadingLabel: "Updating...",
-          note: (group) => `Ready to dispatch: ${formatItemsLabel(group.itemCount)}. Press Shipped after courier handoff is complete.`,
+          note: (group) =>
+            getShipNote(group, `Ready to dispatch: ${formatItemsLabel(group.itemCount)}. Press Shipped after courier handoff is complete.`),
+          disableAction: isShipActionDisabled,
           onAction: markOrderShipped,
         };
     renderQueue(

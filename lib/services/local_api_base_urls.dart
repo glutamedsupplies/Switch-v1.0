@@ -20,6 +20,9 @@ const localApiLanBaseUrls = <String>[
 
 String? _preferredLocalApiBaseUrl;
 
+/// Last backend URL that answered successfully, if any.
+String? get preferredLocalApiBaseUrl => _preferredLocalApiBaseUrl;
+
 /// Remembers the last backend URL that answered successfully so later calls
 /// skip dead loopback/LAN candidates first.
 void rememberWorkingLocalApiBaseUrl(String baseUrl) {

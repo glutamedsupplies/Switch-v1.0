@@ -18,6 +18,11 @@ const {
   verifyGoogleCredential,
   normalizeVerificationTarget,
 } = require("./postgresAuth");
+const {
+  isTestModeEnabled,
+  buildTestModeProfilePatch,
+  isTestModeCompany,
+} = require("./testModeService");
 
 const SELLER_SELECT = `
   SELECT
@@ -52,15 +57,69 @@ const SELLER_SELECT = `
     s.ban_type,
     s.ban_expires_at,
     s.restrict_expires_at,
-    s.profile_data
+    s.profile_data,
+    company.company_id,
+    company.company_profile_data,
+    gi.provider_subject AS google_subject,
+    gi.email AS google_identity_email,
+    gi.profile_data AS google_profile_data,
+    NULLIF(BTRIM(COALESCE(gi.profile_data->>'picture', '')), '') AS google_picture
   FROM accounts a
   INNER JOIN seller_profiles s ON s.account_id = a.id
-  WHERE a.role = 'admin'
-     OR EXISTS (
-       SELECT 1
-       FROM account_capabilities ac
-       WHERE ac.account_id = a.id
-         AND ac.capability = 'seller_admin'
+  LEFT JOIN LATERAL (
+    SELECT provider_subject, email, profile_data
+    FROM auth_identities
+    WHERE account_id = a.id AND provider = 'google'
+    ORDER BY updated_at DESC NULLS LAST
+    LIMIT 1
+  ) gi ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT
+      c.id AS company_id,
+      c.name AS company_name,
+      c.public_name AS company_public_name,
+      c.status::text AS company_status,
+      c.subscription_status::text AS company_subscription_status,
+      c.profile_data AS company_profile_data
+    FROM companies c
+    WHERE c.type = 'seller'
+      AND (
+        c.source_account_id = a.id
+        OR EXISTS (
+          SELECT 1
+          FROM company_memberships m
+          WHERE m.company_id = c.id
+            AND m.account_id = a.id
+        )
+      )
+      -- Never attach a purged Test Mode company as the seller's active company.
+      AND COALESCE(c.profile_data->>'purgedByTestModeOff', 'false') NOT IN ('true', '1', 'yes')
+    ORDER BY
+      CASE
+        WHEN c.source_account_id = a.id THEN 0
+        ELSE 1
+      END,
+      -- Prefer banned/restricted so SA ban/unban targets the enforced company,
+      -- not a newer draft sibling (which left the banned company stuck).
+      CASE
+        WHEN c.status = 'banned' THEN 0
+        WHEN c.status = 'restricted' THEN 1
+        WHEN c.status = 'active' THEN 2
+        WHEN c.status = 'pending_review' THEN 3
+        ELSE 4
+      END,
+      c.updated_at DESC NULLS LAST,
+      c.created_at DESC NULLS LAST
+    LIMIT 1
+  ) company ON TRUE
+  WHERE (
+       a.role = 'admin'
+       OR EXISTS (
+         SELECT 1
+         FROM account_capabilities ac
+         WHERE ac.account_id = a.id
+           AND ac.capability = 'seller_admin'
+       )
      )
 `;
 
@@ -70,18 +129,51 @@ function buildSellerAccount(row) {
   }
 
   const extra = asObject(row.profile_data);
-  const storeName = row.store_name || extra.storeName || extra.companyName || "";
+  const companyProfile = asObject(row.company_profile_data);
+  const officialCompanyName = String(
+    row.company_name ||
+      row.company_public_name ||
+      companyProfile.name ||
+      companyProfile.publicName ||
+      companyProfile.companyName ||
+      "",
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  const storeName =
+    officialCompanyName || row.store_name || extra.storeName || extra.companyName || "";
   const storeType = row.store_type || extra.storeType || extra.businessType || "";
+  const companyStatus = String(row.company_status || extra.companyStatus || "").trim().toLowerCase();
+  const companySubscriptionStatus = String(
+    row.company_subscription_status || extra.subscriptionStatus || "",
+  ).trim().toLowerCase();
+  const isPendingReviewCompany =
+    companyStatus === "pending_review"
+    || companySubscriptionStatus === "pending_review";
+  const testMode =
+    isTestModeCompany(companyProfile)
+    || isTestModeCompany(extra)
+    || Boolean(extra.testMode);
 
   return {
     ...extra,
     id: row.id,
     adminId: row.admin_id || row.id,
     accountCode: row.account_code || row.admin_id || row.id,
+    companyId: row.company_id || extra.companyId || "",
+    companyCode: "",
+    sellerKind: String(companyProfile.sellerKind || extra.sellerKind || "").trim(),
+    profileData: {
+      ...extra,
+      ...companyProfile,
+    },
+    testMode,
     role: "admin",
     source: "web",
     storeName,
     companyName: storeName,
+    companyOfficialName: officialCompanyName,
+    companyPublicName: String(row.company_public_name || companyProfile.publicName || "").trim(),
     businessName: storeName,
     storeType,
     storeTypeName: storeType,
@@ -97,14 +189,68 @@ function buildSellerAccount(row) {
     emailVerified: Boolean(row.email_verified),
     mobileVerified: Boolean(row.mobile_verified),
     planName: row.plan_name || "Free Plan",
-    planStatus: row.plan_status || "active",
-    profileImageUrl: row.profile_image_url || "",
+    planStatus: isPendingReviewCompany
+      ? "pending_review"
+      : (row.plan_status || extra.planStatus || "active"),
+    companyStatus: companyStatus || extra.companyStatus || "",
+    subscriptionStatus: companySubscriptionStatus || extra.subscriptionStatus || "",
+    isPendingReviewCompany,
+    profileImageUrl:
+      String(row.profile_image_url || "").trim()
+      || String(row.google_picture || "").trim()
+      || String(asObject(row.google_profile_data).picture || "").trim()
+      || "",
+    googleProfile: (() => {
+      const googleData = asObject(row.google_profile_data);
+      const subject = String(row.google_subject || googleData.subject || "").trim();
+      if (!subject && !Object.keys(googleData).length) {
+        return extra.googleProfile && typeof extra.googleProfile === "object"
+          ? extra.googleProfile
+          : null;
+      }
+      return {
+        subject,
+        email: String(row.google_identity_email || googleData.email || row.email || "").trim(),
+        firstName: googleData.firstName || row.first_name || "",
+        lastName: googleData.lastName || row.last_name || "",
+        displayName: googleData.displayName || "",
+        picture: googleData.picture || row.google_picture || "",
+        ...googleData,
+      };
+    })(),
+    gmailBinding: (() => {
+      const googleEmail = String(
+        row.google_identity_email || asObject(row.google_profile_data).email || "",
+      ).trim();
+      if (googleEmail) {
+        return { email: googleEmail, provider: "google" };
+      }
+      if (extra.registeredVia === "google" || extra.googleEmail) {
+        return {
+          email: String(extra.googleEmail || row.email || "").trim(),
+          provider: "google",
+        };
+      }
+      return extra.gmailBinding && typeof extra.gmailBinding === "object"
+        ? extra.gmailBinding
+        : null;
+    })(),
+    registeredVia:
+      String(extra.registeredVia || "").trim()
+      || (row.google_subject ? "google" : ""),
+    authProvider: row.google_subject ? "google" : String(extra.authProvider || "").trim(),
     accessPermissions: [],
     accessPermissionGrantedAt: {},
     accessPermissionsConfigured: false,
-    status: row.status || extra.status || "active",
-    accountStatus: row.status || extra.accountStatus || "active",
-    accountState: row.status || extra.accountState || "active",
+    status: isPendingReviewCompany
+      ? "pending_review"
+      : (row.status || extra.status || "active"),
+    accountStatus: isPendingReviewCompany
+      ? "pending_review"
+      : (row.status || extra.accountStatus || "active"),
+    accountState: isPendingReviewCompany
+      ? "pending-review"
+      : (row.status || extra.accountState || "active"),
     banType: row.ban_type || extra.banType || null,
     banExpiresAt: toIso(row.ban_expires_at) || extra.banExpiresAt || null,
     restrictExpiresAt: toIso(row.restrict_expires_at) || extra.restrictExpiresAt || null,
@@ -127,6 +273,8 @@ function extractSellerProfileData(account) {
     "id",
     "adminId",
     "accountCode",
+    "companyId",
+    "companyCode",
     "role",
     "source",
     "storeName",
@@ -306,13 +454,20 @@ async function createSellerAccount(normalizedAdmin) {
       ? normalizedAdmin.googleProfile
       : null;
 
+  const isGoogleAccount = Boolean(
+    googleProfile ||
+      String(normalizedAdmin.authProvider ?? "").trim().toLowerCase() === "google" ||
+      String(normalizedAdmin.registeredVia ?? "").trim().toLowerCase() === "google" ||
+      String(normalizedAdmin.source ?? "").trim().toLowerCase() === "google",
+  );
+
   if (storeName.length < 2) {
     throw new Error("Company name must be at least 2 characters long.");
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error("Please enter a valid admin email address.");
   }
-  if (password.length < 6) {
+  if (password.length < 6 && !isGoogleAccount) {
     throw new Error("Admin password must be at least 6 characters long.");
   }
 
@@ -328,8 +483,15 @@ async function createSellerAccount(normalizedAdmin) {
   const id = String(normalizedAdmin.id ?? "").trim() || `admin-${Date.now()}`;
   const adminId = String(normalizedAdmin.adminId ?? id).trim() || id;
   const now = new Date().toISOString();
-  const passwordHash = await hashPassword(password);
+  const passwordHash = password
+    ? await hashPassword(password)
+    : isGoogleAccount
+      ? null
+      : await hashPassword(password);
   const profileData = extractSellerProfileData(normalizedAdmin);
+  if (await isTestModeEnabled()) {
+    Object.assign(profileData, buildTestModeProfilePatch());
+  }
   const emailVerified =
     verificationChannel === "email" || Boolean(normalizedAdmin.emailVerified);
   const mobileVerified =
@@ -528,6 +690,14 @@ async function createSellerAccountFromGoogle(profile) {
   // Random password — Google is the sign-in method; password can be set later.
   const passwordHash = await hashPassword(crypto.randomBytes(32).toString("hex"));
   const profileImageUrl = String(profile.picture ?? "").trim();
+  const sellerProfileData = {
+    registeredVia: "google",
+    googleEmail: email,
+    companyName: storeName,
+  };
+  if (await isTestModeEnabled()) {
+    Object.assign(sellerProfileData, buildTestModeProfilePatch());
+  }
 
   await withTransaction(async (client) => {
     await client.query(
@@ -581,11 +751,7 @@ async function createSellerAccountFromGoogle(profile) {
         "",
         lastName,
         "",
-        JSON.stringify({
-          registeredVia: "google",
-          googleEmail: email,
-          companyName: storeName,
-        }),
+        JSON.stringify(sellerProfileData),
         now,
         now,
       ],
@@ -867,10 +1033,13 @@ async function upsertSellerFromLegacyRecord(legacyAccount, plainPassword = null)
   )
     .trim()
     .toLowerCase();
-  const isGoogleAccount =
-    Boolean(googleSubject) ||
-    authProvider === "google" ||
-    registeredVia === "google";
+  const gmailBindingEmail = normalizeEmail(
+    legacyAccount.gmailBinding?.email ??
+      legacyAccount.googleBinding?.email ??
+      profileDataSource.googleEmail ??
+      googleProfile?.email ??
+      "",
+  );
 
   const existing = await findSellerByEmail(email);
   const passwordSource = plainPassword ?? legacyAccount.password ?? "";
@@ -879,6 +1048,55 @@ async function upsertSellerFromLegacyRecord(legacyAccount, plainPassword = null)
       ? String(passwordSource)
       : await hashPassword(String(passwordSource))
     : existing?._passwordHash || null;
+
+  let isGoogleAccount =
+    Boolean(googleSubject) ||
+    authProvider === "google" ||
+    registeredVia === "google" ||
+    Boolean(gmailBindingEmail) ||
+    String(existing?.registeredVia || "").trim().toLowerCase() === "google" ||
+    Boolean(existing?.googleProfile?.subject) ||
+    Boolean(existing?.gmailBinding?.email);
+
+  // Buyer→seller Google Instant Sign-In accounts often arrive without google markers
+  // on the sync payload. Fall back to auth_identities / passwordless account row.
+  if (!passwordHash && !isGoogleAccount) {
+    const accountId = String(existing?.id ?? legacyAccount.id ?? "").trim();
+    const identity = await query(
+      `
+        SELECT 1
+        FROM auth_identities gi
+        WHERE gi.provider = 'google'
+          AND (
+            ($1::text <> '' AND gi.account_id = $1)
+            OR lower(COALESCE(gi.email, '')) = lower($2)
+          )
+        LIMIT 1
+      `,
+      [accountId, email],
+    );
+    if (identity.rows?.length) {
+      isGoogleAccount = true;
+    } else {
+      const passwordless = await query(
+        `
+          SELECT 1
+          FROM accounts a
+          WHERE lower(a.email) = lower($1)
+            AND a.password_hash IS NULL
+            AND EXISTS (
+              SELECT 1
+              FROM auth_identities gi
+              WHERE gi.account_id = a.id
+                AND gi.provider = 'google'
+            )
+          LIMIT 1
+        `,
+        [email],
+      );
+      isGoogleAccount = Boolean(passwordless.rows?.length);
+    }
+  }
 
   // Google Instant Sign-In sellers do not require a local password.
   if (!passwordHash && !isGoogleAccount) {
@@ -898,7 +1116,7 @@ async function upsertSellerFromLegacyRecord(legacyAccount, plainPassword = null)
     ...(isGoogleAccount
       ? {
           registeredVia: "google",
-          googleEmail: email,
+          googleEmail: gmailBindingEmail || email,
         }
       : {}),
   };

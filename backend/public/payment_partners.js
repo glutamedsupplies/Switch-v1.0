@@ -152,7 +152,9 @@
     success: `<div class="product-validation-lottie-check" data-partner-validation-lottie-check></div>`,
     notice: `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>`,
     error: `<i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>`,
-    delete: `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+    delete: window.SwitchDefaultIcons?.trash?.svgLarge ||
+      window.SwitchDefaultIcons?.svg?.("trash", { size: 256, className: "lucide lucide-trash" }) ||
+      `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
   });
 
   function setFeedback(message, state) {

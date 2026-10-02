@@ -1,3 +1,4 @@
+//ito pwedi idelete
 (() => {
   "use strict";
 
@@ -26,6 +27,7 @@
   const routeDefinitions = Object.freeze([
     { path: "/admin_dashboard.html", key: "dashboard", title: "Store Overview" },
     { path: "/concern.html", key: "concern", title: "Concern" },
+    { path: "/seller_security_center.html", key: "account-health", title: "Account Health" },
     { path: "/product_panel.html", key: "products", title: "Products" },
     { path: "/edit_products.html", key: "products", title: "Edit Listing" },
     { path: "/stock.html", key: "stock", title: "Inventory" },
@@ -536,3 +538,4 @@
     navigate(initialRoute.url.href, { history: "replace", force: true });
   }
 })();
+//hanggang dito

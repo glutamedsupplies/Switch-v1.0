@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Edit Listing</title>
     <link rel="stylesheet" href="/styles.css?v=snackbar-oneline-1" />
-    <link rel="stylesheet" href="/main.css?v=admin-seller-table-headers-main-only-1" />
+    <link rel="stylesheet" href="/main.css?v=admin-seller-table-headers-main-only-1-listing-specs-2" />
   <script src="/lazy-loading.js?v=global-lazy-1"></script>
   </head>
   <body data-product-editor-page="standalone">
@@ -295,6 +295,37 @@
                       </label>
                     </div>
 
+                    <section
+                      class="product-specifications"
+                      id="product-specifications"
+                      aria-labelledby="product-specifications-title"
+                    >
+                      <div class="product-specifications__header">
+                        <span class="product-specifications__title" id="product-specifications-title">Specifications</span>
+                        <small class="product-specifications__hint" data-specification-hint>
+                          Select a category first to see its specifications.
+                        </small>
+                      </div>
+                      <div
+                        class="product-specifications__list"
+                        id="product-specifications-list"
+                        data-specification-list
+                        aria-live="polite"
+                      ></div>
+                      <button
+                        type="button"
+                        class="product-specifications__add"
+                        id="product-specifications-add"
+                        data-specification-add
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M5 12h14" />
+                          <path d="M12 5v14" />
+                        </svg>
+                        <span>Add specification</span>
+                      </button>
+                    </section>
+
                     <label>
                       About this product
                       <textarea
@@ -481,7 +512,8 @@
       </section>
     </main>
 
+    <script src="/default_icons.js?v=default-icons-zap-trash-1"></script>
     <script src="/theme.js?v=platform-workspace-settings-1"></script>
-    <script src="/app.js?v=stock-record-latest-quantity-1"></script>
+    <script src="/app.js?v=stock-record-latest-quantity-1-listing-specs-2"></script>
   </body>
 </html>

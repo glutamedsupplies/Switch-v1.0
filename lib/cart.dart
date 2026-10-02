@@ -37,6 +37,12 @@ String cartPlatformDisplayName(String? platformId) {
       return 'Food';
     case 'shop':
       return 'Shop';
+    case 'groceries':
+      return 'Groceries';
+    case 'hotels':
+      return 'Hotels';
+    case 'resort':
+      return 'Resort';
     default:
       final id = normalizeCartPlatformId(platformId);
       return id[0].toUpperCase() + id.substring(1);

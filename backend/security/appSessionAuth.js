@@ -4,7 +4,8 @@ const crypto = require("crypto");
 
 const DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60;
 const MAX_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
-const ALLOWED_ROLES = new Set(["buyer", "seller", "employee"]);
+// "rider" sessions are only honored on /api/rider/* (see server attachAppSession).
+const ALLOWED_ROLES = new Set(["buyer", "seller", "employee", "rider"]);
 
 function normalizeText(value) {
   return String(value ?? "").trim();
@@ -112,6 +113,20 @@ function createAppSessionAuth(environment = process.env, options = {}) {
       .digest();
   }
 
+  function resolveIssueTtlSeconds(identity = {}) {
+    if (typeof options.resolveSessionTtlSeconds === "function") {
+      try {
+        const resolved = options.resolveSessionTtlSeconds(identity);
+        if (Number.isFinite(Number(resolved)) && Number(resolved) > 0) {
+          return parseSessionTtlSeconds(resolved);
+        }
+      } catch (_error) {
+        // Fall back to env TTL when resolver fails.
+      }
+    }
+    return sessionTtlSeconds;
+  }
+
   function issueSession(identity = {}) {
     if (!isConfigured()) {
       throw new Error("App session authentication is not configured.");
@@ -128,8 +143,11 @@ function createAppSessionAuth(environment = process.env, options = {}) {
       throw new Error("A tenant admin ID is required for seller and employee sessions.");
     }
 
+    const ttlSeconds = Number.isFinite(Number(identity.ttlSeconds)) && Number(identity.ttlSeconds) > 0
+      ? parseSessionTtlSeconds(identity.ttlSeconds)
+      : resolveIssueTtlSeconds(identity);
     const issuedAt = Math.floor(now() / 1000);
-    const expiresAt = issuedAt + sessionTtlSeconds;
+    const expiresAt = issuedAt + ttlSeconds;
     const payload = {
       sub: accountId,
       role,
@@ -146,7 +164,7 @@ function createAppSessionAuth(environment = process.env, options = {}) {
     return {
       token: `v1.${encodedPayload}.${signature}`,
       expiresAt: new Date(expiresAt * 1000).toISOString(),
-      expiresInSeconds: sessionTtlSeconds,
+      expiresInSeconds: ttlSeconds,
       payload,
     };
   }

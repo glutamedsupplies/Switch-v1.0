@@ -9,6 +9,7 @@
   let modalAccount = null;
   let modalBaseline = null;
   let modalProfileImageUrl = "";
+  let modalCompanyBackgroundUrl = "";
   let modalBusy = false;
   let validationAutoCloseTimer = 0;
   let validationModalAllowManualClose = true;
@@ -17,7 +18,7 @@
   const lottiePlayerUrl = "/vendor/lottie.min.js";
   const successCheckAnimationPath = "/animations/employee-account-check.json";
   const successModalAutoCloseMs = 1800;
-  const adminAccountSettingsStylesheet = "/admin_account_settings.css?v=seller-account-deletion-1";
+  const adminAccountSettingsStylesheet = "/admin_account_settings.css?v=company-background-2";
   const adminAccountSquarePenIconMarkup = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-square-pen-icon lucide-square-pen"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg>';
   const adminAccountIcons = Object.freeze({
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>',
@@ -27,7 +28,8 @@
     plan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></svg>',
     registration: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>',
     security: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/><path d="M12 8v4"/><circle cx="12" cy="15" r=".6" fill="currentColor"/></svg>',
-    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+    trash: window.SwitchDefaultIcons?.trash?.svg ||
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
   });
   let activeSettingsTab = "profile";
   let deletionCountdownTimer = 0;
@@ -94,9 +96,20 @@
 
   function getAdminHeaders(extraHeaders = {}) {
     const adminId = getAdminRequestId();
+    const session = readAdminSession() || {};
+    const companyId = String(
+      session.companyId || session.activeCompanyId || "",
+    ).trim() || (() => {
+      try {
+        return String(window.localStorage?.getItem("gms-active-company-id") || "").trim();
+      } catch (_) {
+        return "";
+      }
+    })();
     return {
       ...extraHeaders,
       ...(adminId ? { "X-GMS-Admin-ID": adminId } : {}),
+      ...(companyId ? { "X-GMS-Company-ID": companyId } : {}),
     };
   }
 
@@ -143,6 +156,28 @@
       account?.profile?.companyPictureUrl,
       account?.profile?.profileImageUrl,
       account?.profile?.logoUrl,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .find(Boolean) || "";
+  }
+
+  function getAdminCompanyBackgroundUrl(account) {
+    return [
+      account?.companyBackgroundUrl,
+      account?.company_background_url,
+      account?.backgroundUrl,
+      account?.background_url,
+      account?.coverImageUrl,
+      account?.cover_image_url,
+      account?.bannerUrl,
+      account?.banner_url,
+      account?.company?.companyBackgroundUrl,
+      account?.company?.backgroundUrl,
+      account?.company?.coverImageUrl,
+      account?.store?.companyBackgroundUrl,
+      account?.store?.backgroundUrl,
+      account?.profile?.companyBackgroundUrl,
+      account?.profile?.backgroundUrl,
     ]
       .map((value) => String(value ?? "").trim())
       .find(Boolean) || "";
@@ -319,13 +354,6 @@
     const subscription = account?.subscription && typeof account.subscription === "object"
       ? account.subscription
       : {};
-    const planName = normalizeAccountText(
-      account?.planName
-        ?? account?.subscriptionPlan
-        ?? account?.plan
-        ?? subscription.name,
-      "Free Plan",
-    );
     const status = normalizeAccountText(
       account?.planStatus
         ?? account?.subscriptionStatus
@@ -334,22 +362,13 @@
     );
 
     return {
-      name: planName,
+      name: "Free",
       status,
-      billingCycle: normalizeAccountText(
-        account?.billingCycle ?? subscription.billingCycle,
-        "No billing cycle",
-      ),
+      billingCycle: "None",
       startedAt: formatAccountDate(
         account?.planStartedAt ?? account?.subscriptionStartedAt ?? subscription.startedAt ?? account?.createdAt,
       ),
-      renewsAt: formatAccountDate(
-        account?.planRenewsAt
-          ?? account?.nextBillingAt
-          ?? account?.renewalDate
-          ?? subscription.renewsAt,
-        "Not scheduled",
-      ),
+      renewsAt: "Not scheduled",
     };
   }
 
@@ -456,14 +475,8 @@
       return;
     }
 
-    const plan = getAdminPlanDetails(account);
     const registration = getAdminRegistrationDetails(account);
-    setTextContent(modalRefs.profilePlanName, plan.name);
-    setTextContent(modalRefs.planName, plan.name);
-    setTextContent(modalRefs.planStatus, plan.status);
-    setTextContent(modalRefs.planBillingCycle, plan.billingCycle);
-    setTextContent(modalRefs.planStartedAt, plan.startedAt);
-    setTextContent(modalRefs.planRenewsAt, plan.renewsAt);
+    setTextContent(modalRefs.profilePlanName, "Seller");
     setTextContent(modalRefs.registrationCompanyName, registration.companyName);
     setTextContent(modalRefs.registrationBusinessType, registration.businessType);
     setTextContent(modalRefs.registrationAccountHolder, registration.accountHolder);
@@ -483,7 +496,7 @@
       return;
     }
 
-    const normalizedTab = ["profile", "plan", "registration", "security"].includes(tabName)
+    const normalizedTab = ["profile", "registration", "security"].includes(tabName)
       ? tabName
       : "profile";
     activeSettingsTab = normalizedTab;
@@ -551,9 +564,8 @@
         lastName: "",
         mobileNumber: "",
         email: "",
-        password: "",
-        confirmPassword: "",
         profileImageUrl: modalProfileImageUrl,
+        companyBackgroundUrl: modalCompanyBackgroundUrl,
       };
     }
 
@@ -563,9 +575,8 @@
       lastName: String(modalRefs.lastNameInput.value || "").trim(),
       mobileNumber: normalizePhoneNumber(modalRefs.phoneInput.value),
       email: String(modalRefs.emailInput.value || "").trim().toLowerCase(),
-      password: String(modalRefs.passwordInput.value || "").trim(),
-      confirmPassword: String(modalRefs.confirmPasswordInput.value || "").trim(),
       profileImageUrl: String(modalProfileImageUrl || "").trim(),
+      companyBackgroundUrl: String(modalCompanyBackgroundUrl || "").trim(),
     };
   }
 
@@ -582,7 +593,7 @@
       || values.mobileNumber !== modalBaseline.mobileNumber
       || values.email !== modalBaseline.email
       || values.profileImageUrl !== modalBaseline.profileImageUrl
-      || Boolean(values.password || values.confirmPassword)
+      || values.companyBackgroundUrl !== modalBaseline.companyBackgroundUrl
     );
   }
 
@@ -616,6 +627,13 @@
     if (modalRefs.removePhotoButton) {
       modalRefs.removePhotoButton.hidden = !modalProfileImageUrl;
       modalRefs.removePhotoButton.disabled = modalBusy || !modalProfileImageUrl;
+    }
+    if (modalRefs.backgroundUploadButton) {
+      modalRefs.backgroundUploadButton.disabled = modalBusy;
+    }
+    if (modalRefs.backgroundRemoveButton) {
+      modalRefs.backgroundRemoveButton.hidden = !modalCompanyBackgroundUrl;
+      modalRefs.backgroundRemoveButton.disabled = modalBusy || !modalCompanyBackgroundUrl;
     }
     if (modalBusy) {
       setAvatarMenuOpen(false);
@@ -657,6 +675,30 @@
       modalRefs.avatarImage.hidden = true;
       modalRefs.avatarFallback.innerHTML = getDefaultWorkspaceLogoIconMarkup();
       modalRefs.avatarFallback.hidden = false;
+    }
+
+    const hasBackground = Boolean(modalCompanyBackgroundUrl);
+    if (modalRefs.backgroundRemoveButton) {
+      modalRefs.backgroundRemoveButton.hidden = !hasBackground;
+      modalRefs.backgroundRemoveButton.disabled = modalBusy || !hasBackground;
+    }
+    if (modalRefs.backgroundUploadLabel) {
+      modalRefs.backgroundUploadLabel.textContent = hasBackground
+        ? "Change Background"
+        : "Upload Background";
+    }
+    if (modalRefs.backgroundImage && modalRefs.backgroundEmpty) {
+      if (hasBackground) {
+        modalRefs.backgroundImage.src = modalCompanyBackgroundUrl;
+        modalRefs.backgroundImage.alt = `${displayName} company background`;
+        modalRefs.backgroundImage.hidden = false;
+        modalRefs.backgroundEmpty.hidden = true;
+      } else {
+        modalRefs.backgroundImage.removeAttribute("src");
+        modalRefs.backgroundImage.alt = "";
+        modalRefs.backgroundImage.hidden = true;
+        modalRefs.backgroundEmpty.hidden = false;
+      }
     }
     syncSaveButtonState();
   }
@@ -923,26 +965,11 @@
       };
     }
 
-    if (type === "password") {
-      return {
-        button: modalRefs.passwordEditButton,
-        fields: [
-          getFieldWrapper(modalRefs.passwordInput),
-          getFieldWrapper(modalRefs.confirmPasswordInput),
-        ].filter(Boolean),
-        inputs: [
-          modalRefs.passwordInput,
-          modalRefs.confirmPasswordInput,
-        ].filter(Boolean),
-        label: "new password",
-      };
-    }
-
     return null;
   }
 
   function syncAdminAccountSettingsEditButtons() {
-    ["company", "firstName", "lastName", "phone", "email", "password"].forEach((type) => {
+    ["company", "firstName", "lastName", "phone", "email"].forEach((type) => {
       const config = getAdminAccountSettingsEditConfig(type);
       if (!config?.button || !config.inputs.length) {
         return;
@@ -991,7 +1018,7 @@
   }
 
   function lockAdminAccountSettingsEditableFields() {
-    ["company", "firstName", "lastName", "phone", "email", "password"].forEach((type) => {
+    ["company", "firstName", "lastName", "phone", "email"].forEach((type) => {
       setAdminAccountSettingsFieldEditable(type, false, { focus: false });
     });
   }
@@ -1011,9 +1038,6 @@
     }
     if (input === modalRefs?.emailInput) {
       return "email";
-    }
-    if (input === modalRefs?.passwordInput || input === modalRefs?.confirmPasswordInput) {
-      return "password";
     }
     return "";
   }
@@ -1072,6 +1096,46 @@
     });
   }
 
+  function prepareCompanyBackgroundDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !String(file.type || "").startsWith("image/")) {
+        reject(new Error("Please choose an image file."));
+        return;
+      }
+      if (file.size > 4 * 1024 * 1024) {
+        reject(new Error("Background image must be 4 MB or smaller."));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.addEventListener("error", () => reject(new Error("Unable to read selected image.")));
+      reader.addEventListener("load", () => {
+        const image = new Image();
+        image.addEventListener("error", () => reject(new Error("Unable to prepare selected image.")));
+        image.addEventListener("load", () => {
+          const maxWidth = 1600;
+          const naturalWidth = image.naturalWidth || image.width || 1;
+          const naturalHeight = image.naturalHeight || image.height || 1;
+          const scale = Math.min(1, maxWidth / naturalWidth);
+          const width = Math.max(1, Math.round(naturalWidth * scale));
+          const height = Math.max(1, Math.round(naturalHeight * scale));
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          if (!context) {
+            reject(new Error("Unable to prepare selected image."));
+            return;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          context.drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.88));
+        });
+        image.src = String(reader.result || "");
+      });
+      reader.readAsDataURL(file);
+    });
+  }
+
   function createAdminAccountSettingsModal() {
     if (modalRefs) {
       return modalRefs;
@@ -1097,10 +1161,6 @@
             <button type="button" class="admin-account-settings-tab is-active" role="tab" id="admin-account-settings-profile-tab" aria-selected="true" aria-controls="admin-account-settings-profile-panel" data-admin-account-settings-tab="profile">
               ${adminAccountIcons.profile}
               <span>Profile</span>
-            </button>
-            <button type="button" class="admin-account-settings-tab" role="tab" id="admin-account-settings-plan-tab" aria-selected="false" aria-controls="admin-account-settings-plan-panel" tabindex="-1" data-admin-account-settings-tab="plan">
-              ${adminAccountIcons.plan}
-              <span>Plan</span>
             </button>
             <button type="button" class="admin-account-settings-tab" role="tab" id="admin-account-settings-registration-tab" aria-selected="false" aria-controls="admin-account-settings-registration-panel" tabindex="-1" data-admin-account-settings-tab="registration">
               ${adminAccountIcons.registration}
@@ -1138,10 +1198,29 @@
               </span>
               <span class="employee-account-settings-profile__identity">
                 <span class="employee-account-settings-profile__name" data-admin-account-settings-profile-name>Admin</span>
-                <span class="employee-account-settings-profile__position" data-admin-account-settings-profile-plan-name>Free Plan</span>
+                <span class="employee-account-settings-profile__position" data-admin-account-settings-profile-plan-name>Seller</span>
                 <span class="employee-account-settings-profile__since" data-admin-account-settings-created-since>Created since Not available</span>
               </span>
               <input type="file" accept="image/*" hidden data-admin-account-settings-file />
+
+              <div class="admin-account-settings-background" aria-label="Company background">
+                <h3>Company Background</h3>
+                <p class="admin-account-settings-background__hint">Appears on the right of your company card in Super Admin.</p>
+                <div class="admin-account-settings-background__preview" data-admin-account-settings-background-preview>
+                  <img data-admin-account-settings-background-image alt="" hidden />
+                  <span class="admin-account-settings-background__empty" data-admin-account-settings-background-empty>No background yet</span>
+                </div>
+                <div class="admin-account-settings-background__actions">
+                  <button type="button" class="employee-account-settings-secondary" data-admin-account-settings-background-upload>
+                    ${adminAccountIcons.image}
+                    <span data-admin-account-settings-background-upload-label>Upload Background</span>
+                  </button>
+                  <button type="button" class="employee-account-settings-secondary admin-account-settings-background__remove" data-admin-account-settings-background-remove hidden>
+                    Remove
+                  </button>
+                </div>
+                <input type="file" accept="image/*" hidden data-admin-account-settings-background-file />
+              </div>
             </section>
 
             <section class="employee-account-settings-basic" aria-label="Company account details">
@@ -1194,41 +1273,8 @@
                   </span>
                 </label>
               </div>
-
-              <div class="employee-account-settings-grid">
-                <label class="employee-account-settings-field">
-                  <span>New Password</span>
-                  <span class="employee-account-settings-editable-field">
-                    <input type="password" autocomplete="new-password" data-admin-account-settings-password />
-                    <button type="button" class="employee-account-settings-field-edit" data-admin-account-settings-password-edit aria-label="Edit new password" title="Edit new password" aria-pressed="false">
-                      ${adminAccountSquarePenIconMarkup}
-                    </button>
-                  </span>
-                </label>
-                <label class="employee-account-settings-field">
-                  <span>Confirm Password</span>
-                  <input type="password" autocomplete="new-password" data-admin-account-settings-confirm-password />
-                </label>
-              </div>
             </section>
           </div>
-
-          <section class="admin-account-settings-panel admin-account-settings-summary" role="tabpanel" id="admin-account-settings-plan-panel" aria-labelledby="admin-account-settings-plan-tab" data-admin-account-settings-panel="plan" hidden>
-            <div class="admin-account-settings-plan-hero">
-              <span class="admin-account-settings-plan-hero__icon" aria-hidden="true">${adminAccountIcons.plan}</span>
-              <span class="admin-account-settings-plan-hero__copy">
-                <span>Current plan</span>
-                <strong data-admin-account-settings-plan-name>Free Plan</strong>
-              </span>
-              <span class="admin-account-settings-status" data-admin-account-settings-plan-status>Active</span>
-            </div>
-            <dl class="admin-account-settings-detail-grid">
-              <div><dt>Plan started</dt><dd data-admin-account-settings-plan-started>Not available</dd></div>
-              <div><dt>Billing cycle</dt><dd data-admin-account-settings-plan-billing>No billing cycle</dd></div>
-              <div><dt>Next renewal</dt><dd data-admin-account-settings-plan-renews>Not scheduled</dd></div>
-              <div><dt>Account role</dt><dd>Seller Admin</dd></div>
-            </dl>
-          </section>
 
           <section class="admin-account-settings-panel admin-account-settings-summary" role="tabpanel" id="admin-account-settings-registration-panel" aria-labelledby="admin-account-settings-registration-tab" data-admin-account-settings-panel="registration" hidden>
             <div class="admin-account-settings-summary__heading">
@@ -1350,6 +1396,13 @@
       changePhotoLabel: overlay.querySelector("[data-admin-account-settings-change-photo-label]"),
       seePhotoButton: overlay.querySelector("[data-admin-account-settings-see-photo]"),
       removePhotoButton: overlay.querySelector("[data-admin-account-settings-remove-photo]"),
+      backgroundPreview: overlay.querySelector("[data-admin-account-settings-background-preview]"),
+      backgroundImage: overlay.querySelector("[data-admin-account-settings-background-image]"),
+      backgroundEmpty: overlay.querySelector("[data-admin-account-settings-background-empty]"),
+      backgroundUploadButton: overlay.querySelector("[data-admin-account-settings-background-upload]"),
+      backgroundUploadLabel: overlay.querySelector("[data-admin-account-settings-background-upload-label]"),
+      backgroundRemoveButton: overlay.querySelector("[data-admin-account-settings-background-remove]"),
+      backgroundFileInput: overlay.querySelector("[data-admin-account-settings-background-file]"),
       photoViewer: overlay.querySelector("[data-admin-account-settings-photo-viewer]"),
       photoViewerClose: overlay.querySelector("[data-admin-account-settings-photo-viewer-close]"),
       photoViewerImage: overlay.querySelector("[data-admin-account-settings-photo-viewer-image]"),
@@ -1369,9 +1422,6 @@
       phoneEditButton: overlay.querySelector("[data-admin-account-settings-phone-edit]"),
       emailInput: overlay.querySelector("[data-admin-account-settings-email]"),
       emailEditButton: overlay.querySelector("[data-admin-account-settings-email-edit]"),
-      passwordInput: overlay.querySelector("[data-admin-account-settings-password]"),
-      passwordEditButton: overlay.querySelector("[data-admin-account-settings-password-edit]"),
-      confirmPasswordInput: overlay.querySelector("[data-admin-account-settings-confirm-password]"),
       planName: overlay.querySelector("[data-admin-account-settings-plan-name]"),
       planStatus: overlay.querySelector("[data-admin-account-settings-plan-status]"),
       planBillingCycle: overlay.querySelector("[data-admin-account-settings-plan-billing]"),
@@ -1469,11 +1519,6 @@
     modalRefs.emailEditButton.addEventListener("click", () => {
       setAdminAccountSettingsFieldEditable("email", true);
     });
-    modalRefs.passwordEditButton.addEventListener("click", () => {
-      setAdminAccountSettingsFieldEditable("password", true);
-      setFieldTooltip(modalRefs.passwordInput, "");
-      setFieldTooltip(modalRefs.confirmPasswordInput, "");
-    });
     modalRefs.phoneInput.addEventListener("input", () => {
       modalRefs.phoneInput.value = normalizePhoneNumber(modalRefs.phoneInput.value);
       setFieldTooltip(modalRefs.phoneInput, "");
@@ -1484,8 +1529,6 @@
       modalRefs.firstNameInput,
       modalRefs.lastNameInput,
       modalRefs.emailInput,
-      modalRefs.passwordInput,
-      modalRefs.confirmPasswordInput,
     ].forEach((input) => {
       input.addEventListener("input", () => {
         setFieldTooltip(input, "");
@@ -1508,6 +1551,33 @@
         setFeedback(error instanceof Error ? error.message : "Unable to use selected photo.", "error");
       }
     });
+    modalRefs.backgroundUploadButton?.addEventListener("click", () => {
+      if (modalBusy) {
+        return;
+      }
+      modalRefs.backgroundFileInput?.click();
+    });
+    modalRefs.backgroundRemoveButton?.addEventListener("click", () => {
+      modalCompanyBackgroundUrl = "";
+      syncProfilePreview();
+      setFeedback("");
+    });
+    modalRefs.backgroundFileInput?.addEventListener("change", async () => {
+      const file = modalRefs.backgroundFileInput.files?.[0] || null;
+      modalRefs.backgroundFileInput.value = "";
+      if (!file) {
+        return;
+      }
+
+      try {
+        setFeedback("");
+        modalCompanyBackgroundUrl = await prepareCompanyBackgroundDataUrl(file);
+        syncProfilePreview();
+        setFeedback("");
+      } catch (error) {
+        setFeedback(error instanceof Error ? error.message : "Unable to use selected background.", "error");
+      }
+    });
     modalRefs.overlay.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target : null;
       if (target && !modalRefs.avatarWrap.contains(target)) {
@@ -1523,13 +1593,12 @@
 
   function fillAdminAccountForm(account) {
     modalProfileImageUrl = getAdminProfileImageUrl(account);
+    modalCompanyBackgroundUrl = getAdminCompanyBackgroundUrl(account);
     modalRefs.companyInput.value = String(account.companyName || account.storeName || "").trim();
     modalRefs.firstNameInput.value = String(account.firstName || "").trim();
     modalRefs.lastNameInput.value = String(account.lastName || "").trim();
     modalRefs.phoneInput.value = normalizePhoneNumber(account.mobileNumber);
     modalRefs.emailInput.value = String(account.email || "").trim();
-    modalRefs.passwordInput.value = "";
-    modalRefs.confirmPasswordInput.value = "";
     modalBaseline = getAdminAccountSettingsValues();
     syncProfilePreview();
     syncAdminAccountSummary(account);
@@ -1592,8 +1661,6 @@
     modalRefs.overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
     window.dispatchEvent(new CustomEvent("gms-admin-account-settings-closed"));
-    modalRefs.passwordInput.value = "";
-    modalRefs.confirmPasswordInput.value = "";
     modalBaseline = getAdminAccountSettingsValues();
     lockAdminAccountSettingsEditableFields();
     clearFieldTooltips();
@@ -1715,8 +1782,6 @@
       mobileNumber: normalizePhoneNumber(modalRefs.phoneInput.value),
       countryCode: "+63",
       email: String(modalRefs.emailInput.value || "").trim().toLowerCase(),
-      password: String(modalRefs.passwordInput.value || "").trim(),
-      confirmPassword: String(modalRefs.confirmPasswordInput.value || "").trim(),
     };
 
     if (values.companyName.length < 2) {
@@ -1734,16 +1799,221 @@
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
       return { error: "Please enter a valid e-mail address.", target: modalRefs.emailInput };
     }
-    if (values.password || values.confirmPassword) {
-      if (values.password.length < 6) {
-        return { error: "New password must be at least 6 characters long.", target: modalRefs.passwordInput };
-      }
-      if (values.password !== values.confirmPassword) {
-        return { error: "Confirm password not match.", target: modalRefs.confirmPasswordInput };
-      }
-    }
 
     return { values };
+  }
+
+  async function postSellerSwitchPin(path, payload) {
+    const session = readAdminSession() || {};
+    const sessionToken = String(session.sessionToken || "").trim();
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(sessionToken
+          ? {
+              "X-Switch-Session": sessionToken,
+              "X-GMS-Admin-Session": sessionToken,
+            }
+          : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || "Unable to check Switch PIN.");
+    }
+    return data;
+  }
+
+  function promptSwitchPinForSave() {
+    return new Promise((resolve) => {
+      const session = readAdminSession() || {};
+      const accountId = String(
+        session.accountId ??
+          session.adminId ??
+          session.id ??
+          session.accountCode ??
+          "",
+      ).trim();
+      const email = String(session.email || session.adminEmail || "").trim().toLowerCase();
+      if (!accountId && !email) {
+        resolve(false);
+        return;
+      }
+
+      const companyName =
+        String(session.companyName || session.storeName || "Seller admin").trim() || "Seller admin";
+      const overlay = document.createElement("div");
+      overlay.className = "admin-account-settings-pin-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.innerHTML = `
+        <form class="admin-account-settings-pin-card">
+          <p class="admin-account-settings-pin-kicker">Switch PIN</p>
+          <h2 data-admin-pin-title>Confirm changes</h2>
+          <p class="admin-account-settings-pin-lead" data-admin-pin-lead>Checking Switch PIN...</p>
+          <div data-admin-pin-fields></div>
+          <p class="admin-account-settings-pin-feedback" data-admin-pin-feedback></p>
+          <div class="admin-account-settings-pin-actions">
+            <button type="button" class="admin-account-settings-pin-cancel" data-admin-pin-cancel>Cancel</button>
+            <button type="submit" class="admin-account-settings-pin-submit" data-admin-pin-submit disabled>Confirm</button>
+          </div>
+        </form>
+      `;
+      document.body.appendChild(overlay);
+
+      const title = overlay.querySelector("[data-admin-pin-title]");
+      const lead = overlay.querySelector("[data-admin-pin-lead]");
+      const fields = overlay.querySelector("[data-admin-pin-fields]");
+      const feedback = overlay.querySelector("[data-admin-pin-feedback]");
+      const submit = overlay.querySelector("[data-admin-pin-submit]");
+      const cancel = overlay.querySelector("[data-admin-pin-cancel]");
+      let mode = "enter";
+      let companyId = String(session.companyId || session.storeId || "").trim();
+      let settled = false;
+
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        overlay.remove();
+        resolve(ok);
+      };
+
+      const renderFields = (nextMode, options = {}) => {
+        mode = nextMode;
+        const pinResetRequired = options.pinResetRequired === true;
+        if (title) {
+          title.textContent = pinResetRequired
+            ? "Switch PIN reset required"
+            : nextMode === "create"
+              ? "Create Switch PIN"
+              : "Confirm changes";
+        }
+        if (lead) {
+          lead.textContent = pinResetRequired
+            ? options.reason
+              ? `Super Admin required a Switch PIN reset: ${options.reason} Create a new 6-digit Switch PIN to save.`
+              : "Super Admin required a Switch PIN reset. Create a new 6-digit Switch PIN to save."
+            : nextMode === "create"
+              ? "Create a 6-digit Switch PIN to confirm account changes. This is not your login password."
+              : `Enter the Switch PIN for ${companyName} to save these changes. This is not your login password.`;
+        }
+        fields.innerHTML =
+          nextMode === "create"
+            ? `
+              <label>${pinResetRequired ? "New Switch PIN" : "Create Switch PIN"}
+                <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-admin-pin required />
+              </label>
+              <label>Confirm Switch PIN
+                <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-admin-pin-confirm required />
+              </label>
+            `
+            : `
+              <label>Switch PIN
+                <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-admin-pin required />
+              </label>
+              <button type="button" class="admin-account-settings-pin-forgot" data-admin-pin-forgot>Forgot PIN</button>
+            `;
+        fields.querySelectorAll("input").forEach((input) => {
+          input.addEventListener("input", () => {
+            input.value = String(input.value || "").replace(/\D/g, "").slice(0, 6);
+            feedback.textContent = "";
+          });
+        });
+        overlay.querySelector("[data-admin-pin-forgot]")?.addEventListener("click", async () => {
+          const forgotBtn = overlay.querySelector("[data-admin-pin-forgot]");
+          submit.disabled = true;
+          cancel.disabled = true;
+          if (forgotBtn) forgotBtn.disabled = true;
+          feedback.textContent = "Sending a reset link to your Gmail...";
+          try {
+            const result = await postSellerSwitchPin("/api/account/seller-switch-pin/forgot", {
+              accountId,
+              email,
+              companyId,
+            });
+            feedback.textContent = result.message
+              || "We sent a reset link to your Gmail. Tap the link — it is not a code.";
+          } catch (error) {
+            feedback.textContent = error instanceof Error ? error.message : "Unable to send Switch PIN reset link.";
+          } finally {
+            submit.disabled = false;
+            cancel.disabled = false;
+            if (forgotBtn) forgotBtn.disabled = false;
+          }
+        });
+        submit.disabled = false;
+        fields.querySelector("input")?.focus();
+      };
+
+      cancel.addEventListener("click", () => finish(false));
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) finish(false);
+      });
+      overlay.querySelector("form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const pin = String(overlay.querySelector("[data-admin-pin]")?.value || "").replace(/\D/g, "");
+        const confirmPin = String(overlay.querySelector("[data-admin-pin-confirm]")?.value || "").replace(
+          /\D/g,
+          "",
+        );
+        if (!/^\d{6}$/.test(pin)) {
+          feedback.textContent = "Switch PIN must be exactly 6 digits.";
+          return;
+        }
+        if (mode === "create" && pin !== confirmPin) {
+          feedback.textContent = "Switch PIN confirmation does not match.";
+          return;
+        }
+        submit.disabled = true;
+        cancel.disabled = true;
+        feedback.textContent = "";
+        try {
+          await postSellerSwitchPin(
+            mode === "create"
+              ? "/api/account/seller-switch-pin/set"
+              : "/api/account/seller-switch-pin/verify",
+            { accountId, email, companyId, pin, confirmPin },
+          );
+          finish(true);
+        } catch (error) {
+          submit.disabled = false;
+          cancel.disabled = false;
+          feedback.textContent =
+            error instanceof Error ? error.message : "Unable to check Switch PIN.";
+        }
+      });
+
+      void (async () => {
+        try {
+          const status = await postSellerSwitchPin("/api/account/seller-switch-pin/status", {
+            accountId,
+            email,
+            companyId,
+          });
+          companyId = String(status.companyId || companyId).trim();
+          if (status.pinResetRequired) {
+            renderFields("create", {
+              pinResetRequired: true,
+              reason: String(status.pinResetReason || "").trim(),
+            });
+            return;
+          }
+          if (!status.hasPin) {
+            renderFields("create");
+            return;
+          }
+          renderFields("enter");
+        } catch (error) {
+          feedback.textContent =
+            error instanceof Error ? error.message : "Unable to check Switch PIN.";
+          submit.disabled = true;
+        }
+      })();
+    });
   }
 
   async function saveAdminAccountSettings(event) {
@@ -1769,6 +2039,11 @@
       return;
     }
 
+    const pinConfirmed = await promptSwitchPinForSave();
+    if (!pinConfirmed) {
+      return;
+    }
+
     const payload = {
       companyName: result.values.companyName,
       storeName: result.values.companyName,
@@ -1778,10 +2053,9 @@
       mobileNumber: result.values.mobileNumber,
       email: result.values.email,
       profileImageUrl: modalProfileImageUrl,
+      companyPictureUrl: modalProfileImageUrl,
+      companyBackgroundUrl: modalCompanyBackgroundUrl,
     };
-    if (result.values.password) {
-      payload.password = result.values.password;
-    }
 
     setBusy(true);
     setFeedback("");

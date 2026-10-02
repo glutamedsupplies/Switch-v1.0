@@ -14,7 +14,12 @@
   const sessionCompanies = document.getElementById("session-companies");
   const sellerForm = document.getElementById("seller-upgrade-form");
   const sellerCompanyNameInput = document.getElementById("seller-company-name");
+  const sellerKindSelect = document.getElementById("seller-kind-select");
+  const sellerBankNameInput = document.getElementById("seller-bank-name");
+  const sellerBankAccountNameInput = document.getElementById("seller-bank-account-name");
+  const sellerBankAccountNumberInput = document.getElementById("seller-bank-account-number");
   const sellerBusinessTypeInput = document.getElementById("seller-business-type");
+  const sellerStoreAddressInput = document.getElementById("seller-store-address");
   const sellerPaymentReferenceInput = document.getElementById("seller-payment-reference");
   const sellerPlanSelect = document.getElementById("seller-plan-select");
   const sellerPaymentPartnerSelect = document.getElementById("seller-payment-partner-select");
@@ -26,6 +31,12 @@
   let accountRequestBusy = false;
   let sellerRequestBusy = false;
   let sellerCatalog = { plans: [], paymentPartners: [] };
+  let sellerEntitlement = {
+    firstCompanyFree: true,
+    requiresPaidPlan: false,
+    canSubmitFreeFirst: true,
+    existingCompanyCount: 0,
+  };
   const rememberedIdentityKey = "switch-unified-account-identity";
 
   function setFeedback(target, message, type) {
@@ -102,7 +113,10 @@
     for (const plan of plans) {
       const option = document.createElement("option");
       option.value = String(plan.id || "").trim();
-      option.textContent = `${plan.name} - ${plan.currencyCode || "PHP"} ${plan.amount || 0}/${plan.billingCycle || "month"}`;
+      option.textContent = plan.comingSoon
+        ? `${plan.name} — Coming soon`
+        : `${plan.name} - ${plan.currencyCode || "PHP"} ${plan.amount || 0}/${plan.billingCycle || "month"}`;
+      option.disabled = Boolean(plan.comingSoon);
       sellerPlanSelect.appendChild(option);
     }
     if (!plans.length) {
@@ -136,7 +150,7 @@
 
     sellerPlanSummary.textContent = plan.name || "Seller plan";
     sellerPlanCopy.textContent =
-      `${plan.currencyCode || "PHP"} ${plan.amount || 0} ${plan.billingCycle || "monthly"} through the unified seller subscription flow.`;
+      `One free company per account. No subscription. The legitimate badge is earned from ratings, speed, and service.`;
     sellerPlanFeatures.innerHTML = "";
     for (const feature of Array.isArray(plan.features) ? plan.features : []) {
       const item = document.createElement("li");
@@ -151,7 +165,21 @@
         cache: "no-store",
       });
       sellerCatalog = payload.catalog || { plans: [], paymentPartners: [] };
+      sellerEntitlement = {
+        firstCompanyFree: payload.firstCompanyFree !== false,
+        requiresPaidPlan: Boolean(payload.requiresPaidPlan),
+        canSubmitFreeFirst: Boolean(payload.canSubmitFreeFirst),
+        existingCompanyCount: Number(payload.existingCompanyCount) || 0,
+      };
       renderSellerCatalog();
+      const firstCompany = true;
+      sellerPlanSelect?.closest(".portal-field")?.toggleAttribute("hidden", firstCompany);
+      sellerPaymentReferenceInput?.closest(".portal-field")?.toggleAttribute("hidden", firstCompany);
+      sellerPaymentPartnerSelect?.closest(".portal-field")?.toggleAttribute("hidden", firstCompany);
+      if (firstCompany && sellerPlanSummary && sellerPlanCopy) {
+        sellerPlanSummary.textContent = "Free first company";
+        sellerPlanCopy.textContent = "One free company per account. No subscription and no extra company slot.";
+      }
     } catch (error) {
       sellerCatalog = { plans: [], paymentPartners: [] };
       renderSellerCatalog();
@@ -319,16 +347,51 @@
       return;
     }
     const companyName = String(sellerCompanyNameInput?.value || "").trim();
+    const sellerKind = String(sellerKindSelect?.value || "").trim();
     const businessType = String(sellerBusinessTypeInput?.value || "").trim();
+    const storeAddress = String(sellerStoreAddressInput?.value || "").replace(/\s+/g, " ").trim();
     const paymentReference = String(sellerPaymentReferenceInput?.value || "").trim();
-    const plan = selectedPlan();
+    const payoutBank = {
+      bankName: String(sellerBankNameInput?.value || "").trim(),
+      accountName: String(sellerBankAccountNameInput?.value || "").trim(),
+      accountNumber: String(sellerBankAccountNumberInput?.value || "").replace(/\D/g, ""),
+    };
+    const firstCompany = true;
+    const plan = firstCompany
+      ? { id: "seller-free", name: "Free", billingCycle: "monthly", amount: 0, currencyCode: "PHP", free: true }
+      : selectedPlan();
     const paymentPartner = selectedPaymentPartner();
+    if (!firstCompany && plan?.comingSoon) {
+      setFeedback(sellerFeedback, "Premium is coming soon. Choose Basic or Pro.", "error");
+      return;
+    }
+    if (sellerKind !== "individual" && sellerKind !== "business") {
+      setFeedback(sellerFeedback, "Choose Individual Seller or Business / Corporate Seller.", "error");
+      return;
+    }
     if (companyName.length < 2) {
       setFeedback(sellerFeedback, "Enter a company name with at least 2 characters.", "error");
       return;
     }
+    if (payoutBank.bankName.length < 2 || payoutBank.accountName.length < 2 || payoutBank.accountNumber.length < 6) {
+      setFeedback(sellerFeedback, "Enter a complete payout bank account.", "error");
+      return;
+    }
+    if (storeAddress.length < 8) {
+      setFeedback(sellerFeedback, "Enter your store address (street, barangay, city, province).", "error");
+      return;
+    }
 
     sellerRequestBusy = true;
+    const sellerSubmitBtn = sellerForm?.querySelector('button[type="submit"]');
+    if (sellerSubmitBtn instanceof HTMLButtonElement) {
+      if (!sellerSubmitBtn.dataset.idleLabel) {
+        sellerSubmitBtn.dataset.idleLabel = String(sellerSubmitBtn.textContent || "").trim();
+      }
+      sellerSubmitBtn.disabled = true;
+      sellerSubmitBtn.setAttribute("aria-busy", "true");
+      sellerSubmitBtn.textContent = "Submitting…";
+    }
     setFeedback(sellerFeedback, "Creating seller company...", null);
 
     try {
@@ -338,11 +401,14 @@
           accountId: currentSession.account.id,
           companyName,
           businessType,
-          planName: plan?.name || "Starter Seller Plan",
+          sellerKind,
+          payoutBank,
+          storeAddress,
+          planName: plan?.name || "Free",
           billingCycle: plan?.billingCycle || "monthly",
           amount: Number(plan?.amount || 0),
           currencyCode: plan?.currencyCode || "PHP",
-          paymentGateway: paymentPartner?.name || "manual",
+          paymentGateway: firstCompany ? "free" : "paymongo",
         }),
       });
 
@@ -350,6 +416,34 @@
       const companyId = findSellerCompanyId(startSession);
       if (!companyId) {
         throw new Error("Seller onboarding was created, but no seller company was returned.");
+      }
+
+      if (firstCompany) {
+        await fetchJson("/api/account/become-seller/confirm-payment", {
+          method: "POST",
+          body: JSON.stringify({
+            accountId: currentSession.account.id,
+            companyId,
+            planName: "Free",
+            billingCycle: "monthly",
+            paymentGateway: "free",
+            amount: 0,
+            currencyCode: "PHP",
+          }),
+        });
+        setFeedback(
+          sellerFeedback,
+          "Your first company was submitted for Super Admin review. No payment is required.",
+          "success",
+        );
+        sellerRequestBusy = false;
+        if (sellerSubmitBtn instanceof HTMLButtonElement) {
+          sellerSubmitBtn.disabled = false;
+          sellerSubmitBtn.removeAttribute("aria-busy");
+          sellerSubmitBtn.textContent = sellerSubmitBtn.dataset.idleLabel || "Start seller activation";
+        }
+        await loadSellerCatalog();
+        return;
       }
 
       setFeedback(sellerFeedback, "Preparing checkout intent...", null);
@@ -360,7 +454,7 @@
           companyId,
           planName: plan?.name || "Starter Seller Plan",
           billingCycle: plan?.billingCycle || "monthly",
-          paymentGateway: paymentPartner?.name || "manual",
+          paymentGateway: "paymongo",
           paymentReference: paymentReference || "",
           amount: Number(plan?.amount || 0),
           currencyCode: plan?.currencyCode || "PHP",
@@ -368,9 +462,10 @@
       });
       const checkoutIntent = checkoutPayload.checkoutIntent || {};
       const checkoutUrl = String(checkoutIntent.checkoutUrl || "").trim();
-      const shouldRedirectToHostedCheckout =
+      const livePaidHostedCheckout =
         /^https?:\/\//i.test(checkoutUrl) &&
         !checkoutUrl.includes("/unified_account.html");
+      const shouldRedirectToHostedCheckout = livePaidHostedCheckout;
 
       setFeedback(
         sellerFeedback,
@@ -380,43 +475,33 @@
         null,
       );
       if (shouldRedirectToHostedCheckout) {
+        if (sellerSubmitBtn instanceof HTMLButtonElement) {
+          sellerSubmitBtn.textContent = "Redirecting…";
+        }
         window.location.href = checkoutUrl;
         return;
       }
 
-      const confirmPayload = await fetchJson("/api/account/become-seller/confirm-payment", {
-        method: "POST",
-        body: JSON.stringify({
-          accountId: currentSession.account.id,
-          companyId,
-          planName: plan?.name || "Starter Seller Plan",
-          billingCycle: plan?.billingCycle || "monthly",
-          paymentGateway: paymentPartner?.name || "manual",
-          paymentReference:
-            paymentReference ||
-            checkoutIntent.paymentReference ||
-            `MANUAL-${Date.now()}`,
-          amount: Number(plan?.amount || 0),
-          currencyCode: plan?.currencyCode || "PHP",
-        }),
-      });
-
-      renderSession(confirmPayload.session || null);
-      setFeedback(
-        sellerFeedback,
-        confirmPayload.message || "Seller flow completed.",
-        "success",
+      throw new Error(
+        checkoutPayload.message
+          || "PayMongo checkout URL was not returned. Complete the ₱0 or paid checkout before Super Admin review.",
       );
-      setFeedback(feedback, "Unified account updated.", "success");
     } catch (error) {
       setFeedback(
         sellerFeedback,
         error.message || "Unable to activate seller flow.",
         "error",
       );
-    } finally {
       sellerRequestBusy = false;
+      if (sellerSubmitBtn instanceof HTMLButtonElement) {
+        sellerSubmitBtn.disabled = false;
+        sellerSubmitBtn.removeAttribute("aria-busy");
+        sellerSubmitBtn.textContent =
+          sellerSubmitBtn.dataset.idleLabel || "Start seller activation";
+      }
+      return;
     }
+    // Keep locked after success so rapid re-submit cannot double-create.
   }
 
   accountForm?.addEventListener("submit", (event) => {

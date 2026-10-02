@@ -9,6 +9,7 @@
 
 // dart:convert — Provides jsonEncode/jsonDecode for serializing/deserializing
 // saved entries to/from SharedPreferences storage.
+import 'dart:async';
 import 'dart:convert';
 
 // flutter/cupertino — Provides CupertinoSwitch for the "Set as default" toggle.
@@ -25,8 +26,10 @@ import 'package:switch_app/theme/app_snack_bar.dart';
 // per-user SharedPreferences key so each account's saved entries are isolated.
 import 'package:switch_app/utils/auth_session.dart';
 
-// google_maps_embed_preview — Native Google Maps address preview.
-import 'package:switch_app/widgets/google_maps_embed_preview.dart';
+// address_map_picker — Draggable square Google Map that fills the address.
+import 'package:switch_app/widgets/address_map_picker.dart';
+import 'package:switch_app/services/buyer_delivery_address_store.dart';
+import 'package:switch_app/services/philippines_places_service.dart';
 
 // shared_preferences — Flutter plugin for persistent key-value storage on disk.
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,6 +43,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 const BorderRadius _userDetailsFieldBorderRadius = BorderRadius.all(
   Radius.circular(8),
 );
+
+// _composeFullAddress — Full delivery line saved as `address`: the address
+// plus any region parts (barangay, city, province) it does not already name.
+String _composeFullAddress(String streetAddress, String region) {
+  final street = streetAddress.trim();
+  final regionParts = region
+      .split(',')
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty)
+      .toList(growable: false);
+  if (street.isEmpty) return regionParts.join(', ');
+  final lowerStreet = street.toLowerCase();
+  final missing = regionParts
+      .where((part) => !lowerStreet.contains(part.toLowerCase()))
+      .toList(growable: false);
+  return missing.isEmpty ? street : '$street, ${missing.join(', ')}';
+}
 
 // ============================================================================
 // UserDetailsResult
@@ -636,6 +656,10 @@ class _SavedUserDetailsEntry {
     required this.address,
     this.addressDetails = '',
     this.isDefault = false,
+    this.streetAddress = '',
+    this.region = '',
+    this.lat,
+    this.lng,
   });
 
   // ------------------------------------------------------------------------
@@ -651,7 +675,16 @@ class _SavedUserDetailsEntry {
       address: json['address']?.toString() ?? '',
       addressDetails: json['addressDetails']?.toString() ?? '',
       isDefault: json['isDefault'] == true,
+      streetAddress: json['streetAddress']?.toString() ?? '',
+      region: json['region']?.toString() ?? '',
+      lat: _parseCoordinate(json['lat']),
+      lng: _parseCoordinate(json['lng']),
     );
+  }
+
+  static double? _parseCoordinate(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('${value ?? ''}'.trim());
   }
 
   // ------------------------------------------------------------------------
@@ -669,6 +702,12 @@ class _SavedUserDetailsEntry {
   final String address;
   final String addressDetails;
   final bool isDefault;
+  // streetAddress / region — Editable parts of [address] (the full line
+  // shown and sent with orders). Empty for entries saved before the map picker.
+  final String streetAddress;
+  final String region;
+  final double? lat;
+  final double? lng;
 
   // ------------------------------------------------------------------------
   // isComplete — Returns true only when name, contactNumber, and address all
@@ -708,6 +747,10 @@ class _SavedUserDetailsEntry {
       'address': address,
       'addressDetails': addressDetails,
       'isDefault': isDefault,
+      if (streetAddress.trim().isNotEmpty) 'streetAddress': streetAddress,
+      if (region.trim().isNotEmpty) 'region': region,
+      if (lat != null) 'lat': lat,
+      if (lng != null) 'lng': lng,
     };
   }
 
@@ -731,6 +774,10 @@ class _SavedUserDetailsEntry {
       address: address ?? this.address,
       addressDetails: addressDetails ?? this.addressDetails,
       isDefault: isDefault ?? this.isDefault,
+      streetAddress: streetAddress,
+      region: region,
+      lat: lat,
+      lng: lng,
     );
   }
 }
@@ -771,12 +818,27 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
   late final TextEditingController _nameController;
   late final TextEditingController _contactController;
   late final TextEditingController _addressController;
+  late final TextEditingController _regionController;
+  // _addressDetailsController — Optional landmark.
   late final TextEditingController _addressDetailsController;
 
   // ------------------------------------------------------------------------
   // _setsAsDefault — Controls the "Set as default" CupertinoSwitch.
   // ------------------------------------------------------------------------
   late bool _setsAsDefault;
+
+  // ------------------------------------------------------------------------
+  // Map state — the square map sets the address/region as it is dragged;
+  // typing an address moves the map without overwriting the text.
+  // ------------------------------------------------------------------------
+  final GlobalKey<AddressMapPickerState> _mapKey =
+      GlobalKey<AddressMapPickerState>();
+  Timer? _addressGeocodeDebounce;
+  int _addressGeocodeRequestId = 0;
+  double? _lat;
+  double? _lng;
+  bool _resolveMapOnStart = false;
+  bool _mapEditing = false;
 
   // ------------------------------------------------------------------------
   // Validation getters — return true when each field has a non-empty value.
@@ -812,21 +874,126 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
     _contactController = TextEditingController(
       text: initialEntry?.contactNumber ?? '',
     );
-    _addressController = TextEditingController(text: initialEntry?.address ?? '');
+    final initialStreet = initialEntry == null
+        ? ''
+        : (initialEntry.streetAddress.trim().isNotEmpty
+              ? initialEntry.streetAddress
+              : initialEntry.address);
+    _addressController = TextEditingController(text: initialStreet);
+    _regionController = TextEditingController(text: initialEntry?.region ?? '');
     _addressDetailsController = TextEditingController(
       text: initialEntry?.addressDetails ?? '',
     );
     _setsAsDefault = initialEntry?.isDefault ?? false;
+    _lat = initialEntry?.lat;
+    _lng = initialEntry?.lng;
+
+    if (initialEntry == null) {
+      unawaited(_prefillFromAccount());
+      // Start the map on the buyer's current delivery pin and fill the
+      // address from it.
+      final selected = BuyerDeliveryAddressStore.instance.selectedAddress;
+      if (selected?.lat != null && selected?.lng != null) {
+        _lat = selected!.lat;
+        _lng = selected.lng;
+        _resolveMapOnStart = true;
+      }
+    } else if ((_lat == null || _lng == null) &&
+        initialStreet.trim().isNotEmpty) {
+      _scheduleAddressGeocode(immediate: true);
+    }
   }
 
   @override
   void dispose() {
+    _addressGeocodeDebounce?.cancel();
     // Clean up controllers to prevent memory leaks.
     _nameController.dispose();
     _contactController.dispose();
     _addressController.dispose();
+    _regionController.dispose();
     _addressDetailsController.dispose();
     super.dispose();
+  }
+
+  // ------------------------------------------------------------------------
+  // _prefillFromAccount — New entries start with the signed-in account's name
+  // (Google / Facebook / email sign-up) and the contact number saved in
+  // Account Settings. Anything the user already typed is kept.
+  // ------------------------------------------------------------------------
+  Future<void> _prefillFromAccount() async {
+    final preferences = await SharedPreferences.getInstance();
+    var accountName = (await AuthSession.getAccountName())?.trim() ?? '';
+    if (accountName.isEmpty) {
+      accountName = [
+        preferences.getString('profile_first_name')?.trim() ?? '',
+        preferences.getString('profile_last_name')?.trim() ?? '',
+      ].where((part) => part.isNotEmpty).join(' ');
+    }
+    final phone = preferences.getString('profile_phone')?.trim() ?? '';
+    if (!mounted) return;
+    setState(() {
+      if (_nameController.text.trim().isEmpty && accountName.isNotEmpty) {
+        _nameController.text = accountName;
+      }
+      if (_contactController.text.trim().isEmpty && phone.isNotEmpty) {
+        _contactController.text = phone;
+      }
+    });
+  }
+
+  String _regionFromPlace(PhilippinesPlace place) {
+    return <String>[
+      place.resolvedBarangay.trim(),
+      place.city.trim(),
+      place.province.trim(),
+    ].where((part) => part.isNotEmpty).join(', ');
+  }
+
+  void _handleMapPlaceChanged(PhilippinesPlace? place, double lat, double lng) {
+    setState(() {
+      _lat = lat;
+      _lng = lng;
+      if (place == null) return;
+      final line = place.description.isNotEmpty
+          ? place.description
+          : place.label;
+      if (line.isNotEmpty) _addressController.text = line;
+      final region = _regionFromPlace(place);
+      if (region.isNotEmpty) _regionController.text = region;
+    });
+  }
+
+  void _scheduleAddressGeocode({bool immediate = false}) {
+    _addressGeocodeDebounce?.cancel();
+    _addressGeocodeDebounce = Timer(
+      immediate ? Duration.zero : const Duration(milliseconds: 800),
+      () => unawaited(_geocodeTypedAddress()),
+    );
+  }
+
+  Future<void> _geocodeTypedAddress() async {
+    final query = _composeFullAddress(
+      _addressController.text,
+      _regionController.text,
+    );
+    if (query.trim().length < 3) return;
+    final requestId = ++_addressGeocodeRequestId;
+    final place = await geocodePhilippinesAddress(query);
+    if (!mounted || requestId != _addressGeocodeRequestId) return;
+    if (place == null || !place.hasCoordinates) return;
+    setState(() {
+      _lat = place.lat;
+      _lng = place.lng;
+      if (_regionController.text.trim().isEmpty) {
+        _regionController.text = _regionFromPlace(place);
+      }
+    });
+    await _mapKey.currentState?.moveTo(
+      place.lat!,
+      place.lng!,
+      label: _addressController.text,
+    );
   }
 
   // ------------------------------------------------------------------------
@@ -845,6 +1012,11 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
   // Reuses the existing entry id if editing; generates a new id if adding.
   // ------------------------------------------------------------------------
   void _handleSave() {
+    if (_mapEditing) {
+      _showMessage('Tap Save on the map first to keep the new location.');
+      return;
+    }
+
     if (!_hasName) {
       _showMessage('Please enter the client name.');
       return;
@@ -865,14 +1037,20 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
       return;
     }
 
+    final streetAddress = _addressController.text.trim();
+    final region = _regionController.text.trim();
     final entry = _SavedUserDetailsEntry(
       id: widget.initialEntry?.id ??
           DateTime.now().microsecondsSinceEpoch.toString(),
       name: _nameController.text.trim(),
       contactNumber: _contactController.text.trim(),
-      address: _addressController.text.trim(),
+      address: _composeFullAddress(streetAddress, region),
       addressDetails: _addressDetailsController.text.trim(),
       isDefault: _setsAsDefault,
+      streetAddress: streetAddress,
+      region: region,
+      lat: _lat,
+      lng: _lng,
     );
 
     Navigator.of(context).pop(
@@ -941,6 +1119,8 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
         onPressed: _handleSave,
       ),
       body: ListView(
+        // Keep the form still while the map is being dragged.
+        physics: _mapEditing ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         children: [
           TextField(
@@ -968,12 +1148,10 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
           const SizedBox(height: 12),
           TextField(
             controller: _addressController,
-            maxLines: 1,
+            maxLines: 2,
             minLines: 1,
             textInputAction: TextInputAction.next,
-            onChanged: (_) {
-              setState(() {});
-            },
+            onChanged: (_) => _scheduleAddressGeocode(),
             decoration: _withUserDetailsFieldRadius(
               context,
               const InputDecoration(
@@ -982,14 +1160,37 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _regionController,
+            maxLines: 2,
+            minLines: 1,
+            textInputAction: TextInputAction.next,
+            onChanged: (_) => _scheduleAddressGeocode(),
+            decoration: _withUserDetailsFieldRadius(
+              context,
+              const InputDecoration(
+                labelText: 'Region (Barangay, City, Province)',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
           AspectRatio(
             aspectRatio: 1,
-            child: GoogleMapsEmbedPreview(
-              address: _addressController.text.trim(),
+            child: AddressMapPicker(
+              key: _mapKey,
+              initialLat: _lat,
+              initialLng: _lng,
+              initialLabel: _addressController.text,
+              resolveOnStart: _resolveMapOnStart,
               borderRadius: 8,
-              height: null,
               primaryColor: theme.colorScheme.primary,
+              onPlaceChanged: _handleMapPlaceChanged,
+              onEditingChanged: (editing) {
+                setState(() => _mapEditing = editing);
+              },
+              onError: _showMessage,
             ),
           ),
           const SizedBox(height: 12),
@@ -999,7 +1200,7 @@ class _UserDetailsEditorPageState extends State<_UserDetailsEditorPage> {
             decoration: _withUserDetailsFieldRadius(
               context,
               const InputDecoration(
-                labelText: 'Address Code',
+                labelText: 'Landmark (optional)',
               ),
             ),
           ),

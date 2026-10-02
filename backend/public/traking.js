@@ -1175,6 +1175,7 @@
   }
 
   function renderDetails(group) {
+    window.SellerSwitchRider?.render(group || null);
     if (!group) {
       renderStatusPill(detailStatusEl, "toPrepare");
       setText(detailOrderEl, "-");

@@ -4,6 +4,25 @@ const path = require("path");
 const crypto = require("crypto");
 const fs = require("fs");
 const fsPromises = require("fs/promises");
+const {
+  normalizePlatformSettings,
+  normalizePlatformSettingsPayload,
+  getEnforcementMap,
+  invalidatePlatformSettingsCache,
+  getPlatformSettingDefaults,
+  DANGEROUS_PLATFORM_SETTINGS,
+} = require("./platformSettings");
+const {
+  isTestModeEnabled,
+  buildTestModeApiBlockedPayload,
+  restorePurgedTestModeCompanies,
+  getRequestClientIp,
+  buildTestModeAccessLock,
+  normalizeTestModeAccess,
+  getTestModeAccess,
+  isTestModeExplorerAllowed,
+} = require("./testModeService");
+const { query, withTransaction } = require("../db/pool");
 
 /**
  * Restores Super Admin APIs wiped when server.js was rolled back to the Aug 15 backup:
@@ -14,6 +33,7 @@ function createRestoreMissingSaApis(deps) {
   const {
     DATA_DIR,
     UPLOADS_DIR,
+    objectStorage = null,
     ensureStoragePaths,
     writeJsonFileAtomically,
     enqueueSerializedMutation,
@@ -26,6 +46,12 @@ function createRestoreMissingSaApis(deps) {
     writeWorkspaceSettings,
     setCorsHeaders,
     biometricFirmwareCompile = null,
+    persistSuperAdminNotification = null,
+    createPersistentLinkedNotification = null,
+    notifySellerAdminInboxByAdminId = null,
+    findCompanyById = null,
+    logSuperAdminSystemActivity = null,
+    isSuperAdminAuthorized = null,
   } = deps;
 
   const CHAT_WALLPAPERS_FILE = path.join(DATA_DIR, "chat_wallpapers.json");
@@ -42,6 +68,30 @@ function createRestoreMissingSaApis(deps) {
     anthropic: "Claude (Anthropic)",
     gemini: "Google Gemini",
   };
+
+  function getServerAiProviderCredentials() {
+    const firstConfigured = (...values) => values
+      .map((value) => String(value || "").trim())
+      .find(Boolean) || "";
+    return new Map([
+      ["openai", firstConfigured(process.env.CHAT_AI_API_KEY, process.env.OPENAI_API_KEY)],
+      ["anthropic", firstConfigured(process.env.ANTHROPIC_API_KEY, process.env.CLAUDE_API_KEY)],
+      [
+        "gemini",
+        firstConfigured(
+          process.env.GEMINI_API_KEY,
+          process.env.GOOGLE_AI_API_KEY,
+          process.env.GOOGLE_API_KEY,
+        ),
+      ],
+    ].filter(([, apiKey]) => apiKey));
+  }
+
+  function resolveAiIntegrationCredential(record, serverCredentials = getServerAiProviderCredentials()) {
+    const source = record && typeof record === "object" ? record : {};
+    const provider = String(source.provider || "").trim().toLowerCase();
+    return String(serverCredentials.get(provider) || source.apiKey || "").trim();
+  }
 
   // Fallback catalog when live provider listing is unavailable.
   // Prefer live /v1/models results so the picker matches the connected API key.
@@ -221,7 +271,12 @@ function createRestoreMissingSaApis(deps) {
     if (!normalizedSrc) {
       return;
     }
-    const filePath = path.join(UPLOADS_DIR, path.posix.basename(normalizedSrc));
+    const fileName = path.posix.basename(normalizedSrc);
+    if (objectStorage) {
+      await objectStorage.deleteUpload(fileName).catch(() => {});
+      return;
+    }
+    const filePath = path.join(UPLOADS_DIR, fileName);
     if (!filePath.startsWith(UPLOADS_DIR)) {
       return;
     }
@@ -604,25 +659,59 @@ function createRestoreMissingSaApis(deps) {
     }
   }
 
-  function normalizePlatformSettingsPayload(value) {
-    if (!value || typeof value !== "object") {
-      return {};
-    }
-    const next = {};
-    for (const [key, raw] of Object.entries(value)) {
-      if (typeof raw === "boolean") {
-        next[key] = raw;
-      }
-    }
-    return next;
+  function normalizePlatformSettingsPayloadLocal(value) {
+    return normalizePlatformSettingsPayload(value);
   }
 
   async function handlePlatformSettingsApi(request, response) {
     if (request.method === "GET") {
       try {
-        const settings = await readWorkspaceSettings();
+        let settings = await readWorkspaceSettings();
+        let normalized = normalizePlatformSettings(settings?.platformSettings);
+        let testModeAccess = normalizeTestModeAccess(settings?.testModeAccess);
+
+        // Auto-heal: Test Mode was on but IP lock was stripped by an older settings write.
+        // When Super Admin opens Settings, lock to their current IP so they can create again.
+        const saAuthorized =
+          typeof isSuperAdminAuthorized === "function" && isSuperAdminAuthorized(request);
+        if (
+          normalized.testMode
+          && !testModeAccess.allowedIps.length
+          && saAuthorized
+        ) {
+          const healed = buildTestModeAccessLock(getRequestClientIp(request), {
+            lockedBy: "super-admin",
+          });
+          if (healed.allowedIps.length) {
+            settings = await writeWorkspaceSettings({
+              ...settings,
+              testModeAccess: healed,
+              updatedAt: new Date().toISOString(),
+            });
+            testModeAccess = normalizeTestModeAccess(settings.testModeAccess);
+            console.log(
+              `[test-mode] Healed empty IP lock → ${testModeAccess.allowedIps.join(", ")}`,
+            );
+          }
+        }
+
+        const explorerAllowed = normalized.testMode
+          ? await isTestModeExplorerAllowed(request)
+          : true;
         sendJson(response, 200, {
-          settings: normalizePlatformSettingsPayload(settings?.platformSettings),
+          settings: normalized,
+          enforcement: getEnforcementMap(),
+          defaults: getPlatformSettingDefaults(),
+          dangerous: Object.keys(DANGEROUS_PLATFORM_SETTINGS || {}),
+          testModeExplorerAllowed: explorerAllowed,
+          testModeAccess: normalized.testMode
+            ? {
+                locked: Boolean(testModeAccess.allowedIps.length),
+                lockedAt: testModeAccess.lockedAt,
+                lockedBy: testModeAccess.lockedBy,
+                ...(saAuthorized ? { allowedIps: testModeAccess.allowedIps } : {}),
+              }
+            : null,
         });
       } catch (error) {
         sendJson(response, 500, {
@@ -643,31 +732,229 @@ function createRestoreMissingSaApis(deps) {
 
     try {
       const payload = await parseRequestBody(request);
-      const incoming = normalizePlatformSettingsPayload(
+      const incoming = normalizePlatformSettingsPayloadLocal(
         payload?.settings && typeof payload.settings === "object"
           ? payload.settings
           : payload,
       );
+      let purgeSummary = null;
+      let restoreSummary = null;
       const saved = await enqueueSerializedMutation("platform-settings", async () => {
         const current = await readWorkspaceSettings();
-        return writeWorkspaceSettings({
-          ...current,
-          platformSettings: {
-            ...(current.platformSettings && typeof current.platformSettings === "object"
-              ? current.platformSettings
-              : {}),
-            ...incoming,
-          },
-          updatedAt: new Date().toISOString(),
+        const previousPlatformSettings = normalizePlatformSettings(
+          current.platformSettings && typeof current.platformSettings === "object"
+            ? current.platformSettings
+            : {},
+        );
+        const mergedPlatformSettings = normalizePlatformSettings({
+          ...previousPlatformSettings,
+          ...incoming,
         });
+        const turningTestModeOff =
+          previousPlatformSettings.testMode === true && mergedPlatformSettings.testMode === false;
+        const turningTestModeOn =
+          previousPlatformSettings.testMode !== true && mergedPlatformSettings.testMode === true;
+        // Test Mode off only hides sandbox companies from the live world.
+        // Never deactivate/purge them — they must return intact when Test Mode is on again.
+        if (turningTestModeOn) {
+          restoreSummary = await restorePurgedTestModeCompanies({ query, withTransaction });
+        }
+        let nextTestModeAccess = normalizeTestModeAccess(current.testModeAccess);
+        if (turningTestModeOn) {
+          // Lock account creation to this Super Admin's IP for the sandbox session.
+          nextTestModeAccess = buildTestModeAccessLock(getRequestClientIp(request), {
+            lockedBy: "super-admin",
+          });
+        } else if (turningTestModeOff) {
+          nextTestModeAccess = { allowedIps: [], lockedAt: null, lockedBy: null };
+        } else if (mergedPlatformSettings.testMode === true) {
+          // Keep lock; refresh IP if SA is still on Test Mode and lock was empty.
+          if (!nextTestModeAccess.allowedIps.length) {
+            nextTestModeAccess = buildTestModeAccessLock(getRequestClientIp(request), {
+              lockedBy: "super-admin",
+            });
+          }
+        }
+        const next = await writeWorkspaceSettings({
+          ...current,
+          platformSettings: mergedPlatformSettings,
+          testModeAccess: nextTestModeAccess,
+          updatedAt: new Date().toISOString(),
+          ...(restoreSummary
+            ? {
+                lastTestModeRestore: {
+                  restoredAt: restoreSummary.restoredAt,
+                  restoredCompanies: restoreSummary.restoredCompanies,
+                },
+              }
+            : {}),
+        });
+        invalidatePlatformSettingsCache(mergedPlatformSettings);
+        next.__testModeTransition = {
+          turnedOn: turningTestModeOn,
+          turnedOff: turningTestModeOff,
+          purgeSummary,
+          restoreSummary,
+          testModeAccess: nextTestModeAccess,
+        };
+        return next;
       });
+      const transition = saved?.__testModeTransition || null;
+      if (transition && typeof persistSuperAdminNotification === "function") {
+        const now = new Date().toISOString();
+        if (transition.turnedOn && typeof createPersistentLinkedNotification === "function") {
+          const lockedIp = transition.testModeAccess?.allowedIps?.[0] || "unknown";
+          await persistSuperAdminNotification(
+            createPersistentLinkedNotification({
+              type: "platform-test-mode-on",
+              audience: "super_admin",
+              title: "Test Mode enabled",
+              reason: "Super Admin turned on Test Mode",
+              message:
+                `Test Mode sandbox is on. Other Wi‑Fi/IPs see maintenance only. Your IP (${lockedIp}) can explore and create Test data.`,
+              createdBy: "super-admin",
+              targetUrl: "/super_admin.html#settings",
+              createdAt: now,
+            }),
+          );
+        }
+        if (transition.turnedOff && typeof createPersistentLinkedNotification === "function") {
+          await persistSuperAdminNotification(
+            createPersistentLinkedNotification({
+              type: "platform-test-mode-off",
+              audience: "super_admin",
+              title: "Test Mode disabled",
+              reason: "Super Admin turned off Test Mode",
+              message:
+                "Live APIs and restrictions are restored. Test Mode companies are hidden and will return when Test Mode is turned back on.",
+              createdBy: "super-admin",
+              targetUrl: "/super_admin.html#settings",
+              createdAt: now,
+            }),
+          );
+        }
+      }
+      if (typeof logSuperAdminSystemActivity === "function") {
+        const changedKeys = Object.keys(incoming || {});
+        await logSuperAdminSystemActivity(
+          {
+            type: transition?.turnedOn || transition?.turnedOff
+              ? "platform-test-mode"
+              : "platform-settings",
+            action: transition?.turnedOn
+              ? "test-mode-on"
+              : transition?.turnedOff
+                ? "test-mode-off"
+                : "updated",
+            category: "settings",
+            title: transition?.turnedOn
+              ? "Test Mode enabled"
+              : transition?.turnedOff
+                ? "Test Mode disabled"
+                : "Platform settings updated",
+            description: transition?.turnedOn
+              ? "Super Admin turned on Test Mode."
+              : transition?.turnedOff
+                ? "Super Admin turned off Test Mode."
+                : `Super Admin updated platform settings${changedKeys.length ? ` (${changedKeys.slice(0, 6).join(", ")}${changedKeys.length > 6 ? "…" : ""})` : ""}.`,
+            targetUrl: "/super_admin.html#settings",
+          },
+          request,
+        );
+      }
       sendJson(response, 200, {
-        settings: normalizePlatformSettingsPayload(saved.platformSettings),
-        message: "Platform settings saved.",
+        settings: normalizePlatformSettings(saved.platformSettings),
+        enforcement: getEnforcementMap(),
+        message: transition?.turnedOff
+          ? "Platform settings saved. Test Mode companies are hidden until Test Mode is turned back on."
+          : transition?.turnedOn && restoreSummary?.restoredCompanies
+            ? `Platform settings saved. Restored ${restoreSummary.restoredCompanies} Test Mode compan${
+                restoreSummary.restoredCompanies === 1 ? "y" : "ies"
+              }.`
+            : "Platform settings saved.",
+        testModeAccess: normalizePlatformSettings(saved.platformSettings).testMode
+          ? normalizeTestModeAccess(saved.testModeAccess || transition?.testModeAccess)
+          : null,
       });
     } catch (error) {
       sendJson(response, 400, {
         message: error instanceof Error ? error.message : "Unable to save platform settings.",
+      });
+    }
+  }
+
+  async function handlePlatformSettingsExportApi(request, response) {
+    if (request.method !== "GET") {
+      sendJson(response, 405, { message: "Method not allowed." });
+      return;
+    }
+    if (!requireSuperAdmin(request, response)) {
+      return;
+    }
+    try {
+      const settings = await readWorkspaceSettings();
+      const normalized = normalizePlatformSettings(settings?.platformSettings);
+      sendJson(response, 200, {
+        exportedAt: new Date().toISOString(),
+        version: 1,
+        settings: normalized,
+        enforcement: getEnforcementMap(),
+      });
+    } catch (error) {
+      sendJson(response, 500, {
+        message: error instanceof Error ? error.message : "Unable to export platform settings.",
+      });
+    }
+  }
+
+  async function handlePlatformSettingsImportApi(request, response) {
+    if (request.method !== "POST" && request.method !== "PUT") {
+      sendJson(response, 405, { message: "Method not allowed." });
+      return;
+    }
+    if (!requireSuperAdmin(request, response)) {
+      return;
+    }
+    try {
+      const payload = await parseRequestBody(request);
+      const incoming = normalizePlatformSettingsPayloadLocal(
+        payload?.settings && typeof payload.settings === "object"
+          ? payload.settings
+          : payload,
+      );
+      if (!Object.keys(incoming).length) {
+        sendJson(response, 400, { message: "No valid platform settings found in import payload." });
+        return;
+      }
+      const saved = await enqueueSerializedMutation("platform-settings", async () => {
+        const current = await readWorkspaceSettings();
+        const replace = payload?.replace === true;
+        const mergedPlatformSettings = normalizePlatformSettings(
+          replace
+            ? incoming
+            : {
+                ...(current.platformSettings && typeof current.platformSettings === "object"
+                  ? current.platformSettings
+                  : {}),
+                ...incoming,
+              },
+        );
+        const next = await writeWorkspaceSettings({
+          ...current,
+          platformSettings: mergedPlatformSettings,
+          updatedAt: new Date().toISOString(),
+        });
+        invalidatePlatformSettingsCache(mergedPlatformSettings);
+        return next;
+      });
+      sendJson(response, 200, {
+        settings: normalizePlatformSettings(saved.platformSettings),
+        enforcement: getEnforcementMap(),
+        message: "Platform settings imported.",
+      });
+    } catch (error) {
+      sendJson(response, 400, {
+        message: error instanceof Error ? error.message : "Unable to import platform settings.",
       });
     }
   }
@@ -906,7 +1193,11 @@ function createRestoreMissingSaApis(deps) {
     return { chat, image };
   }
 
-  async function resolveProviderModels(provider, apiKey, { allowCache = true } = {}) {
+  async function resolveProviderModels(
+    provider,
+    apiKey,
+    { allowCache = true, strict = false } = {},
+  ) {
     const normalizedProvider = String(provider || "").trim().toLowerCase();
     const key = String(apiKey || "").trim();
     const fallback = DEFAULT_MODELS[normalizedProvider] || { chat: [], image: [] };
@@ -934,13 +1225,25 @@ function createRestoreMissingSaApis(deps) {
       } else if (normalizedProvider === "gemini") {
         live = await fetchGeminiProviderModels(key);
       }
-      const models = {
-        chat: normalizeModelOptions(live.chat?.length ? live.chat : fallback.chat),
-        image: normalizeModelOptions(live.image?.length ? live.image : fallback.image),
-      };
+      const hasLiveModels = Boolean(live.chat?.length || live.image?.length);
+      if (!hasLiveModels && strict) {
+        throw new Error("The provider returned no compatible chat or image models.");
+      }
+      const models = hasLiveModels
+        ? {
+          chat: normalizeModelOptions(live.chat),
+          image: normalizeModelOptions(live.image),
+        }
+        : {
+          chat: normalizeModelOptions(fallback.chat),
+          image: normalizeModelOptions(fallback.image),
+        };
       providerModelCache.set(cacheKey, { at: Date.now(), models });
       return models;
-    } catch (_) {
+    } catch (error) {
+      if (strict) {
+        throw error;
+      }
       return {
         chat: normalizeModelOptions(fallback.chat),
         image: normalizeModelOptions(fallback.image),
@@ -989,6 +1292,14 @@ function createRestoreMissingSaApis(deps) {
     };
   }
 
+  const MAX_LIVE_AI_INTEGRATIONS = 2;
+  const AI_CAPABILITY_KEYS = ["chatbot", "autoReply", "imageEnhancement"];
+  const AI_CAPABILITY_LABELS = {
+    chatbot: "Chatbot & Manual AI Reply",
+    autoReply: "Automatic Customer Replies",
+    imageEnhancement: "Seller Photo Enhancement",
+  };
+
   function buildClaimedByOthers(integrations, currentId) {
     const claimed = {
       chatbot: null,
@@ -1011,6 +1322,36 @@ function createRestoreMissingSaApis(deps) {
       }
     }
     return claimed;
+  }
+
+  function countLaunchedAiIntegrations(integrations) {
+    return (Array.isArray(integrations) ? integrations : []).filter((item) => (
+      Boolean(item?.launched) && Boolean(String(item?.apiKey || "").trim())
+    )).length;
+  }
+
+  function assertAiFeatureExclusivity(integrations, targetId, capabilities) {
+    const claimed = buildClaimedByOthers(
+      (Array.isArray(integrations) ? integrations : []).map((item) => ({
+        id: String(item?.id || "").trim(),
+        provider: String(item?.provider || "").trim().toLowerCase(),
+        launched: Boolean(item?.launched),
+        capabilities: item?.capabilities || {},
+      })),
+      String(targetId || "").trim(),
+    );
+    for (const key of AI_CAPABILITY_KEYS) {
+      if (!isStoredCapabilityEnabled(capabilities?.[key])) {
+        continue;
+      }
+      const claim = claimed[key];
+      if (claim) {
+        throw createHttpError(
+          `${AI_CAPABILITY_LABELS[key]} is already live on ${claim.providerLabel || "another AI"}. Each feature can belong to only one AI.`,
+          409,
+        );
+      }
+    }
   }
 
   function toPublicIntegration(record, allRecords = []) {
@@ -1044,7 +1385,6 @@ function createRestoreMissingSaApis(deps) {
       launched,
       provider,
       providerLabel: PROVIDER_LABELS[provider] || String(source.providerLabel || "").trim(),
-      apiKeyMasked: maskApiKey(apiKey),
       chatModel: String(source.chatModel || "").trim(),
       imageModel: String(source.imageModel || "").trim(),
       availableModels: {
@@ -1079,6 +1419,7 @@ function createRestoreMissingSaApis(deps) {
       ),
       updatedAt: String(source.updatedAt || "").trim(),
       verifiedAt: String(source.verifiedAt || "").trim(),
+      modelsSyncedAt: String(source.modelsSyncedAt || "").trim(),
       launchedAt: String(source.launchedAt || "").trim(),
     };
   }
@@ -1636,33 +1977,8 @@ function createRestoreMissingSaApis(deps) {
     }
   }
 
-  async function handleAiIntegrationApiKeyReveal(request, response, integrationId) {
-    if (!requireSuperAdmin(request, response)) {
-      return;
-    }
-    if (request.method !== "GET") {
-      sendJson(response, 405, { message: "Method not allowed." });
-      return;
-    }
-    try {
-      const id = String(integrationId || "").trim();
-      const integrations = await readAiIntegrations();
-      const match = integrations.find((item) => String(item?.id || "").trim() === id);
-      if (!match) {
-        sendJson(response, 404, { message: "AI integration not found." });
-        return;
-      }
-      const apiKey = String(match.apiKey || "").trim();
-      if (!apiKey) {
-        sendJson(response, 404, { message: "No API key is configured." });
-        return;
-      }
-      sendJson(response, 200, { apiKey });
-    } catch (error) {
-      sendJson(response, 500, {
-        message: error instanceof Error ? error.message : "Unable to reveal the API key.",
-      });
-    }
+  async function rejectIfTestModeBlocksApis(_response, _actionLabel) {
+    return false;
   }
 
   async function readAiIntegrations() {
@@ -1711,6 +2027,9 @@ function createRestoreMissingSaApis(deps) {
       sendJson(response, 405, { message: "Method not allowed." });
       return;
     }
+    if (await rejectIfTestModeBlocksApis(response, "AI API keys")) {
+      return;
+    }
     try {
       const payload = await parseRequestBody(request);
       const apiKey = String(payload?.apiKey || "").trim();
@@ -1748,6 +2067,155 @@ function createRestoreMissingSaApis(deps) {
     }
   }
 
+  async function handleAiIntegrationSyncModelsApi(request, response) {
+    response.setHeader("Cache-Control", "no-store, max-age=0");
+    if (!requireSuperAdmin(request, response)) {
+      return;
+    }
+    if (request.method !== "POST") {
+      sendJson(response, 405, { message: "Method not allowed." });
+      return;
+    }
+
+    try {
+      const result = await enqueueSerializedMutation("ai-integration", async () => {
+        const serverCredentials = getServerAiProviderCredentials();
+        const current = await readAiIntegrations();
+        const candidates = current.map((item) => ({ ...item }));
+
+        for (const [provider] of serverCredentials) {
+          const alreadyRegistered = candidates.some(
+            (item) => String(item?.provider || "").trim().toLowerCase() === provider,
+          );
+          if (alreadyRegistered) {
+            continue;
+          }
+          candidates.push({
+            id: `ai_${crypto.randomBytes(6).toString("hex")}`,
+            schemaVersion: 3,
+            managed: true,
+            provider,
+            configured: true,
+            credentialSource: "environment",
+            chatModel: "",
+            imageModel: "",
+            availableChatModels: [],
+            availableImageModels: [],
+            capabilities: { chatbot: false, autoReply: false, imageEnhancement: false },
+            launched: false,
+            launchedAt: "",
+          });
+        }
+
+        if (!candidates.length) {
+          throw createHttpError(
+            "No server AI credentials are configured. Add OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY, then sync again.",
+            400,
+          );
+        }
+
+        const syncResults = await Promise.all(candidates.map(async (item) => {
+          const storedKey = String(item?.apiKey || "").trim();
+          const provider = String(item?.provider || "").trim().toLowerCase()
+            || (storedKey ? detectProviderFromApiKey(storedKey) : "");
+          const apiKey = String(serverCredentials.get(provider) || storedKey || "").trim();
+          if (!provider || !apiKey) {
+            return { record: item, synced: false, skipped: true, modelCount: 0 };
+          }
+          try {
+            const models = await resolveProviderModels(provider, apiKey, {
+              allowCache: false,
+              strict: true,
+            });
+            const syncedAt = new Date().toISOString();
+            return {
+              synced: true,
+              skipped: false,
+              modelCount: models.chat.length + models.image.length,
+              provider,
+              record: {
+                ...item,
+                schemaVersion: 3,
+                managed: true,
+                provider,
+                configured: true,
+                credentialSource: serverCredentials.has(provider)
+                  ? "environment"
+                  : String(item?.credentialSource || "stored"),
+                chatModel: pickPreferredModel(item.chatModel, models.chat, models.chat[0]?.id),
+                imageModel: pickPreferredModel(item.imageModel, models.image, models.image[0]?.id),
+                availableChatModels: models.chat,
+                availableImageModels: models.image,
+                capabilities: item?.capabilities || {
+                  chatbot: false,
+                  autoReply: false,
+                  imageEnhancement: false,
+                },
+                verifiedAt: syncedAt,
+                modelsSyncedAt: syncedAt,
+                updatedAt: syncedAt,
+              },
+            };
+          } catch (error) {
+            return {
+              record: item,
+              synced: false,
+              skipped: false,
+              modelCount: 0,
+              provider,
+              error: error instanceof Error ? error.message : "Provider model sync failed.",
+            };
+          }
+        }));
+
+        const synced = syncResults.filter((item) => item.synced);
+        const failures = syncResults.filter((item) => item.error);
+        if (!synced.length) {
+          if (failures.length) {
+            const failedProviders = failures
+              .map((item) => PROVIDER_LABELS[item.provider] || item.provider || "AI provider")
+              .join(", ");
+            throw createHttpError(`Unable to sync models from ${failedProviders}. Check the server credentials and try again.`, 502);
+          }
+          throw createHttpError(
+            "No usable AI provider credentials were found on the server.",
+            400,
+          );
+        }
+
+        const next = syncResults.map((item) => item.record);
+        await writeAiIntegrations(next);
+        return {
+          list: next,
+          syncedProviders: synced.map((item) => item.provider),
+          modelCount: synced.reduce((total, item) => total + item.modelCount, 0),
+          failedProviders: failures.map(
+            (item) => PROVIDER_LABELS[item.provider] || item.provider || "AI provider",
+          ),
+        };
+      });
+
+      const body = buildAiResponse(result.list);
+      const providerCount = result.syncedProviders.length;
+      const partialFailureCopy = result.failedProviders.length
+        ? ` ${result.failedProviders.join(", ")} could not be synced.`
+        : "";
+      sendJson(response, 200, {
+        ...body,
+        syncedProviders: result.syncedProviders,
+        modelCount: result.modelCount,
+        message: `Synced ${providerCount} AI provider${providerCount === 1 ? "" : "s"} and refreshed ${result.modelCount} model${result.modelCount === 1 ? "" : "s"}.${partialFailureCopy}`,
+      });
+    } catch (error) {
+      const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400
+        ? error.statusCode
+        : 500;
+      sendJson(response, statusCode, {
+        message: error instanceof Error ? error.message : "Unable to sync AI provider models.",
+      });
+    }
+  }
+
   async function handleAiIntegrationLaunchApi(request, response) {
     response.setHeader("Cache-Control", "no-store, max-age=0");
     if (!requireSuperAdmin(request, response)) {
@@ -1769,8 +2237,11 @@ function createRestoreMissingSaApis(deps) {
         }
         const target = current[index];
         if (launched) {
+          if (!resolveAiIntegrationCredential(target)) {
+            throw createHttpError("Sync provider models before launching this integration.", 400);
+          }
           const caps = target?.capabilities || {};
-          const hasEnabledFeature = ["chatbot", "autoReply", "imageEnhancement"]
+          const hasEnabledFeature = AI_CAPABILITY_KEYS
             .some((key) => isStoredCapabilityEnabled(caps[key]));
           if (!hasEnabledFeature) {
             throw createHttpError(
@@ -1778,15 +2249,18 @@ function createRestoreMissingSaApis(deps) {
               400,
             );
           }
+          const alreadyLive = Boolean(target?.launched);
+          if (!alreadyLive && countLaunchedAiIntegrations(current) >= MAX_LIVE_AI_INTEGRATIONS) {
+            throw createHttpError(
+              "Only two AI integrations can stay live at once. Stop one before launching another.",
+              409,
+            );
+          }
+          assertAiFeatureExclusivity(current, id, caps);
         }
         const updated = current.map((item, itemIndex) => {
           if (itemIndex !== index) {
-            return {
-              ...item,
-              // Only one shared launch profile is live at a time.
-              launched: launched ? false : item.launched,
-              updatedAt: launched ? new Date().toISOString() : item.updatedAt,
-            };
+            return item;
           }
           return {
             ...item,
@@ -1804,7 +2278,7 @@ function createRestoreMissingSaApis(deps) {
         launched: Boolean(body.integration?.launched),
         message: launched
           ? "The enabled AI services are now available."
-          : "The shared AI integration has been stopped.",
+          : "This AI integration has been stopped.",
       });
     } catch (error) {
       const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 400
@@ -1825,10 +2299,11 @@ function createRestoreMissingSaApis(deps) {
     if (request.method === "GET") {
       try {
         const integrations = await readAiIntegrations();
+        const serverCredentials = getServerAiProviderCredentials();
         const enriched = await Promise.all(
           integrations.map(async (item) => {
             const provider = String(item?.provider || "").trim().toLowerCase();
-            const key = String(item?.apiKey || "").trim();
+            const key = resolveAiIntegrationCredential(item, serverCredentials);
             if (!provider || !key) {
               return item;
             }
@@ -1862,6 +2337,9 @@ function createRestoreMissingSaApis(deps) {
       const id = String(payload?.id || "").trim();
       const apiKey = String(payload?.apiKey || "").trim();
 
+      if (apiKey && (await rejectIfTestModeBlocksApis(response, "AI API keys"))) {
+        return;
+      }
       const next = await enqueueSerializedMutation("ai-integration", async () => {
         let current = await readAiIntegrations();
 
@@ -1910,14 +2388,20 @@ function createRestoreMissingSaApis(deps) {
         const provider = apiKey
           ? detectProviderFromApiKey(apiKey)
           : String(existing.provider || "").trim().toLowerCase();
-        const resolvedKey = apiKey || String(existing.apiKey || "").trim();
+        const serverCredentials = getServerAiProviderCredentials();
+        const storedKey = String(existing.apiKey || "").trim();
+        const resolvedKey = apiKey || String(serverCredentials.get(provider) || storedKey).trim();
         const models = await resolveProviderModels(provider, resolvedKey, {
           allowCache: !apiKey,
         });
         const nextRecord = {
           ...existing,
           provider,
-          apiKey: resolvedKey,
+          apiKey: apiKey || storedKey,
+          configured: Boolean(resolvedKey),
+          credentialSource: serverCredentials.has(provider)
+            ? "environment"
+            : String(existing.credentialSource || "stored"),
           chatModel: pickPreferredModel(
             payload?.chatModel ?? existing.chatModel,
             models.chat,
@@ -1940,6 +2424,9 @@ function createRestoreMissingSaApis(deps) {
           updatedAt: new Date().toISOString(),
           verifiedAt: apiKey ? new Date().toISOString() : existing.verifiedAt,
         };
+        if (Boolean(nextRecord.launched)) {
+          assertAiFeatureExclusivity(current, nextRecord.id, nextRecord.capabilities);
+        }
         current = current.map((item, index) => (index === targetIndex ? nextRecord : item));
         await writeAiIntegrations(current);
         return { list: current, selectedId: nextRecord.id };
@@ -1985,6 +2472,16 @@ function createRestoreMissingSaApis(deps) {
       return true;
     }
 
+    if (pathname === "/api/platform-settings/export") {
+      await handlePlatformSettingsExportApi(request, response);
+      return true;
+    }
+
+    if (pathname === "/api/platform-settings/import") {
+      await handlePlatformSettingsImportApi(request, response);
+      return true;
+    }
+
     if (pathname === "/api/super-admin/biometric-settings") {
       await handleSuperAdminBiometricSettingsApi(request, response);
       return true;
@@ -2005,6 +2502,11 @@ function createRestoreMissingSaApis(deps) {
       return true;
     }
 
+    if (pathname === "/api/super-admin/ai-integration/sync-models") {
+      await handleAiIntegrationSyncModelsApi(request, response);
+      return true;
+    }
+
     if (pathname === "/api/super-admin/ai-integration/launch") {
       await handleAiIntegrationLaunchApi(request, response);
       return true;
@@ -2020,19 +2522,23 @@ function createRestoreMissingSaApis(deps) {
       return true;
     }
 
-    const aiKeyMatch = pathname.match(
-      /^\/api\/super-admin\/ai-image-enhancement\/([^/]+)\/api-key$/,
-    );
-    if (aiKeyMatch) {
-      await handleAiIntegrationApiKeyReveal(
-        request,
-        response,
-        decodeURIComponent(aiKeyMatch[1] || ""),
-      );
-      return true;
-    }
-
     return false;
+  }
+
+  /** Provider credentials for the role-aware assistant: the launched chatbot integration, if any. */
+  async function getLaunchedAssistantProvider() {
+    const integrations = await readAiIntegrations();
+    const integration = integrations.find((item) =>
+      item?.launched
+      && String(item.apiKey || "").trim()
+      && isStoredCapabilityEnabled(item?.capabilities?.chatbot));
+    if (!integration) return null;
+    const provider = String(integration.provider || "openai").trim().toLowerCase() || "openai";
+    return {
+      provider,
+      apiKey: String(integration.apiKey || "").trim(),
+      model: String(integration.chatModel || "").trim() || DEFAULT_MODELS[provider]?.chat?.[0]?.id || "gpt-4o-mini",
+    };
   }
 
   return {
@@ -2041,6 +2547,7 @@ function createRestoreMissingSaApis(deps) {
     ensureRestoreStorageFiles,
     requestLaunchedChatCompletion,
     getLaunchedChatAssistantStatus,
+    getLaunchedAssistantProvider,
   };
 }
 

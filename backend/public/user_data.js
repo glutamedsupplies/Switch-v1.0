@@ -72,6 +72,15 @@ const buyerElements = {
   actionTitle: document.querySelector("[data-buyer-action-title]"),
   actionCopy: document.querySelector("[data-buyer-action-copy]"),
   actionIcon: document.querySelector("[data-buyer-action-icon]"),
+  actionAccountCode: document.querySelector("[data-buyer-action-account-code]"),
+  actionSubjectAvatar: document.querySelector("[data-buyer-action-subject-avatar]"),
+  actionSubjectName: document.querySelector("[data-buyer-action-subject-name]"),
+  actionSubjectEmail: document.querySelector("[data-buyer-action-subject-email]"),
+  actionSubjectStatus: document.querySelector("[data-buyer-action-subject-status]"),
+  actionSubjectCountry: document.querySelector("[data-buyer-action-subject-country]"),
+  actionOutcomeTitle: document.querySelector("[data-buyer-action-outcome-title]"),
+  actionOutcomeCopy: document.querySelector("[data-buyer-action-outcome-copy]"),
+  actionImpact: document.querySelector("[data-buyer-action-impact]"),
   actionReasonTextField: document.querySelector("[data-buyer-action-reason-text-field]"),
   actionReasonTextLabel: document.querySelector("[data-buyer-action-reason-text-label]"),
   actionReasonText: document.querySelector("[data-buyer-action-reason-text]"),
@@ -91,6 +100,11 @@ const buyerElements = {
   actionDurationUnitLabel: document.querySelector("[data-buyer-action-duration-unit-label]"),
   actionDurationUnitMenu: document.querySelector("[data-buyer-action-duration-unit-menu]"),
   actionDurationUnitOptions: Array.from(document.querySelectorAll("[data-buyer-action-duration-unit-option]")),
+  actionRestrictionStart: document.querySelector("[data-buyer-action-restriction-start]"),
+  actionRestrictionStartDate: document.querySelector("[data-buyer-action-restriction-start-date]"),
+  actionRestrictionStartTime: document.querySelector("[data-buyer-action-restriction-start-time]"),
+  actionRestrictionEndDate: document.querySelector("[data-buyer-action-restriction-end-date]"),
+  actionRestrictionEndTime: document.querySelector("[data-buyer-action-restriction-end-time]"),
   actionNote: document.querySelector("[data-buyer-action-note]"),
   actionDescriptionLabel: document.querySelector("[data-buyer-action-description-label]"),
   actionSummarizeAiButton: document.querySelector("[data-buyer-action-summarize-ai]"),
@@ -116,10 +130,11 @@ const buyerState = {
   pageSize: 10,
   searchTerm: "",
   searchLoading: false,
-  status: initialBuyerAccountSubNav === "low-risk" ? "active" : initialBuyerAccountSubNav,
+  status: initialBuyerAccountSubNav === "low-risk" ? "active" : initialBuyerAccountSubNav === "online" ? "online" : initialBuyerAccountSubNav,
   verification: "all",
   activity: "all",
   dateJoined: "all",
+  deleted: "all",
   sort: ["newest"],
   activeBuyerId: "",
   activeTab: "overview",
@@ -157,6 +172,7 @@ const buyerActionConfig = {
     icon: '<path d="M2 21a8 8 0 0 1 10.434-7.62"></path><circle cx="10" cy="8" r="5"></circle><circle cx="18" cy="18" r="4.5"></circle><line x1="18" x2="18" y1="16.1" y2="17.7"></line><line x1="18" x2="18.01" y1="19.9" y2="19.9"></line>',
     button: "Restrict User",
     showDuration: true,
+    durationDays: "7",
     showReasonDropdown: true,
     reasonLabel: "Reason for Restriction",
     reasonPrompt: "Select Restriction Reason",
@@ -167,38 +183,37 @@ const buyerActionConfig = {
     copy: "Permanently block this user account.",
     icon: '<path d="M2 21a8 8 0 0 1 10.434-7.62"></path><circle cx="10" cy="8" r="5"></circle><circle cx="18" cy="18" r="4"></circle><path d="M15.5 15.5 20.5 20.5"></path>',
     button: "Ban User",
-    showDuration: true,
+    showDuration: false,
     showReasonDropdown: true,
     reasonLabel: "Reason for Ban",
     reasonPrompt: "Select Ban Reason",
     danger: true,
-    durationUnit: "permanent",
   },
   activate: {
     title: "Restore Active Status",
     copy: "Return this user to normal account access.",
-    icon: "fa-solid fa-circle-check",
+    icon: '<path d="M2 21a8 8 0 0 1 13.292-6"></path><circle cx="10" cy="8" r="5"></circle><path d="m16 19 2 2 4-4"></path>',
     button: "Set Active",
     showDuration: false,
   },
   "require-password-reset": {
     title: "Require Password Reset",
     copy: "Force the user to reset their password on the next login.",
-    icon: "fa-solid fa-key",
+    icon: '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle>',
     button: "Require Password Reset",
     showDuration: false,
   },
   "logout-devices": {
     title: "Log Out All Devices",
     copy: "Invalidate current user sessions and mark the account offline.",
-    icon: "fa-solid fa-right-from-bracket",
+    icon: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" x2="9" y1="12" y2="12"></line>',
     button: "Log Out Devices",
     showDuration: false,
   },
   lock: {
     title: "Lock Suspicious Account",
     copy: "Lock this account while suspicious activity is reviewed.",
-    icon: "fa-solid fa-lock",
+    icon: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>',
     button: "Lock Account",
     showDuration: false,
     danger: true,
@@ -223,11 +238,12 @@ const buyerFilterDefaults = Object.freeze({
   verification: "all",
   activity: "all",
   dateJoined: "all",
+  deleted: "all",
   sort: "newest",
 });
 
 const buyerFilterOptions = Object.freeze({
-  status: new Set(["all", "new", "active", "restricted", "banned", "deleted"]),
+  status: new Set(["all", "new", "active", "online", "restricted", "banned", "deleted"]),
   verification: new Set([
     "all",
     "verified",
@@ -238,8 +254,9 @@ const buyerFilterOptions = Object.freeze({
     "phone-verified",
     "identity-verified",
   ]),
-  activity: new Set(["all", "online-today", "has-orders", "has-bookings", "no-history"]),
+  activity: new Set(["all", "inactive-30", "has-orders", "has-bookings", "no-history"]),
   dateJoined: new Set(["all", "30", "90", "365"]),
+  deleted: new Set(["all", "hide", "only"]),
 });
 
 const buyerSortOptions = new Set(["newest", "oldest", "last-active", "orders", "order-count", "bookings", "a-z"]);
@@ -248,7 +265,8 @@ const buyerFilterLabels = Object.freeze({
   status: {
     all: "All status",
     new: "New registrations",
-    active: "Active",
+    active: "Active User",
+    online: "Online",
     restricted: "Restricted",
     banned: "Banned",
     deleted: "Deleted",
@@ -265,7 +283,7 @@ const buyerFilterLabels = Object.freeze({
   },
   activity: {
     all: "All activity",
-    "online-today": "Online today",
+    "inactive-30": "Inactive 30+ days",
     "has-orders": "Has orders",
     "has-bookings": "Has bookings",
     "no-history": "No orders/bookings",
@@ -275,6 +293,11 @@ const buyerFilterLabels = Object.freeze({
     30: "Last 30 days",
     90: "Last 90 days",
     365: "Last 12 months",
+  },
+  deleted: {
+    all: "All accounts",
+    hide: "Hide deleted",
+    only: "Deleted only",
   },
 });
 
@@ -292,12 +315,10 @@ const buyerStatusSubNavMap = Object.freeze({
   all: "all",
   new: "new",
   "low-risk": "active",
+  online: "online",
   restricted: "restricted",
   banned: "banned",
 });
-
-const buyerListTableColumns =
-  "minmax(0, 1.2fr) minmax(0, 0.55fr) minmax(118px, 0.62fr) minmax(0, 0.62fr) minmax(0, 0.7fr) minmax(0, 0.55fr) minmax(96px, 0.52fr) minmax(204px, 0.88fr)";
 
 const buyerListIconPaths = Object.freeze({
   verified: '<circle cx="12" cy="12" r="8"></circle><path d="m8.5 12 2.2 2.2 4.8-5"></path>',
@@ -316,19 +337,25 @@ const buyerListActionIconPaths = Object.freeze({
   notify: '<path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"></path><path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14"></path><path d="M8 6v8"></path>',
   restrict: '<path d="M2 21a8 8 0 0 1 10.434-7.62"></path><circle cx="10" cy="8" r="5"></circle><circle cx="18" cy="18" r="4.5"></circle><line x1="18" x2="18" y1="16.1" y2="17.7"></line><line x1="18" x2="18.01" y1="19.9" y2="19.9"></line>',
   ban: '<path d="M2 21a8 8 0 0 1 10.434-7.62"></path><circle cx="10" cy="8" r="5"></circle><circle cx="18" cy="18" r="4"></circle><path d="M15.5 15.5 20.5 20.5"></path>',
+  activate: '<path d="M2 21a8 8 0 0 1 13.292-6"></path><circle cx="10" cy="8" r="5"></circle><path d="m16 19 2 2 4-4"></path>',
+  "require-password-reset": '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle>',
+  "logout-devices": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" x2="9" y1="12" y2="12"></line>',
   activity: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path>',
+  "delete-test-data": (typeof window !== "undefined" && window.SwitchDefaultIcons?.paths?.trash) ||
+    '<path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>',
 });
 
 const buyerActivityActionIconPaths = Object.freeze({
   addList: '<path d="M8 6h8"></path><path d="M8 10h8"></path><path d="M8 14h5"></path><path d="M5 6h.01"></path><path d="M5 10h.01"></path><path d="M5 14h.01"></path><path d="M16 19h6"></path><path d="M19 16v6"></path>',
   editList: '<path d="M8 6h8"></path><path d="M8 10h7"></path><path d="M8 14h4"></path><path d="M5 6h.01"></path><path d="M5 10h.01"></path><path d="M5 14h.01"></path><path d="m14 20 5.5-5.5a1.5 1.5 0 0 0-2-2L12 18v2h2Z"></path><path d="m17 13 2 2"></path>',
-  trash: '<path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>',
+  trash: (typeof window !== "undefined" && window.SwitchDefaultIcons?.paths?.trash) ||
+    '<path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>',
 });
 
 const buyerActivityActionIconConfigs = Object.freeze({
   add: { lucide: "ListPlus", tabler: "playlist-add", fallback: buyerActivityActionIconPaths.addList },
   edit: { lucide: "SquarePen", tabler: "file-pencil", fallback: buyerActivityActionIconPaths.editList },
-  delete: { lucide: "Trash2", tabler: "trash", fallback: buyerActivityActionIconPaths.trash },
+  delete: { lucide: "Trash", tabler: "trash", fallback: buyerActivityActionIconPaths.trash },
 });
 
 const buyerDrawerIconPaths = Object.freeze({
@@ -564,17 +591,64 @@ function getBuyerPhone(account) {
   return mobileNumber.startsWith("+") ? mobileNumber : `${countryCode} ${mobileNumber}`;
 }
 
+function getBuyerCountry(account) {
+  const api = window.SuperAdminCountries;
+  if (api && typeof api.resolveCountryFromRecord === "function") {
+    return api.resolveCountryFromRecord(account);
+  }
+  const dial = normalizeText(account?.countryCode) || "+63";
+  return {
+    iso2: dial === "+63" ? "PH" : "",
+    name: dial === "+63" ? "Philippines" : `Country ${dial}`,
+    dialCode: dial,
+    flag: dial === "+63" ? "🇵🇭" : "🌐",
+  };
+}
+
+function getBuyerCountryLabel(account) {
+  const country = getBuyerCountry(account);
+  const api = window.SuperAdminCountries;
+  if (api && typeof api.formatCountryFullLabel === "function") {
+    return api.formatCountryFullLabel(country);
+  }
+  return country.name || "Unknown";
+}
+
+function createBuyerCountryFlag(account, options = {}) {
+  const api = window.SuperAdminCountries;
+  const country = getBuyerCountry(account);
+  if (api && typeof api.createCountryFlagElement === "function") {
+    return api.createCountryFlagElement(country, options);
+  }
+  const fallback = createElement("span", options.className || "sa-country-flag is-fallback", country.flag || "🌐");
+  fallback.setAttribute("aria-hidden", "true");
+  return fallback;
+}
+
 function getBuyerEmail(account) {
   return normalizeText(account?.email || account?.registerEmail);
 }
 
 function getBuyerAddress(account) {
+  const addresses = getBuyerDeliveryAddressList(account);
+  if (addresses.length) {
+    return addresses[0];
+  }
+  return normalizeText(
+    account?.savedDeliveryAddress ||
+      account?.deliveryAddress ||
+      account?.defaultDeliveryAddress ||
+      account?.address,
+  ) || "-";
+}
+
+function getBuyerDeliveryAddressList(account) {
   const savedAddresses = Array.isArray(account?.savedAddresses)
     ? account.savedAddresses
     : Array.isArray(account?.deliveryAddresses)
       ? account.deliveryAddresses
       : [];
-  const firstSavedAddress = savedAddresses
+  const fromSaved = savedAddresses
     .map((address) => {
       if (typeof address === "string") {
         return normalizeText(address);
@@ -588,14 +662,79 @@ function getBuyerAddress(account) {
             .join(", "),
       );
     })
-    .find(Boolean);
-  return normalizeText(
+    .filter(Boolean);
+  const primary = normalizeText(
     account?.savedDeliveryAddress ||
       account?.deliveryAddress ||
       account?.defaultDeliveryAddress ||
-      account?.address ||
-      firstSavedAddress,
-  ) || "-";
+      account?.address,
+  );
+  const addresses = [];
+  const seen = new Set();
+  for (const value of [primary, ...fromSaved]) {
+    if (!value || seen.has(value.toLowerCase())) {
+      continue;
+    }
+    seen.add(value.toLowerCase());
+    addresses.push(value);
+  }
+  return addresses;
+}
+
+function getBuyerUsername(account) {
+  return normalizeText(account?.username);
+}
+
+function getBuyerGender(account) {
+  return normalizeText(account?.gender);
+}
+
+function getBuyerDateOfBirth(account) {
+  return account?.dateOfBirth || account?.dob || "";
+}
+
+function getBuyerLastLogin(account) {
+  return account?.lastLoginAt || account?.lastSignedInAt || "";
+}
+
+function getBuyerPreferredLanguage(account) {
+  return normalizeText(
+    account?.preferredLanguage ||
+      account?.profileData?.preferredLanguage ||
+      account?.language,
+  );
+}
+
+function isBuyerGoogleLinked(account) {
+  return Boolean(
+    normalizeText(account?.gmailBinding?.email) ||
+      normalizeText(account?.googleProfile?.email) ||
+      normalizeText(account?.googleEmail) ||
+      normalizeKey(account?.authProvider || account?.loginProvider) === "google",
+  );
+}
+
+function getBuyerGoogleEmail(account) {
+  return normalizeText(
+    account?.gmailBinding?.email ||
+      account?.googleProfile?.email ||
+      account?.googleEmail,
+  );
+}
+
+function buyerHasPassword(account) {
+  if (account?.hasPassword === true || account?.passwordSet === true) {
+    return true;
+  }
+  if (account?.hasPassword === false || account?.passwordSet === false) {
+    return false;
+  }
+  return Boolean(account?.passwordUpdatedAt || account?.passwordResetRequired);
+}
+
+function canRestoreBuyerAccount(account) {
+  const status = getBuyerStatus(account);
+  return status === "restricted" || status === "banned";
 }
 
 function getBuyerStatus(account) {
@@ -718,6 +857,25 @@ function isBuyerAccount(account) {
   return source === "app" || role === "user" || role === "buyer" || role === "customer";
 }
 
+function isTestModeBuyerAccount(account) {
+  return (
+    account?.testMode === true
+    || account?.testMode === "true"
+    || account?.testMode === 1
+    || account?.profileData?.testMode === true
+    || account?.profile_data?.testMode === true
+  );
+}
+
+function isUserDataTestModeOn() {
+  const settings =
+    window.GMSPlatformSettings
+    || (typeof window.GMSTheme?.getPlatformSettings === "function"
+      ? window.GMSTheme.getPlatformSettings()
+      : null);
+  return Boolean(settings?.testMode);
+}
+
 function getBuyerMatchKeys(account) {
   return [
     account?.id,
@@ -753,15 +911,37 @@ function isBookingRecord(order) {
   );
 }
 
+let buyerOrdersIndexSource = null;
+let buyerOrdersByAccountKey = new Map();
+
+function getBuyerOrdersIndex() {
+  if (buyerOrdersIndexSource !== buyerState.orders) {
+    buyerOrdersIndexSource = buyerState.orders;
+    buyerOrdersByAccountKey = new Map();
+    (Array.isArray(buyerState.orders) ? buyerState.orders : []).forEach((order) => {
+      const accountKey = getOrderAccountKey(order);
+      if (!accountKey) {
+        return;
+      }
+      const bucket = buyerOrdersByAccountKey.get(accountKey);
+      if (bucket) {
+        bucket.push(order);
+      } else {
+        buyerOrdersByAccountKey.set(accountKey, [order]);
+      }
+    });
+  }
+  return buyerOrdersByAccountKey;
+}
+
 function getBuyerOrders(account, includeBookings = true) {
-  const keys = new Set(getBuyerMatchKeys(account));
-  return buyerState.orders.filter((order) => {
-    const accountKey = getOrderAccountKey(order);
-    if (!accountKey || !keys.has(accountKey)) {
-      return false;
-    }
-    return includeBookings ? true : !isBookingRecord(order);
+  const index = getBuyerOrdersIndex();
+  const matched = new Set();
+  getBuyerMatchKeys(account).forEach((key) => {
+    (index.get(key) || []).forEach((order) => matched.add(order));
   });
+  const orders = Array.from(matched);
+  return includeBookings ? orders : orders.filter((order) => !isBookingRecord(order));
 }
 
 function getBuyerBookings(account) {
@@ -788,14 +968,20 @@ function getBuyerLastActive(account) {
 }
 
 function getBuyerSearchText(account) {
+  const country = getBuyerCountry(account);
   return [
     getBuyerName(account),
     getBuyerCode(account),
+    getBuyerUsername(account),
     getBuyerEmail(account),
     getBuyerPhone(account),
     getBuyerAddress(account),
+    getBuyerGoogleEmail(account),
     getBuyerStatus(account),
     getBuyerVerificationStatus(account),
+    country.name,
+    country.iso2,
+    country.dialCode,
   ]
     .map(normalizeKey)
     .filter(Boolean)
@@ -843,6 +1029,9 @@ function getBuyerSubNavValueForStatus(status) {
   }
   if (normalizedStatus === "active") {
     return "low-risk";
+  }
+  if (normalizedStatus === "online") {
+    return "online";
   }
   if (normalizedStatus === "restricted" || normalizedStatus === "banned") {
     return normalizedStatus;
@@ -966,8 +1155,9 @@ function matchesBuyerActivityFilter(account, filterValue) {
   }
   const orderCount = getBuyerOrderCount(account);
   const bookingCount = getBuyerBookingCount(account);
-  if (activity === "online-today") {
-    return isBuyerOnlineToday(account);
+  if (activity === "inactive-30") {
+    const lastActive = parseDate(getBuyerLastActive(account));
+    return !lastActive || Date.now() - lastActive.getTime() > 30 * 86400000;
   }
   if (activity === "has-orders") {
     return orderCount > 0;
@@ -1106,12 +1296,13 @@ function syncBuyerFilterControlsFromState() {
   buyerState.verification = normalizeBuyerFilterValue("verification", buyerState.verification);
   buyerState.activity = normalizeBuyerFilterValue("activity", buyerState.activity);
   buyerState.dateJoined = normalizeBuyerFilterValue("dateJoined", buyerState.dateJoined);
+  buyerState.deleted = normalizeBuyerFilterValue("deleted", buyerState.deleted);
   buyerState.sort = normalizeBuyerSortValues(buyerState.sort);
 
-  setBuyerRadioChecked('[data-buyer-filter="status"]', buyerState.status);
   setBuyerRadioChecked('[data-buyer-filter="verification"]', buyerState.verification);
   setBuyerRadioChecked('[data-buyer-filter="activity"]', buyerState.activity);
   setBuyerRadioChecked('[data-buyer-filter="dateJoined"]', buyerState.dateJoined);
+  setBuyerRadioChecked('[data-buyer-filter="deleted"]', buyerState.deleted);
   setBuyerSortControlsChecked(buyerState.sort);
 
   setSelectValue(buyerElements.statusFilter, buyerState.status);
@@ -1145,7 +1336,16 @@ function setBuyerStatusFromSubNav(value) {
   buyerState.page = 1;
   syncBuyerFilterControlsFromState();
   syncBuyerFilterSummary();
-  renderBuyerTable();
+  const run = () => {
+    renderBuyerTable();
+  };
+  if (typeof window.SuperAdminContentSkeleton?.run === "function") {
+    void window.SuperAdminContentSkeleton.run(async () => {
+      run();
+    }, { section: "user-data" });
+    return;
+  }
+  run();
 }
 
 function syncBuyerFilterSummary() {
@@ -1153,8 +1353,8 @@ function syncBuyerFilterSummary() {
     return;
   }
   const activeFilters = [];
-  if (buyerState.status !== "all") {
-    activeFilters.push(getBuyerFilterLabel("status", buyerState.status));
+  if (buyerState.deleted !== "all") {
+    activeFilters.push(getBuyerFilterLabel("deleted", buyerState.deleted));
   }
   if (buyerState.verification !== "all") {
     activeFilters.push(getBuyerFilterLabel("verification", buyerState.verification));
@@ -1181,10 +1381,10 @@ function toggleBuyerFilterDropdown(forceOpen) {
 }
 
 function applyBuyerFiltersFromControls() {
-  buyerState.status = getCheckedBuyerFilterValue("status");
   buyerState.verification = getCheckedBuyerFilterValue("verification");
   buyerState.activity = getCheckedBuyerFilterValue("activity");
   buyerState.dateJoined = getCheckedBuyerFilterValue("dateJoined");
+  buyerState.deleted = getCheckedBuyerFilterValue("deleted");
   enforceBuyerSortCheckboxFallback();
   buyerState.sort = getCheckedBuyerSortValues();
   buyerState.page = 1;
@@ -1194,10 +1394,10 @@ function applyBuyerFiltersFromControls() {
 }
 
 function clearBuyerFiltersFromControls() {
-  buyerState.status = buyerFilterDefaults.status;
   buyerState.verification = buyerFilterDefaults.verification;
   buyerState.activity = buyerFilterDefaults.activity;
   buyerState.dateJoined = buyerFilterDefaults.dateJoined;
+  buyerState.deleted = buyerFilterDefaults.deleted;
   buyerState.sort = [buyerFilterDefaults.sort];
   buyerState.page = 1;
   syncBuyerFilterControlsFromState();
@@ -1213,6 +1413,20 @@ function updateSummaryCards() {
   const banned = buyers.filter((buyer) => getBuyerStatus(buyer) === "banned").length;
   const limited = buyers.filter((buyer) => getBuyerStatus(buyer) === "restricted").length;
   const newBuyers = buyers.filter(isNewlyRegisteredBuyer).length;
+
+  const countMap = {
+    all: total,
+    new: newBuyers,
+    "low-risk": active,
+    online,
+    restricted: limited,
+    banned,
+  };
+  document.querySelectorAll("[data-buyer-filter-count]").forEach((countEl) => {
+    const key = String(countEl.dataset.buyerFilterCount || "").trim();
+    countEl.textContent = formatNumber(countMap[key] || 0);
+  });
+  window.SuperAdminClearBootSubNavSkeleton?.("user-data");
 
   if (buyerElements.stats.totalLabel) buyerElements.stats.totalLabel.textContent = `(${formatNumber(total)})`;
   if (buyerElements.stats.total) buyerElements.stats.total.textContent = formatNumber(total);
@@ -1238,6 +1452,7 @@ function filterBuyers() {
   const verification = normalizeBuyerFilterValue("verification", buyerState.verification);
   const activity = normalizeBuyerFilterValue("activity", buyerState.activity);
   const dateJoined = normalizeBuyerFilterValue("dateJoined", buyerState.dateJoined);
+  const deleted = normalizeBuyerFilterValue("deleted", buyerState.deleted);
   const maxAgeDays = dateJoined === "all" ? 0 : Number(dateJoined);
   const now = Date.now();
 
@@ -1248,7 +1463,16 @@ function filterBuyers() {
     if (status === "new" && !isNewlyRegisteredBuyer(buyer)) {
       return false;
     }
-    if (status !== "all" && status !== "new" && getBuyerStatus(buyer) !== status) {
+    if (status === "online" && !isBuyerOnlineToday(buyer)) {
+      return false;
+    }
+    if (status !== "all" && status !== "new" && status !== "online" && getBuyerStatus(buyer) !== status) {
+      return false;
+    }
+    if (deleted === "hide" && getBuyerStatus(buyer) === "deleted") {
+      return false;
+    }
+    if (deleted === "only" && getBuyerStatus(buyer) !== "deleted") {
       return false;
     }
     if (!matchesBuyerVerificationFilter(buyer, verification)) {
@@ -1362,13 +1586,41 @@ function createBadge(type, label) {
 }
 
 function getBuyerActionDefinitions(account) {
-  return [
-    ["view-profile", "View Profile"],
-    ["notify", "Notify User"],
-    ["restrict", "Restrict"],
+  const status = getBuyerStatus(account);
+  const definitions = [["view-profile", "View Profile"], ["notify", "Notify User"]];
+
+  if (status === "deleted") {
+    definitions.push(["activity", "Activity Logs"]);
+    return definitions.map(([id, label, tone]) => ({
+      id,
+      label,
+      icon: buyerListActionIconPaths[id] || buyerListActionIconPaths["view-profile"],
+      buyerId: getBuyerId(account),
+      danger: tone === "danger",
+    }));
+  }
+
+  if (canRestoreBuyerAccount(account)) {
+    definitions.push(["activate", "Restore Active"]);
+    if (status === "restricted") {
+      definitions.push(["ban", "Ban", "danger"]);
+    }
+  } else {
+    definitions.push(["restrict", "Restrict"], ["ban", "Ban", "danger"]);
+  }
+
+  definitions.push(
+    ["require-password-reset", "Require Password Reset"],
+    ["logout-devices", "Log Out Devices"],
     ["activity", "Activity Logs"],
-    ["ban", "Ban", "danger"],
-  ].map(([id, label, tone]) => ({
+  );
+
+  // Delete icon only for Test Mode sandbox buyers while Test Mode is ON.
+  if (isUserDataTestModeOn() && isTestModeBuyerAccount(account)) {
+    definitions.push(["delete-test-data", "Delete Test data", "danger"]);
+  }
+
+  return definitions.map(([id, label, tone]) => ({
     id,
     label,
     icon: buyerListActionIconPaths[id] || buyerListActionIconPaths["view-profile"],
@@ -1452,21 +1704,10 @@ function setBuyerListViewShell() {
   if (!buyerElements.list) {
     return;
   }
-  buyerElements.list.classList.add("buyer-data-list", "super-admin-company-list", "is-list-view");
-  buyerElements.list.style.setProperty("--company-list-table-columns", buyerListTableColumns);
-  buyerElements.list.style.setProperty("--buyer-data-list-columns", buyerListTableColumns);
-}
-
-function createBuyerTableHeader() {
-  const header = document.createElement("div");
-  header.className = "super-admin-data-table-header super-admin-company-table-header buyer-data-list-header";
-  header.setAttribute("role", "row");
-  ["User", "Contact", "Security", "Verification", "Restriction Level", "Last Active", "Registered", "Actions"].forEach((label) => {
-    const cell = document.createElement("span");
-    cell.textContent = label;
-    header.appendChild(cell);
-  });
-  return header;
+  buyerElements.list.classList.remove("super-admin-company-list", "is-list-view");
+  buyerElements.list.classList.add("buyer-data-list", "sa-buyer-showcase-list", "sa-showcase-list");
+  buyerElements.list.style.removeProperty("--company-list-table-columns");
+  buyerElements.list.style.removeProperty("--buyer-data-list-columns");
 }
 
 function createBuyerContactCopyField(value, label, className, canCopy = true) {
@@ -1491,6 +1732,21 @@ function createBuyerContactCopyField(value, label, className, canCopy = true) {
   return field;
 }
 
+function createBuyerListUserIdCell(account) {
+  const userId = getBuyerCode(account) || "—";
+  const cell = document.createElement("div");
+  cell.className = "buyer-data-list-row__user-id platform-feedback-list-row__feedback-id";
+  cell.append(
+    createBuyerContactCopyField(
+      userId,
+      "User ID",
+      "platform-feedback-list-row__feedback-id-copy",
+      userId !== "—" && userId !== "Unknown",
+    ),
+  );
+  return cell;
+}
+
 function createBuyerListIdentityCell(account) {
   const buyerId = getBuyerId(account);
   const identity = document.createElement("div");
@@ -1503,13 +1759,6 @@ function createBuyerListIdentityCell(account) {
   const titleWrap = createElement("span", "super-admin-company-card__title buyer-data-list-row__title");
   const titleContainer = createElement("span", "super-admin-company-card__title-container");
   const title = createElement("h3", "super-admin-company-card__title-text", getBuyerName(account));
-  const emailValue = getBuyerEmail(account) || `ID: ${getBuyerCode(account)}`;
-  const email = createBuyerContactCopyField(
-    emailValue,
-    "Email",
-    "super-admin-company-card__table-user-email buyer-data-list-row__email",
-    Boolean(getBuyerEmail(account)),
-  );
   const avatar = createBuyerAvatar(account);
   const buyerOnline = isBuyerOnline(account);
   const presenceDot = createElement(
@@ -1521,9 +1770,19 @@ function createBuyerListIdentityCell(account) {
   presenceDot.title = buyerOnline ? "Online" : "Offline";
   avatar.appendChild(presenceDot);
   titleContainer.appendChild(title);
-  titleWrap.append(titleContainer, email);
+  titleWrap.append(titleContainer);
   identity.append(avatar, titleWrap);
   return identity;
+}
+
+function createBuyerListEmailCell(account) {
+  const emailValue = getBuyerEmail(account) || `ID: ${getBuyerCode(account)}`;
+  return createBuyerContactCopyField(
+    emailValue,
+    "Email",
+    "super-admin-company-card__table-email buyer-data-list-row__email",
+    Boolean(getBuyerEmail(account)),
+  );
 }
 
 function createBuyerListContactCell(account) {
@@ -1538,6 +1797,27 @@ function createBuyerListContactCell(account) {
       Boolean(phone),
     ),
   );
+  return cell;
+}
+
+function createBuyerListCountryCell(account) {
+  const country = getBuyerCountry(account);
+  const label = getBuyerCountryLabel(account);
+  const cell = document.createElement("div");
+  cell.className = "buyer-data-list-row__country sa-country-cell";
+  cell.title = label;
+  cell.setAttribute("aria-label", label);
+  cell.append(
+    createBuyerCountryFlag(account, {
+      className: "sa-country-cell__flag sa-country-flag",
+      size: "w40",
+      width: 22,
+      height: 16,
+    }),
+  );
+  const copy = createElement("span", "sa-country-cell__copy");
+  copy.append(createElement("strong", "", country.name || "Unknown"));
+  cell.append(copy);
   return cell;
 }
 
@@ -1572,10 +1852,7 @@ function createBuyerListVerificationCell(account) {
     "span",
     `super-admin-company-card__verification-pill ${isVerified ? "is-verified" : "is-unverified"}`,
   );
-  pill.append(
-    createSvgIcon(isVerified ? buyerListIconPaths.verified : buyerListIconPaths.warning),
-    createElement("span", "", getBuyerVerificationLabel(verification)),
-  );
+  pill.append(createElement("span", "", getBuyerVerificationLabel(verification)));
   cell.appendChild(pill);
   return cell;
 }
@@ -1719,32 +1996,207 @@ function createBuyerListLastActiveCell(account) {
   return cell;
 }
 
+function createBuyerShowcaseAvatar(account, extraClassName = "") {
+  const avatar = createBuyerAvatar(account);
+  if (extraClassName) {
+    avatar.classList.add(...extraClassName.split(/\s+/).filter(Boolean));
+  }
+  const buyerOnline = isBuyerOnline(account);
+  const presenceDot = createElement(
+    "span",
+    `super-admin-company-card__avatar-status-dot buyer-data-list-avatar__presence ${buyerOnline ? "is-online" : "is-offline"}`,
+  );
+  presenceDot.setAttribute("role", "img");
+  presenceDot.setAttribute("aria-label", buyerOnline ? "Online" : "Offline");
+  presenceDot.title = buyerOnline ? "Online" : "Offline";
+  avatar.appendChild(presenceDot);
+  return avatar;
+}
+
+function createBuyerShowcaseStat(iconPaths, value, label) {
+  const stat = createElement("div", "business-type-showcase__stat");
+  const icon = createElement("span", "business-type-showcase__stat-icon");
+  icon.setAttribute("aria-hidden", "true");
+  icon.append(createSvgIcon(iconPaths));
+  const copy = createElement("span", "business-type-showcase__stat-copy");
+  copy.append(
+    createElement("strong", "", String(value || "0")),
+    createElement("span", "", label),
+  );
+  stat.append(icon, copy);
+  return stat;
+}
+
+function createBuyerShowcaseSetting(label, value, extraClassName = "") {
+  const setting = createElement(
+    "div",
+    `business-type-showcase__setting sa-buyer-showcase__setting ${extraClassName}`.trim(),
+  );
+  const settingLabel = createElement("span", "business-type-showcase__setting-label", label);
+  const settingValue = createElement("div", "business-type-showcase__setting-value");
+  if (value instanceof Node) {
+    settingValue.append(value);
+  } else {
+    settingValue.append(createElement("strong", "", String(value || "—")));
+  }
+  setting.append(settingLabel, settingValue);
+  return setting;
+}
+
+function createBuyerShowcaseCountry(account) {
+  const country = getBuyerCountry(account);
+  const countryWrap = createElement("span", "sa-buyer-showcase__country");
+  countryWrap.append(
+    createBuyerCountryFlag(account, {
+      className: "sa-country-cell__flag sa-country-flag",
+      size: "w40",
+      width: 22,
+      height: 16,
+    }),
+    createElement("strong", "", country.name || "Unknown"),
+  );
+  return countryWrap;
+}
+
 function createBuyerRow(account) {
   const status = getBuyerStatus(account);
+  const statusClass = status === "deleted" ? "banned" : status;
+  const verification = getBuyerVerificationStatus(account);
+  const restriction = getBuyerRestrictionDescriptor(account);
+  const orderCount = getBuyerOrderCount(account);
+  const bookingCount = getBuyerBookingCount(account);
+  const lastActive = formatRelativeTime(getBuyerLastActive(account));
+  const buyerName = getBuyerName(account);
+  const buyerEmail = getBuyerEmail(account) || `ID: ${getBuyerCode(account)}`;
+  const buyerPhone = getBuyerPhone(account) || "No phone";
+  const countryLabel = getBuyerCountryLabel(account);
   const row = document.createElement("article");
-  row.className = "super-admin-company-card buyer-data-list-row";
+  row.className = "super-admin-company-showcase business-type-showcase buyer-data-list-row sa-buyer-showcase sa-showcase-card";
   row.dataset.buyerRow = getBuyerId(account);
-  row.setAttribute("role", "row");
-  row.tabIndex = 0;
-  row.setAttribute("aria-label", `Open profile for ${getBuyerName(account)}`);
-  row.setAttribute("aria-keyshortcuts", "Enter Space ContextMenu Shift+F10");
+  row.dataset.buyerStatus = statusClass;
+  row.setAttribute("role", "listitem");
   row.classList.toggle("is-banned", status === "banned" || status === "deleted");
   row.classList.toggle("is-restricted", status === "restricted");
 
-  const actionCell = document.createElement("div");
-  actionCell.className = "super-admin-company-card__actions-cell buyer-data-list-row__actions";
-  actionCell.append(createBuyerQuickActions(account), createBuyerActionMenu(account));
-
-  row.append(
-    createBuyerListIdentityCell(account),
-    createBuyerListContactCell(account),
-    createBuyerListPasswordCell(account),
-    createBuyerListVerificationCell(account),
-    createBuyerListRestrictionCell(account),
-    createBuyerListLastActiveCell(account),
-    createBuyerListTextCell("super-admin-company-card__table-registered buyer-data-list-row__registered", formatDate(account?.createdAt)),
-    actionCell,
+  const hero = createElement("div", "business-type-showcase__hero");
+  const content = createElement("div", "business-type-showcase__content");
+  const identity = createElement("div", "business-type-showcase__identity sa-buyer-showcase__identity");
+  const iconWrap = createElement("span", "business-type-showcase__icon-wrap");
+  iconWrap.append(createBuyerShowcaseAvatar(account, "sa-buyer-showcase__avatar"));
+  const heading = createElement("div", "business-type-showcase__heading");
+  const titleRow = createElement("div", "business-type-showcase__title-row");
+  const title = createElement("h3", "business-type-showcase__title", buyerName);
+  const statusCell = createBuyerListStatusCell(account);
+  statusCell.classList.add("sa-buyer-showcase__status");
+  const quickActions = createBuyerQuickActions(account);
+  quickActions.classList.add("sa-buyer-showcase__actions");
+  titleRow.append(title, statusCell, quickActions);
+  const tagline = createElement(
+    "p",
+    "business-type-showcase__tagline sa-buyer-showcase__tagline",
+    getBuyerUsername(account) ? `@${getBuyerUsername(account)}` : buyerEmail,
   );
+  heading.append(titleRow, tagline);
+  identity.append(iconWrap, heading);
+
+  const description = createElement(
+    "p",
+    "business-type-showcase__description sa-buyer-showcase__description",
+    `${getBuyerVerificationLabel(verification)} buyer from ${countryLabel}. ${isBuyerOnline(account) ? "Currently online." : `Last active ${lastActive}.`}`,
+  );
+
+  const stats = createElement("div", "business-type-showcase__stats sa-buyer-showcase__stats");
+  stats.append(
+    createBuyerShowcaseStat(buyerListActionIconPaths.orders, String(orderCount), "Orders"),
+    createBuyerShowcaseStat(buyerListActionIconPaths.bookings, String(bookingCount), "Bookings"),
+    createBuyerShowcaseStat(buyerListActionIconPaths.activity, lastActive, "Last active"),
+  );
+
+  const userId = getBuyerCode(account) || "—";
+  const settings = createElement("div", "business-type-showcase__settings sa-buyer-showcase__settings");
+  settings.append(
+    createBuyerShowcaseSetting(
+      "User ID",
+      createBuyerContactCopyField(
+        userId,
+        "User ID",
+        "sa-buyer-showcase__copy-field",
+        userId !== "—" && userId !== "Unknown",
+      ),
+      "sa-buyer-showcase__setting--id",
+    ),
+    createBuyerShowcaseSetting(
+      "Email",
+      createBuyerContactCopyField(
+        buyerEmail,
+        "Email",
+        "sa-buyer-showcase__copy-field",
+        Boolean(getBuyerEmail(account)),
+      ),
+    ),
+    createBuyerShowcaseSetting(
+      "Contact",
+      createBuyerContactCopyField(
+        buyerPhone,
+        "Phone number",
+        "sa-buyer-showcase__copy-field",
+        Boolean(getBuyerPhone(account)),
+      ),
+    ),
+    createBuyerShowcaseSetting("Country", createBuyerShowcaseCountry(account)),
+    createBuyerShowcaseSetting("Registered", formatDate(account?.createdAt)),
+  );
+  content.append(identity, description, stats, settings);
+
+  const media = createElement("div", "business-type-showcase__media sa-buyer-showcase__media");
+  media.setAttribute("aria-label", `${buyerName} account overview`);
+  const glow = createElement("div", "sa-buyer-showcase__glow");
+  glow.setAttribute("aria-hidden", "true");
+  const preview = createElement("div", "sa-buyer-showcase__preview");
+  const previewHead = createElement("div", "sa-buyer-showcase__preview-head");
+  const previewAvatar = createBuyerShowcaseAvatar(account, "sa-buyer-showcase__preview-avatar");
+  const previewIdentity = createElement("div", "sa-buyer-showcase__preview-identity");
+  previewIdentity.append(
+    createElement("span", "sa-buyer-showcase__eyebrow", "Buyer account"),
+    createElement("h4", "", buyerName),
+    createElement("p", "", buyerEmail),
+  );
+  const previewStatus = createBuyerListStatusCell(account);
+  previewStatus.classList.add("sa-buyer-showcase__preview-status");
+  previewHead.append(previewAvatar, previewIdentity, previewStatus);
+
+  const previewMetrics = createElement("div", "sa-buyer-showcase__preview-metrics");
+  for (const [value, label] of [
+    [orderCount, "Orders"],
+    [bookingCount, "Bookings"],
+  ]) {
+    const metric = createElement("div", "");
+    metric.append(createElement("strong", "", String(value)), createElement("span", "", label));
+    previewMetrics.append(metric);
+  }
+
+  const badges = createElement("div", "sa-buyer-showcase__preview-badges");
+  const verificationCell = createBuyerListVerificationCell(account);
+  verificationCell.classList.add("sa-buyer-showcase__preview-verification");
+  const restrictionCell = createBuyerListRestrictionCell(account);
+  restrictionCell.classList.add("sa-buyer-showcase__preview-restriction");
+  const presence = createElement(
+    "span",
+    `sa-buyer-showcase__presence ${isBuyerOnline(account) ? "is-online" : "is-offline"}`,
+    isBuyerOnline(account) ? "Online" : "Offline",
+  );
+  badges.append(verificationCell, restrictionCell, presence);
+
+  const previewFooter = createElement("div", "sa-buyer-showcase__preview-footer");
+  previewFooter.append(
+    createElement("span", "", countryLabel),
+    createElement("span", "", `Joined ${formatDate(account?.createdAt)}`),
+  );
+  preview.append(previewHead, previewMetrics, badges, previewFooter);
+  media.append(glow, preview);
+  hero.append(content, media);
+  row.append(hero);
+
   return row;
 }
 
@@ -1760,7 +2212,6 @@ function renderBuyerTable() {
 
   if (buyerState.searchLoading) {
     buyerElements.list.append(
-      createBuyerTableHeader(),
       createBuyerSearchState({
         variant: "loading",
         message: "Searching users...",
@@ -1779,7 +2230,6 @@ function renderBuyerTable() {
 
   if (!filtered.length) {
     buyerElements.list.append(
-      createBuyerTableHeader(),
       createBuyerSearchState({
         variant: "empty",
         message: buyerState.searchTerm
@@ -1794,7 +2244,7 @@ function renderBuyerTable() {
 
   const pageStart = (buyerState.page - 1) * buyerState.pageSize;
   const pageBuyers = filtered.slice(pageStart, pageStart + buyerState.pageSize);
-  buyerElements.list.append(createBuyerTableHeader(), ...pageBuyers.map((buyer) => createBuyerRow(buyer)));
+  buyerElements.list.append(...pageBuyers.map((buyer) => createBuyerRow(buyer)));
   updatePagination();
 }
 
@@ -2074,6 +2524,25 @@ function createBuyerDrawerInfoRow(label, values) {
   return row;
 }
 
+function createBuyerDrawerCountryRow(account) {
+  const row = createElement("div", "super-admin-company-drawer__info-row sa-country-info-row");
+  row.append(createElement("span", "super-admin-company-drawer__info-label", "Country"));
+  const valueElement = createElement("span", "super-admin-company-drawer__info-value sa-country-info-row__value");
+  const chip = createElement("span", "sa-country-chip");
+  chip.append(
+    createBuyerCountryFlag(account, {
+      className: "sa-country-chip__flag sa-country-flag",
+      size: "w40",
+      width: 24,
+      height: 18,
+    }),
+  );
+  chip.append(createElement("span", "sa-country-chip__text", getBuyerCountryLabel(account)));
+  valueElement.append(chip);
+  row.append(valueElement);
+  return row;
+}
+
 function getBuyerDrawerWarningDescriptor(account) {
   const status = getBuyerStatus(account);
   const reports = normalizeReportRecords(account).length;
@@ -2163,10 +2632,25 @@ function renderOverview(account) {
   );
 
   const information = createElement("div", "super-admin-company-drawer__information");
+  const deliveryAddresses = getBuyerDeliveryAddressList(account);
   information.append(
     createBuyerDrawerInfoRow("User ID", getBuyerCode(account)),
-    createBuyerDrawerInfoRow("Address", getBuyerAddress(account)),
+    createBuyerDrawerCountryRow(account),
+    createBuyerDrawerInfoRow("Username", getBuyerUsername(account) || "-"),
+    createBuyerDrawerInfoRow("Date of Birth", formatDate(getBuyerDateOfBirth(account))),
+    createBuyerDrawerInfoRow("Gender", getBuyerGender(account) || "-"),
+    createBuyerDrawerInfoRow(
+      "Google Account",
+      isBuyerGoogleLinked(account) ? getBuyerGoogleEmail(account) || "Linked" : "Not linked",
+    ),
+    createBuyerDrawerInfoRow("Password", buyerHasPassword(account) ? "Set" : "Not set"),
+    createBuyerDrawerInfoRow("Preferred Language", getBuyerPreferredLanguage(account) || "-"),
+    createBuyerDrawerInfoRow(
+      deliveryAddresses.length > 1 ? "Delivery Addresses" : "Address",
+      deliveryAddresses.length ? deliveryAddresses : ["-"],
+    ),
     createBuyerDrawerInfoRow("Registered", formatDateTime(account?.createdAt)),
+    createBuyerDrawerInfoRow("Last Login", formatDateTime(getBuyerLastLogin(account))),
     createBuyerDrawerInfoRow("Last Active", formatDateTime(getBuyerLastActive(account))),
   );
 
@@ -2293,6 +2777,29 @@ function renderReports(account) {
       createElement("span", "", `Status: ${normalizeText(report.status || "Pending")}`),
       createElement("span", "", `Decision: ${normalizeText(report.adminDecision || report.decision || "No decision yet")}`),
     );
+    if (String(report.source || "") === "seller-protection" && String(report.status || "pending") === "pending") {
+      const actions = createElement("div", "buyer-data-report-actions");
+      const dismiss = createElement("button", "", "Dismiss ticket");
+      dismiss.type = "button";
+      const uphold = createElement("button", "", "Uphold ticket");
+      uphold.type = "button";
+      const reviewTicket = async (decision) => {
+        const response = await fetch(`/api/super-admin/buyer-protection/tickets/${encodeURIComponent(report.id)}/review`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ decision }),
+        });
+        const data = await response.json().catch(() => ({}));
+        window.alert(data.message || (response.ok ? "Ticket reviewed." : "Unable to review ticket."));
+        if (response.ok) {
+          await loadBuyers({ quiet: true, showLoading: false });
+        }
+      };
+      dismiss.addEventListener("click", () => void reviewTicket("dismiss"));
+      uphold.addEventListener("click", () => void reviewTicket("uphold"));
+      actions.append(dismiss, uphold);
+      card.appendChild(actions);
+    }
     list.appendChild(card);
   });
   wrap.appendChild(list);
@@ -3030,7 +3537,7 @@ const buyerActionDropdowns = {
     menu: buyerElements.actionDurationUnitMenu,
     options: buyerElements.actionDurationUnitOptions,
     optionKey: "buyerActionDurationUnitOption",
-    emptyLabel: "Select Unit",
+    emptyLabel: "Select day length",
   },
 };
 
@@ -3133,6 +3640,139 @@ function isBuyerModerationAction(action = buyerElements.actionType?.value) {
   return ["restrict", "ban"].includes(normalizeKey(action));
 }
 
+function formatBuyerRestrictionScheduleParts(value) {
+  const date = parseDate(value);
+  if (!date) {
+    return { date: "mm/dd/yyyy", time: "--:--" };
+  }
+  return {
+    date: date.toLocaleDateString(undefined, {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+    }),
+    time: date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }),
+  };
+}
+
+function syncBuyerRestrictionSchedule() {
+  if (normalizeKey(buyerElements.actionType?.value) !== "restrict") {
+    return null;
+  }
+  let startsAt = parseDate(buyerElements.actionRestrictionStart?.value);
+  if (!startsAt) {
+    startsAt = new Date();
+    startsAt.setSeconds(0, 0);
+    if (buyerElements.actionRestrictionStart instanceof HTMLInputElement) {
+      buyerElements.actionRestrictionStart.value = startsAt.toISOString();
+    }
+  }
+  const durationDays = Math.max(1, Math.trunc(Number(buyerElements.actionDuration?.value || 7)));
+  const expiresAt = new Date(startsAt.getTime() + durationDays * 86400000);
+  const startParts = formatBuyerRestrictionScheduleParts(startsAt);
+  const endParts = formatBuyerRestrictionScheduleParts(expiresAt);
+  if (buyerElements.actionRestrictionStartDate) {
+    buyerElements.actionRestrictionStartDate.textContent = startParts.date;
+  }
+  if (buyerElements.actionRestrictionStartTime) {
+    buyerElements.actionRestrictionStartTime.textContent = startParts.time;
+  }
+  if (buyerElements.actionRestrictionEndDate) {
+    buyerElements.actionRestrictionEndDate.textContent = endParts.date;
+  }
+  if (buyerElements.actionRestrictionEndTime) {
+    buyerElements.actionRestrictionEndTime.textContent = endParts.time;
+  }
+  return { startsAt, expiresAt, durationDays };
+}
+
+function resetBuyerRestrictionSchedule() {
+  if (!(buyerElements.actionRestrictionStart instanceof HTMLInputElement)) {
+    return syncBuyerRestrictionSchedule();
+  }
+  const startsAt = new Date();
+  startsAt.setSeconds(0, 0);
+  buyerElements.actionRestrictionStart.value = startsAt.toISOString();
+  return syncBuyerRestrictionSchedule();
+}
+
+function syncBuyerModerationModalLayout(action, buyer) {
+  const normalizedAction = normalizeKey(action);
+  const isModeration = isBuyerModerationAction(normalizedAction);
+  const dialog = buyerElements.actionDialog;
+  const backdrop = buyerElements.actionModal;
+  if (!dialog || !backdrop) {
+    return;
+  }
+
+  dialog.classList.toggle("company-control-modal", isModeration);
+  dialog.classList.toggle("is-buyer-moderation", isModeration);
+  dialog.classList.toggle("is-visible", isModeration);
+  dialog.classList.toggle("is-restrict", normalizedAction === "restrict");
+  backdrop.classList.toggle("super-admin-ban-modal-overlay", isModeration);
+  backdrop.classList.toggle("is-visible", isModeration);
+  document.body.classList.toggle("super-admin-company-action-modal-open", isModeration);
+
+  if (!isModeration) {
+    if (dialog.id === "super-admin-listing-restrict-modal") {
+      dialog.removeAttribute("id");
+    }
+    return;
+  }
+
+  // Reuse the established Restrict Listing review shell without changing the
+  // User Data form submission and account-action behavior.
+  dialog.id = "super-admin-listing-restrict-modal";
+  const buyerName = getBuyerName(buyer);
+  const buyerEmail = getBuyerEmail(buyer) || `Account ${getBuyerCode(buyer)}`;
+  const buyerStatus = getBuyerStatusLabel(getBuyerStatus(buyer));
+  const isBan = normalizedAction === "ban";
+
+  if (buyerElements.actionAccountCode) {
+    buyerElements.actionAccountCode.textContent = getBuyerCode(buyer);
+    buyerElements.actionAccountCode.title = getBuyerCode(buyer);
+  }
+  if (buyerElements.actionSubjectName) {
+    buyerElements.actionSubjectName.textContent = buyerName;
+    buyerElements.actionSubjectName.title = buyerName;
+  }
+  if (buyerElements.actionSubjectEmail) {
+    buyerElements.actionSubjectEmail.textContent = buyerEmail;
+    buyerElements.actionSubjectEmail.title = buyerEmail;
+  }
+  if (buyerElements.actionSubjectStatus) {
+    buyerElements.actionSubjectStatus.textContent = buyerStatus;
+  }
+  if (buyerElements.actionSubjectCountry) {
+    buyerElements.actionSubjectCountry.textContent = getBuyerCountryLabel(buyer);
+  }
+  if (buyerElements.actionOutcomeTitle) {
+    buyerElements.actionOutcomeTitle.textContent = isBan ? "Ban user" : "Restrict user";
+  }
+  if (buyerElements.actionOutcomeCopy) {
+    buyerElements.actionOutcomeCopy.textContent = isBan
+      ? "Block this account from signing in and using Switch."
+      : "Limit selected user access for the chosen period.";
+  }
+  if (buyerElements.actionImpact) {
+    buyerElements.actionImpact.textContent = isBan
+      ? "The user will lose account access until Super Admin restores the account."
+      : "Selected account access stays limited until the restriction ends.";
+  }
+
+  if (buyerElements.actionSubjectAvatar) {
+    const avatar = createBuyerAvatar(buyer);
+    avatar.classList.add("super-admin-ban-modal__avatar");
+    avatar.dataset.buyerActionSubjectAvatar = "";
+    avatar.setAttribute("aria-hidden", "true");
+    buyerElements.actionSubjectAvatar.replaceWith(avatar);
+    buyerElements.actionSubjectAvatar = avatar;
+  }
+}
+
 function getBuyerActionReasonValue() {
   const action = normalizeKey(buyerElements.actionType?.value);
   const config = buyerActionConfig[action];
@@ -3205,9 +3845,8 @@ async function summarizeBuyerActionWithAi() {
 
   const buyerId = normalizeText(buyerElements.actionId?.value);
   const buyer = getBuyerById(buyerId);
-  const durationValue = Math.max(1, Math.trunc(Number(buyerElements.actionDuration?.value || 1)));
-  const durationUnit = normalizeKey(buyerElements.actionDurationUnit?.value || "days");
-  const duration = durationUnit === "permanent" ? "Permanent" : `${durationValue} ${durationUnit}`;
+  const durationValue = Math.max(1, Math.trunc(Number(buyerElements.actionDuration?.value || 7)));
+  const duration = action === "ban" ? "Permanent" : `${durationValue} days`;
   const controller = new AbortController();
   buyerActionAiAbortController = controller;
   buyerState.isSummarizingAction = true;
@@ -3268,9 +3907,13 @@ function openActionModal(action, buyerId) {
   buyerElements.actionId.value = getBuyerId(buyer);
   buyerElements.actionType.value = action;
   buyerElements.actionTitle.textContent = config.title;
-  buyerElements.actionCopy.textContent = `${config.copy} User: ${getBuyerName(buyer)}.`;
+  buyerElements.actionCopy.textContent = isBuyerModerationAction(action)
+    ? (action === "ban"
+      ? "Review the reason and impact before banning this user account."
+      : "Review the reason, duration, and impact before restricting this user account.")
+    : `${config.copy} User: ${getBuyerName(buyer)}.`;
   buyerElements.actionIcon.replaceChildren(createIcon(config.icon));
-  buyerElements.actionDialog.dataset.buyerActionTone = ["notify", "restrict", "ban"].includes(action)
+  buyerElements.actionDialog.dataset.buyerActionTone = ["notify", "restrict", "ban", "activate"].includes(action)
     ? action
     : "default";
   const usesReasonDropdown = config.showReasonDropdown === true;
@@ -3290,18 +3933,30 @@ function openActionModal(action, buyerId) {
   if (reasonPlaceholderOption?.value === "") {
     reasonPlaceholderOption.textContent = reasonPrompt;
   }
-  buyerElements.actionDuration.value = "1";
-  buyerElements.actionDurationUnit.value = config.durationUnit || "days";
+  buyerElements.actionDuration.value = config.durationDays || "7";
   buyerElements.actionDurationRow.hidden = !config.showDuration;
   buyerElements.actionNotificationField.hidden = !config.showNotificationType;
   buyerElements.actionNotificationType.value = "account-warning";
   closeBuyerActionDropdowns();
   Object.keys(buyerActionDropdowns).forEach(syncBuyerActionDropdown);
+  if (action === "restrict") {
+    resetBuyerRestrictionSchedule();
+  } else if (buyerElements.actionRestrictionStart instanceof HTMLInputElement) {
+    buyerElements.actionRestrictionStart.value = "";
+  }
   buyerElements.actionNote.value = "";
   buyerElements.actionFeedback.textContent = "";
   syncBuyerActionAiButton();
-  buyerElements.actionSubmit.textContent = config.button || "Apply Action";
+  const submitLabel = config.button || "Apply Action";
+  if (isBuyerModerationAction(action)) {
+    const submitIcon = createIcon(config.icon);
+    submitIcon.setAttribute("aria-hidden", "true");
+    buyerElements.actionSubmit.replaceChildren(submitIcon, createElement("span", "", submitLabel));
+  } else {
+    buyerElements.actionSubmit.textContent = submitLabel;
+  }
   buyerElements.actionSubmit.classList.toggle("is-danger", Boolean(config.danger));
+  syncBuyerModerationModalLayout(action, buyer);
   buyerElements.actionModal.hidden = false;
   buyerElements.actionDialog.hidden = false;
   document.body.classList.add("buyer-data-modal-open");
@@ -3316,7 +3971,13 @@ function closeActionModal() {
   buyerElements.actionModal.hidden = true;
   buyerElements.actionDialog.hidden = true;
   buyerElements.actionDialog.removeAttribute("data-buyer-action-tone");
+  buyerElements.actionDialog.classList.remove("company-control-modal", "is-buyer-moderation", "is-visible", "is-restrict");
+  if (buyerElements.actionDialog.id === "super-admin-listing-restrict-modal") {
+    buyerElements.actionDialog.removeAttribute("id");
+  }
+  buyerElements.actionModal.classList.remove("super-admin-ban-modal-overlay", "is-visible");
   document.body.classList.remove("buyer-data-modal-open");
+  document.body.classList.remove("super-admin-company-action-modal-open");
 }
 
 async function submitBuyerAction(event) {
@@ -3333,6 +3994,7 @@ async function submitBuyerAction(event) {
       : buyerElements.actionReasonText?.value,
   );
   const internalNote = normalizeText(buyerElements.actionNote?.value);
+  const restrictionSchedule = action === "restrict" ? syncBuyerRestrictionSchedule() : null;
 
   if (!buyerId || !config) {
     return;
@@ -3348,7 +4010,16 @@ async function submitBuyerAction(event) {
     return;
   }
 
-  const fingerprintRequiredActions = new Set(["notify", "restrict", "ban", "suspend"]);
+  const fingerprintRequiredActions = new Set([
+    "notify",
+    "restrict",
+    "ban",
+    "suspend",
+    "activate",
+    "lock",
+    "logout-devices",
+    "require-password-reset",
+  ]);
   if (fingerprintRequiredActions.has(action)) {
     const authorize = window.gmsAuthorizeSuperAdminFingerprint;
     if (typeof authorize !== "function") {
@@ -3361,6 +4032,10 @@ async function submitBuyerAction(event) {
       restrict: "restrict this user",
       ban: "ban this user",
       suspend: "suspend this user",
+      activate: "restore this user to active",
+      lock: "lock this user",
+      "logout-devices": "log out all devices for this user",
+      "require-password-reset": "require a password reset for this user",
     };
     buyerElements.actionFeedback.textContent = "Retina Security · Place your finger to proceed...";
     const authorized = await authorize(actionLabels[action] || "continue this user action");
@@ -3383,8 +4058,10 @@ async function submitBuyerAction(event) {
         action,
         reason,
         internalNote,
-        durationValue: Number(buyerElements.actionDuration?.value || 0),
-        durationUnit: normalizeText(buyerElements.actionDurationUnit?.value || "days"),
+        durationValue: action === "restrict" ? Number(buyerElements.actionDuration?.value || 7) : 0,
+        durationUnit: action === "ban" ? "permanent" : "days",
+        restrictStartsAt: restrictionSchedule?.startsAt?.toISOString?.() || "",
+        restrictExpiresAt: restrictionSchedule?.expiresAt?.toISOString?.() || "",
         notificationType: normalizeText(buyerElements.actionNotificationType?.value || ""),
       }),
     });
@@ -3441,7 +4118,66 @@ function handleBuyerAction(action, buyerId) {
     openBuyerActivityModal(buyerId);
     return;
   }
+  if (action === "delete-test-data") {
+    void deleteTestModeBuyerAccount(buyerId);
+    return;
+  }
   openActionModal(action, buyerId);
+}
+
+async function deleteTestModeBuyerAccount(buyerId) {
+  const buyer = getBuyerById(buyerId);
+  if (!buyer) {
+    return;
+  }
+  if (!isUserDataTestModeOn() || !isTestModeBuyerAccount(buyer)) {
+    window.alert(
+      "Company/user data can only be deleted while Test Mode is on, and only for Test Mode sandbox accounts.",
+    );
+    return;
+  }
+
+  const authorize = window.gmsAuthorizeSuperAdminFingerprint;
+  if (typeof authorize === "function") {
+    const authorized = await authorize(
+      `delete Test Mode data for ${getBuyerName(buyer) || getBuyerEmail(buyer) || "this user"}`,
+    );
+    if (!authorized) {
+      return;
+    }
+  }
+
+  const confirmed = window.confirm(
+    `Permanently delete Test Mode sandbox account "${getBuyerName(buyer) || getBuyerEmail(buyer)}"?\n\n` +
+      "This cannot be undone. Live accounts stay protected.",
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/super-admin/buyers/${encodeURIComponent(getBuyerId(buyer))}/data`,
+      {
+        method: "DELETE",
+        cache: "no-store",
+        headers: getSuperAdminHeaders({ Accept: "application/json" }),
+      },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.message || "Unable to delete Test Mode buyer account.");
+    }
+    if (typeof window.GMSAdminSuccessModal?.show === "function") {
+      window.GMSAdminSuccessModal.show({
+        title: "Test Mode Data Deleted",
+        message: data.message || "Test Mode buyer account permanently deleted.",
+      });
+    }
+    await loadBuyers({ quiet: true, showLoading: false });
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "Unable to delete Test Mode buyer account.");
+  }
 }
 
 function bindEvents() {
@@ -3526,6 +4262,7 @@ function bindEvents() {
     buyerState.verification = buyerFilterDefaults.verification;
     buyerState.activity = buyerFilterDefaults.activity;
     buyerState.dateJoined = buyerFilterDefaults.dateJoined;
+    buyerState.deleted = buyerFilterDefaults.deleted;
     buyerState.sort = [buyerFilterDefaults.sort];
     buyerState.page = 1;
     if (buyerElements.search) buyerElements.search.value = "";
@@ -3587,23 +4324,6 @@ function bindEvents() {
         : { focusFirst: true, cursorPosition: { clientX: event.clientX, clientY: event.clientY } },
     );
   });
-  buyerElements.list?.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    if (
-      event.target.closest("[data-buyer-action], [data-buyer-menu-toggle], [data-buyer-menu], .buyer-data-actions, [data-sa-secret-reveal], [data-buyer-contact-copy]") ||
-      event.target.closest("button, a, input, select, textarea")
-    ) {
-      return;
-    }
-    const row = event.target.closest(".buyer-data-list-row");
-    if (!(row instanceof HTMLElement)) {
-      return;
-    }
-    closeBuyerMenus();
-    openBuyerDrawer(row.dataset.buyerRow || "", "overview");
-  });
   buyerElements.list?.addEventListener("keydown", (event) => {
     if (handleBuyerMenuKeydown(event)) {
       return;
@@ -3622,11 +4342,6 @@ function bindEvents() {
       event.preventDefault();
       openBuyerRowActionMenu(row, { focusFirst: true });
       return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      closeBuyerMenus();
-      openBuyerDrawer(row.dataset.buyerRow || "", "overview");
     }
   });
   document.addEventListener("click", (event) => {
@@ -3718,6 +4433,9 @@ function bindEvents() {
         cancelBuyerActionAiSummary();
       }
       syncBuyerActionDropdown(type);
+      if (type === "duration") {
+        syncBuyerRestrictionSchedule();
+      }
       syncBuyerActionAiButton();
     });
     dropdown.trigger?.addEventListener("click", (event) => {
@@ -3822,7 +4540,7 @@ async function loadBuyers(options = {}) {
         cache: "no-store",
         headers: getSuperAdminHeaders(),
       }),
-      fetch("/api/orders", {
+      fetch("/api/orders?view=buyer-summary", {
         cache: "no-store",
         headers: getSuperAdminHeaders(),
       }).catch(() => null),
@@ -3865,6 +4583,7 @@ async function loadBuyers(options = {}) {
     if (requestSequence !== buyerLoadRequestSequence) {
       return false;
     }
+    window.SuperAdminClearBootSubNavSkeleton?.("user-data");
     console.error(error);
     if (!quiet) {
       setBuyerListViewShell();
@@ -3930,6 +4649,10 @@ function isBuyerDataSectionActive() {
   return !(section instanceof HTMLElement) || !section.hidden;
 }
 
+function isBuyerDataNeeded() {
+  return isBuyerDataSectionActive() || document.body.classList.contains("super-admin-dashboard-active");
+}
+
 async function flushBuyerRealtimeRefresh() {
   buyerRealtimeRefreshTimer = 0;
   if (buyerRealtimeRefreshInFlight) {
@@ -3951,7 +4674,7 @@ async function flushBuyerRealtimeRefresh() {
 
 function scheduleBuyerRealtimeRefresh(options = {}) {
   const force = options.force === true;
-  if (!force && !isBuyerDataSectionActive()) {
+  if (!force && !isBuyerDataNeeded()) {
     buyerRealtimeRefreshDirty = true;
     return;
   }
@@ -3998,7 +4721,19 @@ function handleBuyerRealtimeChange(event) {
 }
 
 function handleSuperAdminSectionChanged(event) {
-  if (normalizeKey(event?.detail?.section) !== "user-data") {
+  const section = normalizeKey(event?.detail?.section);
+  if (section === "dashboard") {
+    if (buyerRealtimeRefreshDirty) {
+      scheduleBuyerRealtimeRefresh({ force: true });
+    }
+    return;
+  }
+  if (section !== "user-data") {
+    return;
+  }
+  if (buyerRealtimeRefreshDirty && !buyerState.buyers.length && !buyerRealtimeRefreshInFlight) {
+    buyerRealtimeRefreshDirty = false;
+    void loadBuyers();
     return;
   }
   if (buyerRealtimeRefreshDirty || isBuyerDataSectionActive()) {
@@ -4030,7 +4765,11 @@ window.GMSBuyerData = Object.freeze({
 Object.keys(buyerActionDropdowns).forEach(syncBuyerActionDropdown);
 syncBuyerFilterControlsFromState();
 syncBuyerFilterSummary();
-void loadBuyers();
+if (isBuyerDataNeeded()) {
+  void loadBuyers();
+} else {
+  buyerRealtimeRefreshDirty = true;
+}
 window.setInterval(() => {
   refreshBuyerNewRegistrationState();
 }, buyerNewRegistrationRefreshIntervalMs);

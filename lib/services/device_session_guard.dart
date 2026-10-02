@@ -5,6 +5,8 @@ import 'package:switch_app/favorite_products_store.dart';
 import 'package:switch_app/guest_session.dart';
 import 'package:switch_app/order_store.dart';
 import 'package:switch_app/services/account_devices_service.dart';
+import 'package:switch_app/services/unified_account_service.dart';
+import 'package:switch_app/services/unified_account_service_base.dart';
 import 'package:switch_app/utils/auth_session.dart';
 import 'package:switch_app/cart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,6 +43,25 @@ class DeviceSessionGuard {
       final accountId = (await AuthSession.getAccountId())?.trim() ?? '';
       final email = (await AuthSession.getAccountEmail())?.trim() ?? '';
       if (accountId.isEmpty && email.isEmpty) return false;
+
+      // Account deleted / banned / restricted → force local sign-out.
+      try {
+        await createUnifiedAccountService().fetchSession(
+          accountId: accountId.isNotEmpty ? accountId : null,
+          email: email.isNotEmpty ? email : null,
+        );
+      } on UnifiedAccountServiceException catch (error) {
+        if (error.shouldForceSignOut) {
+          await _forgetLocalLogin();
+          final callback = _onSignedOut;
+          if (callback != null) {
+            await callback();
+          }
+          return true;
+        }
+      } catch (_) {
+        // Ignore offline/transient errors; device status still checked below.
+      }
 
       final status = await createAccountDevicesService().currentDeviceStatus(
         accountId: accountId,

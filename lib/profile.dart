@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:switch_app/cart.dart';
 import 'package:switch_app/change_password.dart';
@@ -6,6 +8,7 @@ import 'package:switch_app/error_validation.dart';
 import 'package:switch_app/favorite_products_store.dart';
 import 'package:switch_app/guest_session.dart';
 import 'package:switch_app/order_store.dart';
+import 'package:switch_app/services/philippines_places_service.dart';
 import 'package:switch_app/services/unified_account_service.dart';
 import 'package:switch_app/settings_page.dart';
 import 'package:switch_app/theme/app_snack_bar.dart';
@@ -13,6 +16,7 @@ import 'package:switch_app/utils/auth_session.dart';
 import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:switch_app/widgets/address_map_picker.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -271,15 +275,24 @@ class _ProfilePageState extends State<ProfilePage> {
     final companyNameController = TextEditingController();
     final businessTypeController = TextEditingController();
     final paymentReferenceController = TextEditingController();
+    final bankNameController = TextEditingController();
+    final bankAccountNameController = TextEditingController();
+    final bankAccountNumberController = TextEditingController();
+    final storeAddressController = TextEditingController();
+    final storeMapKey = GlobalKey<AddressMapPickerState>();
+    double? storeLat;
+    double? storeLng;
+    Timer? storeGeocodeDebounce;
     var sellerPlans = <Map<String, dynamic>>[
       const {
-        'id': 'starter-seller-monthly',
-        'name': 'Starter Seller Plan',
+        'id': 'seller-basic-monthly',
+        'name': 'Basic',
         'billingCycle': 'monthly',
-        'amount': 499,
+        'amount': 299,
         'currencyCode': 'PHP',
       },
     ];
+    var firstCompanyFree = true;
     var paymentPartners = <Map<String, dynamic>>[
       const {
         'id': 'manual',
@@ -291,10 +304,12 @@ class _ProfilePageState extends State<ProfilePage> {
       final catalogResult = await _unifiedAccountService.fetchSellerPlanCatalog();
       final plansRaw = catalogResult.catalog['plans'];
       final partnersRaw = catalogResult.catalog['paymentPartners'];
+      firstCompanyFree = true;
       if (plansRaw is List && plansRaw.isNotEmpty) {
         sellerPlans = plansRaw
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
+            .where((item) => item['comingSoon'] != true)
             .toList(growable: false);
       }
       if (partnersRaw is List && partnersRaw.isNotEmpty) {
@@ -317,6 +332,8 @@ class _ProfilePageState extends State<ProfilePage> {
             sellerPlans.first['id']?.toString().trim() ?? 'starter-seller-monthly';
         var selectedPartnerId =
             paymentPartners.first['id']?.toString().trim() ?? 'manual';
+        var selectedSellerKind = 'individual';
+        var storeMapEditing = false;
 
         return Padding(
           padding: EdgeInsets.only(
@@ -355,10 +372,45 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 final companyName = companyNameController.text.trim();
                 final businessType = businessTypeController.text.trim();
+                final payoutBank = <String, String>{
+                  'bankName': bankNameController.text.trim(),
+                  'accountName': bankAccountNameController.text.trim(),
+                  'accountNumber':
+                      bankAccountNumberController.text.replaceAll(RegExp(r'\D'), ''),
+                };
                 if (companyName.length < 2) {
                   AppSnackBar.showError(
                     modalContext,
                     message: 'Enter a company name with at least 2 characters.',
+                  );
+                  return;
+                }
+                if (payoutBank['bankName']!.length < 2 ||
+                    payoutBank['accountName']!.length < 2 ||
+                    payoutBank['accountNumber']!.length < 6) {
+                  AppSnackBar.showError(
+                    modalContext,
+                    message: selectedSellerKind == 'business'
+                        ? 'Enter the business bank account that matches the registered name.'
+                        : 'Enter a bank account in your name for payouts.',
+                  );
+                  return;
+                }
+                final storeAddress = storeAddressController.text
+                    .replaceAll(RegExp(r'\s+'), ' ')
+                    .trim();
+                if (storeAddress.length < 8) {
+                  AppSnackBar.showError(
+                    modalContext,
+                    message:
+                        'Enter your store address (street, barangay, city, province) so nearby Switch Riders can pick up your orders.',
+                  );
+                  return;
+                }
+                if (storeMapEditing) {
+                  AppSnackBar.showError(
+                    modalContext,
+                    message: 'Tap Save on the store map first to keep the pin.',
                   );
                   return;
                 }
@@ -372,7 +424,16 @@ class _ProfilePageState extends State<ProfilePage> {
                 });
 
                 try {
-                  final plan = selectedPlan();
+                  final plan = firstCompanyFree
+                      ? <String, dynamic>{
+                          'id': 'seller-free',
+                          'name': 'Free',
+                          'billingCycle': 'monthly',
+                          'amount': 0,
+                          'currencyCode': 'PHP',
+                          'free': true,
+                        }
+                      : selectedPlan();
                   final partner = selectedPartner();
                   final startResult =
                       await _unifiedAccountService.startBecomeSeller(
@@ -380,7 +441,12 @@ class _ProfilePageState extends State<ProfilePage> {
                     companyName: companyName,
                     businessType: businessType,
                     planName:
-                        plan['name']?.toString().trim() ?? 'Starter Seller Plan',
+                        plan['name']?.toString().trim() ?? 'Free',
+                    sellerKind: selectedSellerKind,
+                    payoutBank: payoutBank,
+                    storeAddress: storeAddress,
+                    storeLatitude: storeLat,
+                    storeLongitude: storeLng,
                   );
                   await AuthSession.setUnifiedSession(startResult.session);
 
@@ -411,6 +477,33 @@ class _ProfilePageState extends State<ProfilePage> {
                     throw Exception(
                       'Seller onboarding was created but no seller company ID was returned.',
                     );
+                  }
+
+                  if (firstCompanyFree) {
+                    final confirmResult =
+                        await _unifiedAccountService.confirmBecomeSeller(
+                      accountId: accountId,
+                      companyId: companyId,
+                      planName: 'Free',
+                      billingCycle: 'monthly',
+                      paymentGateway: 'free',
+                      paymentReference:
+                          'FREE-FIRST-${DateTime.now().millisecondsSinceEpoch}',
+                      amount: 0,
+                      currencyCode: 'PHP',
+                    );
+                    await AuthSession.setUnifiedSession(confirmResult.session);
+                    await _loadProfile();
+                    if (!mounted) {
+                      return;
+                    }
+                    Navigator.of(sheetContext).pop();
+                    AppSnackBar.showSuccess(
+                      context,
+                      message:
+                          'Your first company was submitted for review. It is free — please wait up to 24 hours.',
+                    );
+                    return;
                   }
 
                   final checkoutResult =
@@ -460,22 +553,45 @@ class _ProfilePageState extends State<ProfilePage> {
                     return;
                   }
 
+                  final planAmount = (plan['amount'] as num?)?.toDouble() ?? 0;
+                  final planIsFree =
+                      plan['free'] == true || planAmount <= 0;
+                  final gatewayToken = (checkoutIntent['paymentGateway'] ??
+                          partner['name'] ??
+                          '')
+                      .toString()
+                      .trim()
+                      .toLowerCase();
+                  final checkoutIsTestMode =
+                      checkoutUrl.contains('checkout=test-mode') ||
+                      checkoutIntent['testMode'] == true ||
+                      gatewayToken == 'test_mode_text';
+                  // Live paid plans must finish PayMongo — never confirm with MANUAL/PROTO.
+                  if (!planIsFree && !checkoutIsTestMode) {
+                    throw Exception(
+                      'PayMongo checkout URL was not returned. Complete live payment before Super Admin review.',
+                    );
+                  }
+
                   final confirmResult =
                       await _unifiedAccountService.confirmBecomeSeller(
                     accountId: accountId,
                     companyId: companyId,
-                    paymentGateway:
-                        partner['name']?.toString().trim() ?? 'manual',
+                    paymentGateway: planIsFree
+                        ? 'free'
+                        : checkoutIsTestMode
+                            ? 'test_mode_text'
+                            : (partner['name']?.toString().trim() ?? 'paymongo'),
                     paymentReference:
                         checkoutIntent['paymentReference']?.toString().trim().isNotEmpty ==
                                 true
                             ? checkoutIntent['paymentReference']
                                 .toString()
                                 .trim()
-                            : paymentReferenceController.text.trim().isEmpty
-                                ? 'MANUAL-${DateTime.now().millisecondsSinceEpoch}'
-                                : paymentReferenceController.text.trim(),
-                    amount: (plan['amount'] as num?)?.toDouble() ?? 0,
+                            : planIsFree
+                                ? 'FREE-${DateTime.now().millisecondsSinceEpoch}'
+                                : 'TESTMODE-${DateTime.now().millisecondsSinceEpoch}',
+                    amount: planAmount,
                     currencyCode:
                         plan['currencyCode']?.toString().trim() ?? 'PHP',
                     planName:
@@ -511,12 +627,38 @@ class _ProfilePageState extends State<ProfilePage> {
                 }
               }
 
+              Future<void> geocodeStoreAddress() async {
+                final query = storeAddressController.text.trim();
+                if (query.length < 8) return;
+                final place = await geocodePhilippinesAddress(query)
+                    .catchError((Object _) => null);
+                if (!modalContext.mounted ||
+                    place?.lat == null ||
+                    place?.lng == null ||
+                    storeAddressController.text.trim() != query) {
+                  return;
+                }
+                setModalState(() {
+                  storeLat = place!.lat;
+                  storeLng = place.lng;
+                });
+                await storeMapKey.currentState?.moveTo(
+                  place!.lat!,
+                  place.lng!,
+                  label: query,
+                );
+              }
+
               return Container(
                 decoration: BoxDecoration(
                   color: widget.backgroundColor,
                   borderRadius: BorderRadius.circular(18),
                 ),
                 padding: const EdgeInsets.all(16),
+                child: SingleChildScrollView(
+                physics: storeMapEditing
+                    ? const NeverScrollableScrollPhysics()
+                    : null,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -537,6 +679,22 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                     ),
                     const SizedBox(height: 16),
+                    if (firstCompanyFree)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: widget.surfaceColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Your first company is free. No subscription plan and no payment. Super Admin still reviews it first.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: widget.secondaryColor,
+                                height: 1.35,
+                              ),
+                        ),
+                      )
+                    else
                     DropdownButtonFormField<String>(
                       value: selectedPlanId,
                       decoration: const InputDecoration(
@@ -564,6 +722,47 @@ class _ProfilePageState extends State<ProfilePage> {
                             },
                     ),
                     const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedSellerKind,
+                      decoration: const InputDecoration(
+                        labelText: 'Seller type',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'individual',
+                          child: Text('Individual Seller — no DTI/SEC'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'business',
+                          child: Text('Business / Corporate Seller — DTI or SEC'),
+                        ),
+                      ],
+                      onChanged: isSubmitting
+                          ? null
+                          : (value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setModalState(() {
+                                selectedSellerKind = value;
+                              });
+                            },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      selectedSellerKind == 'business'
+                          ? (firstCompanyFree
+                              ? 'Required: DTI or SEC, BIR COR, owner ID, and a matching business bank account. Finish documents on web company setup, then Super Admin reviews your free company.'
+                              : 'Required after this step: DTI or SEC, BIR COR, owner ID, and a matching business bank account. Finish documents on web company setup before PayMongo.')
+                          : (firstCompanyFree
+                              ? 'Required: government-issued ID and a bank account in your name. No DTI or SEC. Finish the ID upload on web company setup, then Super Admin reviews your free company.'
+                              : 'Required: government-issued ID and a bank account in your name. No DTI or SEC. Finish the ID upload on web company setup before PayMongo.'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: widget.secondaryColor,
+                            height: 1.35,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: companyNameController,
                       textInputAction: TextInputAction.next,
@@ -579,6 +778,93 @@ class _ProfilePageState extends State<ProfilePage> {
                         labelText: 'Business type',
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: storeAddressController,
+                      textInputAction: TextInputAction.next,
+                      minLines: 1,
+                      maxLines: 2,
+                      onChanged: (_) {
+                        storeGeocodeDebounce?.cancel();
+                        storeGeocodeDebounce = Timer(
+                          const Duration(milliseconds: 900),
+                          () => unawaited(geocodeStoreAddress()),
+                        );
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Store address',
+                        hintText: 'e.g. 16-B Lanzones St., Brgy., City, Pampanga',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Switch Riders near this address pick up your orders. Tap Edit on the map to adjust the pin to your exact store entrance.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: widget.secondaryColor,
+                            height: 1.35,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 200,
+                      child: AddressMapPicker(
+                        key: storeMapKey,
+                        initialLat: storeLat,
+                        initialLng: storeLng,
+                        initialLabel: storeAddressController.text,
+                        borderRadius: 12,
+                        primaryColor: Theme.of(context).colorScheme.primary,
+                        onPlaceChanged: (place, lat, lng) {
+                          setModalState(() {
+                            storeLat = lat;
+                            storeLng = lng;
+                            final line = place == null
+                                ? ''
+                                : (place.description.isNotEmpty
+                                    ? place.description
+                                    : place.label);
+                            if (line.isNotEmpty &&
+                                storeAddressController.text.trim().length < 8) {
+                              storeAddressController.text = line;
+                            }
+                          });
+                        },
+                        onEditingChanged: (editing) {
+                          setModalState(() => storeMapEditing = editing);
+                        },
+                        onError: (message) =>
+                            AppSnackBar.showError(modalContext, message: message),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: bankNameController,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Bank name',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: bankAccountNameController,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: selectedSellerKind == 'business'
+                            ? 'Bank account name (registered business)'
+                            : 'Bank account name (your name)',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: bankAccountNumberController,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Bank account number',
+                      ),
+                    ),
+                    if (!firstCompanyFree) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: selectedPartnerId,
@@ -625,13 +911,14 @@ class _ProfilePageState extends State<ProfilePage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${selectedPlan()['name'] ?? 'Seller Plan'}: ${selectedPlan()['currencyCode'] ?? 'PHP'} ${selectedPlan()['amount'] ?? 0} ${selectedPlan()['billingCycle'] ?? 'monthly'}. If a hosted gateway is configured, the app opens checkout automatically.',
+                        '${selectedPlan()['name'] ?? 'Seller Plan'}: ${selectedPlan()['currencyCode'] ?? 'PHP'} ${selectedPlan()['amount'] ?? 0} every month for one extra company slot. This is not free once you already have a company.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: widget.secondaryColor,
                               height: 1.35,
                             ),
                       ),
                     ),
+                    ],
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
                       onPressed: isSubmitting ? null : submit,
@@ -643,10 +930,15 @@ class _ProfilePageState extends State<ProfilePage> {
                             )
                           : const Icon(Icons.workspace_premium_rounded),
                       label: Text(
-                        isSubmitting ? 'Processing...' : 'Activate Seller Plan',
+                        isSubmitting
+                            ? 'Processing...'
+                            : firstCompanyFree
+                                ? 'Submit free company'
+                                : 'Add paid company',
                       ),
                     ),
                   ],
+                ),
                 ),
               );
             },
@@ -655,7 +947,12 @@ class _ProfilePageState extends State<ProfilePage> {
       },
     );
 
+    storeGeocodeDebounce?.cancel();
+    storeAddressController.dispose();
     companyNameController.dispose();
+    bankNameController.dispose();
+    bankAccountNameController.dispose();
+    bankAccountNumberController.dispose();
     businessTypeController.dispose();
     paymentReferenceController.dispose();
   }

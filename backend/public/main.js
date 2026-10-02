@@ -8372,7 +8372,10 @@ const inventoryFrameQueryKeys = Object.freeze([
       translate: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
       forward: '<path d="m15 17 5-5-5-5"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/>',
       "pen-line": '<path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
-      "trash-2": '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+      "trash-2": (typeof window !== "undefined" && window.SwitchDefaultIcons?.paths?.trash) ||
+        '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+      trash: (typeof window !== "undefined" && window.SwitchDefaultIcons?.paths?.trash) ||
+        '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
       reminder: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
       users: '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
       image2: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
@@ -8387,7 +8390,6 @@ const inventoryFrameQueryKeys = Object.freeze([
       folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
       "circle-dashed": '<path d="M10.1 2.18a9.93 9.93 0 0 1 8.8 0"/><path d="M21.8 8.22a10 10 0 0 1 0 7.56"/><path d="M13.9 21.82a9.93 9.93 0 0 1-8.8 0"/><path d="M2.2 15.78a10 10 0 0 1 0-7.56"/>',
       history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
-      trash: '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
       bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
     };
     return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.more}</svg>`;
@@ -18866,6 +18868,17 @@ const inventoryFrameQueryKeys = Object.freeze([
       .seller-switch-pin__cancel { background: #f1f5f9; color: #0f172a; }
       .seller-switch-pin__submit { background: #0f766e; color: #fff; }
       .seller-switch-pin button:disabled { opacity: 0.7; cursor: wait; }
+      .seller-switch-pin__forgot {
+        display: inline-flex;
+        margin: 10px 0 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: #0f766e;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -18890,24 +18903,6 @@ const inventoryFrameQueryKeys = Object.freeze([
     const email = String(session.email || session.adminEmail || "").trim().toLowerCase();
     if (!accountId && !email) return;
 
-    const ticket = consumeSwitchPinTicket();
-    const stored = readSwitchPinUnlock();
-    const unlockToken = ticket || String(stored?.token || "").trim();
-    if (unlockToken) {
-      try {
-        const unlock = await postSellerSwitchPin("/api/account/seller-switch-pin/check-unlock", {
-          accountId,
-          email,
-          companyId: String(stored?.companyId || "").trim(),
-          unlockToken,
-        });
-        if (unlock.unlocked) {
-          writeSwitchPinUnlock(unlockToken, unlock.companyId);
-          return;
-        }
-      } catch (_) {}
-    }
-
     ensureSellerSwitchPinStyles();
     const companyName = String(session.companyName || session.storeName || "Seller admin").trim() || "Seller admin";
     const overlay = document.createElement("div");
@@ -18915,7 +18910,7 @@ const inventoryFrameQueryKeys = Object.freeze([
     overlay.innerHTML = `
       <form class="seller-switch-pin__card">
         <p class="seller-switch-pin__kicker">Switch PIN</p>
-        <h2>Open seller admin</h2>
+        <h2 data-seller-pin-title>Open seller admin</h2>
         <p class="seller-switch-pin__lead" data-seller-pin-lead>Checking Switch PIN...</p>
         <div data-seller-pin-fields></div>
         <p class="seller-switch-pin__feedback" data-seller-pin-feedback></p>
@@ -18926,6 +18921,7 @@ const inventoryFrameQueryKeys = Object.freeze([
       </form>
     `;
     document.body.appendChild(overlay);
+    const title = overlay.querySelector("[data-seller-pin-title]");
     const lead = overlay.querySelector("[data-seller-pin-lead]");
     const fields = overlay.querySelector("[data-seller-pin-fields]");
     const feedback = overlay.querySelector("[data-seller-pin-feedback]");
@@ -18933,15 +18929,31 @@ const inventoryFrameQueryKeys = Object.freeze([
     const cancel = overlay.querySelector("[data-seller-pin-cancel]");
     let mode = "enter";
     let companyId = "";
+    let pinResetRequired = false;
 
-    const renderFields = (nextMode) => {
+    const clearStoredUnlock = () => {
+      try {
+        localStorage.removeItem("gms-switch-pin-unlock");
+        sessionStorage.removeItem("gms-switch-pin-unlock");
+      } catch (_) {}
+    };
+
+    const renderFields = (nextMode, options = {}) => {
       mode = nextMode;
-      lead.textContent = nextMode === "create"
-        ? "Create a Switch PIN for this seller admin. This is not your login password. Subscribers must enter this PIN before opening seller admin."
-        : `Enter the Switch PIN for ${companyName}. This is not your login password.`;
+      pinResetRequired = options.pinResetRequired === true;
+      if (title) {
+        title.textContent = pinResetRequired ? "Switch PIN reset required" : "Open seller admin";
+      }
+      lead.textContent = pinResetRequired
+        ? (options.reason
+          ? `Super Admin required a Switch PIN reset: ${options.reason} Create a new 6-digit Switch PIN to continue.`
+          : "Super Admin required a Switch PIN reset. Create a new 6-digit Switch PIN to continue. This is not your login password.")
+        : nextMode === "create"
+          ? "Create a Switch PIN for this seller admin. This is not your login password. Subscribers must enter this PIN before opening seller admin."
+          : `Enter the Switch PIN for ${companyName}. This is not your login password.`;
       fields.innerHTML = nextMode === "create"
         ? `
-          <label>Create Switch PIN
+          <label>${pinResetRequired ? "New Switch PIN" : "Create Switch PIN"}
             <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-seller-pin required />
           </label>
           <label>Confirm Switch PIN
@@ -18952,12 +18964,35 @@ const inventoryFrameQueryKeys = Object.freeze([
           <label>Switch PIN
             <input type="password" inputmode="numeric" maxlength="6" autocomplete="off" data-seller-pin required />
           </label>
+          <button type="button" class="seller-switch-pin__forgot" data-seller-pin-forgot>Forgot PIN</button>
         `;
       fields.querySelectorAll("input").forEach((input) => {
         input.addEventListener("input", () => {
           input.value = String(input.value || "").replace(/\D/g, "").slice(0, 6);
           feedback.textContent = "";
         });
+      });
+      overlay.querySelector("[data-seller-pin-forgot]")?.addEventListener("click", async () => {
+        const forgotBtn = overlay.querySelector("[data-seller-pin-forgot]");
+        submit.disabled = true;
+        cancel.disabled = true;
+        if (forgotBtn) forgotBtn.disabled = true;
+        feedback.textContent = "Sending a reset link to your Gmail...";
+        try {
+          const result = await postSellerSwitchPin("/api/account/seller-switch-pin/forgot", {
+            accountId,
+            email,
+            companyId,
+          });
+          feedback.textContent = result.message
+            || "We sent a reset link to your Gmail. Tap the link — it is not a code.";
+        } catch (error) {
+          feedback.textContent = error instanceof Error ? error.message : "Unable to send Switch PIN reset link.";
+        } finally {
+          submit.disabled = false;
+          cancel.disabled = false;
+          if (forgotBtn) forgotBtn.disabled = false;
+        }
       });
       submit.disabled = false;
       fields.querySelector("input")?.focus();
@@ -18999,6 +19034,34 @@ const inventoryFrameQueryKeys = Object.freeze([
         email,
       });
       companyId = String(status.companyId || "").trim();
+      if (status.pinResetRequired) {
+        clearStoredUnlock();
+        renderFields("create", {
+          pinResetRequired: true,
+          reason: String(status.pinResetReason || "").trim(),
+        });
+        return;
+      }
+
+      const ticket = consumeSwitchPinTicket();
+      const stored = readSwitchPinUnlock();
+      const unlockToken = ticket || String(stored?.token || "").trim();
+      if (unlockToken) {
+        try {
+          const unlock = await postSellerSwitchPin("/api/account/seller-switch-pin/check-unlock", {
+            accountId,
+            email,
+            companyId: String(stored?.companyId || companyId || "").trim(),
+            unlockToken,
+          });
+          if (unlock.unlocked) {
+            writeSwitchPinUnlock(unlockToken, unlock.companyId || companyId);
+            overlay.remove();
+            return;
+          }
+        } catch (_) {}
+      }
+
       renderFields(status.hasPin ? "enter" : "create");
     } catch (error) {
       const message = error instanceof Error ? error.message : "";

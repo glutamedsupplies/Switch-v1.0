@@ -1,4 +1,4 @@
-﻿(async function () {
+(async function () {
   const browserPath = String(window.location.pathname || "").trim().toLowerCase();
   const isAdminSpaShellDocument = document.documentElement.hasAttribute("data-admin-spa-shell");
 
@@ -87,6 +87,7 @@
     "/admin_dashboard.html": "dashboard",
     "/live_chat.html": "live-chat",
     "/concern.html": "concern",
+    "/seller_security_center.html": "account-health",
     "/product_panel.html": "products",
     "/edit_products.html": "products",
     "/main_inventory_embed.html": "stock",
@@ -105,6 +106,7 @@
     "employee-dashboard": "employee-dashboard",
     "live-chat": "live-chat",
     concern: "concern",
+    "account-health": "concern",
     products: "products",
     stock: "admin-inventory",
     "payment-partners": "payment-partners",
@@ -525,6 +527,15 @@
       label: "Concern",
       title: "Concern",
       stockKey: "concern",
+      icon: concernNavIconOutline,
+      activeIcon: concernNavIconFilled,
+    },
+    {
+      key: "account-health",
+      href: "/seller_security_center.html",
+      label: "Account Health",
+      title: "Security Center",
+      stockKey: "account-health",
       icon: concernNavIconOutline,
       activeIcon: concernNavIconFilled,
     },
@@ -2292,7 +2303,7 @@
     }
 
     const scriptElement = document.createElement("script");
-    scriptElement.src = "/admin_account_settings.js?v=seller-square-pen-1";
+    scriptElement.src = "/admin_account_settings.js?v=no-subscription-modal-1";
     scriptElement.defer = true;
     scriptElement.dataset.adminAccountSettingsScript = "true";
     const appendScript = () => document.body?.appendChild(scriptElement);

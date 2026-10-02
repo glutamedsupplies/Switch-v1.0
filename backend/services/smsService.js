@@ -95,7 +95,33 @@ async function sendSemaphoreSms({ number, message }) {
   };
 }
 
-async function sendSms({ number, message }) {
+async function assertSmsNotificationsAllowed({ critical = false } = {}) {
+  if (critical) {
+    return;
+  }
+  try {
+    const {
+      getPlatformSettings,
+      isPlatformSettingBlocking,
+    } = require("./platformSettings");
+    const settings = await getPlatformSettings();
+    if (isPlatformSettingBlocking(settings, "smsNotifications")) {
+      throw new Error(
+        "SMS notifications are disabled by Super Admin platform settings.",
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof Error
+      && /disabled by Super Admin platform settings/i.test(error.message)
+    ) {
+      throw error;
+    }
+  }
+}
+
+async function sendSms({ number, message, critical = false }) {
+  await assertSmsNotificationsAllowed({ critical });
   if (!isSmsEnabled()) {
     throw new Error(
       "SMS is not enabled. Set SEMAPHORE_API_KEY (and SMS_ENABLED=true) in backend/.env.",
@@ -120,7 +146,7 @@ async function sendVerificationSms({ number, code, purpose = "registration" }) {
       ? `${appName}: Your password reset code is ${code}. Valid for 10 minutes. Do not share this code.`
       : `${appName}: Your verification code is ${code}. Valid for 10 minutes. Do not share this code.`;
 
-  return sendSms({ number, message });
+  return sendSms({ number, message, critical: true });
 }
 
 module.exports = {

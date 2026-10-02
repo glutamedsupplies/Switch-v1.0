@@ -55,6 +55,31 @@ jobs:
           cp web/maps_api_key.example.js web/maps_api_key.js
           flutter build web --release
 
+  switch-rider-app:
+    name: Switch Rider app + switch_core analyze, test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: switch_core
+        working-directory: packages/switch_core
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Switch Rider
+        if: success() || failure()
+        working-directory: apps/switch_rider
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
   backend:
     name: Node backend install + test + health smoke
     runs-on: ubuntu-latest
@@ -169,6 +194,11 @@ jobs:
       - name: Run db:migrate
         working-directory: backend
         run: npm run db:migrate
-      - name: Catalog/order helper + Postgres tests
+      - name: Catalog/order/chat helper + Postgres tests
         working-directory: backend
-        run: npm run test:catalog
+        run: |
+          npm run test:catalog
+          npm run test:chat
+      - name: Switch Rider Postgres integration tests
+        working-directory: backend
+        run: node --test test/switchRider.test.js

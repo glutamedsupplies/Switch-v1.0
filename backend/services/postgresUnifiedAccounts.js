@@ -59,7 +59,6 @@ async function listCompanyMemberships() {
         m.metadata,
         m.created_at,
         m.updated_at,
-        c.company_code,
         c.type::text AS company_type,
         c.status::text AS company_status,
         c.name,
@@ -76,7 +75,7 @@ async function listCompanyMemberships() {
         c.profile_data
       FROM company_memberships m
       INNER JOIN companies c ON c.id = m.company_id
-      ORDER BY c.created_at ASC, m.created_at ASC
+      ORDER BY c.created_at DESC, m.created_at DESC
     `,
   );
 
@@ -93,7 +92,7 @@ async function listCompanyMemberships() {
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
     company: {
       id: row.company_id,
-      companyCode: row.company_code || "",
+      companyCode: "",
       type: row.company_type,
       status: row.company_status,
       name: row.name || "",
@@ -298,14 +297,16 @@ function buildSessionView(entry, options = {}) {
     ) || null;
   }
   if (!activeMembership) {
-    activeMembership = (entry.companies || []).find((membership) =>
-      membership.isPrimary && modeMatchesMembership(activeMode, membership),
-    ) || null;
-  }
-  if (!activeMembership) {
-    activeMembership = (entry.companies || []).find((membership) =>
+    const modeMatches = (entry.companies || []).filter((membership) =>
       modeMatchesMembership(activeMode, membership),
-    ) || null;
+    );
+    activeMembership =
+      modeMatches.find((membership) => membership.isPrimary) ||
+      modeMatches.find((membership) =>
+        String(membership.company?.status || "").toLowerCase() === "active",
+      ) ||
+      modeMatches[0] ||
+      null;
   }
 
   return {

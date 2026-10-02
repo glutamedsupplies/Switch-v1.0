@@ -12,6 +12,7 @@
     food: "#ea580c",
     hotels: "#7c3aed",
     resort: "#0891b2",
+    groceries: "#16a34a",
   });
 
   function normalizeHex(value, fallback = "") {

@@ -13,6 +13,7 @@
     selectedPlan: null,
     paymentCard: null,
     sellerPin: "",
+    companyPassword: "",
     storeTypes: [],
     selectedStoreType: "",
     businessTypeSearchTerm: "",
@@ -20,9 +21,14 @@
     companyLogoPreviewUrl: "",
     companyLogoUploadedUrl: "",
     companyLogoSkipped: false,
-    businessDocumentFile: null,
-    businessDocumentType: "business_permit",
-    businessDocumentUploadedUrl: "",
+    sellerKind: "",
+    payoutBank: {
+      bankName: "",
+      accountName: "",
+      accountNumber: "",
+    },
+    kycDocuments: {},
+    activeKycSlot: "",
     verifyChannel: "email",
     verificationToken: "",
     emailVerified: Boolean(session.emailVerified),
@@ -34,9 +40,14 @@
     googleConnected: initialGoogleConnection.connected,
     googleEmail: initialGoogleConnection.email,
     companyId: "",
+    firstCompanyFree: true,
+    requiresPaidPlan: false,
+    existingCompanyCount: 0,
+    canSubmitFreeFirst: true,
+    paidExtraSlot: null,
     busy: false,
     deleteBusy: false,
-    step: "plan",
+    step: "pin",
   };
 
   const els = {
@@ -52,11 +63,12 @@
     googleStatus: document.querySelector("[data-ba-google-status]"),
     googleStatusLabel: document.querySelector("[data-ba-google-status-label]"),
     sellerStatus: document.querySelector("[data-ba-seller-status]"),
+    startSeller: document.querySelector("[data-ba-start-seller]"),
     wizard: document.querySelector("[data-ba-wizard]"),
     wizardFeedback: document.querySelector("[data-ba-wizard-feedback]"),
     wizardTitle: document.getElementById("ba-wizard-title"),
+    finishSeller: document.querySelector("[data-ba-finish-seller]"),
     progress: document.querySelector("[data-ba-wizard-progress]"),
-    planGrid: document.querySelector("[data-ba-plan-grid]"),
     verifyTarget: document.querySelector("[data-ba-verify-target]"),
     businessType: document.querySelector("[data-ba-business-type]"),
     businessTypes: document.querySelector("[data-ba-business-types]"),
@@ -68,10 +80,14 @@
     companyLogoStatus: document.querySelector("[data-ba-company-logo-status]"),
     companyLogoRemove: document.querySelector("[data-ba-company-logo-remove]"),
     documentInput: document.querySelector("[data-ba-document-input]"),
-    documentType: document.querySelector("[data-ba-document-type]"),
-    documentStatus: document.querySelector("[data-ba-document-status]"),
-    documentSelect: document.querySelector("[data-ba-document-select]"),
-    documentRemove: document.querySelector("[data-ba-document-remove]"),
+    sellerKindCopy: document.querySelector("[data-ba-seller-kind-copy]"),
+    payoutBank: document.querySelector("[data-ba-payout-bank]"),
+    kycSlots: document.querySelector("[data-ba-kyc-slots]"),
+    companyDocuments: document.querySelector("[data-ba-company-documents]"),
+    bankName: document.querySelector("[data-ba-bank-name]"),
+    bankAccountName: document.querySelector("[data-ba-bank-account-name]"),
+    bankAccountNumber: document.querySelector("[data-ba-bank-account-number]"),
+    bankAccountNameLabel: document.querySelector("[data-ba-bank-account-name-label]"),
     doneCopy: document.querySelector("[data-ba-done-copy]"),
     openDashboard: document.querySelector("[data-ba-open-dashboard]"),
     deleteModal: document.querySelector("[data-ba-delete-modal]"),
@@ -81,14 +97,46 @@
     deleteSubmit: document.querySelector("[data-ba-delete-submit]"),
   };
 
-  const STEP_ORDER = ["plan", "card", "pin", "verify", "company", "done"];
+  function setActionBusy(button, busy, busyLabel = "") {
+    if (!(button instanceof HTMLButtonElement) && !(button instanceof HTMLElement)) {
+      return;
+    }
+    if (busy) {
+      if (!button.dataset.baIdleLabel) {
+        button.dataset.baIdleLabel = String(button.textContent || "").trim();
+      }
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.classList.add("is-busy");
+      if (busyLabel) {
+        button.textContent = busyLabel;
+      }
+      return;
+    }
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    button.classList.remove("is-busy");
+    if (button.dataset.baIdleLabel) {
+      button.textContent = button.dataset.baIdleLabel;
+    }
+  }
+
+  const FIRST_COMPANY_STEPS = ["pin", "company"];
+  const EXTRA_COMPANY_STEPS = ["pin", "company"];
   const STEP_TITLES = {
-    plan: "Choose Your Plan",
-    card: "Register your card",
     pin: "Create Switch PIN",
     verify: "Verify your contact",
     company: "Company profile",
     done: "You're ready",
+  };
+  const FIRST_COMPANY_FREE_PLAN = {
+    id: "seller-free",
+    name: "Free",
+    billingCycle: "monthly",
+    amount: 0,
+    yearlyAmount: 0,
+    currencyCode: "PHP",
+    free: true,
   };
 
   function escapeHtml(value) {
@@ -533,79 +581,62 @@
     );
   }
 
-  function wizardStepOrder() {
-    return isFreePlan()
-      ? ["plan", "pin", "verify", "company", "done"]
-      : ["plan", "card", "pin", "verify", "company", "done"];
+  function isPlatformTestModeOn() {
+    const settings =
+      window.GMSPlatformSettings
+      || (typeof window.GMSTheme?.getPlatformSettings === "function"
+        ? window.GMSTheme.getPlatformSettings()
+        : null);
+    return Boolean(settings?.testMode);
   }
 
-  function planCycleLabel() {
-    return state.billingCycle === "yearly" ? "year" : "month";
+  async function ensurePlatformSettingsFresh() {
+    if (typeof window.GMSTheme?.syncPlatformSettings === "function") {
+      try {
+        await window.GMSTheme.syncPlatformSettings({ force: true });
+      } catch (_) {}
+    }
+  }
+
+  function isFirstCompanyFlow() {
+    return Number(state.existingCompanyCount || 0) === 0 || Boolean(state.canSubmitFreeFirst);
+  }
+
+  function isExtraSlotPaid() {
+    return Boolean(state.paidExtraSlot?.paidAt || state.paidExtraSlot?.intentId);
+  }
+
+  function wizardStepOrder() {
+    return isFirstCompanyFlow() ? FIRST_COMPANY_STEPS : EXTRA_COMPANY_STEPS;
+  }
+
+  function syncSellerCta() {
+    if (!els.startSeller) return;
+    if (Number(state.existingCompanyCount || 0) > 0 && !state.canSubmitFreeFirst) {
+      els.startSeller.dataset.baLocked = "one-company";
+      setActionBusy(els.startSeller, true, "Company already added");
+      return;
+    }
+    delete els.startSeller.dataset.baLocked;
+    setActionBusy(els.startSeller, false, "Start free company");
+    els.startSeller.dataset.baIdleLabel = "Start free company";
+    els.startSeller.textContent = "Start free company";
+  }
+
+  function progressStepKey(step) {
+    if (step === "verify") return "pin";
+    if (step === "done") return "company";
+    return step;
   }
 
   function renderPlans() {
-    if (!els.planGrid) return;
-    const plans = Array.isArray(state.plans) ? state.plans : [];
-    if (!plans.length) {
-      els.planGrid.innerHTML = `<p class="ba-muted">Unable to load seller plans. You can still continue with a prototype Pro plan.</p>`;
-      state.plans = [
-        {
-          id: "seller-free",
-          name: "Free",
-          amount: 0,
-          yearlyAmount: 0,
-          currencyCode: "PHP",
-          free: true,
-          description: "Start selling on Switch at no cost.",
-          features: ["Seller admin dashboard", "Up to 10 active listings"],
-        },
-        {
-          id: "seller-pro-monthly",
-          name: "Pro",
-          amount: 499,
-          yearlyAmount: 4790,
-          currencyCode: "PHP",
-          popular: true,
-          description: "Prototype seller plan for Switch.",
-          features: ["Seller admin dashboard", "Unified account", "Legit badge for original products"],
-        },
-      ];
-    }
-
-    const icons = { Free: "○", Basic: "🌿", Pro: "👑", Premium: "◆" };
-    els.planGrid.innerHTML = state.plans
-      .map((plan) => {
-        const amount = planAmount(plan);
-        const popular = Boolean(plan.popular);
-        const free = isFreePlan(plan);
-        const features = Array.isArray(plan.features) ? plan.features : [];
-        return `
-          <article class="ba-plan-card ${popular ? "is-popular" : ""}${free ? " is-free" : ""}" data-ba-select-plan="${escapeHtml(plan.id)}">
-            ${popular ? `<span class="ba-plan-card__badge">Most Popular</span>` : ""}
-            ${free && !popular ? `<span class="ba-plan-card__badge">Free</span>` : ""}
-            <div class="ba-plan-card__icon" aria-hidden="true">${icons[plan.name] || "◆"}</div>
-            <h3>${escapeHtml(plan.name || "Plan")}</h3>
-            <p class="ba-plan-card__copy">${escapeHtml(plan.description || "")}</p>
-            <div class="ba-plan-card__price">
-              <strong>${free ? "Free" : `${escapeHtml(plan.currencyCode || "PHP")} ${amount}`}</strong>
-              <span>${free ? "to start" : `/ ${planCycleLabel()}`}</span>
-            </div>
-            <ul>
-              ${features.map((feature) => `<li>${escapeHtml(feature)}</li>`).join("")}
-            </ul>
-            <button type="button" class="ba-plan-card__cta" data-ba-select-plan="${escapeHtml(plan.id)}">
-              ${free ? "Start Free →" : popular ? "Start Free Trial →" : "Get Started →"}
-            </button>
-          </article>
-        `;
-      })
-      .join("");
+    state.selectedPlan = { ...FIRST_COMPANY_FREE_PLAN };
   }
 
   function renderProgress() {
     if (!els.progress) return;
     const steps = wizardStepOrder();
-    const activeIndex = steps.indexOf(state.step);
+    const activeIndex = steps.indexOf(progressStepKey(state.step));
     els.progress.innerHTML = steps.map((step, index) => {
       const cls = index < activeIndex ? "is-done" : index === activeIndex ? "is-active" : "";
       return `<span class="${cls}" data-step="${step}"></span>`;
@@ -631,21 +662,50 @@
     if (next === "company") {
       renderBusinessTypes();
       syncCompanyLogoPreview();
+      const mobileInput = document.querySelector("[data-ba-company-mobile]");
+      if (mobileInput && !String(mobileInput.value || "").trim()) {
+        mobileInput.value = String(state.mobileNumber || "").trim();
+      }
+    }
+    if (els.finishSeller) {
+      els.finishSeller.textContent = isFirstCompanyFlow()
+        ? "Submit free company"
+        : "Submit for review";
+      els.finishSeller.dataset.baIdleLabel = els.finishSeller.textContent;
     }
   }
 
-  function openWizard(startStep = "plan") {
-    if (!els.wizard) return;
+  function openWizard(startStep = "") {
+    if (!els.wizard || !els.wizard.hidden) return;
     els.wizard.hidden = false;
     document.body.classList.add("modal-open");
     setFeedback(els.wizardFeedback, "", null);
-    showStep(startStep);
+    let firstStep = startStep || wizardStepOrder()[0] || "pin";
+    if (["plan", "card", "paymongo"].includes(firstStep)) {
+      firstStep = "pin";
+    }
+    showStep(firstStep);
   }
 
   function closeWizard() {
-    if (!els.wizard) return;
+    if (!els.wizard || els.wizard.hidden) return;
+    // Do not allow closing mid-submit (finishSellerUpgrade in flight).
+    if (state.busy && els.finishSeller?.getAttribute("aria-busy") === "true") {
+      return;
+    }
     els.wizard.hidden = true;
     document.body.classList.remove("modal-open");
+    state.busy = false;
+    setActionBusy(els.finishSeller, false);
+    if (els.startSeller?.dataset.baLocked) {
+      const lockedLabel =
+        els.startSeller.dataset.baLocked === "seller-active"
+          ? "Already upgraded"
+          : "Upgrade in progress…";
+      setActionBusy(els.startSeller, true, lockedLabel);
+    } else {
+      setActionBusy(els.startSeller, false);
+    }
   }
 
   function deleteConfirmationMatches() {
@@ -777,6 +837,84 @@
       holderName,
       prototype: true,
     };
+  }
+
+  function readCompanyAccessForm() {
+    const mobile = String(document.querySelector("[data-ba-company-mobile]")?.value || "").replace(/\D/g, "");
+    const password = String(document.querySelector("[data-ba-company-password]")?.value || "");
+    const confirm = String(document.querySelector("[data-ba-company-password-confirm]")?.value || "");
+    if (mobile && mobile.length < 10) {
+      throw new Error("Enter a valid mobile number.");
+    }
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      throw new Error("Company password must be at least 8 characters and include a letter and a number.");
+    }
+    if (password !== confirm) {
+      throw new Error("Company password confirmation does not match.");
+    }
+    return { mobileNumber: mobile || state.mobileNumber, companyPassword: password };
+  }
+
+  function readStoreLocationForm() {
+    const address = String(document.querySelector("[data-ba-store-address]")?.value || "").replace(/\s+/g, " ").trim();
+    if (address.length < 8) {
+      throw new Error("Enter your store address (street, barangay, city, province) so nearby Switch Riders can pick up your orders.");
+    }
+    const lat = Number(document.querySelector("[data-ba-store-lat]")?.value);
+    const lng = Number(document.querySelector("[data-ba-store-lng]")?.value);
+    const hasPin = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)
+      && String(document.querySelector("[data-ba-store-lat]")?.value || "").trim() !== "";
+    return {
+      storeAddress: address,
+      ...(hasPin ? { storeLatitude: lat, storeLongitude: lng } : {}),
+    };
+  }
+
+  function bindStoreLocationControls() {
+    const button = document.querySelector("[data-ba-store-locate]");
+    const status = document.querySelector("[data-ba-store-location-status]");
+    const latInput = document.querySelector("[data-ba-store-lat]");
+    const lngInput = document.querySelector("[data-ba-store-lng]");
+    const addressInput = document.querySelector("[data-ba-store-address]");
+    if (!button || !latInput || !lngInput) return;
+    addressInput?.addEventListener("input", () => {
+      if (button.dataset.pinned === "true") return;
+      latInput.value = "";
+      lngInput.value = "";
+    });
+    button.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        if (status) status.textContent = "This browser can't share your location. We'll pin the store from the address instead.";
+        return;
+      }
+      button.disabled = true;
+      if (status) status.textContent = "Getting your location...";
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          latInput.value = String(lat);
+          lngInput.value = String(lng);
+          button.dataset.pinned = "true";
+          button.disabled = false;
+          if (status) status.textContent = `Store pinned at your current location (±${Math.round(position.coords.accuracy || 0)} m).`;
+          if (addressInput && addressInput.value.trim().length < 8) {
+            try {
+              const payload = await fetchJson(`/api/maps/geocode/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
+              const line = String(payload?.place?.description || payload?.place?.label || "").trim();
+              if (line) addressInput.value = line;
+            } catch (_) {
+              // Seller can still type the address manually.
+            }
+          }
+        },
+        () => {
+          button.disabled = false;
+          if (status) status.textContent = "Location permission was denied. We'll pin the store from the address instead.";
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      );
+    });
   }
 
   function readPinForm() {
@@ -933,55 +1071,220 @@
     return uploadedUrl;
   }
 
-  async function uploadSelectedBusinessDocument() {
-    if (state.businessDocumentUploadedUrl) return state.businessDocumentUploadedUrl;
-    const file = state.businessDocumentFile instanceof File ? state.businessDocumentFile : null;
-    if (!file) return "";
+  function getKycSlotsForKind(kind) {
+    if (kind === "individual") {
+      return [
+        {
+          key: "valid_id",
+          type: "valid_id",
+          label: "Government-Issued ID",
+          hint: "National ID (PhilSys), Passport, Driver's License, SSS ID, or TIN ID.",
+        },
+      ];
+    }
+    if (kind === "business") {
+      return [
+        {
+          key: "registration",
+          types: ["dti", "sec"],
+          label: "DTI or SEC Certificate",
+          hint: "DTI for sole proprietorship, or SEC Certificate & Articles for corporation / OPC.",
+        },
+        {
+          key: "bir",
+          type: "bir",
+          label: "BIR Certificate of Registration",
+          hint: "COR / Form 2303.",
+        },
+        {
+          key: "valid_id",
+          type: "valid_id",
+          label: "Valid ID of owner or representative",
+          hint: "Government-issued ID of the owner or authorized representative.",
+        },
+      ];
+    }
+    return [];
+  }
+
+  function readPayoutBank() {
+    state.payoutBank = {
+      bankName: String(els.bankName?.value || "").replace(/\s+/g, " ").trim(),
+      accountName: String(els.bankAccountName?.value || "").replace(/\s+/g, " ").trim(),
+      accountNumber: String(els.bankAccountNumber?.value || "").replace(/\D/g, ""),
+    };
+    return state.payoutBank;
+  }
+
+  function getKycSlotRecord(slot) {
+    return state.kycDocuments[slot.key] || null;
+  }
+
+  function getMissingKycSlots() {
+    return getKycSlotsForKind(state.sellerKind)
+      .filter((slot) => !(getKycSlotRecord(slot)?.file instanceof File) && !getKycSlotRecord(slot)?.url)
+      .map((slot) => slot.label);
+  }
+
+  async function uploadDocumentFile(file) {
     const response = await fetch("/api/document-uploads", {
       method: "POST",
       headers: {
         "Content-Type": file.type || "application/octet-stream",
-        "X-File-Name": file.name || "business-document",
+        "X-File-Name": file.name || "seller-document",
       },
       body: file,
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.message || "Unable to upload business document.");
+      throw new Error(data.message || "Unable to upload document.");
     }
-    const uploadedUrl = String(data.documentUrl || "").trim();
+    const uploadedUrl = String(data.documentUrl || data.imageUrl || "").trim();
     if (!uploadedUrl) {
       throw new Error("Document upload did not return a file URL.");
     }
-    state.businessDocumentUploadedUrl = uploadedUrl;
     return uploadedUrl;
   }
 
-  function syncBusinessDocumentUi() {
-    const hasFile = state.businessDocumentFile instanceof File;
-    if (els.documentStatus) {
-      els.documentStatus.textContent = hasFile
-        ? `Selected: ${state.businessDocumentFile.name}`
-        : "PDF or image of your business permit / DTI / SEC helps Super Admin review faster.";
+  async function uploadRequiredKycDocuments(companyId) {
+    const slots = getKycSlotsForKind(state.sellerKind);
+    for (const slot of slots) {
+      const record = getKycSlotRecord(slot);
+      let url = String(record?.url || "").trim();
+      if (!url && record?.file instanceof File) {
+        setFeedback(els.wizardFeedback, `Uploading ${slot.label}...`, null);
+        url = await uploadDocumentFile(record.file);
+        state.kycDocuments[slot.key] = { ...record, url };
+      }
+      if (!url) {
+        throw new Error(`Upload ${slot.label} before continuing.`);
+      }
+      const type = record?.type || slot.type || (slot.types && slot.types[0]) || "other";
+      await fetchJson("/api/account/become-seller/documents", {
+        method: "POST",
+        body: JSON.stringify({
+          accountId: state.accountId,
+          companyId,
+          type,
+          fileName: record?.file?.name || "",
+          label: slot.label,
+          url,
+        }),
+      });
     }
-    if (els.documentRemove) els.documentRemove.hidden = !hasFile;
   }
 
-  function clearBusinessDocument() {
-    state.businessDocumentFile = null;
-    state.businessDocumentUploadedUrl = "";
-    if (els.documentInput) els.documentInput.value = "";
-    syncBusinessDocumentUi();
+  function setSellerKind(kind) {
+    state.sellerKind = kind === "business" ? "business" : kind === "individual" ? "individual" : "";
+    document.querySelectorAll("[data-ba-seller-kind-option]").forEach((button) => {
+      button.classList.toggle("is-active", button.getAttribute("data-ba-seller-kind-option") === state.sellerKind);
+    });
+    if (els.sellerKindCopy) {
+      els.sellerKindCopy.textContent = state.sellerKind === "individual"
+        ? "Individual Seller: government ID plus a bank account in your name. No DTI or SEC."
+        : state.sellerKind === "business"
+          ? "Business / Corporate Seller: DTI or SEC, BIR COR, owner ID, and a business bank account."
+          : "Select a seller type to see the documents Super Admin will review.";
+    }
+    if (els.payoutBank) {
+      els.payoutBank.hidden = !state.sellerKind;
+    }
+    if (els.companyDocuments) {
+      els.companyDocuments.hidden = !state.sellerKind;
+    }
+    if (els.bankAccountNameLabel) {
+      els.bankAccountNameLabel.textContent = state.sellerKind === "business"
+        ? "Account name (must match registered business)"
+        : "Account name (must be in your name)";
+    }
+    renderKycSlots();
+  }
+
+  function renderKycSlots() {
+    if (!els.kycSlots) {
+      return;
+    }
+    els.kycSlots.innerHTML = "";
+    const slots = getKycSlotsForKind(state.sellerKind);
+    for (const slot of slots) {
+      const record = getKycSlotRecord(slot);
+      const row = document.createElement("div");
+      row.className = "ba-kyc-slot";
+      const title = document.createElement("strong");
+      title.textContent = slot.label;
+      const hint = document.createElement("p");
+      hint.className = "ba-muted";
+      hint.textContent = record?.file?.name
+        ? `Selected: ${record.file.name}`
+        : slot.hint;
+      const actions = document.createElement("div");
+      actions.className = "admin-signup-logo-card__actions";
+      if (Array.isArray(slot.types)) {
+        const select = document.createElement("select");
+        select.className = "ba-kyc-slot__type";
+        select.innerHTML = `
+          <option value="dti">DTI Certificate</option>
+          <option value="sec">SEC Certificate</option>
+        `;
+        select.value = record?.type || "dti";
+        select.addEventListener("change", () => {
+          state.kycDocuments[slot.key] = {
+            ...(state.kycDocuments[slot.key] || {}),
+            type: select.value,
+          };
+        });
+        actions.append(select);
+      }
+      const uploadBtn = document.createElement("button");
+      uploadBtn.type = "button";
+      uploadBtn.className = "admin-signup-logo-action";
+      uploadBtn.textContent = record?.file ? "Replace file" : "Upload";
+      uploadBtn.addEventListener("click", () => {
+        state.activeKycSlot = slot.key;
+        if (!state.kycDocuments[slot.key]) {
+          state.kycDocuments[slot.key] = { type: slot.type || slot.types?.[0] || "other" };
+        }
+        els.documentInput?.click();
+      });
+      actions.append(uploadBtn);
+      if (record?.file) {
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "admin-signup-logo-action admin-signup-logo-action--remove";
+        removeBtn.textContent = "Remove";
+        removeBtn.addEventListener("click", () => {
+          delete state.kycDocuments[slot.key];
+          renderKycSlots();
+        });
+        actions.append(removeBtn);
+      }
+      row.append(title, hint, actions);
+      els.kycSlots.append(row);
+    }
+  }
+
+  function applyPlanEntitlement(payload = {}) {
+    const catalog = payload?.catalog || {};
+    state.plans = Array.isArray(catalog.plans) ? catalog.plans : [];
+    state.firstCompanyFree = payload.firstCompanyFree !== false && catalog.firstCompanyFree !== false;
+    state.requiresPaidPlan = Boolean(payload.requiresPaidPlan || catalog.requiresPaidPlan);
+    state.existingCompanyCount = Number(payload.existingCompanyCount ?? catalog.existingCompanyCount) || 0;
+    state.canSubmitFreeFirst = Boolean(
+      payload.canSubmitFreeFirst ?? catalog.canSubmitFreeFirst ?? !state.requiresPaidPlan,
+    );
+    state.paidExtraSlot = null;
+    state.selectedPlan = { ...FIRST_COMPANY_FREE_PLAN };
   }
 
   async function loadPlans() {
     try {
       const payload = await fetchJson("/api/account/seller-plans");
-      state.plans = Array.isArray(payload?.catalog?.plans) ? payload.catalog.plans : [];
+      applyPlanEntitlement(payload);
     } catch (_) {
       state.plans = [];
     }
     renderPlans();
+    syncSellerCta();
   }
 
   async function loadStoreTypes() {
@@ -1059,28 +1362,17 @@
       const modes = Array.isArray(payload?.session?.availableModes)
         ? payload.session.availableModes
         : [];
-      if (modes.includes("seller_admin")) {
+      if (modes.includes("seller_admin") || state.existingCompanyCount > 0) {
         setFeedback(
           els.sellerStatus,
-          "Seller access is already active on this account.",
+          isFirstCompanyFlow()
+            ? "Finish your free company, then Super Admin will review it."
+            : "This account already has its one free company. The legitimate badge is earned from shop performance.",
           "success",
         );
       }
+      syncSellerCta();
     } catch (_) {}
-  }
-
-  function selectPlan(planId) {
-    const plan = state.plans.find((item) => String(item.id) === String(planId));
-    if (!plan) {
-      setFeedback(els.wizardFeedback, "Select a plan to continue.", "error");
-      return;
-    }
-    state.selectedPlan = {
-      ...plan,
-      billingCycle: state.billingCycle,
-      amount: planAmount(plan),
-    };
-    showStep(isFreePlan(state.selectedPlan) ? "pin" : "card");
   }
 
   async function sendVerificationCode() {
@@ -1223,21 +1515,42 @@
     const businessType = normalizeStoreTypeName(
       state.selectedStoreType || document.querySelector("[data-ba-business-type]")?.value || "",
     );
+    state.selectedPlan = { ...FIRST_COMPANY_FREE_PLAN };
+    const firstCompany = isFirstCompanyFlow();
     const plan = state.selectedPlan;
 
+    if (!state.sellerKind) {
+      throw new Error("Choose Individual Seller or Business / Corporate Seller.");
+    }
     if (companyName.length < 2) {
       throw new Error("Company name must be at least 2 characters.");
     }
+    const companyAccess = readCompanyAccessForm();
+    state.mobileNumber = companyAccess.mobileNumber || state.mobileNumber;
+    state.companyPassword = companyAccess.companyPassword;
+    const storeLocation = readStoreLocationForm();
     if (!businessType) {
       throw new Error("Choose a business type.");
     }
+    const payoutBank = readPayoutBank();
+    if (!payoutBank.bankName || !payoutBank.accountName || payoutBank.accountNumber.length < 6) {
+      throw new Error(
+        state.sellerKind === "business"
+          ? "Enter the business bank account that matches the registered company name."
+          : "Enter a bank account in your name for payouts.",
+      );
+    }
+    const missingDocs = getMissingKycSlots();
+    if (missingDocs.length) {
+      throw new Error(`Upload required documents: ${missingDocs.join(", ")}.`);
+    }
     if (!plan) {
-      throw new Error("Select a plan first.");
+      state.selectedPlan = { ...FIRST_COMPANY_FREE_PLAN };
     }
-    const freePlan = isFreePlan(plan);
-    if (!freePlan && !state.paymentCard) {
-      throw new Error("Register a card before continuing.");
+    if (!firstCompany) {
+      throw new Error("This account already has a company. Switch allows one company per account.");
     }
+    await ensurePlatformSettingsFresh();
     if (!/^\d{6}$/.test(state.sellerPin)) {
       showStep("pin");
       throw new Error("Create a Switch PIN before opening seller admin.");
@@ -1251,15 +1564,11 @@
 
     setFeedback(
       els.wizardFeedback,
-      freePlan ? "Creating free seller company..." : "Creating seller company...",
+      firstCompany
+        ? "Creating your free company..."
+        : "Creating seller company...",
       null,
     );
-
-    const paymentGateway = freePlan
-      ? "free"
-      : state.paymentCard.brand === "mastercard"
-        ? "prototype-mastercard"
-        : "prototype-visa";
 
     const startPayload = await fetchJson("/api/account/become-seller/start", {
       method: "POST",
@@ -1269,16 +1578,21 @@
         companyName,
         businessType,
         logoUrl,
-        planName: plan.name,
-        billingCycle: plan.billingCycle || state.billingCycle,
-        amount: Number(plan.amount || 0),
-        currencyCode: plan.currencyCode || "PHP",
-        paymentGateway,
-        paymentCard: freePlan ? null : state.paymentCard,
+        planName: "Free",
+        billingCycle: "monthly",
+        amount: 0,
+        currencyCode: "PHP",
+        paymentGateway: "free",
+        paymentCard: null,
         sellerPin: state.sellerPin,
+        password: state.companyPassword,
+        companyPassword: state.companyPassword,
+        sellerKind: state.sellerKind,
+        payoutBank,
         countryCode: state.countryCode,
         mobileNumber: state.mobileNumber,
         businessLogoSkipped: state.companyLogoSkipped && !logoUrl,
+        ...storeLocation,
       }),
     });
 
@@ -1299,96 +1613,44 @@
     }
     state.companyId = companyId;
 
-    const documentUrl = await uploadSelectedBusinessDocument();
-    if (documentUrl) {
-      setFeedback(els.wizardFeedback, "Saving business document for review...", null);
-      await fetchJson("/api/account/become-seller/documents", {
-        method: "POST",
-        body: JSON.stringify({
-          accountId: state.accountId,
-          companyId,
-          type: state.businessDocumentType || els.documentType?.value || "business_permit",
-          fileName: state.businessDocumentFile?.name || "",
-          label: state.businessDocumentFile?.name || "",
-          url: documentUrl,
-        }),
-      });
-    }
-
-    setFeedback(
-      els.wizardFeedback,
-      freePlan ? "Activating free seller plan..." : "Confirming prototype subscription...",
-      null,
-    );
-    const checkoutPayload = await fetchJson("/api/account/become-seller/checkout-intent", {
+    await uploadRequiredKycDocuments(companyId);
+    await fetchJson("/api/account/become-seller/confirm-payment", {
       method: "POST",
       body: JSON.stringify({
         accountId: state.accountId,
         companyId,
-        planName: plan.name,
-        billingCycle: plan.billingCycle || state.billingCycle,
-        paymentGateway: freePlan ? "free" : "prototype-visa",
-        amount: Number(plan.amount || 0),
-        currencyCode: plan.currencyCode || "PHP",
+        planName: "Free",
+        billingCycle: "monthly",
+        paymentGateway: "free",
+        paymentReference: "",
+        amount: 0,
+        currencyCode: "PHP",
       }),
     });
-
-    const paymentReference =
-      checkoutPayload?.checkoutIntent?.paymentReference ||
-      (freePlan ? `FREE-${Date.now()}` : `PROTO-${Date.now()}`);
-
-    const confirmPayload = await fetchJson("/api/account/become-seller/confirm-payment", {
-      method: "POST",
-      body: JSON.stringify({
-        accountId: state.accountId,
-        companyId,
-        planName: plan.name,
-        billingCycle: plan.billingCycle || state.billingCycle,
-        paymentGateway: freePlan ? "free" : "prototype-visa",
-        paymentReference,
-        amount: Number(plan.amount || 0),
-        currencyCode: plan.currencyCode || "PHP",
-      }),
-    });
-
-    if (!confirmPayload?.onboarding?.active) {
-      throw new Error(
-        confirmPayload.message ||
-          "Payment saved, but seller activation still needs verification review.",
-      );
-    }
-
-    const workspace = await fetchJson("/api/account/become-seller/open-workspace", {
-      method: "POST",
-      body: JSON.stringify({
-        accountId: state.accountId,
-        email: state.email,
-      }),
-    });
-
-    const redirectPath = String(
-      workspace.redirectPath || confirmPayload.redirectPath || "/main.html#dashboard",
-    ).trim();
-    persistAdminSession(workspace.admin || {}, redirectPath);
-    persistSwitchPinUnlock(startPayload?.pinUnlockToken, startPayload?.onboarding?.company?.id || companyId);
-    if (els.openDashboard) els.openDashboard.href = redirectPath;
     if (els.doneCopy) {
-      els.doneCopy.textContent = `${companyName} is active on the ${plan.name} plan. Opening seller admin dashboard…`;
+      els.doneCopy.textContent = `${companyName} was submitted for Super Admin review. Your company is free — no payment is required. Please wait up to 24 hours.`;
     }
     showStep("done");
-    setFeedback(els.sellerStatus, "Seller workspace activated.", "success");
-    setFeedback(els.wizardFeedback, workspace.message || "Seller workspace ready.", "success");
-
-    window.setTimeout(() => {
-      window.location.href = redirectPath;
-    }, 900);
+    setFeedback(
+      els.wizardFeedback,
+      firstCompany
+        ? "Your first company is in review. Thank you — Super Admin will respond within 24 hours."
+        : "This account already has a company. Switch allows one company per account.",
+      "success",
+    );
+    await loadPlans();
   }
 
   function previousStep() {
-    if (state.step === "card") showStep("plan");
-    else if (state.step === "pin") showStep(isFreePlan() ? "plan" : "card");
-    else if (state.step === "verify") showStep("pin");
-    else if (state.step === "company") showStep(isVerified() ? "pin" : "verify");
+    const steps = wizardStepOrder();
+    const current = steps.indexOf(progressStepKey(state.step));
+    if (state.step === "verify") {
+      showStep("pin");
+      return;
+    }
+    if (current > 0) {
+      showStep(steps[current - 1]);
+    }
   }
 
   document.querySelectorAll("[data-ba-tab]").forEach((btn) => {
@@ -1470,7 +1732,9 @@
   });
 
   document.querySelector("[data-ba-start-seller]")?.addEventListener("click", () => {
-    openWizard("plan");
+    if (els.startSeller?.disabled || (els.wizard && !els.wizard.hidden)) return;
+    setActionBusy(els.startSeller, true, "Upgrade in progress…");
+    openWizard();
   });
 
   document.querySelector("[data-ba-delete-open]")?.addEventListener("click", openDeleteModal);
@@ -1498,42 +1762,8 @@
     node.addEventListener("click", closeWizard);
   });
 
-  document.querySelectorAll("[data-ba-billing]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.billingCycle = btn.getAttribute("data-ba-billing") === "yearly" ? "yearly" : "monthly";
-      document.querySelectorAll("[data-ba-billing]").forEach((item) => {
-        item.classList.toggle("is-active", item === btn);
-      });
-      renderPlans();
-    });
-  });
-
-  els.planGrid?.addEventListener("click", (event) => {
-    const target = event.target.closest("[data-ba-select-plan]");
-    if (!target) return;
-    selectPlan(target.getAttribute("data-ba-select-plan"));
-  });
-
-  document.querySelector("[data-ba-card-number]")?.addEventListener("input", (event) => {
-    event.target.value = formatCardNumber(event.target.value);
-  });
-
-  document.querySelector("[data-ba-card-expiry]")?.addEventListener("input", (event) => {
-    event.target.value = formatExpiry(event.target.value);
-  });
-
   document.querySelectorAll("[data-ba-back]").forEach((btn) => {
     btn.addEventListener("click", previousStep);
-  });
-
-  document.querySelector("[data-ba-next-card]")?.addEventListener("click", () => {
-    try {
-      state.paymentCard = readCardForm();
-      setFeedback(els.wizardFeedback, "Card saved for this prototype.", "success");
-      showStep("pin");
-    } catch (error) {
-      setFeedback(els.wizardFeedback, error.message || "Check your card details.", "error");
-    }
   });
 
   document.querySelector("[data-ba-next-pin]")?.addEventListener("click", () => {
@@ -1583,21 +1813,27 @@
     clearCompanyLogo();
   });
 
-  els.documentSelect?.addEventListener("click", () => els.documentInput?.click());
-  els.documentType?.addEventListener("change", () => {
-    state.businessDocumentType = String(els.documentType.value || "business_permit");
+  document.querySelectorAll("[data-ba-seller-kind-option]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setSellerKind(button.getAttribute("data-ba-seller-kind-option"));
+    });
   });
   els.documentInput?.addEventListener("change", () => {
     const file = els.documentInput.files?.[0] || null;
     els.documentInput.value = "";
-    if (!file) return;
-    state.businessDocumentFile = file;
-    state.businessDocumentUploadedUrl = "";
-    state.businessDocumentType = String(els.documentType?.value || "business_permit");
-    syncBusinessDocumentUi();
+    const slotKey = state.activeKycSlot;
+    if (!file || !slotKey) return;
+    const slot = getKycSlotsForKind(state.sellerKind).find((item) => item.key === slotKey);
+    state.kycDocuments[slotKey] = {
+      ...(state.kycDocuments[slotKey] || {}),
+      type: state.kycDocuments[slotKey]?.type || slot?.type || slot?.types?.[0] || "other",
+      file,
+      url: "",
+    };
+    renderKycSlots();
   });
-  els.documentRemove?.addEventListener("click", () => {
-    clearBusinessDocument();
+  els.bankAccountNumber?.addEventListener("input", (event) => {
+    event.target.value = String(event.target.value || "").replace(/\D/g, "").slice(0, 20);
   });
 
   document.querySelector("[data-ba-company-logo-skip]")?.addEventListener("click", () => {
@@ -1616,50 +1852,62 @@
   });
 
   document.querySelector("[data-ba-send-code]")?.addEventListener("click", async () => {
+    const btn = document.querySelector("[data-ba-send-code]");
     if (state.busy) return;
     state.busy = true;
+    setActionBusy(btn, true, "Sending…");
     try {
       await sendVerificationCode();
     } catch (error) {
       setFeedback(els.wizardFeedback, error.message || "Unable to send code.", "error");
     } finally {
       state.busy = false;
+      setActionBusy(btn, false);
     }
   });
 
   document.querySelector("[data-ba-next-verify]")?.addEventListener("click", async () => {
+    const btn = document.querySelector("[data-ba-next-verify]");
     if (state.busy) return;
     state.busy = true;
+    setActionBusy(btn, true, "Verifying…");
     try {
       await verifyCode({ prototype: false });
     } catch (error) {
       setFeedback(els.wizardFeedback, error.message || "Unable to verify.", "error");
     } finally {
       state.busy = false;
+      setActionBusy(btn, false);
     }
   });
 
   document.querySelector("[data-ba-prototype-verify]")?.addEventListener("click", async () => {
+    const btn = document.querySelector("[data-ba-prototype-verify]");
     if (state.busy) return;
     state.busy = true;
+    setActionBusy(btn, true, "Applying…");
     try {
       await verifyCode({ prototype: true });
     } catch (error) {
       setFeedback(els.wizardFeedback, error.message || "Unable to apply prototype verification.", "error");
     } finally {
       state.busy = false;
+      setActionBusy(btn, false);
     }
   });
 
   document.querySelector("[data-ba-finish-seller]")?.addEventListener("click", async () => {
     if (state.busy) return;
     state.busy = true;
+    setActionBusy(els.finishSeller, true, "Saving…");
     try {
       await finishSellerUpgrade();
+      setActionBusy(els.finishSeller, false);
+      state.busy = false;
     } catch (error) {
       setFeedback(els.wizardFeedback, error.message || "Unable to finish seller upgrade.", "error");
-    } finally {
       state.busy = false;
+      setActionBusy(els.finishSeller, false);
     }
   });
 
@@ -1709,10 +1957,10 @@
   }
 
   fillProfile();
-  loadPlans();
   loadStoreTypes();
   refreshUnifiedSession();
   bindHeaderScroll();
+  bindStoreLocationControls();
   setupEmbedMode();
 
   const params = new URLSearchParams(window.location.search);
@@ -1739,10 +1987,16 @@
       switchSecuritySection(requestedSection);
     }
   }
-  if (params.get("becomeSeller") === "1") {
+
+  void (async () => {
+    await loadPlans();
+    const openSeller = params.get("becomeSeller") === "1";
+    if (!openSeller) {
+      return;
+    }
     switchTab("seller");
-    openWizard("plan");
-  }
+    openWizard("pin");
+  })();
 
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin) return;
@@ -1753,7 +2007,7 @@
     }
     if (data.type === "ba-account-open-seller") {
       switchTab("seller");
-      openWizard("plan");
+      openWizard("pin");
     }
   });
 
@@ -1761,7 +2015,7 @@
     switchTab: applyExternalTab,
     openSellerWizard: () => {
       switchTab("seller");
-      openWizard("plan");
+      openWizard("pin");
     },
   };
 })();

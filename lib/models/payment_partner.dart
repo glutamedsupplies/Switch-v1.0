@@ -5,6 +5,7 @@ class PaymentPartner {
     required this.imageUrl,
     this.isEnabled = true,
     this.createdAt,
+    this.paymongoMethod = '',
   });
 
   final String id;
@@ -12,6 +13,9 @@ class PaymentPartner {
   final String imageUrl;
   final bool isEnabled;
   final DateTime? createdAt;
+
+  /// PayMongo `payment_method_types` value this partner charges through.
+  final String paymongoMethod;
 
   bool get hasImage => imageUrl.trim().isNotEmpty;
 
@@ -26,6 +30,7 @@ class PaymentPartner {
     String? imageUrl,
     bool? isEnabled,
     DateTime? createdAt,
+    String? paymongoMethod,
   }) {
     return PaymentPartner(
       id: id ?? this.id,
@@ -33,6 +38,7 @@ class PaymentPartner {
       imageUrl: imageUrl ?? this.imageUrl,
       isEnabled: isEnabled ?? this.isEnabled,
       createdAt: createdAt ?? this.createdAt,
+      paymongoMethod: paymongoMethod ?? this.paymongoMethod,
     );
   }
 
@@ -45,6 +51,8 @@ class PaymentPartner {
       imageUrl: json['imageUrl']?.toString() ?? '',
       isEnabled: _normalizePartnerEnabledState(json),
       createdAt: rawCreatedAt.isEmpty ? null : DateTime.tryParse(rawCreatedAt),
+      paymongoMethod:
+          (json['paymongoMethod']?.toString() ?? '').trim().toLowerCase(),
     );
   }
 }

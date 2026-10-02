@@ -24,6 +24,7 @@ class LoginResult {
     this.successMessage,
     this.created = false,
     this.code,
+    this.sessionToken,
   });
 
   final Map<String, dynamic>? account;
@@ -31,6 +32,7 @@ class LoginResult {
   final String? successMessage;
   final bool created;
   final String? code;
+  final String? sessionToken;
 
   bool get isSuccess => errorMessage == null;
   bool get isFailure => errorMessage != null;
@@ -41,11 +43,13 @@ class LoginResult {
     Map<String, dynamic>? account, {
     String? message,
     bool created = false,
+    String? sessionToken,
   }) {
     return LoginResult._(
       account: account,
       successMessage: message,
       created: created,
+      sessionToken: sessionToken,
     );
   }
 

@@ -12,7 +12,7 @@
   --md-text: #162033;
   --md-muted: #52607a;
   --md-surface: #ffffff;
-  --md-bg: #f3f6fb;
+  --md-bg: #f2f2f2;
   --md-line: rgba(22, 32, 51, 0.08);
   --md-danger: #e53935;
   --md-radius: 18px;
@@ -43,10 +43,7 @@ body {
 body.md-app {
   font-family: var(--md-font);
   color: var(--md-text);
-  background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 34%),
-    radial-gradient(circle at top right, rgba(7, 153, 133, 0.12), transparent 28%),
-    linear-gradient(180deg, #eef3fb 0%, var(--md-bg) 42%, #e9eef7 100%);
+  background: var(--md-bg);
   padding-bottom: env(safe-area-inset-bottom);
   min-height: 100vh;
   display: flex;
@@ -3086,13 +3083,31 @@ body.md-platform-home > .login-site-header.has-search .login-site-header__action
   cursor: progress;
 }
 
+.md-account-companies__item.is-blocked:disabled,
+.md-account-companies__item.is-suspended:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.md-account-companies__item.is-blocked:hover,
+.md-account-companies__item.is-suspended:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.md-account-companies__item.is-status-modal {
+  cursor: pointer;
+}
+
 .md-account-companies__avatar {
+  position: relative;
   width: 48px;
   height: 48px;
   border-radius: 14px;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  overflow: visible;
   color: #0f766e;
   background: #ecfeff;
   flex-shrink: 0;
@@ -3140,6 +3155,8 @@ body.md-platform-home > .login-site-header.has-search .login-site-header__action
   display: grid;
   place-items: center;
   position: relative;
+  overflow: hidden;
+  border-radius: inherit;
 }
 
 .md-account-companies__avatar-media img {
@@ -3202,6 +3219,71 @@ body.md-platform-home > .login-site-header.has-search .login-site-header__action
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.md-account-companies__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 140px;
+}
+
+.md-account-companies__badge--banned {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.md-account-companies__badge--restricted {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.md-account-companies__badge--pending {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.md-account-companies__badge--suspended {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.md-account-companies__item.is-banned {
+  border-color: rgba(185, 28, 28, 0.28);
+}
+
+.md-account-companies__item.is-restricted {
+  border-color: rgba(180, 83, 9, 0.28);
+}
+
+.md-account-companies__avatar-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.md-account-companies__avatar-dot--banned {
+  background: #dc2626;
+}
+
+.md-account-companies__avatar-dot--restricted {
+  background: #f59e0b;
+}
+
+.md-account-companies__avatar-dot--pending {
+  background: #0ea5e9;
+}
+
+.md-account-companies__avatar-dot--suspended {
+  background: #64748b;
 }
 
 .md-account-companies__status {
@@ -3220,10 +3302,26 @@ body.md-platform-home > .login-site-header.has-search .login-site-header__action
 }
 
 .md-account-companies__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin-top: 14px;
   width: 100%;
   box-sizing: border-box;
-  justify-content: center;
+}
+
+.md-account-companies__add-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .md-account-panel.md-account-panel--menu .md-right-panel__header,

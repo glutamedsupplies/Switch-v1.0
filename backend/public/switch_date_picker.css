@@ -1,0 +1,649 @@
+/* Shared Switch calendar — listing add-product expiry picker is the source of truth.
+   Seller admin, Super Admin, vouchers, and trending reuse these classes only. */
+
+.product-expiry-date-picker {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.product-expiry-date-picker__native {
+  position: absolute !important;
+  width: 1px !important;
+  min-width: 0 !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: none !important;
+}
+
+.product-expiry-date-picker__trigger {
+  display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid #cbd6e7 !important;
+  border-radius: 8px;
+  background: #ffffff !important;
+  color: #11213d !important;
+  box-shadow: none !important;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transform: none !important;
+}
+
+.product-expiry-date-picker__trigger:hover {
+  border-color: #b5c2d5 !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.product-expiry-date-picker__trigger:focus,
+.product-expiry-date-picker__trigger:focus-visible,
+.product-expiry-date-picker.is-open .product-expiry-date-picker__trigger {
+  border-color: var(--accent) !important;
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--accent-rgb), 0.18),
+    0 4px 14px rgba(var(--accent-rgb), 0.08) !important;
+}
+
+.product-expiry-date-picker__calendar-icon,
+.product-expiry-date-picker__chevron {
+  display: block;
+  width: 100%;
+  height: auto;
+  flex: none;
+}
+
+.product-expiry-date-picker__calendar-icon {
+  color: inherit;
+}
+
+.product-expiry-date-picker__chevron {
+  color: #738199;
+  transition: transform 150ms ease;
+}
+
+.product-expiry-date-picker.is-open .product-expiry-date-picker__chevron {
+  transform: rotate(180deg);
+}
+
+.product-expiry-date-picker__value {
+  min-width: 0;
+  overflow: hidden;
+  color: #11213d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-expiry-date-picker__trigger.is-empty .product-expiry-date-picker__value {
+  color: #8797b3;
+}
+
+.product-expiry-calendar {
+  --product-expiry-calendar-accent: var(--accent, #2563eb);
+  position: fixed;
+  z-index: 2100;
+  width: min(304px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #11213d;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
+  font-family: var(--admin-seller-font, "Google Sans Flex", "Segoe UI", Helvetica, Arial, sans-serif);
+}
+
+.product-expiry-calendar[hidden] {
+  display: none !important;
+}
+
+.product-expiry-calendar::before,
+.product-expiry-calendar::after {
+  position: absolute;
+  left: var(--product-expiry-calendar-arrow-left, 50%);
+  width: 0;
+  height: 0;
+  border-right: 8px solid transparent;
+  border-left: 8px solid transparent;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.product-expiry-calendar::before {
+  top: -9px;
+  border-bottom: 9px solid #dbe3ee;
+}
+
+.product-expiry-calendar::after {
+  top: -8px;
+  border-bottom: 9px solid #ffffff;
+}
+
+.product-expiry-calendar.is-open-up::before {
+  top: auto;
+  bottom: -9px;
+  border-top: 9px solid #dbe3ee;
+  border-bottom: 0;
+}
+
+.product-expiry-calendar.is-open-up::after {
+  top: auto;
+  bottom: -8px;
+  border-top: 9px solid #ffffff;
+  border-bottom: 0;
+}
+
+.product-expiry-calendar__header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.product-expiry-calendar__month {
+  min-width: 0;
+  color: #18233a;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.product-expiry-calendar__nav,
+.product-expiry-calendar__today,
+.product-expiry-calendar__day {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  font: inherit;
+  cursor: pointer;
+  transform: none;
+}
+
+.product-expiry-calendar__nav {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  place-items: center;
+  border: 1px solid #e3e8ef;
+  border-radius: 7px;
+  color: #526078;
+}
+
+.product-expiry-calendar__nav svg,
+.product-expiry-calendar__today svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.product-expiry-calendar__nav:hover,
+.product-expiry-calendar__nav:focus-visible {
+  border-color: #bed0e5;
+  background: #f4f7fb;
+  color: var(--product-expiry-calendar-accent);
+  outline: none;
+}
+
+.product-expiry-calendar__nav:disabled,
+.product-expiry-calendar__nav[aria-disabled="true"] {
+  opacity: 0.38;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.product-expiry-calendar__weekdays,
+.product-expiry-calendar__days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.product-expiry-calendar__weekdays {
+  margin-bottom: 4px;
+}
+
+.product-expiry-calendar__weekday {
+  padding-block: 3px;
+  color: #8692a6;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.product-expiry-calendar__weekday.is-sunday {
+  color: #dc2626;
+}
+
+.product-expiry-calendar__day {
+  display: inline-grid;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  place-items: center;
+  border-radius: 7px;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.product-expiry-calendar__day:hover,
+.product-expiry-calendar__day:focus-visible {
+  background: #eef4fb;
+  color: #10203b;
+  outline: none;
+}
+
+.product-expiry-calendar__day.is-outside-month {
+  color: #b7c0cd;
+}
+
+.product-expiry-calendar__day.is-sunday {
+  color: #dc2626;
+}
+
+.product-expiry-calendar__day.is-sunday:hover,
+.product-expiry-calendar__day.is-sunday:focus-visible {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.product-expiry-calendar__day.is-sunday.is-outside-month {
+  color: #f3a3a3;
+}
+
+.product-expiry-calendar__day.is-sunday.is-today {
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.45);
+  color: #dc2626;
+}
+
+.product-expiry-calendar__day.is-sunday.is-selected,
+.product-expiry-calendar__day.is-sunday.is-selected:hover,
+.product-expiry-calendar__day.is-sunday.is-selected:focus-visible {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.product-expiry-calendar__day.is-sunday.is-disabled,
+.product-expiry-calendar__day.is-sunday:disabled,
+.product-expiry-calendar__day.is-sunday.is-disabled:hover,
+.product-expiry-calendar__day.is-sunday:disabled:hover {
+  color: #f3a3a3;
+  background: transparent;
+}
+
+.product-expiry-calendar__day.is-today {
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 37, 99, 235), 0.45);
+  color: var(--product-expiry-calendar-accent);
+  font-weight: 700;
+}
+
+.product-expiry-calendar__day.is-selected,
+.product-expiry-calendar__day.is-selected:hover,
+.product-expiry-calendar__day.is-selected:focus-visible {
+  background: var(--product-expiry-calendar-accent);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.product-expiry-calendar__day.is-disabled,
+.product-expiry-calendar__day:disabled,
+.product-expiry-time-calendar__option.is-disabled,
+.product-expiry-time-calendar__option:disabled {
+  color: #c5cdd8;
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none !important;
+}
+
+.product-expiry-calendar__day.is-disabled:hover,
+.product-expiry-calendar__day:disabled:hover,
+.product-expiry-time-calendar__option.is-disabled:hover,
+.product-expiry-time-calendar__option:disabled:hover {
+  background: transparent;
+  color: #c5cdd8;
+}
+
+body.super-admin-voucher-modal-open .product-expiry-time-calendar__option:disabled,
+body.super-admin-voucher-modal-open .product-expiry-time-calendar__option.is-disabled {
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.38;
+}
+
+.product-expiry-calendar__day.is-expired {
+  color: #b91c1c;
+  opacity: 0.72;
+}
+
+.product-expiry-calendar__day.is-expired:hover,
+.product-expiry-calendar__day.is-expired:focus-visible {
+  background: rgba(185, 28, 28, 0.08);
+  color: #991b1b;
+}
+
+.product-expiry-calendar__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #edf0f4;
+}
+
+.product-expiry-calendar__clear {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #b91c1c;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.product-expiry-calendar__clear svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: block;
+}
+
+.product-expiry-calendar__clear:hover,
+.product-expiry-calendar__clear:focus-visible {
+  outline: none;
+  background: #fff1f2;
+}
+
+.product-expiry-calendar__clear[hidden] {
+  display: none !important;
+}
+
+.product-expiry-calendar__today {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  color: var(--product-expiry-calendar-accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.product-expiry-calendar__today svg {
+  width: 14px;
+  height: 14px;
+}
+
+.product-expiry-calendar__today:hover,
+.product-expiry-calendar__today:focus-visible {
+  background: #eef4fb;
+  outline: none;
+}
+
+.product-expiry-calendar__apply {
+  display: inline-flex;
+  min-height: 30px;
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--product-expiry-calendar-accent);
+  color: #ffffff;
+  box-shadow: none;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.product-expiry-calendar__apply:hover,
+.product-expiry-calendar__apply:focus-visible {
+  outline: none;
+  filter: brightness(1.06);
+}
+
+.product-expiry-calendar__apply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: none;
+  pointer-events: none;
+}
+
+.product-expiry-calendar__apply[hidden] {
+  display: none !important;
+}
+
+.product-expiry-date-picker.is-disabled .product-expiry-date-picker__trigger,
+.product-expiry-date-picker.is-disabled .product-expiry-date-picker__trigger:hover {
+  background: #f8fafc !important;
+  color: #94a3b8 !important;
+  border-color: #dce4ed !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-date-picker.is-disabled .product-expiry-date-picker__trigger,
+html[data-sa-scheme="dark"] .product-expiry-date-picker.is-disabled .product-expiry-date-picker__trigger:hover {
+  background: #1e1f20 !important;
+  color: #80868b !important;
+  border-color: rgba(95, 99, 104, 0.55) !important;
+}
+
+.sa-voucher-date-calendar.product-expiry-calendar {
+  z-index: 2600;
+}
+
+body.super-admin-report-warn-modal-open .product-expiry-calendar {
+  z-index: 3200;
+}
+
+body.super-admin-voucher-modal-open .product-expiry-calendar,
+body.super-admin-voucher-modal-open .product-expiry-time-calendar {
+  z-index: 2600;
+}
+
+.product-expiry-time-calendar {
+  width: min(268px, calc(100vw - 24px));
+}
+
+.product-expiry-time-calendar .product-expiry-calendar__header.is-time {
+  grid-template-columns: 1fr;
+  margin-bottom: 8px;
+}
+
+.product-expiry-time-calendar__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px;
+  align-items: start;
+  gap: 8px;
+}
+
+.product-expiry-time-calendar__column {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.product-expiry-time-calendar__list {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  max-height: 196px;
+  padding-right: 2px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.product-expiry-time-calendar__list.is-period {
+  max-height: none;
+}
+
+.product-expiry-time-calendar__option {
+  aspect-ratio: auto;
+  min-height: 30px;
+  font-size: 11px;
+}
+
+.product-expiry-date-picker.is-readonly .product-expiry-date-picker__trigger {
+  cursor: default;
+  pointer-events: none;
+}
+
+.product-expiry-date-picker.is-readonly .product-expiry-date-picker__chevron {
+  visibility: hidden;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-date-picker__trigger,
+html[data-sa-scheme="dark"] .product-expiry-date-picker__trigger:hover {
+  border-color: rgba(95, 99, 104, 0.55) !important;
+  background: #1e1f20 !important;
+  color: var(--sa-on-surface, #e8eaed) !important;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-date-picker__value {
+  color: var(--sa-on-surface, #e8eaed);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-date-picker__trigger.is-empty .product-expiry-date-picker__value {
+  color: var(--sa-hint, #9aa0a6);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar {
+  border-color: rgba(95, 99, 104, 0.55);
+  background: #1e1f20;
+  color: var(--sa-on-surface, #e8eaed);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar::before {
+  border-bottom-color: rgba(95, 99, 104, 0.55);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar::after {
+  border-bottom-color: #1e1f20;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar.is-open-up::before {
+  border-top-color: rgba(95, 99, 104, 0.55);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar.is-open-up::after {
+  border-top-color: #1e1f20;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__month {
+  color: var(--sa-on-surface, #e8eaed);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__nav {
+  border-color: rgba(95, 99, 104, 0.55);
+  color: var(--sa-hint, #9aa0a6);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__nav:hover,
+html[data-sa-scheme="dark"] .product-expiry-calendar__nav:focus-visible,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day:hover,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day:focus-visible,
+html[data-sa-scheme="dark"] .product-expiry-calendar__today:hover,
+html[data-sa-scheme="dark"] .product-expiry-calendar__today:focus-visible {
+  background: #2a2b2c;
+  color: var(--sa-on-surface, #e8eaed);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__weekday,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-outside-month {
+  color: #80868b;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__weekday.is-sunday,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday {
+  color: #f87171;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday:hover,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday:focus-visible {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday.is-outside-month,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday.is-disabled,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday:disabled {
+  color: #7f1d1d;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday.is-today {
+  color: #f87171;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday.is-selected,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday.is-selected:hover,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-sunday.is-selected:focus-visible {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__day {
+  color: var(--sa-on-surface, #e8eaed);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-disabled,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day:disabled,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day.is-disabled:hover,
+html[data-sa-scheme="dark"] .product-expiry-calendar__day:disabled:hover {
+  background: transparent;
+  color: #5f6368;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__nav:disabled,
+html[data-sa-scheme="dark"] .product-expiry-calendar__nav[aria-disabled="true"] {
+  color: #5f6368;
+}
+
+html[data-sa-scheme="dark"] .product-expiry-calendar__footer {
+  border-top-color: rgba(95, 99, 104, 0.35);
+}
+
+html[data-sa-scheme="dark"] .product-expiry-time-calendar__list {
+  scrollbar-color: rgba(154, 160, 166, 0.45) transparent;
+}

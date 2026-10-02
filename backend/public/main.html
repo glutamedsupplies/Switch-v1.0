@@ -81,14 +81,16 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="/admin-fonts.css?v=admin-seller-super-admin-font-2" />
-    <link rel="stylesheet" href="/main.css?v=flash-deal-app-ribbon-1" />
+    <link rel="stylesheet" href="/switch_date_picker.css?v=switch-date-picker-gsf-1" />
+    <link rel="stylesheet" href="/main.css?v=flash-deal-app-ribbon-1-shared-calendar-1-listing-specs-2" />
     <link rel="stylesheet" href="/waybill-print.css?v=waybill-size-4x6-1" />
     <link rel="stylesheet" href="/viber-live-chat.css?v=participant-avatar-white-1" />
-    <link rel="stylesheet" href="/admin_account_settings.css?v=seller-account-deletion-1" />
+    <link rel="stylesheet" href="/admin_account_settings.css?v=switch-pin-save-1" />
     <link rel="stylesheet" href="/standalone-svg-icon-sizes.css?v=clipboard-pen-size-1" />
     <link rel="stylesheet" href="/seller_feedback_modal.css?v=seller-feedback-v14" />
-    <link rel="stylesheet" href="/seller_vouchers.css?v=seller-vouchers-8" />
-    <link rel="stylesheet" href="/seller_flash_deals.css?v=flash-deal-app-ribbon-1" />
+    <link rel="stylesheet" href="/seller_vouchers.css?v=seller-restore-grad-1-seller-restore-mark-1-seller-hide-big-logo-1-seller-off-space-1-seller-off-inline-1-seller-co-name-3-seller-co-name-2-seller-co-name-1-seller-vouchers-8-cut-edge-2-shared-calendar-1-seller-ticket-cut-center-1-seller-logo-on-cut-1-seller-cut-inset-1-seller-dash-fine-1-seller-off-burst-1-seller-notch-32-1-seller-dash-dense-1-seller-cal-ring-shadow-1-seller-plat-mark-1-seller-dash-gap-2-free-ship-1-inactive-dd-1-voucher-card-color-1-voucher-card-in-media-1-voucher-netflix-match-1-voucher-ticket-cut-1-voucher-notch-half-1-voucher-co-logo-top-1-voucher-cd-side-1-voucher-cd-cal-card-1-voucher-cd-lift-2-voucher-cal-gap-1-voucher-face-color-1-voucher-modal-noscroll-1-voucher-no-promo-preview-1-seller-no-modal-preview-1-seller-co-photo-noredeem-1-voucher-color-live-2-seller-sched-store-1-seller-no-modal-preview-1-seller-co-photo-noredeem-1-seller-uses-per-acct-1-seller-amounts-row-1-seller-no-expiry-1-seller-promo-lift-2-seller-face-tall-1-seller-face-code-1-seller-repeat-weekly-1-seller-repeat-days-activity-1-seller-repeat-end-of-day-1-seller-repeat-days-platform-dd-1" />
+    <link rel="stylesheet" href="/seller_flash_deals.css?v=seller-flash-campaign-strip-1-flash-deal-override-1-flash-deal-app-ribbon-1" />
+    <link rel="stylesheet" href="/switch_ai_assistant.css?v=ai-assistant-1" />
   </head>
   <body class="main-shell-host main-initial-loading">
     <div class="main-refresh-loading" data-main-refresh-loading role="status" aria-label="Loading workspace">
@@ -1250,6 +1252,36 @@
                                           </span>
                                         </label>
                                       </div>
+                                      <section
+                                        class="product-specifications"
+                                        id="product-specifications"
+                                        aria-labelledby="product-specifications-title"
+                                      >
+                                        <div class="product-specifications__header">
+                                          <span class="product-specifications__title" id="product-specifications-title">Specifications</span>
+                                          <small class="product-specifications__hint" data-specification-hint>
+                                            Select a category first to see its specifications.
+                                          </small>
+                                        </div>
+                                        <div
+                                          class="product-specifications__list"
+                                          id="product-specifications-list"
+                                          data-specification-list
+                                          aria-live="polite"
+                                        ></div>
+                                        <button
+                                          type="button"
+                                          class="product-specifications__add"
+                                          id="product-specifications-add"
+                                          data-specification-add
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M5 12h14" />
+                                            <path d="M12 5v14" />
+                                          </svg>
+                                          <span>Add specification</span>
+                                        </button>
+                                      </section>
                                       <div class="product-description-editor" data-product-description-editor data-description-mode="text">
                                         <div class="product-description-editor__toolbar">
                                           <span class="product-description-editor__title" id="product-description-label">Description</span>
@@ -2267,22 +2299,6 @@
                   On = percent of total purchase. Off = fixed price off total purchase.
                 </small>
               </div>
-              <label class="category-add-field sa-voucher-modal__discount-value-field">
-                <span id="seller-voucher-discount-value-label">Percent of total purchase (%)</span>
-                <input
-                  type="number"
-                  id="seller-voucher-discount-value-input"
-                  placeholder="20"
-                  min="1"
-                  max="100"
-                  step="1"
-                  inputmode="numeric"
-                  required
-                />
-                <small class="super-admin-store-type-modal__helper" id="seller-voucher-discount-value-helper">
-                  How many percent off the buyer's total purchase.
-                </small>
-              </label>
               <div class="category-add-field sa-voucher-modal__free-shipping-field">
                 <span>Free shipping</span>
                 <input type="checkbox" id="seller-voucher-free-shipping-input" hidden />
@@ -2301,10 +2317,56 @@
                   When on, this voucher waives shipping on the order (can be used with or without a purchase discount).
                 </small>
               </div>
-              <label class="category-add-field">
+              <div class="sa-voucher-modal__amounts-row">
+              <label class="category-add-field sa-voucher-modal__discount-value-field">
+                <span id="seller-voucher-discount-value-label">Percent of total purchase (%)</span>
+                <input
+                  type="number"
+                  id="seller-voucher-discount-value-input"
+                  placeholder="20"
+                  min="1"
+                  max="100"
+                  step="1"
+                  inputmode="numeric"
+                  required
+                />
+                <small class="super-admin-store-type-modal__helper" id="seller-voucher-discount-value-helper" hidden>
+                  How many percent off the buyer's total purchase.
+                </small>
+              </label>
+              <label class="category-add-field sa-voucher-modal__min-spend-field">
                 <span>Min. spend (₱)</span>
                 <input type="number" id="seller-voucher-min-spend-input" placeholder="500" min="0" step="1" inputmode="numeric" />
               </label>
+              <label class="category-add-field sa-voucher-modal__uses-field">
+                <span>Uses per account</span>
+                <input type="number" id="seller-voucher-uses-per-account-input" placeholder="1" min="1" max="99" step="1" value="1" inputmode="numeric" />
+              </label>
+              </div>
+              <div class="category-add-field sa-voucher-modal__color-field">
+                <span>Card color</span>
+                <div class="sa-voucher-modal__palette-row">
+                  <div
+                    class="sa-voucher-modal__swatches"
+                    data-seller-voucher-color-swatches
+                    role="group"
+                    aria-label="Voucher card color"
+                  ></div>
+                  <label class="sa-voucher-modal__custom-color">
+                    <span class="visually-hidden">Custom card color</span>
+                    <input
+                      type="color"
+                      id="seller-voucher-card-color-input"
+                      value="#e50914"
+                      aria-label="Custom card color"
+                    />
+                    <strong data-seller-voucher-card-color-hex>#E50914</strong>
+                  </label>
+                </div>
+                <small class="super-admin-store-type-modal__helper">
+                  The selected color updates the voucher face instantly.
+                </small>
+              </div>
               <div class="category-add-field sa-voucher-modal__passive-field">
                 <span>Passive voucher</span>
                 <input type="checkbox" id="seller-voucher-passive-input" hidden />
@@ -2323,8 +2385,57 @@
                   When on, this voucher becomes available automatically at Place Order once the buyer reaches the minimum spend.
                 </small>
               </div>
+              <div class="sa-voucher-modal__repeat-row">
+                <div class="category-add-field sa-voucher-modal__repeat-field">
+                  <span class="sa-voucher-modal__schedule-label">
+                    Repeat days
+                    <button type="button" class="sa-voucher-modal__sub-toggle" id="seller-voucher-repeat-toggle" aria-pressed="false">
+                      <span class="super-admin-store-type-modal__status-toggle" aria-hidden="true"></span>
+                      <span id="seller-voucher-repeat-toggle-label">Off</span>
+                    </button>
+                  </span>
+                  <input type="checkbox" id="seller-voucher-repeat-input" hidden />
+                  <div class="sa-voucher-modal__repeat-panel" id="seller-voucher-repeat-panel" hidden>
+                    <div class="sa-choice-dropdown sa-voucher-modal__choice" data-seller-voucher-choice="repeat-days">
+                      <button
+                        type="button"
+                        class="sa-voucher-modal__choice-trigger"
+                        id="seller-voucher-repeat-days-toggle"
+                        aria-expanded="false"
+                        aria-haspopup="listbox"
+                        aria-controls="seller-voucher-repeat-days-menu"
+                      >
+                        <span data-seller-voucher-repeat-days-label>Select days</span>
+                        <svg class="sa-choice-dropdown__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                      <div class="sa-choice-menu" id="seller-voucher-repeat-days-menu" role="listbox" aria-label="Repeat days" hidden>
+                        <button type="button" class="sa-choice-option" data-repeat-day="mon" role="option" aria-selected="false">Monday</button>
+                        <button type="button" class="sa-choice-option" data-repeat-day="tue" role="option" aria-selected="false">Tuesday</button>
+                        <button type="button" class="sa-choice-option" data-repeat-day="wed" role="option" aria-selected="false">Wednesday</button>
+                        <button type="button" class="sa-choice-option" data-repeat-day="thu" role="option" aria-selected="false">Thursday</button>
+                        <button type="button" class="sa-choice-option" data-repeat-day="fri" role="option" aria-selected="false">Friday</button>
+                        <button type="button" class="sa-choice-option" data-repeat-day="sat" role="option" aria-selected="false">Saturday</button>
+                        <button type="button" class="sa-choice-option" data-repeat-day="sun" role="option" aria-selected="false">Sunday</button>
+                      </div>
+                    </div>
+                    <span class="sa-voucher-modal__datetime-pair sa-voucher-modal__repeat-times">
+                      <label class="category-add-field">
+                        <span>Start</span>
+                        <input type="time" id="seller-voucher-repeat-start-time-input" class="sa-voucher-modal__repeat-native-time" />
+                      </label>
+                      <label class="category-add-field">
+                        <span>End</span>
+                        <input type="time" id="seller-voucher-repeat-end-time-input" class="sa-voucher-modal__repeat-native-time" />
+                      </label>
+                    </span>
+                    <small class="super-admin-store-type-modal__helper">When on, the voucher is active on the selected days from Start. Leave End empty to stay active until the end of that day.</small>
+                  </div>
+                </div>
+              </div>
               <label class="category-add-field sa-voucher-modal__expires-field">
-                <span>Expires</span>
+                <span>End</span>
                 <span class="product-expiry-date-picker sa-voucher-date-picker" id="seller-voucher-date-picker">
                   <input
                     type="date"
@@ -2332,7 +2443,6 @@
                     class="product-expiry-date-picker__native"
                     tabindex="-1"
                     aria-hidden="true"
-                    required
                   />
                   <button
                     type="button"
@@ -2353,7 +2463,7 @@
                       <path d="M8 18h.01"></path>
                       <path d="M12 18h.01"></path>
                     </svg>
-                    <span class="product-expiry-date-picker__value" data-seller-voucher-date-value>mm/dd/yyyy</span>
+                    <span class="product-expiry-date-picker__value" data-seller-voucher-date-value>--.--</span>
                     <svg class="product-expiry-date-picker__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                       <path d="m6 9 6 6 6-6"></path>
                     </svg>
@@ -2441,7 +2551,7 @@
               <div>
                 <h2 class="validation-modal__title" id="seller-flash-deal-modal-title">Flash Deal</h2>
                 <p class="super-admin-store-type-modal__subtitle" data-seller-flash-deal-subtitle>
-                  Set a timed flash price and deal stock for this listing. Submitted deals await Super Admin review.
+                  Set a timed flash price and deal stock for this listing. It goes live automatically at the start time.
                 </p>
               </div>
             </div>
@@ -2516,7 +2626,7 @@
                       id="seller-flash-deal-notes-input"
                       rows="3"
                       maxlength="500"
-                      placeholder="Optional note for Super Admin review"
+                      placeholder="Optional internal note"
                     ></textarea>
                   </label>
                 </div>
@@ -2524,7 +2634,7 @@
 
               <div class="seller-flash-deal-modal__submitted" data-seller-flash-deal-submitted hidden>
                 <p class="seller-flash-deal-modal__submitted-banner" data-seller-flash-deal-submitted-banner>
-                  Submitted for Super Admin review.
+                  Flash Deal scheduled.
                 </p>
                 <dl class="seller-flash-deal-modal__summary">
                   <div>
@@ -2560,7 +2670,7 @@
 
           <footer class="super-admin-store-type-modal__actions sa-voucher-modal__footer">
             <p class="sa-voucher-modal__footer-note" data-seller-flash-deal-footer-note>
-              Pending deals need Super Admin approval. Approved deals go Live automatically at start time.
+              Flash Deals go live automatically at the start time — no Super Admin approval needed.
             </p>
             <div class="sa-voucher-modal__footer-actions">
               <button type="button" class="ghost-button" id="seller-flash-deal-modal-cancel-button">Close</button>
@@ -2584,7 +2694,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>
                 </svg>
-                <span data-seller-flash-deal-submit-label>Submit Flash Deal</span>
+                <span data-seller-flash-deal-submit-label>Schedule Flash Deal</span>
               </button>
             </div>
           </footer>
@@ -2594,16 +2704,19 @@
 
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     <script src="/lazy-loading.js?v=global-lazy-1"></script>
-    <script src="/theme.js?v=platform-workspace-settings-1"></script>
+    <script src="/default_icons.js?v=default-icons-zap-trash-1"></script>
+    <script src="/theme.js?v=company-scope-1"></script>
     <script src="/admin-search-not-found.js?v=admin-search-not-found-2"></script>
     <script src="/admin-empty-state-lottie.js?v=admin-seller-empty-data-1"></script>
-    <script src="/admin_account_settings.js?v=seller-account-deletion-1"></script>
+    <script src="/admin_account_settings.js?v=no-subscription-modal-1"></script>
     <script src="/seller_feedback_modal.js?v=seller-feedback-v14"></script>
     <script src="/admin-summary-cards.js?v=admin-seller-summary-shadow-1"></script>
-    <script src="/seller_admin_vouchers.js?v=seller-vouchers-3"></script>
-    <script src="/seller_admin_flash_deals.js?v=flash-deal-pending-ux-1"></script>
-    <script src="/main.js?v=flash-deal-app-ribbon-1"></script>
-    <script src="/app.js?v=flash-deal-app-ribbon-1"></script>
+    <script src="/seller_admin_vouchers.js?v=seller-off-inline-1-seller-co-name-2-seller-co-name-1-seller-calendar-scroll-close-1-seller-vouchers-3-free-ship-1-inactive-dd-1-voucher-card-color-1-voucher-card-in-media-1-voucher-netflix-match-1-voucher-ticket-cut-1-voucher-co-logo-top-1-voucher-cd-cal-card-1-voucher-cd-lift-2-voucher-face-color-1-voucher-date-apply-1-voucher-end-empty-1-voucher-modal-noscroll-1-voucher-no-promo-preview-1-seller-no-modal-preview-1-seller-co-photo-noredeem-1-voucher-color-live-2-seller-sched-store-1-seller-no-modal-preview-1-seller-co-photo-noredeem-1-seller-off-burst-1-seller-plat-mark-3-seller-plat-color-1-seller-uses-per-acct-1-seller-no-expiry-1-seller-face-code-1-seller-repeat-weekly-1-seller-repeat-days-activity-1-seller-repeat-end-of-day-1-voucher-user-copy-1-seller-voucher-separate-card-platform-color-1"></script>
+    <script src="/seller_admin_flash_deals.js?v=flash-deal-override-1-flash-deal-no-pending-1"></script>
+    <script src="/seller_admin_flash_campaigns.js?v=seller-flash-campaign-strip-1"></script>
+    <script src="/main.js?v=default-icons-zap-trash-1"></script>
+    <script src="/app.js?v=calendar-scroll-close-1-company-scope-1-listing-specs-2"></script>
     <script src="/realtime_sync.js?v=platform-realtime-toggle-1"></script>
+    <script src="/switch_ai_assistant.js?v=ai-assistant-1" data-role="seller" defer></script>
   </body>
 </html>

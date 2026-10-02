@@ -11,6 +11,7 @@ const {
   movementsFromProductStockHistory,
 } = require("../db/catalogHelpers");
 const { ensureWorkspaceCategory } = require("./postgresCatalogStore");
+const { sqlExcludeTestModeCompaniesFromProducts } = require("./testModeService");
 
 async function loadProductChildren(productIds) {
   if (!productIds.length) {
@@ -93,22 +94,43 @@ async function listProductsFromPostgres(options = {}) {
 
 function buildProductScopeFilters({
   adminId = "",
+  companyId = "",
   approvalStatus = "",
   publicCatalog = false,
 } = {}) {
   const filters = [];
   const params = [];
-  if (adminId) {
-    params.push(adminId);
+  const normalizedAdminId = String(adminId || "").trim();
+  const normalizedCompanyId = String(companyId || "").trim();
+
+  if (normalizedAdminId) {
+    params.push(normalizedAdminId);
     filters.push(`admin_id = $${params.length}`);
   }
-  if (publicCatalog && !adminId) {
+
+  if (normalizedCompanyId) {
+    params.push(normalizedCompanyId);
+    const companyParam = `$${params.length}`;
+    // Exact company match, or legacy null company_id only for `comp_<admin_id>`.
+    filters.push(`(
+      company_id = ${companyParam}
+      OR (
+        (company_id IS NULL OR BTRIM(company_id) = '')
+        AND ${companyParam} = CONCAT('comp_', admin_id)
+      )
+    )`);
+  }
+
+  if (publicCatalog && !normalizedAdminId) {
     filters.push(`approval_status = 'approved'`);
     filters.push(`is_active IS NOT FALSE`);
+    // Test Mode companies are sandbox-only — never appear on the public marketplace.
+    filters.push(sqlExcludeTestModeCompaniesFromProducts("products"));
   } else if (approvalStatus) {
     params.push(approvalStatus);
     filters.push(`approval_status = $${params.length}`);
   }
+
   return {
     whereSql: filters.length ? `WHERE ${filters.join(" AND ")}` : "",
     params,
@@ -117,6 +139,7 @@ function buildProductScopeFilters({
 
 async function listProductsPageFromPostgres({
   adminId = "",
+  companyId = "",
   approvalStatus = "",
   publicCatalog = false,
   limit = 50,
@@ -124,6 +147,7 @@ async function listProductsPageFromPostgres({
 } = {}) {
   const { whereSql, params } = buildProductScopeFilters({
     adminId,
+    companyId,
     approvalStatus,
     publicCatalog,
   });
@@ -215,20 +239,21 @@ async function upsertProductRecord(client, product) {
   await client.query(
     `
     INSERT INTO products (
-      id, admin_id, name, description, approval_status, is_active,
+      id, admin_id, company_id, name, description, approval_status, is_active,
       original_price, sales_price, stock, sold, barcode, category,
       rating, comment_count, image_url, submitted_at, approved_at,
       approved_by, rejected_at, rejected_by, rejection_reason,
       approval_updated_at, listed_at, extra_data, created_at, updated_at
     ) VALUES (
-      $1, $2, $3, $4, $5, $6,
-      $7, $8, $9, $10, $11, $12,
-      $13, $14, $15, $16, $17,
-      $18, $19, $20, $21,
-      $22, $23, $24::jsonb, $25, NOW()
+      $1, $2, $3, $4, $5, $6, $7,
+      $8, $9, $10, $11, $12, $13,
+      $14, $15, $16, $17, $18,
+      $19, $20, $21, $22,
+      $23, $24, $25::jsonb, $26, NOW()
     )
     ON CONFLICT (id) DO UPDATE SET
       admin_id = EXCLUDED.admin_id,
+      company_id = COALESCE(NULLIF(EXCLUDED.company_id, ''), products.company_id),
       name = EXCLUDED.name,
       description = EXCLUDED.description,
       approval_status = EXCLUDED.approval_status,
@@ -256,6 +281,7 @@ async function upsertProductRecord(client, product) {
     [
       row.id,
       row.admin_id,
+      row.company_id || null,
       row.name,
       row.description,
       row.approval_status,
@@ -385,9 +411,20 @@ async function upsertProductRecord(client, product) {
 async function syncProductsToPostgres(products, options = {}) {
   const deleteMissing = options.deleteMissing !== false;
   const scopeAdminId = String(options.adminId ?? "").trim();
-  const incoming = asArray(products).filter((product) => (
-    !scopeAdminId || String(product?.adminId ?? "").trim() === scopeAdminId
-  ));
+  const scopeCompanyId = String(options.companyId ?? "").trim();
+  const incoming = asArray(products).filter((product) => {
+    if (scopeAdminId && String(product?.adminId ?? "").trim() !== scopeAdminId) {
+      return false;
+    }
+    if (!scopeCompanyId) {
+      return true;
+    }
+    const productCompanyId = String(product?.companyId ?? "").trim();
+    if (productCompanyId) {
+      return productCompanyId === scopeCompanyId;
+    }
+    return scopeCompanyId === `comp_${String(product?.adminId ?? scopeAdminId).trim()}`;
+  });
   const incomingIds = incoming
     .map((product) => String(product?.id ?? "").trim())
     .filter(Boolean);
@@ -398,7 +435,40 @@ async function syncProductsToPostgres(products, options = {}) {
     }
 
     if (deleteMissing) {
-      if (scopeAdminId) {
+      if (scopeAdminId && scopeCompanyId) {
+        if (incomingIds.length) {
+          await client.query(
+            `
+            DELETE FROM products
+            WHERE admin_id = $1
+              AND (
+                company_id = $2
+                OR (
+                  (company_id IS NULL OR BTRIM(company_id) = '')
+                  AND $2 = CONCAT('comp_', admin_id)
+                )
+              )
+              AND id <> ALL($3::text[])
+            `,
+            [scopeAdminId, scopeCompanyId, incomingIds],
+          );
+        } else {
+          await client.query(
+            `
+            DELETE FROM products
+            WHERE admin_id = $1
+              AND (
+                company_id = $2
+                OR (
+                  (company_id IS NULL OR BTRIM(company_id) = '')
+                  AND $2 = CONCAT('comp_', admin_id)
+                )
+              )
+            `,
+            [scopeAdminId, scopeCompanyId],
+          );
+        }
+      } else if (scopeAdminId) {
         if (incomingIds.length) {
           await client.query(
             `DELETE FROM products WHERE admin_id = $1 AND id <> ALL($2::text[])`,

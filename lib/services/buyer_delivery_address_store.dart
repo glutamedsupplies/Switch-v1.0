@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/philippines_places_service.dart';
 import 'package:switch_app/utils/auth_session.dart';
@@ -235,6 +236,7 @@ class BuyerDeliveryAddressStore extends ChangeNotifier {
   }
 
   Future<T?> _tryEachBaseUrl<T>(Future<T?> Function(String baseUrl) work) async {
+    await resolveWorkingLocalApiBaseUrl();
     for (final baseUrl in buildLocalApiBaseUrls(isAndroid: Platform.isAndroid)) {
       try {
         final result = await work(baseUrl);

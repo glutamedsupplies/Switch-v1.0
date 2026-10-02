@@ -58115,9 +58115,7 @@ body .main-listing-view .product-composer-modal__brand-icon {
   white-space: nowrap;
 }
 
-/* July 18 recovery: the custom expiry picker markup and JavaScript survived,
-   but its stylesheet was lost when main.css was cleared. Keep the native date
-   input available to the form while presenting the restored calendar control. */
+/* Calendar visuals live in /switch_date_picker.css (listing source). */
 .product-status-shell .product-expiry-date-field,
 .product-status-shell .product-expiry-date-picker {
   display: block;
@@ -58127,343 +58125,7 @@ body .main-listing-view .product-composer-modal__brand-icon {
 }
 
 .product-status-shell .product-expiry-date-picker {
-  position: relative;
   margin-top: 7px;
-}
-
-.product-status-shell .product-expiry-date-picker__native {
-  position: absolute !important;
-  width: 1px !important;
-  min-width: 0 !important;
-  height: 1px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  border: 0 !important;
-  opacity: 0;
-  pointer-events: none;
-  white-space: nowrap;
-}
-.product-status-shell .product-expiry-date-picker__trigger {
-  display: grid;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 30px;
-  grid-template-columns: 16px minmax(0, 1fr) 14px;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 10px;
-  border: 1px solid #cbd6e7 !important;
-  border-radius: 8px;
-  background: #ffffff !important;
-  color: #11213d !important;
-  box-shadow: none !important;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.2;
-  text-align: left;
-  cursor: pointer;
-  transform: none !important;
-}
-
-.product-status-shell .product-expiry-date-picker__trigger:hover {
-  border-color: #b5c2d5 !important;
-  background: #ffffff !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-.product-status-shell .product-expiry-date-picker__trigger:focus,
-.product-status-shell .product-expiry-date-picker__trigger:focus-visible,
-.product-status-shell .product-expiry-date-picker.is-open .product-expiry-date-picker__trigger {
-  border-color: var(--accent) !important;
-  outline: none;
-  box-shadow:
-    inset 0 0 0 1px rgba(var(--accent-rgb), 0.18),
-    0 4px 14px rgba(var(--accent-rgb), 0.08) !important;
-}
-
-.product-status-shell .product-expiry-date-picker__calendar-icon,
-.product-status-shell .product-expiry-date-picker__chevron {
-  display: block;
-  width: 100%;
-  height: auto;
-  flex: none;
-}
-
-.product-status-shell .product-expiry-date-picker__calendar-icon {
-  color: inherit;
-}
-
-.product-status-shell .product-expiry-date-picker__chevron {
-  color: #738199;
-  transition: transform 150ms ease;
-}
-
-.product-status-shell .product-expiry-date-picker.is-open .product-expiry-date-picker__chevron {
-  transform: rotate(180deg);
-}
-
-.product-status-shell .product-expiry-date-picker__value {
-  min-width: 0;
-  overflow: hidden;
-  color: #11213d;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.product-status-shell .product-expiry-date-picker__trigger.is-empty .product-expiry-date-picker__value {
-  color: #8797b3;
-}
-
-.product-expiry-calendar {
-  --product-expiry-calendar-accent: var(--accent, #2563eb);
-  position: fixed;
-  /* The composer portal uses z-index 2000 and creates an isolated stacking
-     context, so the body-level calendar must sit above that overlay. */
-  z-index: 2100;
-  width: min(304px, calc(100vw - 24px));
-  padding: 12px;
-  border: 1px solid #dbe3ee;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #11213d;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
-  font-family: "Poppins", "TikTok Sans", sans-serif;
-}
-
-.product-expiry-calendar[hidden] {
-  display: none !important;
-}
-
-.product-expiry-calendar::before,
-.product-expiry-calendar::after {
-  position: absolute;
-  left: var(--product-expiry-calendar-arrow-left, 50%);
-  width: 0;
-  height: 0;
-  border-right: 8px solid transparent;
-  border-left: 8px solid transparent;
-  content: "";
-  transform: translateX(-50%);
-}
-
-.product-expiry-calendar::before {
-  top: -9px;
-  border-bottom: 9px solid #dbe3ee;
-}
-
-.product-expiry-calendar::after {
-  top: -8px;
-  border-bottom: 9px solid #ffffff;
-}
-
-.product-expiry-calendar.is-open-up::before {
-  top: auto;
-  bottom: -9px;
-  border-top: 9px solid #dbe3ee;
-  border-bottom: 0;
-}
-
-.product-expiry-calendar.is-open-up::after {
-  top: auto;
-  bottom: -8px;
-  border-top: 9px solid #ffffff;
-  border-bottom: 0;
-}
-
-.product-expiry-calendar__header {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 32px;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.product-expiry-calendar__month {
-  min-width: 0;
-  color: #18233a;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.product-expiry-calendar__nav,
-.product-expiry-calendar__today,
-.product-expiry-calendar__day {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  box-shadow: none;
-  font: inherit;
-  cursor: pointer;
-  transform: none;
-}
-
-.product-expiry-calendar__nav {
-  display: inline-grid;
-  width: 32px;
-  height: 32px;
-  padding: 7px;
-  place-items: center;
-  border: 1px solid #e3e8ef;
-  border-radius: 7px;
-  color: #526078;
-}
-
-.product-expiry-calendar__nav svg,
-.product-expiry-calendar__today svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.product-expiry-calendar__nav:hover,
-.product-expiry-calendar__nav:focus-visible {
-  border-color: #bed0e5;
-  background: #f4f7fb;
-  color: var(--product-expiry-calendar-accent);
-  outline: none;
-}
-
-.product-expiry-calendar__weekdays,
-.product-expiry-calendar__days {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 3px;
-}
-
-.product-expiry-calendar__weekdays {
-  margin-bottom: 4px;
-}
-
-.product-expiry-calendar__weekday {
-  padding-block: 3px;
-  color: #8692a6;
-  font-size: 9px;
-  font-weight: 700;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-.product-expiry-calendar__day {
-  display: inline-grid;
-  aspect-ratio: 1;
-  min-width: 0;
-  padding: 0;
-  place-items: center;
-  border-radius: 7px;
-  color: #334155;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.product-expiry-calendar__day:hover,
-.product-expiry-calendar__day:focus-visible {
-  background: #eef4fb;
-  color: #10203b;
-  outline: none;
-}
-
-.product-expiry-calendar__day.is-outside-month {
-  color: #b7c0cd;
-}
-
-.product-expiry-calendar__day.is-today {
-  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 37, 99, 235), 0.45);
-  color: var(--product-expiry-calendar-accent);
-  font-weight: 700;
-}
-
-.product-expiry-calendar__day.is-selected,
-.product-expiry-calendar__day.is-selected:hover,
-.product-expiry-calendar__day.is-selected:focus-visible {
-  background: var(--product-expiry-calendar-accent);
-  color: #ffffff;
-  box-shadow: none;
-}
-
-.product-expiry-calendar__day.is-expired {
-  color: #b91c1c;
-  opacity: 0.72;
-}
-
-.product-expiry-calendar__day.is-expired:hover,
-.product-expiry-calendar__day.is-expired:focus-visible {
-  background: rgba(185, 28, 28, 0.08);
-  color: #991b1b;
-}
-
-.product-expiry-calendar__footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-top: 9px;
-  padding-top: 9px;
-  border-top: 1px solid #edf0f4;
-}
-
-.product-expiry-calendar__clear {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 0;
-  padding: 5px 9px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: #b91c1c;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.product-expiry-calendar__clear svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  display: block;
-}
-
-.product-expiry-calendar__clear:hover,
-.product-expiry-calendar__clear:focus-visible {
-  outline: none;
-  background: #fff1f2;
-}
-
-.product-expiry-calendar__clear[hidden] {
-  display: none !important;
-}
-
-.product-expiry-calendar__today {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 9px;
-  border-radius: 7px;
-  color: var(--product-expiry-calendar-accent);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.product-expiry-calendar__today svg {
-  width: 14px;
-  height: 14px;
-}
-
-.product-expiry-calendar__today:hover,
-.product-expiry-calendar__today:focus-visible {
-  background: #eef4fb;
-  outline: none;
 }
 
 .product-status-shell .product-composer-compatibility-preview,
@@ -67831,4 +67493,158 @@ body.product-insight-page.listing-insight-embedded.listing-insight-overall-mode
   .product-insight-main-grid
   > .product-insight-sold-list-shell.dashboard-panel {
   grid-template-rows: minmax(0, 1fr) !important;
+}
+
+/* Listing specifications (options defined in backend/config/productSpecifications.js). */
+.product-specifications {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.product-specifications__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.product-specifications__title {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.product-specifications__hint {
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.product-specifications__hint.is-complete {
+  color: #667085;
+}
+
+.product-specifications__list {
+  display: grid;
+  gap: 8px;
+}
+
+.product-specifications__row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(0, 1.4fr) 34px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.product-specifications__select,
+.product-specifications__value {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd6e7;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #11213d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.product-specifications__select:focus,
+.product-specifications__value:focus {
+  border-color: var(--accent, #0f9f78);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 15, 159, 120), 0.12);
+}
+
+.product-specifications__value:disabled {
+  background: #f5f7fa;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.product-specifications__remove {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #667085;
+  cursor: pointer;
+}
+
+.product-specifications__remove svg,
+.product-specifications__add svg {
+  width: 14px;
+  height: 14px;
+}
+
+.product-specifications__remove:hover:not(:disabled) {
+  border-color: #fda29b;
+  color: #b42318;
+}
+
+.product-specifications__remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.product-specifications__add {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px dashed #cbd6e7;
+  border-radius: 8px;
+  background: transparent;
+  color: #344054;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.product-specifications__add:hover {
+  border-color: var(--accent, #0f9f78);
+  color: var(--accent, #0f9f78);
+}
+
+.product-specifications__add[hidden],
+.product-specifications__list[hidden] {
+  display: none;
+}
+
+.product-specifications--variant {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px dashed #e4e7ec;
+}
+
+@media (max-width: 640px) {
+  .product-specifications__row {
+    grid-template-columns: minmax(0, 1fr) 34px;
+  }
+
+  .product-specifications__value {
+    grid-column: 1 / 2;
+    grid-row: 2;
+  }
+
+  .product-specifications__remove {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }

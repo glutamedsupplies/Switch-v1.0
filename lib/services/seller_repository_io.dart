@@ -6,7 +6,8 @@ import 'package:switch_app/models/seller_summary.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/seller_repository_base.dart';
 
-const _requestTimeout = Duration(seconds: 3);
+const _connectTimeout = Duration(seconds: 3);
+const _responseTimeout = Duration(seconds: 15);
 const _memoryCacheLifetime = Duration.zero;
 String? _preferredBaseUrl;
 
@@ -76,14 +77,14 @@ class _HttpSellerRepository implements SellerRepository {
     try {
       final request = await _client
           .getUrl(Uri.parse('$baseUrl/api/sellers'))
-          .timeout(_requestTimeout);
+          .timeout(_connectTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
 
-      final response = await request.close().timeout(_requestTimeout);
+      final response = await request.close().timeout(_responseTimeout);
       final responseBody = await response
           .transform(utf8.decoder)
           .join()
-          .timeout(_requestTimeout);
+          .timeout(_responseTimeout);
 
       if (response.statusCode != HttpStatus.ok) {
         throw _BaseUrlAttemptFailure('${response.statusCode}');
@@ -91,6 +92,7 @@ class _HttpSellerRepository implements SellerRepository {
 
       final parsedSellers = _parseSellersResponse(responseBody);
       _preferredBaseUrl = baseUrl;
+      rememberWorkingLocalApiBaseUrl(baseUrl);
 
       return parsedSellers
           .map((seller) => _resolveSellerImageUrl(seller, baseUrl))

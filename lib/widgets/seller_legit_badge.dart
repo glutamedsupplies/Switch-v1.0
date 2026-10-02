@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:switch_app/widgets/horizontal_end_fade.dart';
 
-/// Blue verified seal for paid-plan sellers (original products).
+/// Blue verified seal for sellers who earned it from shop performance.
 /// Sized to never shrink away when placed beside an ellipsized company name.
 class SellerLegitBadge extends StatelessWidget {
   const SellerLegitBadge({
@@ -17,9 +17,9 @@ class SellerLegitBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Verified seller for original products',
+      message: 'Preferred badge',
       child: Semantics(
-        label: 'Verified seller',
+        label: 'Preferred badge',
         child: SizedBox.square(
           dimension: size,
           child: Image.asset(

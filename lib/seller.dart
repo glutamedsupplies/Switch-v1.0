@@ -6,10 +6,11 @@
 // the seller, and message them through this page.
 // =============================================================================
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:switch_app/chat_support.dart';
 import 'package:switch_app/guest_session.dart';
@@ -19,10 +20,14 @@ import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/product_repository.dart';
 import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
+import 'package:switch_app/widgets/home_voucher_carousel.dart';
+import 'package:switch_app/widgets/lucide_share_icon.dart';
 import 'package:switch_app/utils/auth_session.dart';
 import 'package:switch_app/utils/own_listing.dart';
-import 'package:switch_app/product_details.dart';
-import 'package:switch_app/widgets/product_card.dart';
+import 'package:switch_app/main.dart' show ShopListingGrid;
+import 'package:switch_app/widgets/report_seller_sheet.dart';
+import 'package:switch_app/services/company_report_service.dart';
+import 'package:switch_app/utils/share_links.dart';
 
 // =============================================================================
 // SellerPage Widget
@@ -33,11 +38,7 @@ import 'package:switch_app/widgets/product_card.dart';
 class SellerPage extends StatefulWidget {
   // Creates a SellerPage with the seller's admin ID and optional initial name.
   // The adminId is required to identify the seller and fetch their data.
-  const SellerPage({
-    super.key,
-    required this.adminId,
-    this.initialName,
-  });
+  const SellerPage({super.key, required this.adminId, this.initialName});
 
   // Unique identifier for the seller (admin account ID)
   final String adminId;
@@ -64,6 +65,8 @@ class _SellerPageState extends State<SellerPage> {
   // True when this seller dashboard belongs to the signed-in user's company.
   bool _isOwnCompany = false;
   bool _ownCompanyResolved = false;
+  // Reporting stays hidden until the buyer has ordered from this store.
+  bool _reportEligible = false;
   // URL or base64-encoded image data for the seller's profile picture
   String _sellerPicture = '';
   // Average rating of the seller based on their products
@@ -74,6 +77,12 @@ class _SellerPageState extends State<SellerPage> {
   int _sellerFollowerCount = 0;
   // Cached seller name to avoid repeated API calls
   String _sellerNameCached = '';
+  String _sellerCompanyId = '';
+  // Company cover/background photo shown behind the profile header
+  String _sellerBackground = '';
+  String _sellerStoreType = '';
+  bool _sellerVerified = false;
+  int _sellerProductCount = 0;
 
   // Returns true if the current user is in guest mode (not logged in)
   bool get _isGuestMode => GuestSession.isGuest && !AuthSession.isLoggedInSync;
@@ -101,6 +110,7 @@ class _SellerPageState extends State<SellerPage> {
       setState(() {
         _isOwnCompany = false;
         _ownCompanyResolved = true;
+        _reportEligible = false;
       });
       return;
     }
@@ -111,6 +121,7 @@ class _SellerPageState extends State<SellerPage> {
     final isOwn = listingBelongsToOwnCompany(
       scope: scope,
       adminId: widget.adminId,
+      companyId: _sellerCompanyId,
       companyName: widget.initialName ?? _sellerNameCached,
     );
     setState(() {
@@ -122,9 +133,34 @@ class _SellerPageState extends State<SellerPage> {
       return;
     }
 
+    unawaited(_refreshReportEligibility());
     // Only load follow state for other companies.
     await _loadPrefs();
     await _loadFollowState();
+  }
+
+  Future<void> _refreshReportEligibility() async {
+    final result = await createCompanyReportService()
+        .checkSellerReportEligibility(
+          adminId: widget.adminId,
+          companyId: _sellerCompanyId,
+        );
+    if (!mounted) return;
+    setState(() {
+      _reportEligible = result.eligible;
+    });
+  }
+
+  Future<void> _openReportSeller(String companyName) async {
+    await openReportSellerSheet(
+      context,
+      adminId: widget.adminId,
+      companyId: _sellerCompanyId,
+      companyName: companyName,
+    );
+    if (mounted) {
+      unawaited(_refreshReportEligibility());
+    }
   }
 
   // =============================================================================
@@ -137,8 +173,9 @@ class _SellerPageState extends State<SellerPage> {
     final prefs = await SharedPreferences.getInstance();
     final keyFollow = await _followPreferenceKey();
     // Default to not following if no preference is stored
-    final isFollowing =
-        keyFollow == null ? false : prefs.getBool(keyFollow) ?? false;
+    final isFollowing = keyFollow == null
+        ? false
+        : prefs.getBool(keyFollow) ?? false;
     if (!mounted) {
       return;
     }
@@ -179,6 +216,17 @@ class _SellerPageState extends State<SellerPage> {
                   '',
             );
             if (pic.isNotEmpty) _sellerPicture = pic;
+            final background = _resolveSellerImageUrl(
+              data['companyBackgroundUrl'] ??
+                  data['backgroundUrl'] ??
+                  data['coverImageUrl'] ??
+                  '',
+            );
+            if (background.isNotEmpty) _sellerBackground = background;
+            _sellerStoreType = (data['storeType'] ?? '').toString().trim();
+            _sellerVerified = data['verified'] == true;
+            final productCount = (data['productCount'] as num?)?.toInt();
+            if (productCount != null) _sellerProductCount = productCount;
             // Parse rating with fallback to 0
             _sellerRating = (data['rating'] as num?)?.toDouble() ?? 0;
             // Parse comment count with fallback to 0
@@ -186,12 +234,19 @@ class _SellerPageState extends State<SellerPage> {
             // Try multiple possible field names for follower count
             _sellerFollowerCount =
                 (data['followersCount'] as num?)?.toInt() ??
-                    (data['followerCount'] as num?)?.toInt() ??
-                    0;
+                (data['followerCount'] as num?)?.toInt() ??
+                0;
             // Cache the seller name
             final name = (data['name'] as String?) ?? '';
             if (name.isNotEmpty) _sellerNameCached = name;
+            final companyId = (data['companyId'] ?? data['company_id'] ?? '')
+                .toString()
+                .trim();
+            if (companyId.isNotEmpty) _sellerCompanyId = companyId;
           });
+          if (_sellerCompanyId.isNotEmpty && !_isOwnCompany) {
+            await _resolveOwnCompany();
+          }
         }
       }
       client.close();
@@ -241,8 +296,11 @@ class _SellerPageState extends State<SellerPage> {
   // Supports both network images and base64-encoded data URLs.
   // Returns null if no picture is available.
   // =============================================================================
-  ImageProvider? _buildSellerImageProvider() {
-    final pic = _resolveSellerImageUrl(_sellerPicture);
+  ImageProvider? _buildSellerImageProvider() =>
+      _buildImageProvider(_sellerPicture);
+
+  ImageProvider? _buildImageProvider(String raw) {
+    final pic = _resolveSellerImageUrl(raw);
     if (pic.isEmpty) return null;
     // Handle base64 data URLs
     if (pic.startsWith('data:')) {
@@ -447,8 +505,9 @@ class _SellerPageState extends State<SellerPage> {
       // Check for successful response (200 or 201 Created)
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         // Get followed state from response, fallback to optimistic update
-        final followed =
-            data['followed'] is bool ? data['followed'] as bool : next;
+        final followed = data['followed'] is bool
+            ? data['followed'] as bool
+            : next;
         // Get updated follower count from server
         final serverFollowersCount = (data['followersCount'] as num?)?.toInt();
         final prefs = await SharedPreferences.getInstance();
@@ -528,8 +587,8 @@ class _SellerPageState extends State<SellerPage> {
       final sellerName = _sellerNameCached.trim().isNotEmpty
           ? _sellerNameCached.trim()
           : (widget.initialName?.trim().isNotEmpty == true
-              ? widget.initialName!.trim()
-              : widget.adminId.trim());
+                ? widget.initialName!.trim()
+                : widget.adminId.trim());
       final product = products.first;
       // Ensure product has seller identity for chat display
       final chatProduct = product.copyWith(
@@ -542,19 +601,13 @@ class _SellerPageState extends State<SellerPage> {
       );
 
       // Open the chat support page
-      await openChatSupportPage(
-        context,
-        product: chatProduct,
-      );
+      await openChatSupportPage(context, product: chatProduct);
     } catch (_) {
       if (!mounted) {
         return;
       }
 
-      AppSnackBar.showError(
-        context,
-        message: 'Unable to open chat right now.',
-      );
+      AppSnackBar.showError(context, message: 'Unable to open chat right now.');
     }
   }
 
@@ -581,6 +634,7 @@ class _SellerPageState extends State<SellerPage> {
         if (companyPictureUrl.isNotEmpty) {
           _sellerPicture = companyPictureUrl;
         }
+        _sellerProductCount = filtered.length;
         // Aggregate rating and comments from all products
         _sellerRating = _aggregateSellerRating(filtered);
         _sellerComments = _aggregateSellerComments(filtered);
@@ -659,11 +713,23 @@ class _SellerPageState extends State<SellerPage> {
     final nameToShow = _sellerNameCached.isNotEmpty
         ? _sellerNameCached
         : (widget.initialName ?? widget.adminId);
-    final sellerImageProvider = _buildSellerImageProvider();
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(nameToShow),
-        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+        automaticallyImplyLeading: false,
+        leading: Padding(
+          padding: const EdgeInsets.all(8),
+          child: _buildCoverIconButton(
+            icon: Icons.arrow_back_rounded,
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ),
       ),
       body: SafeArea(
         top: false,
@@ -671,138 +737,22 @@ class _SellerPageState extends State<SellerPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            // =================================================================
-            // Company Profile Section
-            // =================================================================
-            Container(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-              child: Column(
-                children: [
-                  // Company Logo/Picture - Circular avatar with fallback to initials
-                  Container(
-                    width: 78,
-                    height: 78,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: theme.colorScheme.primary.withOpacity(0.12),
-                    ),
-                    child: ClipOval(
-                      child: sellerImageProvider != null
-                          ? Image(
-                              image: sellerImageProvider,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  _buildInitials(nameToShow),
-                            )
-                          : _buildInitials(nameToShow),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // Stats Grid - Rating, Reviews, Followers
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(12),
-                      border: theme.brightness == Brightness.dark
-                          ? Border.all(
-                              color: Colors.white.withOpacity(0.10),
-                            )
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // Rating stat with star icon
-                        _buildStatItem(
-                          context,
-                          Icons.star_rounded,
-                          Colors.amber[700]!,
-                          _sellerRating.toStringAsFixed(1),
-                          'Rating',
-                        ),
-                        _buildDivider(),
-                        // Reviews stat with review icon
-                        _buildStatItem(
-                          context,
-                          Icons.rate_review_rounded,
-                          theme.colorScheme.primary,
-                          '$_sellerComments',
-                          'Reviews',
-                        ),
-                        _buildDivider(),
-                        // Followers stat with people icon
-                        _buildStatItem(
-                          context,
-                          Icons.people_rounded,
-                          theme.colorScheme.secondary,
-                          '$_sellerFollowerCount',
-                          'Followers',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // Follow / Message only for other companies — never for own.
-                  if (_ownCompanyResolved && !_isOwnCompany)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // Follow/Unfollow button
-                        SizedBox(
-                          width: 132,
-                          child: ElevatedButton.icon(
-                            onPressed: _toggleFollow,
-                            icon: Icon(
-                              _isFollowing ? Icons.check : Icons.add,
-                              size: 18,
-                            ),
-                            label: Text(
-                              _isFollowing ? 'Following' : 'Follow',
-                              style: const TextStyle(height: 1),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _isFollowing
-                                  ? Colors.grey[300]
-                                  : theme.colorScheme.primary,
-                              foregroundColor: _isFollowing
-                                  ? Colors.black87
-                                  : Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Message seller button
-                        SizedBox(
-                          width: 132,
-                          child: OutlinedButton.icon(
-                            onPressed: _handleMessageTap,
-                            icon: const Icon(Icons.message_rounded, size: 18),
-                            label: const Text(
-                              'Message',
-                              style: TextStyle(height: 1),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
+              _buildProfileHeader(context, nameToShow),
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
               ),
-            ),
-            // =============================================================================
+              HomeVoucherCarousel(
+                platformId: '',
+                sellerAdminId: widget.adminId,
+                title: 'Company Vouchers',
+                backgroundColor: theme.scaffoldBackgroundColor,
+                titleColor: theme.colorScheme.onSurface,
+                secondaryColor: theme.colorScheme.onSurfaceVariant,
+                primaryColor: theme.colorScheme.primary,
+              ),
+              // =============================================================================
               // Products Section Header
               // =================================================================
               Padding(
@@ -817,8 +767,8 @@ class _SellerPageState extends State<SellerPage> {
                     Text(
                       'Products',
                       style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -848,7 +798,11 @@ class _SellerPageState extends State<SellerPage> {
                         child: Center(
                           child: Column(
                             children: [
-                              Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
+                              Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: Colors.grey[400],
+                              ),
                               const SizedBox(height: 12),
                               const Text('Unable to load seller products.'),
                             ],
@@ -878,41 +832,21 @@ class _SellerPageState extends State<SellerPage> {
                       );
                     }
 
-                    // Success state - display products in a 2-column grid
-                    // Each product card shows company identity (name + picture)
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisExtent: 322,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemCount: products.length,
-                      itemBuilder: (context, index) {
-                        final p = products[index];
-                        // Enrich product with seller identity if not already set
-                        final cardProduct = p.copyWith(
-                          companyName: p.companyName.trim().isNotEmpty
-                              ? p.companyName
-                              : nameToShow,
-                          companyPictureUrl:
-                              p.companyPictureUrl.trim().isNotEmpty
-                                  ? p.companyPictureUrl
-                                  : _sellerPicture,
-                        );
-                        return ProductCard(
-                          p: cardProduct,
-                          onTapWithHero: (heroTag) => openProductDetailsPage(
-                            context,
-                            p,
-                            heroTag: heroTag,
+                    // Success state - Shop-style 2-column grid; each card
+                    // shows company identity (name + picture).
+                    return ShopListingGrid(
+                      products: [
+                        for (final p in products)
+                          p.copyWith(
+                            companyName: p.companyName.trim().isNotEmpty
+                                ? p.companyName
+                                : nameToShow,
+                            companyPictureUrl:
+                                p.companyPictureUrl.trim().isNotEmpty
+                                ? p.companyPictureUrl
+                                : _sellerPicture,
                           ),
-                          showCompanyIdentity: true,
-                        );
-                      },
+                      ],
                     );
                   },
                 ),
@@ -945,57 +879,413 @@ class _SellerPageState extends State<SellerPage> {
   }
 
   // =============================================================================
-  // _buildStatItem
+  // Profile header (cover photo + overlapping avatar)
   // =============================================================================
-  // Reusable widget for displaying a single stat item in the stats row.
-  // Parameters:
-  //   - icon: The icon to display (e.g., star, review, people)
-  //   - iconColor: Color of the icon
-  //   - value: The numeric/stat value to display (e.g., "4.5", "120")
-  //   - label: Descriptive label below the value (e.g., "Rating", "Reviews")
-  // =============================================================================
-  Widget _buildStatItem(
-    BuildContext context,
-    IconData icon,
-    Color iconColor,
-    String value,
-    String label,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+  static const double _coverBaseHeight = 150;
+  static const double _avatarSize = 96;
+
+  Widget _buildProfileHeader(BuildContext context, String name) {
+    final theme = Theme.of(context);
+    final coverHeight = _coverBaseHeight + MediaQuery.paddingOf(context).top;
+    final isVisitor = _ownCompanyResolved && !_isOwnCompany;
+    final mutedColor = theme.colorScheme.onSurfaceVariant;
+    final subtitleParts = <String>[
+      _sellerStoreType.isNotEmpty ? _sellerStoreType : 'Company store',
+      _sellerVerified ? 'Verified seller' : 'Seller on Switch',
+    ];
+
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        Icon(icon, color: iconColor, size: 20),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-                height: 1,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: coverHeight, child: _buildCover(theme)),
+            SizedBox(
+              height: _avatarSize / 2 + 4,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (widget.adminId.trim().isNotEmpty)
+                    IconButton(
+                      tooltip: 'Copy store link',
+                      onPressed: _copyStoreLink,
+                      icon: Icon(Icons.link_rounded, color: mutedColor),
+                    ),
+                  if (isVisitor && _reportEligible)
+                    _buildMoreMenu(context, name),
+                  const SizedBox(width: 4),
+                ],
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (_sellerRating > 0) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.star_rounded,
+                          size: 20,
+                          color: Colors.amber[600],
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          _sellerRating.toStringAsFixed(1),
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      for (var i = 0; i < subtitleParts.length; i++) ...[
+                        if (i > 0)
+                          Container(
+                            width: 1,
+                            height: 12,
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                        Flexible(
+                          child: Text(
+                            subtitleParts[i],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: mutedColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      _buildHeaderStat(
+                        context,
+                        'Followers',
+                        _sellerFollowerCount,
+                      ),
+                      const SizedBox(width: 32),
+                      _buildHeaderStat(
+                        context,
+                        'Products',
+                        _sellerProductCount,
+                      ),
+                      const SizedBox(width: 32),
+                      _buildHeaderStat(context, 'Reviews', _sellerComments),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      // Follow / Message only for other companies — never for own.
+                      if (isVisitor) ...[
+                        _buildHeaderButton(
+                          context,
+                          icon: _isFollowing
+                              ? Icons.check_rounded
+                              : Icons.person_add_alt_1_outlined,
+                          label: _isFollowing ? 'Following' : 'Follow',
+                          active: _isFollowing,
+                          onPressed: _toggleFollow,
+                        ),
+                        _buildHeaderButton(
+                          context,
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: 'Message',
+                          onPressed: _handleMessageTap,
+                        ),
+                      ],
+                      if (widget.adminId.trim().isNotEmpty)
+                        Builder(
+                          builder: (buttonContext) => _buildHeaderButton(
+                            buttonContext,
+                            iconWidget: const LucideShareIcon(size: 18),
+                            label: 'Share',
+                            onPressed: () => shareCompanyLink(
+                              buttonContext,
+                              adminId: widget.adminId,
+                              companyName: name,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color:
-                    Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.7),
-                height: 1,
-              ),
+        Positioned(
+          left: 16,
+          top: coverHeight - _avatarSize / 2,
+          child: _buildAvatar(theme, name),
         ),
       ],
     );
   }
 
-  // =============================================================================
-  // _buildDivider
-  // =============================================================================
-  // Vertical divider line (1px wide, 32px tall) used to visually separate
-  // stat items in the stats row.
-  // =============================================================================
-  Widget _buildDivider() {
-    return Container(
-      width: 1,
-      height: 32,
-      color: Colors.grey[300],
+  Widget _buildCover(ThemeData theme) {
+    final provider = _buildImageProvider(_sellerBackground);
+    final fallback = _buildCoverFallback(theme);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (provider != null)
+          Image(
+            image: provider,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => fallback,
+          )
+        else
+          fallback,
+        // Keeps the status bar and back button legible on bright photos.
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.center,
+              colors: [Color(0x59000000), Color(0x00000000)],
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildCoverFallback(ThemeData theme) {
+    final primary = theme.colorScheme.primary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [primary, Color.lerp(primary, Colors.black, 0.35)!],
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final icon in const [
+                Icons.north_east_rounded,
+                Icons.south_east_rounded,
+                Icons.south_west_rounded,
+                Icons.north_west_rounded,
+              ])
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Icon(
+                    icon,
+                    size: 40,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(ThemeData theme, String name) {
+    final provider = _buildSellerImageProvider();
+    return SizedBox(
+      width: _avatarSize,
+      height: _avatarSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: _avatarSize,
+            height: _avatarSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color.alphaBlend(
+                theme.colorScheme.primary.withOpacity(0.12),
+                theme.colorScheme.surface,
+              ),
+              border: Border.all(
+                color: theme.scaffoldBackgroundColor,
+                width: 4,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: provider != null
+                  ? Image(
+                      image: provider,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => _buildInitials(name),
+                    )
+                  : _buildInitials(name),
+            ),
+          ),
+          if (_sellerVerified)
+            Positioned(
+              right: 0,
+              bottom: 2,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: theme.scaffoldBackgroundColor,
+                ),
+                padding: const EdgeInsets.all(2),
+                child: const Icon(
+                  Icons.verified_rounded,
+                  size: 24,
+                  color: Color(0xFF2E90FA),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoverIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: Colors.black.withOpacity(0.32),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        icon: Icon(icon, color: Colors.white, size: 20),
+      ),
+    );
+  }
+
+  Widget _buildMoreMenu(BuildContext context, String name) {
+    final theme = Theme.of(context);
+    return PopupMenuButton<String>(
+      tooltip: 'More',
+      icon: Icon(
+        Icons.more_horiz_rounded,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      onSelected: (value) {
+        if (value == 'report') _openReportSeller(name);
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem<String>(
+          value: 'report',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.flag_outlined),
+            title: Text('Report seller'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _copyStoreLink() async {
+    await Clipboard.setData(
+      ClipboardData(text: companyShareUrl(widget.adminId)),
+    );
+    if (!mounted) return;
+    AppSnackBar.showSuccess(context, message: 'Store link copied.');
+  }
+
+  Widget _buildHeaderStat(BuildContext context, String label, int value) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _compactCount(value),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeaderButton(
+    BuildContext context, {
+    IconData? icon,
+    Widget? iconWidget,
+    required String label,
+    required VoidCallback? onPressed,
+    bool active = false,
+  }) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: iconWidget ?? Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: active ? scheme.primary : scheme.onSurface,
+        backgroundColor: active
+            ? scheme.primary.withOpacity(0.08)
+            : scheme.surface,
+        side: BorderSide(
+          color: active
+              ? scheme.primary.withOpacity(0.45)
+              : scheme.outlineVariant,
+        ),
+        minimumSize: const Size(0, 38),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        textStyle: theme.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  String _compactCount(int value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(value >= 10000000 ? 0 : 1)}M';
+    }
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(value >= 10000 ? 0 : 1)}K';
+    }
+    return '$value';
   }
 }

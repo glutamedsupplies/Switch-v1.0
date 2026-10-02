@@ -97,12 +97,8 @@ class SellerSummary {
         (json['planName'] ?? json['subscriptionPlan'] ?? 'Free Plan')
             .toString()
             .trim();
-    final hasPaidPlan = json['hasPaidPlan'] == true ||
-        json['isLegitSeller'] == true ||
-        _sellerPlanLooksPaid(
-          planName,
-          json['planAmount'] ?? json['subscriptionAmount'] ?? json['amount'],
-        );
+    final hasPaidPlan = json['legitimateBadge'] == true ||
+        json['isLegitSeller'] == true;
 
     return SellerSummary(
       adminId: adminId,

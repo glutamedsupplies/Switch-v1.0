@@ -7,20 +7,15 @@ import 'package:switch_app/cart.dart';
 import 'package:switch_app/favorite_products_store.dart';
 import 'package:switch_app/guest_session.dart';
 import 'package:switch_app/login_redirect.dart';
+import 'package:switch_app/main.dart' show ShopListingGrid;
 import 'package:switch_app/models/product.dart';
 import 'package:switch_app/models/store_type_summary.dart';
-import 'package:switch_app/product_details.dart';
 import 'package:switch_app/search_bar.dart' as app_search;
-import 'package:switch_app/services/flash_deals_service.dart';
-import 'package:switch_app/theme/app_snack_bar.dart';
 import 'package:switch_app/theme/app_theme.dart';
 import 'package:switch_app/utils/app_keyboard.dart';
 import 'package:switch_app/utils/auth_session.dart';
-import 'package:switch_app/utils/currency_format.dart';
-import 'package:switch_app/widgets/app_price_text.dart';
 import 'package:switch_app/utils/motion_60fps.dart';
 import 'package:switch_app/widgets/horizontal_end_fade.dart';
-import 'package:switch_app/widgets/product_card_tap_lift.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
 
 /// Platform-scoped category catalog entry for the Categories browse flow.
@@ -1543,52 +1538,6 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
     await openCartPage(context, platformId: widget.platformId);
   }
 
-  Future<void> _toggleFavorite(Product product) async {
-    if (_isGuestMode()) {
-      _redirectGuestToLogin(context);
-      return;
-    }
-    await FavoriteProductsStore.instance.toggleFavorite(product.id);
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  Future<void> _addToCart(Product product) async {
-    if (_isGuestMode()) {
-      _redirectGuestToLogin(context);
-      return;
-    }
-    try {
-      await CartStore.instance.addItem(
-        product,
-        quantity: 1,
-        catalogProducts: widget.allPlatformProducts,
-        platformId: widget.platformId,
-      );
-      if (!mounted) return;
-      AppSnackBar.showSuccess(context, message: 'Added to cart.');
-    } on FlashDealReserveException catch (error) {
-      if (!mounted) return;
-      AppSnackBar.showError(context, message: error.message);
-    } catch (_) {
-      if (!mounted) return;
-      AppSnackBar.showError(
-        context,
-        message: 'Unable to add this product to your cart.',
-      );
-    }
-  }
-
-  void _openProduct(Product product) {
-    unawaited(
-      openProductDetailsPage(
-        context,
-        product,
-        platformId: widget.platformId,
-      ),
-    );
-  }
-
   void _selectSibling(CategoryBrowseItem sibling) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
@@ -1837,39 +1786,13 @@ class _CategoryDetailPageState extends State<CategoryDetailPage> {
                   else
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      sliver: SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.62,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final product = visible[index];
-                            return ValueListenableBuilder<List<String>>(
-                              valueListenable: FavoriteProductsStore
-                                  .instance.favoriteProductIdsNotifier,
-                              builder: (context, favorites, _) {
-                                final isFavorite =
-                                    favorites.contains(product.id);
-                                return _CategoryProductCard(
-                                  product: product,
-                                  primaryColor: widget.primaryColor,
-                                  titleColor: titleColor,
-                                  secondaryColor: secondaryColor,
-                                  isFavorite: isFavorite,
-                                  onTap: () => _openProduct(product),
-                                  onFavoriteTap: () =>
-                                      unawaited(_toggleFavorite(product)),
-                                  onAddToCart: () =>
-                                      unawaited(_addToCart(product)),
-                                );
-                              },
-                            );
-                          },
-                          childCount: visible.length,
+                      sliver: SliverToBoxAdapter(
+                        child: ShopListingGrid(
+                          products: visible,
+                          primaryColor: widget.primaryColor,
+                          titleColor: titleColor,
+                          secondaryColor: secondaryColor,
+                          platformId: widget.platformId,
                         ),
                       ),
                     ),
@@ -2089,204 +2012,6 @@ class _SubcategoryTile extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CategoryProductCard extends StatelessWidget {
-  const _CategoryProductCard({
-    required this.product,
-    required this.primaryColor,
-    required this.titleColor,
-    required this.secondaryColor,
-    required this.isFavorite,
-    required this.onTap,
-    required this.onFavoriteTap,
-    required this.onAddToCart,
-  });
-
-  final Product product;
-  final Color primaryColor;
-  final Color titleColor;
-  final Color secondaryColor;
-  final bool isFavorite;
-  final VoidCallback onTap;
-  final VoidCallback onFavoriteTap;
-  final VoidCallback onAddToCart;
-
-  double get _displayPrice {
-    final sales = product.salesPrice;
-    if (sales != null && sales >= 0) return sales;
-    return product.originalPrice;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ProductCardTapLift(
-      onTap: onTap,
-      builder: (context, liftValue, handleTap, heroTag) {
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: handleTap,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE8EAED)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    flex: 55,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Hero(
-                          tag: heroTag,
-                          child: ProductCardTapLift.liftImage(
-                            liftValue: liftValue,
-                            child: CachedNetworkImage(
-                              imageUrl: product.imageUrl,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) =>
-                                  Container(color: const Color(0xFFF3F4F6)),
-                              errorWidget: (_, __, ___) => ColoredBox(
-                                color: const Color(0xFFF3F4F6),
-                                child: Icon(
-                                  Icons.image_outlined,
-                                  color: secondaryColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Material(
-                            color: Colors.white.withValues(alpha: 0.92),
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: onFavoriteTap,
-                              child: Padding(
-                                padding: const EdgeInsets.all(6),
-                                child: Icon(
-                                  isFavorite
-                                      ? Icons.favorite_rounded
-                                      : Icons.favorite_border_rounded,
-                                  size: 18,
-                                  color: isFavorite
-                                      ? const Color(0xFFE11D48)
-                                      : secondaryColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    flex: 45,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.star_rounded,
-                                size: 14,
-                                color: Color(0xFFF59E0B),
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                product.rating.toStringAsFixed(1),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: titleColor,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                              if (product.ratingCount > 0) ...[
-                                Text(
-                                  ' (${product.ratingCount})',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelSmall
-                                      ?.copyWith(color: secondaryColor),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            product.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.2,
-                                ),
-                          ),
-                          const Spacer(),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: AppPriceText(
-                                  amount: _displayPrice,
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall
-                                          ?.fontSize ??
-                                      14,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Material(
-                                color: primaryColor,
-                                borderRadius: BorderRadius.circular(8),
-                                child: InkWell(
-                                  onTap: onAddToCart,
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: const SizedBox(
-                                    width: 30,
-                                    height: 30,
-                                    child: Icon(
-                                      Icons.shopping_cart_outlined,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

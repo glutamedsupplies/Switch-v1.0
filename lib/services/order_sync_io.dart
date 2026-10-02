@@ -4,12 +4,30 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:switch_app/services/admin_scope.dart';
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/order_sync_base.dart';
 import 'package:switch_app/utils/auth_session.dart';
 
-const _requestTimeout = Duration(seconds: 10);
+// Short connect timeout so dead loopback/LAN candidates fail fast; a longer
+// response timeout because saving orders writes to PostgreSQL.
+const _connectTimeout = Duration(seconds: 3);
+const _requestTimeout = Duration(seconds: 20);
 String? _preferredBaseUrl;
+
+/// Pulls `message` out of a JSON error body so the buyer sees the real reason.
+String _serverErrorMessage(int statusCode, String responseBody) {
+  final trimmed = responseBody.trim();
+  if (trimmed.isEmpty) return 'Server error ($statusCode)';
+  try {
+    final decoded = jsonDecode(trimmed);
+    if (decoded is Map && decoded['message'] is String) {
+      final message = (decoded['message'] as String).trim();
+      if (message.isNotEmpty) return message;
+    }
+  } catch (_) {}
+  return trimmed;
+}
 
 Future<List<Map<String, dynamic>>> _decodeOrderItemsInBackground(
   String responseBody,
@@ -92,9 +110,7 @@ List<String> _resolveCandidateBaseUrls(
 }
 
 OrderSyncService createOrderSyncService({String? baseUrl}) {
-  return _HttpOrderSyncService(
-    baseUrls: _buildBaseUrls(baseUrl: baseUrl),
-  );
+  return _HttpOrderSyncService(explicitBaseUrl: baseUrl);
 }
 
 List<String> _buildBaseUrls({String? baseUrl}) {
@@ -115,6 +131,10 @@ Future<void> _setAccountIdHeader(HttpHeaders headers) async {
   final accountId = (await AuthSession.getAccountId())?.trim() ?? '';
   final accountEmail = (await AuthSession.getAccountEmail())?.trim() ?? '';
   final requestAccountId = accountId.isNotEmpty ? accountId : accountEmail;
+  final sessionToken = (await AuthSession.getSessionToken())?.trim() ?? '';
+  if (sessionToken.isNotEmpty) {
+    headers.set('X-Switch-Session', sessionToken);
+  }
 
   if (requestAccountId.isNotEmpty) {
     headers.set('X-GMS-Account-ID', requestAccountId);
@@ -125,12 +145,25 @@ Future<void> _setAccountIdHeader(HttpHeaders headers) async {
 }
 
 class _HttpOrderSyncService implements OrderSyncService {
-  _HttpOrderSyncService({
-    required this.baseUrls,
-  });
+  _HttpOrderSyncService({this.explicitBaseUrl});
 
-  final List<String> baseUrls;
-  final HttpClient _client = HttpClient();
+  final String? explicitBaseUrl;
+  final HttpClient _client = HttpClient()..connectionTimeout = _connectTimeout;
+
+  /// Built per call so the backend URL that is already known to work (from
+  /// any service) is tried first instead of hanging on dead candidates.
+  Future<List<String>> _candidateBaseUrls() async {
+    await resolveWorkingLocalApiBaseUrl();
+    return _resolveCandidateBaseUrls(
+      _buildBaseUrls(baseUrl: explicitBaseUrl),
+      preferredBaseUrl: _preferredBaseUrl,
+    );
+  }
+
+  void _rememberBaseUrl(String baseUrl) {
+    _preferredBaseUrl = baseUrl;
+    rememberWorkingLocalApiBaseUrl(baseUrl);
+  }
 
   Future<List<Map<String, dynamic>>> _fetchOrdersFromBaseUrl(
     String baseUrl,
@@ -154,7 +187,7 @@ class _HttpOrderSyncService implements OrderSyncService {
         throw _BaseUrlAttemptFailure('${response.statusCode}');
       }
 
-      _preferredBaseUrl = baseUrl;
+      _rememberBaseUrl(baseUrl);
       return _decodeOrderItemsInBackground(responseBody);
     } on SocketException {
       throw const _BaseUrlAttemptFailure('socket error');
@@ -166,6 +199,8 @@ class _HttpOrderSyncService implements OrderSyncService {
       throw const _BaseUrlAttemptFailure('invalid JSON');
     } on ArgumentError catch (error) {
       throw _BaseUrlAttemptFailure(error.message ?? 'invalid URL');
+    } on _BaseUrlAttemptFailure {
+      rethrow;
     } catch (error) {
       throw _BaseUrlAttemptFailure(error.toString());
     }
@@ -196,11 +231,12 @@ class _HttpOrderSyncService implements OrderSyncService {
 
       if (response.statusCode != HttpStatus.ok) {
         throw _BaseUrlAttemptFailure(
-          responseBody.trim().isEmpty ? '${response.statusCode}' : responseBody,
+          _serverErrorMessage(response.statusCode, responseBody),
+          reachedServer: true,
         );
       }
 
-      _preferredBaseUrl = baseUrl;
+      _rememberBaseUrl(baseUrl);
     } on SocketException {
       throw const _BaseUrlAttemptFailure('socket error');
     } on TimeoutException {
@@ -209,6 +245,8 @@ class _HttpOrderSyncService implements OrderSyncService {
       throw _BaseUrlAttemptFailure(error.message);
     } on ArgumentError catch (error) {
       throw _BaseUrlAttemptFailure(error.message ?? 'invalid URL');
+    } on _BaseUrlAttemptFailure {
+      rethrow;
     } catch (error) {
       throw _BaseUrlAttemptFailure(error.toString());
     }
@@ -240,11 +278,12 @@ class _HttpOrderSyncService implements OrderSyncService {
       if (response.statusCode != HttpStatus.ok &&
           response.statusCode != HttpStatus.created) {
         throw _BaseUrlAttemptFailure(
-          responseBody.trim().isEmpty ? '${response.statusCode}' : responseBody,
+          _serverErrorMessage(response.statusCode, responseBody),
+          reachedServer: true,
         );
       }
 
-      _preferredBaseUrl = baseUrl;
+      _rememberBaseUrl(baseUrl);
     } on SocketException {
       throw const _BaseUrlAttemptFailure('socket error');
     } on TimeoutException {
@@ -253,6 +292,8 @@ class _HttpOrderSyncService implements OrderSyncService {
       throw _BaseUrlAttemptFailure(error.message);
     } on ArgumentError catch (error) {
       throw _BaseUrlAttemptFailure(error.message ?? 'invalid URL');
+    } on _BaseUrlAttemptFailure {
+      rethrow;
     } catch (error) {
       throw _BaseUrlAttemptFailure(error.toString());
     }
@@ -284,11 +325,12 @@ class _HttpOrderSyncService implements OrderSyncService {
 
       if (response.statusCode != HttpStatus.ok) {
         throw _BaseUrlAttemptFailure(
-          responseBody.trim().isEmpty ? '${response.statusCode}' : responseBody,
+          _serverErrorMessage(response.statusCode, responseBody),
+          reachedServer: true,
         );
       }
 
-      _preferredBaseUrl = baseUrl;
+      _rememberBaseUrl(baseUrl);
     } on SocketException {
       throw const _BaseUrlAttemptFailure('socket error');
     } on TimeoutException {
@@ -297,6 +339,8 @@ class _HttpOrderSyncService implements OrderSyncService {
       throw _BaseUrlAttemptFailure(error.message);
     } on ArgumentError catch (error) {
       throw _BaseUrlAttemptFailure(error.message ?? 'invalid URL');
+    } on _BaseUrlAttemptFailure {
+      rethrow;
     } catch (error) {
       throw _BaseUrlAttemptFailure(error.toString());
     }
@@ -334,6 +378,7 @@ class _HttpOrderSyncService implements OrderSyncService {
         final errorMessage = (decoded['message']?.toString() ?? '').trim();
         throw _BaseUrlAttemptFailure(
           errorMessage.isNotEmpty ? errorMessage : '${response.statusCode}',
+          reachedServer: true,
         );
       }
 
@@ -345,7 +390,7 @@ class _HttpOrderSyncService implements OrderSyncService {
         throw const _BaseUrlAttemptFailure('invalid upload response');
       }
 
-      _preferredBaseUrl = baseUrl;
+      _rememberBaseUrl(baseUrl);
       if (mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
         return mediaUrl;
       }
@@ -361,6 +406,8 @@ class _HttpOrderSyncService implements OrderSyncService {
       throw const _BaseUrlAttemptFailure('invalid JSON');
     } on ArgumentError catch (error) {
       throw _BaseUrlAttemptFailure(error.message ?? 'invalid URL');
+    } on _BaseUrlAttemptFailure {
+      rethrow;
     } catch (error) {
       throw _BaseUrlAttemptFailure(error.toString());
     }
@@ -368,11 +415,8 @@ class _HttpOrderSyncService implements OrderSyncService {
 
   @override
   Future<List<Map<String, dynamic>>> fetchOrders() async {
+    final candidateBaseUrls = await _candidateBaseUrls();
     final preferredBaseUrl = _preferredBaseUrl;
-    final candidateBaseUrls = _resolveCandidateBaseUrls(
-      baseUrls,
-      preferredBaseUrl: preferredBaseUrl,
-    );
 
     if (preferredBaseUrl != null) {
       try {
@@ -427,10 +471,7 @@ class _HttpOrderSyncService implements OrderSyncService {
 
   @override
   Future<void> replaceOrders(List<Map<String, dynamic>> orders) async {
-    final candidateBaseUrls = _resolveCandidateBaseUrls(
-      baseUrls,
-      preferredBaseUrl: _preferredBaseUrl,
-    );
+    final candidateBaseUrls = await _candidateBaseUrls();
     final failures = <String>[];
 
     if (candidateBaseUrls.isEmpty) {
@@ -444,6 +485,9 @@ class _HttpOrderSyncService implements OrderSyncService {
         await _replaceOrdersAtBaseUrl(baseUrl, orders);
         return;
       } on _BaseUrlAttemptFailure catch (error) {
+        if (error.reachedServer) {
+          throw OrderSyncServiceException(error.message);
+        }
         failures.add('$baseUrl -> ${error.message}');
       }
     }
@@ -456,10 +500,7 @@ class _HttpOrderSyncService implements OrderSyncService {
 
   @override
   Future<void> upsertOrders(List<Map<String, dynamic>> orders) async {
-    final candidateBaseUrls = _resolveCandidateBaseUrls(
-      baseUrls,
-      preferredBaseUrl: _preferredBaseUrl,
-    );
+    final candidateBaseUrls = await _candidateBaseUrls();
     final failures = <String>[];
 
     if (candidateBaseUrls.isEmpty) {
@@ -473,6 +514,9 @@ class _HttpOrderSyncService implements OrderSyncService {
         await _upsertOrdersAtBaseUrl(baseUrl, orders);
         return;
       } on _BaseUrlAttemptFailure catch (error) {
+        if (error.reachedServer) {
+          throw OrderSyncServiceException(error.message);
+        }
         failures.add('$baseUrl -> ${error.message}');
       }
     }
@@ -485,10 +529,7 @@ class _HttpOrderSyncService implements OrderSyncService {
 
   @override
   Future<void> cancelOrderGroup(int createdAtEpochMs) async {
-    final candidateBaseUrls = _resolveCandidateBaseUrls(
-      baseUrls,
-      preferredBaseUrl: _preferredBaseUrl,
-    );
+    final candidateBaseUrls = await _candidateBaseUrls();
     final failures = <String>[];
 
     if (candidateBaseUrls.isEmpty) {
@@ -502,6 +543,9 @@ class _HttpOrderSyncService implements OrderSyncService {
         await _cancelOrderGroupAtBaseUrl(baseUrl, createdAtEpochMs);
         return;
       } on _BaseUrlAttemptFailure catch (error) {
+        if (error.reachedServer) {
+          throw OrderSyncServiceException(error.message);
+        }
         failures.add('$baseUrl -> ${error.message}');
       }
     }
@@ -518,10 +562,7 @@ class _HttpOrderSyncService implements OrderSyncService {
     required String fileName,
     required String contentType,
   }) async {
-    final candidateBaseUrls = _resolveCandidateBaseUrls(
-      baseUrls,
-      preferredBaseUrl: _preferredBaseUrl,
-    );
+    final candidateBaseUrls = await _candidateBaseUrls();
     final failures = <String>[];
 
     if (candidateBaseUrls.isEmpty) {
@@ -539,6 +580,9 @@ class _HttpOrderSyncService implements OrderSyncService {
           contentType: contentType,
         );
       } on _BaseUrlAttemptFailure catch (error) {
+        if (error.reachedServer) {
+          throw OrderSyncServiceException(error.message);
+        }
         failures.add('$baseUrl -> ${error.message}');
       }
     }
@@ -574,7 +618,10 @@ class OrderSyncServiceException implements Exception {
 }
 
 class _BaseUrlAttemptFailure implements Exception {
-  const _BaseUrlAttemptFailure(this.message);
+  const _BaseUrlAttemptFailure(this.message, {this.reachedServer = false});
 
   final String message;
+
+  /// The backend answered (with an error), so other URLs won't do better.
+  final bool reachedServer;
 }

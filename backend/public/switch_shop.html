@@ -44,6 +44,7 @@
     <link rel="stylesheet" href="/main_dart.css?v=main-dart-search-heading-art-2" />
     <link rel="stylesheet" href="/switch_shop.css?v=switch-shop-platform-art-2" />
     <link rel="stylesheet" href="/select_address_page.css?v=select-address-1" />
+    <link rel="stylesheet" href="/switch_ai_assistant.css?v=ai-assistant-1" />
   </head>
   <body class="md-app ss-app">
     <header class="login-site-header" aria-label="Switch Shop header">
@@ -205,6 +206,37 @@
           <h2 id="ss-dialog-title"></h2>
           <p class="md-dialog__price" id="ss-dialog-price"></p>
           <p class="md-dialog__desc" id="ss-dialog-desc"></p>
+          <div class="md-dialog__report-row">
+            <button
+              type="button"
+              class="md-dialog__report"
+              id="ss-dialog-report"
+              data-report-seller
+              hidden
+            >Report this seller</button>
+            <button
+              type="button"
+              class="md-dialog__report md-dialog__report--listing"
+              id="ss-dialog-report-listing"
+              data-report-listing
+              hidden
+            >Report this listing</button>
+          </div>
+          <p class="md-dialog__report-hint" id="ss-dialog-report-hint" hidden></p>
+          <div class="md-dialog__share-row">
+            <button
+              type="button"
+              class="md-dialog__share"
+              id="ss-dialog-share-listing"
+            >Share listing</button>
+            <button
+              type="button"
+              class="md-dialog__share"
+              id="ss-dialog-share-store"
+              hidden
+            >Share store</button>
+          </div>
+          <p class="md-dialog__share-status" id="ss-dialog-share-status" role="status" hidden></p>
         </div>
       </form>
     </dialog>
@@ -244,11 +276,14 @@
       </form>
     </dialog>
 
-    <script src="/switch_buyer_auth.js?v=switch-buyer-platform-map-1"></script>
+    <script src="/switch_buyer_auth.js?v=one-free-company-1"></script>
     <script src="/select_address_page.js?v=select-address-1"></script>
     <script src="/switch_site_footer.js?v=switch-footer-embed-1"></script>
     <script src="/platform_search_dock.js?v=platform-search-dock-2"></script>
     <script src="/search_suggestions.js?v=search-suggestions-7"></script>
-    <script src="/switch_shop.js?v=switch-shop-platform-art-2"></script>
+    <script src="/company_report_gateway.js?v=company-report-gateway-3-store-only"></script>
+    <script src="/listing_report_gateway.js?v=listing-report-gateway-1"></script>
+    <script src="/switch_shop.js?v=switch-shop-platform-art-2-listing-report-1"></script>
+    <script src="/switch_ai_assistant.js?v=ai-assistant-1" data-role="buyer" defer></script>
   </body>
 </html>

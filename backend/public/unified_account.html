@@ -112,9 +112,14 @@
 
           <form class="portal-form" id="seller-upgrade-form" novalidate>
             <label class="portal-field">
-              <span>Seller plan</span>
-              <select id="seller-plan-select"></select>
+              <span>Seller type</span>
+              <select id="seller-kind-select" required>
+                <option value="">Select seller type</option>
+                <option value="individual">Individual Seller — personal, no DTI/SEC</option>
+                <option value="business">Business / Corporate Seller — has DTI or SEC</option>
+              </select>
             </label>
+            <p class="portal-plan-copy" id="seller-kind-copy">Individual sellers only need a government ID and a bank account in their name. Business sellers need DTI or SEC, BIR COR, owner ID, and a matching business bank account.</p>
 
             <label class="portal-field">
               <span>Company name</span>
@@ -127,20 +132,25 @@
             </label>
 
             <label class="portal-field">
-              <span>Payment reference</span>
-              <input id="seller-payment-reference" type="text" placeholder="Optional manual payment reference" />
+              <span>Store address</span>
+              <input id="seller-store-address" type="text" minlength="8" maxlength="300" autocomplete="street-address" placeholder="e.g. 16-B Lanzones St., Barangay, City, Pampanga" required />
+              <small>Switch Riders near this address pick up your orders.</small>
             </label>
 
             <label class="portal-field">
-              <span>Payment partner</span>
-              <select id="seller-payment-partner-select"></select>
+              <span>Bank name</span>
+              <input id="seller-bank-name" type="text" placeholder="BDO, BPI, UnionBank" required />
+            </label>
+            <label class="portal-field">
+              <span>Bank account name</span>
+              <input id="seller-bank-account-name" type="text" placeholder="Must match payout owner" required />
+            </label>
+            <label class="portal-field">
+              <span>Bank account number</span>
+              <input id="seller-bank-account-number" type="text" inputmode="numeric" placeholder="Digits only" required />
             </label>
 
-            <div class="portal-plan-note">
-              <strong id="seller-plan-summary">Seller plan</strong>
-              <span id="seller-plan-copy">Loading seller plan catalog...</span>
-              <ul class="portal-plan-list" id="seller-plan-features"></ul>
-            </div>
+            <p class="portal-plan-copy">One free company per account. No subscription. Super Admin still reviews it first.</p>
 
             <div class="portal-actions">
               <button class="portal-button portal-button--accent" type="submit">
@@ -154,6 +164,6 @@
       </section>
     </main>
 
-    <script src="/unified_account.js?v=1"></script>
+    <script src="/unified_account.js?v=no-subscription-modal-1"></script>
   </body>
 </html>

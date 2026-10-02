@@ -184,20 +184,18 @@
 
   function statusLabel(deal) {
     if (!deal) return "";
+    if (deal.overriddenByPlatform) return "Overridden by Platform";
     const display = String(deal.displayStatus || "").toLowerCase();
-    if (display === "pending") return "Pending review";
     if (display === "rejected") return "Rejected";
     if (display === "live") return "Live";
-    if (display === "upcoming") return "Upcoming";
+    if (display === "upcoming" || display === "pending") return "Upcoming";
     if (display === "ended") return "Ended";
     if (display === "cancelled") return "Cancelled";
     const approval = String(deal.approvalStatus || "").toLowerCase();
-    if (approval === "pending") return "Pending review";
     if (approval === "rejected") return "Rejected";
-    if (approval === "revision") return "Needs revision";
     const status = String(deal.status || "").toLowerCase();
     if (status === "live") return "Live";
-    if (status === "upcoming") return "Upcoming";
+    if (status === "upcoming" || status === "pending") return "Upcoming";
     if (status === "ended") return "Ended";
     if (status === "cancelled") return "Cancelled";
     return status || "Draft";
@@ -205,10 +203,10 @@
 
   function statusToneClass(deal) {
     if (!deal) return "";
+    if (deal.overriddenByPlatform) return "is-overridden";
     const display = String(deal.displayStatus || deal.status || "").toLowerCase();
-    if (display === "pending" || display === "revision") return "is-pending";
     if (display === "live") return "is-live";
-    if (display === "upcoming") return "is-upcoming";
+    if (display === "upcoming" || display === "pending") return "is-upcoming";
     if (
       display === "ended" ||
       display === "cancelled" ||
@@ -216,18 +214,16 @@
     ) {
       return "is-ended";
     }
-    return "is-pending";
+    return "is-upcoming";
   }
 
   function dealFlags(deal) {
-    const status = String(deal?.displayStatus || deal?.status || "").toLowerCase();
+    let status = String(deal?.displayStatus || deal?.status || "").toLowerCase();
+    if (status === "pending") status = "upcoming";
     const approval = String(deal?.approvalStatus || "").toLowerCase();
     const canEdit =
       !deal ||
       status === "upcoming" ||
-      status === "pending" ||
-      approval === "pending" ||
-      approval === "revision" ||
       !deal.id;
     const canEndOrCancel =
       Boolean(deal?.id) &&
@@ -308,21 +304,21 @@
       els.summaryNotes.textContent = notes || "No notes";
     }
     if (els.submittedBanner instanceof HTMLElement) {
-      const { status, approval, isLive, isTerminal } = dealFlags(deal);
-      if (isLive) {
+      const { status, isLive, isTerminal } = dealFlags(deal);
+      if (isLive && deal?.overriddenByPlatform) {
+        els.submittedBanner.textContent =
+          "Temporarily overridden by Platform Flash Deal. Your schedule stays intact and resumes automatically when the platform campaign ends.";
+      } else if (isLive) {
         els.submittedBanner.textContent =
           "This Flash Deal is live. You can end it early if needed.";
-      } else if (approval === "revision") {
+      } else if (status === "upcoming") {
         els.submittedBanner.textContent =
-          "Super Admin requested changes. Edit and re-submit.";
-      } else if (status === "pending" || approval === "pending") {
-        els.submittedBanner.textContent =
-          "Submitted for Super Admin review. Edit anytime before it is approved.";
+          "Scheduled. It goes live automatically at the start time. Edit anytime before it starts.";
       } else if (isTerminal) {
         els.submittedBanner.textContent = `This Flash Deal is ${statusLabel(deal).toLowerCase()}.`;
       } else {
         els.submittedBanner.textContent =
-          "Flash Deal details. Use Edit to update and re-submit.";
+          "Flash Deal details. Use Edit to update the schedule.";
       }
     }
   }
@@ -392,31 +388,31 @@
     if (els.title) {
       if (mode === MODE.CREATE) els.title.textContent = "Create Flash Deal";
       else if (mode === MODE.EDIT) els.title.textContent = "Edit Flash Deal";
-      else els.title.textContent = "Flash Deal submitted";
+      else els.title.textContent = "Flash Deal";
     }
     if (els.subtitle) {
       if (mode === MODE.CREATE) {
         els.subtitle.textContent =
-          "Set a timed flash price and deal stock for this listing. Submitted deals await Super Admin review.";
+          "Set a timed flash price and deal stock for this listing. It goes live automatically at the start time.";
       } else if (mode === MODE.EDIT) {
         els.subtitle.textContent =
-          "Update the deal details, then re-submit for Super Admin review.";
+          "Update the deal details. Changes apply immediately to the schedule.";
       } else {
         els.subtitle.textContent =
-          "Your Flash Deal is on file. Review the details or edit before approval.";
+          "Review your Flash Deal schedule, stock, and price.";
       }
     }
     if (els.footerNote) {
       if (isSubmittedView) {
         els.footerNote.textContent = isLive
           ? "Live deals stay active until end time — or end them early from here."
-          : "Pending deals need Super Admin approval. Tap Edit to change details and re-submit.";
+          : "Upcoming deals go live at start time. Tap Edit to change details before they start.";
       } else if (mode === MODE.EDIT) {
         els.footerNote.textContent =
-          "Saving sends this Flash Deal back to Super Admin for review.";
+          "Saving updates this Flash Deal schedule right away.";
       } else {
         els.footerNote.textContent =
-          "Pending deals need Super Admin approval. Approved deals go Live automatically at start time.";
+          "Flash Deals go live automatically at the start time — no Super Admin approval needed.";
       }
     }
 
@@ -427,8 +423,8 @@
     if (els.submitLabel) {
       els.submitLabel.textContent =
         mode === MODE.EDIT || currentDeal?.id
-          ? "Update & re-submit"
-          : "Submit Flash Deal";
+          ? "Save Flash Deal"
+          : "Schedule Flash Deal";
     }
     if (els.editButton instanceof HTMLButtonElement) {
       els.editButton.hidden = !(isSubmittedView && canEdit && !isLive && !isTerminal);
@@ -580,7 +576,7 @@
       paintStatus(currentDeal);
       fillForm(currentDeal, currentProduct);
       applyMode(MODE.SUBMITTED);
-      setFeedback(data.message || "Flash Deal submitted for review.", "success");
+      setFeedback(data.message || "Flash Deal scheduled.", "success");
       window.dispatchEvent(new CustomEvent("gms-flash-deals-changed"));
     } catch (error) {
       setFeedback(

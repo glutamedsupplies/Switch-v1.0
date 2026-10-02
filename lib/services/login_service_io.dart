@@ -2,19 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/login_service_base.dart';
 
 const _requestTimeout = Duration(seconds: 8);
 const _connectTimeout = Duration(seconds: 3);
 
-LoginService createLoginService() =>
-    _IoLoginService(buildLocalApiBaseUrls(isAndroid: Platform.isAndroid));
+LoginService createLoginService() => _IoLoginService();
 
 class _IoLoginService implements LoginService {
-  _IoLoginService(this._baseUrls);
+  _IoLoginService();
 
-  final List<String> _baseUrls;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = _connectTimeout;
 
@@ -25,7 +24,9 @@ class _IoLoginService implements LoginService {
   }) async {
     var receivedServerResponse = false;
 
-    for (final baseUrl in _baseUrls) {
+    await resolveWorkingLocalApiBaseUrl();
+    final baseUrls = buildLocalApiBaseUrls(isAndroid: Platform.isAndroid);
+    for (final baseUrl in baseUrls) {
       try {
         final request = await _client
             .postUrl(Uri.parse('$baseUrl$path'))
@@ -49,6 +50,7 @@ class _IoLoginService implements LoginService {
               account,
               message: decoded['message']?.toString(),
               created: decoded['created'] == true,
+              sessionToken: decoded['sessionToken']?.toString(),
             );
           }
           return LoginResult.failure(

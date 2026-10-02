@@ -383,6 +383,84 @@ body.modal-open {
   text-align: center;
 }
 
+.admin-account-settings-background {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  justify-items: stretch;
+  text-align: left;
+}
+
+.admin-account-settings-background h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.admin-account-settings-background__hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.admin-account-settings-background__preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 110px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgba(37, 99, 235, 0.1), rgba(148, 163, 184, 0.08)),
+    #f8fafc;
+}
+
+.admin-account-settings-background__preview img {
+  display: block;
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+}
+
+.admin-account-settings-background__empty {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-account-settings-background__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-account-settings-background__actions .employee-account-settings-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.admin-account-settings-background__actions .employee-account-settings-secondary svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.admin-account-settings-background__remove {
+  color: #b91c1c;
+}
+
 .employee-account-settings-basic {
   min-width: 0;
   display: grid;
@@ -1175,6 +1253,125 @@ body.modal-open {
 .seller-account-deletion-banner__action:focus-visible {
   background: #881337;
   outline: none;
+}
+
+.admin-account-settings-pin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.admin-account-settings-pin-card {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.admin-account-settings-pin-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.admin-account-settings-pin-card h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #0f172a;
+}
+
+.admin-account-settings-pin-lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.admin-account-settings-pin-card label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-account-settings-pin-card input {
+  height: 44px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 18px;
+  letter-spacing: 0.28em;
+  text-align: center;
+}
+
+.admin-account-settings-pin-card input:focus {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  border-color: #0f766e;
+}
+
+.admin-account-settings-pin-feedback {
+  min-height: 18px;
+  margin: 0;
+  font-size: 13px;
+  color: #b91c1c;
+}
+
+.admin-account-settings-pin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.admin-account-settings-pin-actions button {
+  height: 40px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-account-settings-pin-cancel {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.admin-account-settings-pin-submit {
+  background: #0f766e;
+  color: #fff;
+}
+
+.admin-account-settings-pin-forgot {
+  display: inline-flex;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-account-settings-pin-actions button:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 @media (max-width: 720px) {

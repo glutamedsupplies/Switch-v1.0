@@ -31,7 +31,7 @@ class ProductCompanyIdentity extends StatelessWidget {
 
     return Row(
       children: [
-        _ProductCompanyAvatar(
+        ProductCompanyAvatar(
           imageUrl: companyPictureUrl,
           fallbackColor: fallbackColor,
           size: avatarSize,
@@ -42,12 +42,13 @@ class ProductCompanyIdentity extends StatelessWidget {
             companyName.isEmpty ? 'Company' : companyName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: textColor,
-                      fontSize: fontSize,
-                      fontWeight: FontWeight.w500,
-                      height: 1.15,
-                    ) ??
+            style:
+                Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: textColor,
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w500,
+                  height: 1.15,
+                ) ??
                 TextStyle(
                   color: textColor,
                   fontSize: fontSize,
@@ -61,8 +62,9 @@ class ProductCompanyIdentity extends StatelessWidget {
   }
 }
 
-class _ProductCompanyAvatar extends StatelessWidget {
-  const _ProductCompanyAvatar({
+class ProductCompanyAvatar extends StatelessWidget {
+  const ProductCompanyAvatar({
+    super.key,
     required this.imageUrl,
     required this.fallbackColor,
     required this.size,
@@ -88,13 +90,13 @@ class _ProductCompanyAvatar extends StatelessWidget {
                 gaplessPlayback: true,
               )
             : trimmedImageUrl.isNotEmpty
-                ? Image.network(
-                    trimmedImageUrl,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => _buildFallback(),
-                  )
-                : _buildFallback(),
+            ? Image.network(
+                trimmedImageUrl,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => _buildFallback(),
+              )
+            : _buildFallback(),
       ),
     );
   }

@@ -359,6 +359,7 @@ function groupOrderEntries(entries) {
 const PRODUCT_COLUMN_KEYS = new Set([
   "id",
   "adminId",
+  "companyId",
   "name",
   "description",
   "approvalStatus",
@@ -443,6 +444,7 @@ function productToRow(product) {
   return {
     id,
     admin_id: adminId,
+    company_id: String(source.companyId ?? "").trim(),
     name,
     description: String(source.description ?? ""),
     approval_status: String(source.approvalStatus ?? "pending").trim() || "pending",
@@ -540,6 +542,7 @@ function rowToProduct(row, variants = [], categoryNames = [], categoryIds = []) 
     ...extra,
     id: row.id,
     adminId: row.admin_id || extra.adminId || "",
+    companyId: row.company_id || extra.companyId || "",
     name: row.name || extra.name || "",
     description: row.description ?? extra.description ?? "",
     approvalStatus: row.approval_status || extra.approvalStatus || "pending",

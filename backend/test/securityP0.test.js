@@ -16,11 +16,14 @@ const {
 const { createLoginLockout, createRateLimiter } = require("../security/rateLimit");
 const { isLoopbackBind, isWildcardBind, resolveBindHost } = require("../security/bindHost");
 const { verifyPaymongoWebhook } = require("../services/sellerCheckoutGateway");
+const { createLalamoveSignature } = require("../services/courierProviderAdapter");
 const { createAppSessionAuth } = require("../security/appSessionAuth");
 
 const TEST_APP_SECRET = "test-app-session-secret-with-at-least-32-bytes";
 const TEST_ADMIN_SECRET = "test-admin-session-secret-with-at-least-32-bytes";
 const TEST_WEBHOOK_SECRET = "whsec_test_paymongo_p0";
+const TEST_LALAMOVE_API_KEY = "pk_test_lalamove_p0";
+const TEST_LALAMOVE_SECRET = "sk_test_lalamove_p0";
 const HTTP_PORT = 18123;
 
 function mockResponse() {
@@ -228,6 +231,9 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
     AI_RATE_LIMIT_MAX: "8",
     VISUAL_SEARCH_RATE_LIMIT_MAX: "8",
     PAYMONGO_WEBHOOK_SECRET: TEST_WEBHOOK_SECRET,
+    LALAMOVE_API_KEY: TEST_LALAMOVE_API_KEY,
+    LALAMOVE_API_SECRET: TEST_LALAMOVE_SECRET,
+    LALAMOVE_WEBHOOK_SECRET: TEST_LALAMOVE_SECRET,
   };
   delete env.DATABASE_URL;
   delete env.PAYMONGO_SECRET_KEY;
@@ -473,6 +479,49 @@ test("HTTP security P0 acceptance", { timeout: 60_000 }, async (t) => {
         body: rawBody,
       });
       assert.equal(buyerUnsigned.status, 401);
+    });
+
+    await t.test("Lalamove webhook rejects unsigned events and accepts signed events", async () => {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const data = {
+        order: {
+          orderId: "unknown_lalamove_order",
+          status: "ON_GOING",
+        },
+      };
+      const payload = {
+        apiKey: TEST_LALAMOVE_API_KEY,
+        timestamp,
+        signature: "",
+        eventId: "event_security_p0",
+        eventType: "ORDER_STATUS_CHANGED",
+        data,
+      };
+      const unsigned = await requestHttp(HTTP_PORT, {
+        method: "POST",
+        path: "/api/couriers/lalamove/webhook",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        origin: "https://provider.example",
+      });
+      assert.equal(unsigned.status, 401);
+
+      payload.signature = createLalamoveSignature({
+        timestamp,
+        method: "POST",
+        path: "/api/couriers/lalamove/webhook",
+        body: JSON.stringify(data),
+        secret: TEST_LALAMOVE_SECRET,
+      });
+      const signed = await requestHttp(HTTP_PORT, {
+        method: "POST",
+        path: "/api/couriers/lalamove/webhook",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        origin: "https://provider.example",
+      });
+      assert.equal(signed.status, 200);
+      assert.equal(signed.json?.ignored, true);
     });
 
     await t.test("unauthenticated confirm-payment returns 401", async () => {

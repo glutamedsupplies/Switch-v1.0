@@ -199,9 +199,13 @@ Buyer funnel events are best-effort and tenant-scoped from the referenced catalo
 | --- | --- | --- | --- | --- | --- | --- |
 | `POST` | `/api/payments/paymongo/seller-webhook` | None | Raw PayMongo event JSON | Processing/duplicate/ignored result | PayMongo HMAC signature; five-minute freshness window | `POST /api/payments/paymongo/seller-webhook` |
 | `POST` | `/api/payments/paymongo/buyer-webhook` | None | Raw PayMongo event JSON | Marks matching buyer order paid (`toPrepare`) | PayMongo HMAC; ledger provider `paymongo_buyer` | `POST /api/payments/paymongo/buyer-webhook` |
-| `POST` | `/api/orders/checkout-session` | None | `{ createdAtEpochMs \| orderGroupId, paymentGateway? }` | `{ provider, checkoutUrl, paymentReference, ... }` | Signed buyer session | Creates hosted PayMongo session or marks paid when keys unset |
+| `POST` | `/api/account/become-seller/checkout-intent` | None | `{ companyId, planName, billingCycle }` | Server-priced free or hosted PayMongo checkout intent | Signed buyer session | Paid plans return `503` if PayMongo is unconfigured; client amounts/currency are ignored |
+| `POST` | `/api/account/become-seller/confirm-payment` | None | `{ companyId, planName, billingCycle, paymentReference }` | Seller onboarding result | Signed buyer session | Free plan may activate directly; paid plans require a server-matched, webhook-verified intent |
+| `POST` | `/api/orders/checkout-session` | None | `{ createdAtEpochMs \| orderGroupId, paymentGateway? }` | `{ provider, checkoutUrl, paymentReference, ... }` | Signed buyer session | Creates hosted PayMongo session; returns `503` and leaves the order unpaid when unconfigured |
 | `GET` | `/api/orders/{groupId}/payment-status` | group id path | None | `{ paid, paymentStatus, stage, ... }` | Buyer or seller session | Poll after checkout return |
-| `POST` | `/api/orders/{groupId}/shipments` | group id path | optional `{ trackingNumber }` | `{ shipment: { trackingNumber, provider, mode } }` | Seller/employee | Courier adapter (manual / Lalamove stub) |
+| `POST` | `/api/orders/{groupId}/shipments` | group id path | optional manual `trackingNumber`; live calls may provide pickup/destination coordinates | `{ shipment: { trackingNumber, provider, mode, status } }` | Seller/employee | Manual fulfillment or signed Lalamove quotation + order |
+| `GET` | `/api/orders/{groupId}/shipments` | group id path | None | `{ tracking: { trackingNumber, status, driverId, shareLink } }` | Seller/employee | Retrieves current provider tracking |
+| `POST` | `/api/couriers/lalamove/webhook` | None | Raw Lalamove event JSON | Processing/ignored result | Lalamove API key, timestamp, and HMAC signature | Persists signed courier status updates |
 
 ### Chat Support
 

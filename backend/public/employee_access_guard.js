@@ -128,6 +128,7 @@
     "/packing_dashboard.html": "packing-dashboard",
     "/live_chat.html": "live-chat",
     "/concern.html": "concern",
+    "/seller_security_center.html": "concern",
     "/employee_order_insight.html": "employee-order",
     "/employee_stock.html": "employee-inventory",
     "/insight.html": "insight",

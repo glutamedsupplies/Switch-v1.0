@@ -16,6 +16,7 @@ class AuthSession {
   static const String _activeModeKey = 'activeMode';
   static const String _activeCompanyIdKey = 'activeCompanyId';
   static const String _availableModesKey = 'availableModes';
+  static const String _sessionTokenKey = 'switchSessionToken';
 
   /// Notifier for synchronous login state checking.
   /// Use [isLoggedInSync] getter for sync checks, or [isLoggedIn] for async.
@@ -111,6 +112,22 @@ class AuthSession {
       await prefs.remove(_accountNameKey);
     } else {
       await prefs.setString(_accountNameKey, name.trim());
+    }
+  }
+
+  static Future<String?> getSessionToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_sessionTokenKey)?.trim() ?? '';
+    return token.isEmpty ? null : token;
+  }
+
+  static Future<void> setSessionToken(String? token) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = token?.trim() ?? '';
+    if (normalized.isEmpty) {
+      await prefs.remove(_sessionTokenKey);
+    } else {
+      await prefs.setString(_sessionTokenKey, normalized);
     }
   }
 
@@ -253,12 +270,21 @@ class AuthSession {
             .toList(growable: false)
         : const <String>['buyer'];
 
+    final sessionToken = pick(normalizedSession, const [
+      'sessionToken',
+      'token',
+      'appSessionToken',
+    ]);
+
     await setAccountId(accountId.isNotEmpty ? accountId : email);
     await setAccountEmail(email);
     await setAccountName(resolvedName);
     await setAvailableModes(availableModes);
     await setActiveMode(activeMode);
     await setActiveCompanyId(activeCompanyId);
+    if (sessionToken.isNotEmpty) {
+      await setSessionToken(sessionToken);
+    }
     notifyAccountChanged();
 
     // Keep the customer app profile aligned with the same account record used
@@ -298,6 +324,7 @@ class AuthSession {
     await prefs.remove(_activeModeKey);
     await prefs.remove(_activeCompanyIdKey);
     await prefs.remove(_availableModesKey);
+    await prefs.remove(_sessionTokenKey);
     // Profile identity must not survive logout — otherwise the next session
     // (or guest shell) can briefly/wrongly show the previous account email.
     await prefs.remove('profile_first_name');

@@ -1,7 +1,25 @@
 class UnifiedAccountServiceException implements Exception {
-  const UnifiedAccountServiceException(this.message);
+  const UnifiedAccountServiceException(
+    this.message, {
+    this.statusCode = 0,
+    this.code = '',
+  });
 
   final String message;
+  final int statusCode;
+  final String code;
+
+  bool get shouldForceSignOut {
+    const forceCodes = {
+      'ACCOUNT_NOT_FOUND',
+      'ACCOUNT_BANNED',
+      'ACCOUNT_RESTRICTED',
+      'ACCOUNT_SUSPENDED',
+      'ACCOUNT_LOCKED',
+      'device_revoked',
+    };
+    return forceCodes.contains(code);
+  }
 
   @override
   String toString() => message;
@@ -21,10 +39,18 @@ class UnifiedSellerCatalogResult {
   const UnifiedSellerCatalogResult({
     required this.catalog,
     required this.message,
+    this.firstCompanyFree = true,
+    this.requiresPaidPlan = false,
+    this.canSubmitFreeFirst = true,
+    this.existingCompanyCount = 0,
   });
 
   final Map<String, dynamic> catalog;
   final String message;
+  final bool firstCompanyFree;
+  final bool requiresPaidPlan;
+  final bool canSubmitFreeFirst;
+  final int existingCompanyCount;
 }
 
 class UnifiedCheckoutIntentResult {
@@ -44,6 +70,12 @@ class SellerSwitchPinResult {
     this.unlockToken = '',
     this.companyId = '',
     this.companyName = '',
+    this.pinResetRequired = false,
+    this.pinResetReason = '',
+    this.workspaceBlocked = false,
+    this.workspaceStatus = '',
+    this.banReason = '',
+    this.banDescription = '',
   });
 
   final bool hasPin;
@@ -51,6 +83,12 @@ class SellerSwitchPinResult {
   final String unlockToken;
   final String companyId;
   final String companyName;
+  final bool pinResetRequired;
+  final String pinResetReason;
+  final bool workspaceBlocked;
+  final String workspaceStatus;
+  final String banReason;
+  final String banDescription;
 }
 
 abstract class UnifiedAccountService {
@@ -77,6 +115,20 @@ abstract class UnifiedAccountService {
     required String companyName,
     String businessType = '',
     String planName = 'Starter Seller Plan',
+    String sellerKind = '',
+    Map<String, String> payoutBank = const <String, String>{},
+    String storeAddress = '',
+    double? storeLatitude,
+    double? storeLongitude,
+  });
+
+  Future<void> addSellerDocument({
+    required String accountId,
+    required String companyId,
+    required String type,
+    required String url,
+    String fileName = '',
+    String label = '',
   });
 
   Future<UnifiedAccountSessionResult> confirmBecomeSeller({
@@ -88,6 +140,13 @@ abstract class UnifiedAccountService {
     String paymentReference = '',
     double amount = 0,
     String currencyCode = 'PHP',
+  });
+
+  Future<UnifiedAccountSessionResult> withdrawPendingCompany({
+    required String accountId,
+    required String companyId,
+    String email = '',
+    String reason = '',
   });
 
   Future<UnifiedSellerCatalogResult> fetchSellerPlanCatalog();

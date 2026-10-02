@@ -273,6 +273,7 @@ class ProductSearchBar extends StatefulWidget {
     this.hintText,
     this.pillStyle = false,
     this.alwaysUseFocusedStyle = false,
+    this.idleOnDarkBackdrop,
   });
 
   final TextEditingController controller;
@@ -297,6 +298,10 @@ class ProductSearchBar extends StatefulWidget {
   /// Matches main_dart.html `.md-sa-search` pill search field.
   final bool pillStyle;
   final bool alwaysUseFocusedStyle;
+
+  /// Pill-style text/icon/border contrast while unfocused, for pills drawn
+  /// over a changing backdrop; null follows the app theme brightness.
+  final bool? idleOnDarkBackdrop;
 
   @override
   State<ProductSearchBar> createState() => _ProductSearchBarState();
@@ -362,7 +367,9 @@ class _ProductSearchBarState extends State<ProductSearchBar> {
     Widget buildField({required bool focused}) {
       final borderRadius = BorderRadius.circular(widget.pillStyle ? 999 : 8);
       final muteIcon = const Color(0xFF6B7280);
-      final isDark = theme.brightness == Brightness.dark;
+      final onDarkBackdrop = widget.idleOnDarkBackdrop == true;
+      final isDark = widget.idleOnDarkBackdrop ??
+          theme.brightness == Brightness.dark;
       // Idle: transparent + border (main_dart). Focus: solid white immediately — no gray wash/splash.
       final Color pillFill;
       final Color pillHintColor;
@@ -375,7 +382,11 @@ class _ProductSearchBarState extends State<ProductSearchBar> {
         pillIconColor = muteIcon;
       } else {
         pillFill = Colors.transparent;
-        if (isDark) {
+        if (onDarkBackdrop) {
+          pillHintColor = Colors.white.withValues(alpha: 0.78);
+          pillTextColor = Colors.white;
+          pillIconColor = Colors.white;
+        } else if (isDark) {
           pillHintColor = Colors.white.withValues(alpha: 0.55);
           pillTextColor = Colors.white.withValues(alpha: 0.92);
           pillIconColor = Colors.white.withValues(alpha: 0.75);
@@ -458,6 +469,8 @@ class _ProductSearchBarState extends State<ProductSearchBar> {
                     width: 1,
                     color: focused
                         ? Colors.transparent
+                        : onDarkBackdrop
+                        ? Colors.white.withValues(alpha: 0.85)
                         : (isDark
                               ? Colors.white.withValues(alpha: 0.28)
                               : const Color(0x2E162033)), // rgba(22,32,51,0.18)
@@ -826,13 +839,35 @@ class _ProductSearchPageState extends State<ProductSearchPage> {
     });
 
     _persistRecentSearches();
-    unawaited(
-      recordBuyerSearchEvent(
-        nextQuery,
-        platformId: widget.platformId,
-        category: widget.category,
-        storeType: widget.storeType,
-      ),
+    unawaited(_recordSearchEventWithResultCount(nextQuery));
+  }
+
+  Future<void> _recordSearchEventWithResultCount(String query) async {
+    var resultCount = 0;
+    try {
+      final products = await _productsFuture;
+      final normalizedQuery = normalizeBuyerLiveSearchKey(query);
+      if (normalizedQuery.isNotEmpty) {
+        for (final product in products) {
+          if (!isProductVisibleToUsers(product)) continue;
+          final score = [
+            buyerLiveSearchMatchScore(product.name, normalizedQuery),
+            buyerLiveSearchMatchScore(product.companyName, normalizedQuery),
+            buyerLiveSearchMatchScore(product.categoryLabel, normalizedQuery),
+          ].fold<int>(-1, (best, next) => next > best ? next : best);
+          if (score >= 0) resultCount += 1;
+        }
+      }
+    } catch (_) {
+      // Server still applies catalog/fuzzy gates without a client count.
+    }
+    await recordBuyerSearchEvent(
+      query,
+      platformId: widget.platformId,
+      category: widget.category,
+      storeType: widget.storeType,
+      resultCount: resultCount,
+      hasResults: resultCount > 0,
     );
   }
 

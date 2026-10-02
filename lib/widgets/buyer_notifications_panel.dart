@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:switch_app/services/switch_rider_service.dart';
 import 'package:switch_app/utils/buyer_notification_time_sections.dart';
 import 'package:switch_app/widgets/buyer_right_panel_host.dart';
 import 'package:switch_app/widgets/skeleton_loading.dart';
@@ -120,6 +121,32 @@ class _BuyerNotificationsPanelState extends State<BuyerNotificationsPanel> {
         ),
       ];
       _loaded = true;
+    });
+    await _loadDeliveryUpdates();
+  }
+
+  Future<void> _loadDeliveryUpdates() async {
+    List<SwitchRiderBuyerNotification> updates;
+    try {
+      updates = await createSwitchRiderService().fetchBuyerNotifications();
+    } catch (_) {
+      return;
+    }
+    if (!mounted || updates.isEmpty) return;
+    setState(() {
+      _notifications = <BuyerNotificationItem>[
+        for (final update in updates)
+          BuyerNotificationItem(
+            id: 'switch-rider-${update.id}',
+            body: update.body.isEmpty
+                ? update.title
+                : '${update.title}: ${update.body}',
+            createdAt: update.createdAt,
+          ),
+        ..._notifications.where(
+          (item) => !item.id.startsWith('switch-rider-'),
+        ),
+      ];
     });
   }
 

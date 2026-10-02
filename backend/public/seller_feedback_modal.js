@@ -1136,6 +1136,7 @@
         "X-Feedback-Type": "seller",
         "X-GMS-Admin-ID": auth.adminId,
         "X-GMS-Admin-Session": auth.sessionToken,
+        ...(auth.sessionToken ? { "X-Switch-Session": auth.sessionToken } : {}),
       },
       body: media.file,
     });
@@ -1241,6 +1242,7 @@
           "Content-Type": "application/json",
           "X-GMS-Admin-ID": auth.adminId,
           "X-GMS-Admin-Session": auth.sessionToken,
+          ...(auth.sessionToken ? { "X-Switch-Session": auth.sessionToken } : {}),
         },
         body: JSON.stringify({
           type: "seller",

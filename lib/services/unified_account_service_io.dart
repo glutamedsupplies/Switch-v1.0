@@ -2,22 +2,26 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:switch_app/services/local_api_base_url_probe_io.dart';
 import 'package:switch_app/services/local_api_base_urls.dart';
 import 'package:switch_app/services/unified_account_service_base.dart';
+import 'package:switch_app/utils/auth_session.dart';
 
 const _requestTimeout = Duration(seconds: 10);
 const _connectTimeout = Duration(seconds: 4);
 
-UnifiedAccountService createUnifiedAccountService() => _IoUnifiedAccountService(
-      buildLocalApiBaseUrls(isAndroid: Platform.isAndroid),
-    );
+UnifiedAccountService createUnifiedAccountService() => _IoUnifiedAccountService();
 
 class _IoUnifiedAccountService implements UnifiedAccountService {
-  _IoUnifiedAccountService(this._baseUrls);
+  _IoUnifiedAccountService();
 
-  final List<String> _baseUrls;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = _connectTimeout;
+
+  Future<List<String>> _resolveBaseUrls() async {
+    await resolveWorkingLocalApiBaseUrl();
+    return buildLocalApiBaseUrls(isAndroid: Platform.isAndroid);
+  }
 
   Future<UnifiedAccountSessionResult> _request({
     required String method,
@@ -27,7 +31,7 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
   }) async {
     var receivedServerResponse = false;
 
-    for (final baseUrl in _baseUrls) {
+    for (final baseUrl in await _resolveBaseUrls()) {
       try {
         final queryParameters = <String, String>{};
         if (query != null) {
@@ -47,12 +51,17 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
             : await _client.postUrl(uri).timeout(_connectTimeout);
         request.headers.contentType = ContentType.json;
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        final sessionToken = (await AuthSession.getSessionToken())?.trim() ?? '';
+        if (sessionToken.isNotEmpty) {
+          request.headers.set('X-Switch-Session', sessionToken);
+        }
         if (payload != null) {
           request.write(jsonEncode(payload));
         }
 
         final response = await request.close().timeout(_requestTimeout);
         receivedServerResponse = true;
+        rememberWorkingLocalApiBaseUrl(baseUrl);
         final body = await response.transform(utf8.decoder).join();
         final decoded = body.isEmpty
             ? const <String, dynamic>{}
@@ -74,6 +83,8 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
 
         throw UnifiedAccountServiceException(
           decoded['message']?.toString() ?? 'Unified account request failed.',
+          statusCode: response.statusCode,
+          code: decoded['code']?.toString() ?? '',
         );
       } on SocketException {
         // Try next base URL.
@@ -103,7 +114,7 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
   }) async {
     var receivedServerResponse = false;
 
-    for (final baseUrl in _baseUrls) {
+    for (final baseUrl in await _resolveBaseUrls()) {
       try {
         final queryParameters = <String, String>{};
         if (query != null) {
@@ -122,12 +133,17 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
             : await _client.postUrl(uri).timeout(_connectTimeout);
         request.headers.contentType = ContentType.json;
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        final sessionToken = (await AuthSession.getSessionToken())?.trim() ?? '';
+        if (sessionToken.isNotEmpty) {
+          request.headers.set('X-Switch-Session', sessionToken);
+        }
         if (payload != null) {
           request.write(jsonEncode(payload));
         }
 
         final response = await request.close().timeout(_requestTimeout);
         receivedServerResponse = true;
+        rememberWorkingLocalApiBaseUrl(baseUrl);
         final body = await response.transform(utf8.decoder).join();
         final decoded = body.isEmpty
             ? const <String, dynamic>{}
@@ -138,6 +154,8 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
         }
         throw UnifiedAccountServiceException(
           decoded['message']?.toString() ?? 'Unified account request failed.',
+          statusCode: response.statusCode,
+          code: decoded['code']?.toString() ?? '',
         );
       } on SocketException {
         // Try next base URL.
@@ -216,6 +234,11 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
     required String companyName,
     String businessType = '',
     String planName = 'Starter Seller Plan',
+    String sellerKind = '',
+    Map<String, String> payoutBank = const <String, String>{},
+    String storeAddress = '',
+    double? storeLatitude,
+    double? storeLongitude,
   }) {
     return _request(
       method: 'POST',
@@ -225,6 +248,34 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
         'companyName': companyName.trim(),
         'businessType': businessType.trim(),
         'planName': planName.trim(),
+        'sellerKind': sellerKind.trim(),
+        'payoutBank': payoutBank,
+        'storeAddress': storeAddress.trim(),
+        'storeLatitude': ?storeLatitude,
+        'storeLongitude': ?storeLongitude,
+      },
+    );
+  }
+
+  @override
+  Future<void> addSellerDocument({
+    required String accountId,
+    required String companyId,
+    required String type,
+    required String url,
+    String fileName = '',
+    String label = '',
+  }) async {
+    await _request(
+      method: 'POST',
+      path: '/api/account/become-seller/documents',
+      payload: {
+        'accountId': accountId.trim(),
+        'companyId': companyId.trim(),
+        'type': type.trim(),
+        'url': url.trim(),
+        'fileName': fileName.trim(),
+        'label': label.trim(),
       },
     );
   }
@@ -257,6 +308,25 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
   }
 
   @override
+  Future<UnifiedAccountSessionResult> withdrawPendingCompany({
+    required String accountId,
+    required String companyId,
+    String email = '',
+    String reason = '',
+  }) {
+    return _request(
+      method: 'POST',
+      path: '/api/account/become-seller/withdraw-company',
+      payload: {
+        'accountId': accountId.trim(),
+        'companyId': companyId.trim(),
+        if (email.trim().isNotEmpty) 'email': email.trim(),
+        if (reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+  }
+
+  @override
   Future<UnifiedSellerCatalogResult> fetchSellerPlanCatalog() async {
     final decoded = await _requestRaw(
       method: 'GET',
@@ -271,6 +341,17 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
     return UnifiedSellerCatalogResult(
       catalog: catalog,
       message: decoded['message']?.toString() ?? 'Seller plans loaded.',
+      firstCompanyFree: decoded['firstCompanyFree'] != false &&
+          catalog['firstCompanyFree'] != false,
+      requiresPaidPlan: decoded['requiresPaidPlan'] == true ||
+          catalog['requiresPaidPlan'] == true,
+      canSubmitFreeFirst: (decoded['requiresPaidPlan'] != true &&
+              catalog['requiresPaidPlan'] != true) &&
+          decoded['canSubmitFreeFirst'] != false &&
+          catalog['canSubmitFreeFirst'] != false,
+      existingCompanyCount:
+          int.tryParse('${decoded['existingCompanyCount'] ?? catalog['existingCompanyCount'] ?? 0}') ??
+              0,
     );
   }
 
@@ -335,12 +416,28 @@ class _IoUnifiedAccountService implements UnifiedAccountService {
   }
 
   SellerSwitchPinResult _pinResult(Map<String, dynamic> decoded) {
+    final workspaceStatus =
+        decoded['workspaceStatus']?.toString().trim().toLowerCase() ?? '';
+    final workspaceBlocked = decoded['workspaceBlocked'] == true ||
+        const {
+          'banned',
+          'pending_review',
+          'pending_payment',
+          'deactivated',
+          'suspended',
+        }.contains(workspaceStatus);
     return SellerSwitchPinResult(
       hasPin: decoded['hasPin'] == true,
       message: decoded['message']?.toString() ?? '',
       unlockToken: decoded['unlockToken']?.toString() ?? '',
       companyId: decoded['companyId']?.toString() ?? '',
       companyName: decoded['companyName']?.toString() ?? '',
+      pinResetRequired: decoded['pinResetRequired'] == true,
+      pinResetReason: decoded['pinResetReason']?.toString() ?? '',
+      workspaceBlocked: workspaceBlocked,
+      workspaceStatus: workspaceStatus,
+      banReason: decoded['banReason']?.toString() ?? '',
+      banDescription: decoded['banDescription']?.toString() ?? '',
     );
   }
 

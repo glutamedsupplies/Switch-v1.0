@@ -470,6 +470,10 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     await _persistSignedInAccount(account);
+    final sessionToken = result.sessionToken?.trim() ?? '';
+    if (sessionToken.isNotEmpty) {
+      await AuthSession.setSessionToken(sessionToken);
+    }
     await GuestSession.clear();
 
     // Reload cart/favorites/orders for the new account
@@ -846,6 +850,10 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     await _persistSignedInAccount(account);
+    final sessionToken = result.sessionToken?.trim() ?? '';
+    if (sessionToken.isNotEmpty) {
+      await AuthSession.setSessionToken(sessionToken);
+    }
     await GuestSession.clear();
     await CartStore.instance.reloadForCurrentAccount();
     await FavoriteProductsStore.instance.reloadForCurrentAccount();
